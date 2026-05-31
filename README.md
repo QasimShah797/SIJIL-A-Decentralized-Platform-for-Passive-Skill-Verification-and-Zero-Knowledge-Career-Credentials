@@ -1,1 +1,3 @@
-# SIJIL-A-Decentralized-Platform-for-Passive-Skill-Verification-and-Zero-Knowledge-Career-Credentials
+# Welcome to your Lovable project
+
+TODO: Document your project here
