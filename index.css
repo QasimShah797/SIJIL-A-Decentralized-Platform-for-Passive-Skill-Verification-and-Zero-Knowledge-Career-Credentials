@@ -1,0 +1,124 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* SIJIL Design System - Navy / Slate / Verified Green */
+    --background: 215 30% 98%;
+    --foreground: 222 47% 11%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+
+    /* Navy primary */
+    --primary: 222 47% 17%;
+    --primary-foreground: 210 40% 98%;
+    --primary-glow: 222 60% 28%;
+
+    --secondary: 215 25% 95%;
+    --secondary-foreground: 222 47% 17%;
+
+    --muted: 215 20% 96%;
+    --muted-foreground: 215 16% 42%;
+
+    --accent: 215 25% 94%;
+    --accent-foreground: 222 47% 17%;
+
+    --destructive: 0 72% 50%;
+    --destructive-foreground: 0 0% 100%;
+
+    /* Verified green */
+    --success: 152 65% 36%;
+    --success-foreground: 0 0% 100%;
+    --success-soft: 152 60% 94%;
+
+    /* Warning amber */
+    --warning: 38 92% 50%;
+    --warning-foreground: 26 83% 14%;
+    --warning-soft: 48 96% 92%;
+
+    /* Info / chain blue */
+    --info: 217 91% 50%;
+    --info-foreground: 0 0% 100%;
+    --info-soft: 214 100% 96%;
+
+    --border: 215 20% 90%;
+    --input: 215 20% 90%;
+    --ring: 222 47% 17%;
+
+    --radius: 0.625rem;
+
+    /* Gradients */
+    --gradient-primary: linear-gradient(135deg, hsl(222 47% 14%), hsl(222 60% 28%));
+    --gradient-subtle: linear-gradient(180deg, hsl(210 30% 99%), hsl(215 25% 96%));
+    --gradient-credential: linear-gradient(135deg, hsl(222 47% 17%) 0%, hsl(217 60% 32%) 60%, hsl(152 50% 35%) 100%);
+    --gradient-verified: linear-gradient(135deg, hsl(152 65% 36%), hsl(165 70% 40%));
+
+    /* Shadows */
+    --shadow-sm: 0 1px 2px hsl(222 47% 11% / 0.04);
+    --shadow-md: 0 4px 12px -2px hsl(222 47% 11% / 0.08);
+    --shadow-lg: 0 12px 32px -8px hsl(222 47% 11% / 0.12);
+    --shadow-credential: 0 20px 48px -16px hsl(222 47% 17% / 0.35);
+
+    /* Sidebar */
+    --sidebar-background: 222 47% 13%;
+    --sidebar-foreground: 215 20% 80%;
+    --sidebar-primary: 152 65% 45%;
+    --sidebar-primary-foreground: 222 47% 11%;
+    --sidebar-accent: 222 40% 20%;
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 222 40% 22%;
+    --sidebar-ring: 152 65% 45%;
+  }
+
+  .dark {
+    --background: 222 47% 7%;
+    --foreground: 210 40% 98%;
+    --card: 222 47% 10%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222 47% 10%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 210 40% 98%;
+    --primary-foreground: 222 47% 11%;
+    --secondary: 217 32% 17%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217 32% 17%;
+    --muted-foreground: 215 20% 65%;
+    --accent: 217 32% 17%;
+    --accent-foreground: 210 40% 98%;
+    --border: 217 32% 17%;
+    --input: 217 32% 17%;
+    --ring: 212 27% 84%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "cv11", "ss01";
+    font-variant-numeric: tabular-nums;
+  }
+  h1, h2, h3, h4 {
+    @apply tracking-tight;
+  }
+}
+
+@layer components {
+  .mono {
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace;
+  }
+  .credential-card {
+    background: var(--gradient-credential);
+    box-shadow: var(--shadow-credential);
+  }
+  .surface-subtle {
+    background: var(--gradient-subtle);
+  }
+}
