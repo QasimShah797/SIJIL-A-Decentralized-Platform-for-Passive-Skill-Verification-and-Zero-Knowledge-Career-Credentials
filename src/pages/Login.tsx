@@ -7,7 +7,6 @@ import { Label } from "@/components/ui/label";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
-import { fetchUserRoles, pickPrimaryRole, ROLE_HOME } from "@/lib/auth-helpers";
 import sijilLogo from "@/assets/sijil-logo.png";
 
 export default function Login() {
@@ -19,14 +18,9 @@ export default function Login() {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    if (!loading && user) {
-      (async () => {
-        const roles = await fetchUserRoles(user.id);
-        const primary = pickPrimaryRole(roles) ?? "learner";
-        const from = (location.state as any)?.from as string | undefined;
-        navigate(from || ROLE_HOME[primary], { replace: true });
-      })();
-    }
+    if (loading) return;
+    if (!user) return;
+    navigate("/learner/profile", { replace: true });
   }, [user, loading]); // eslint-disable-line
 
   const submit = async (e: React.FormEvent) => {
@@ -35,14 +29,17 @@ export default function Login() {
       toast({ title: "Email and password required", variant: "destructive" });
       return;
     }
+    if (busy) return;
     setBusy(true);
     try {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
-      toast({ title: "Signed in" });
+      if (data?.user) {
+        toast({ title: "Signed in" });
+        navigate("/learner/profile", { replace: true });
+      }
     } catch (err) {
       toast({ title: "Sign-in failed", description: err instanceof Error ? err.message : String(err), variant: "destructive" });
-    } finally {
       setBusy(false);
     }
   };
@@ -88,14 +85,28 @@ export default function Login() {
               <Label htmlFor="email">Email</Label>
               <div className="relative mt-1.5">
                 <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="pl-9" placeholder="you@institution.edu" />
+                <Input
+                  id="email"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="pl-9"
+                  placeholder="you@institution.edu"
+                />
               </div>
             </div>
             <div>
               <Label htmlFor="password">Password</Label>
               <div className="relative mt-1.5">
                 <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="pl-9" placeholder="••••••••" />
+                <Input
+                  id="password"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="pl-9"
+                  placeholder="••••••••"
+                />
               </div>
             </div>
 
@@ -104,7 +115,9 @@ export default function Login() {
             </Button>
 
             <div className="relative py-1">
-              <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-border" /></div>
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-border" />
+              </div>
               <div className="relative flex justify-center">
                 <span className="bg-card px-3 text-xs uppercase tracking-wide text-muted-foreground">or continue with</span>
               </div>
