@@ -19,12 +19,17 @@ export default function GitHubCallback() {
         const err = params.get("error");
         if (err) throw new Error(err);
         if (!code || !state) throw new Error("Missing code/state");
+        // ADD: store token for direct API calls
+if ((data as any)?.access_token) {
+  localStorage.setItem("github_token", (data as any).access_token);
+}
 
         const { data, error } = await supabase.functions.invoke("github-oauth-callback", {
           body: {
             code,
             state,
             redirect_uri: `${window.location.origin}/auth/github/callback`,
+           
           },
         });
         if (error) throw error;
