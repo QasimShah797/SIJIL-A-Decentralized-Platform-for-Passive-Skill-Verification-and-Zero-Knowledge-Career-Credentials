@@ -48,18 +48,21 @@ export default function Login() {
     }
   };
 
-  const google = async () => {
-    setBusy(true);
-    try {
-      const r = await lovable.auth.signInWithOAuth("google", {
-        redirect_uri: `${window.location.origin}/learner/profile`,
-      });
-      if (r.error) throw r.error;
-    } catch (err) {
-      toast({ title: "Google sign-in failed", description: err instanceof Error ? err.message : String(err), variant: "destructive" });
-      setBusy(false);
-    }
-  };
+ const google = async () => {
+  setBusy(true);
+  try {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: `${window.location.origin}/learner/profile`,
+      },
+    });
+    if (error) throw error;
+  } catch (err) {
+    toast({ title: "Google sign-in failed", description: err instanceof Error ? err.message : String(err), variant: "destructive" });
+    setBusy(false);
+  }
+};
 
   return (
     <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-gradient-to-br from-background via-background to-secondary/40 px-4 py-10">
