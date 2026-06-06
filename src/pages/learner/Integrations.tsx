@@ -12,8 +12,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useNavigate } from "react-router-dom";
 import { declaredSkills, credentials } from "@/lib/sijil-data";
-// ADD this import at the top with other imports
 import { useGitHub } from "@/hooks/useGitHub";
+
 // Combine declared skills with skills present in wallet credentials so repos
 // can be linked to either source. Wallet-derived skills get synthetic ids.
 const walletSkills = Array.from(
@@ -58,8 +58,6 @@ type GhActivity = {
   occurred_at: string | null;
   synced_at: string;
 };
-// ADD after existing useState declarations (around line 60)
-const { user: ghApiUser, repos: ghApiRepos, loading: ghApiLoading } = useGitHub();
 type GhRepo = {
   id: string;
   repo_id: number;
@@ -77,6 +75,7 @@ type GhRepo = {
 export default function Integrations() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const { user: ghApiUser, repos: ghApiRepos, loading: ghApiLoading } = useGitHub(); // ✅ MOVED INSIDE COMPONENT
   const [ghConn, setGhConn] = useState<GhConn | null>(null);
   const [ghActivities, setGhActivities] = useState<GhActivity[]>([]);
   const [ghRepos, setGhRepos] = useState<GhRepo[]>([]);
@@ -129,8 +128,6 @@ export default function Integrations() {
       if (error) throw error;
       const url = (data as { authorize_url?: string })?.authorize_url;
       if (!url) throw new Error("No authorize URL returned");
-      // In sandboxed preview iframes, writing to window.top.location is blocked.
-      // Try top-frame nav first; fall back to opening a new tab.
       try {
         const top = window.top ?? window;
         top.location.href = url;
