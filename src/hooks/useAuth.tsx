@@ -32,12 +32,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let mounted = true;
 
-    // Force stop loading after 3 seconds no matter what
+    console.log("🔵 AuthProvider: starting session check");
+
+    // Force stop loading after 3 seconds
     const timeout = setTimeout(() => {
+      console.log("🔴 AuthProvider: timeout reached, forcing loading=false");
       if (mounted) setLoading(false);
     }, 3000);
 
     const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => {
+      console.log("🟡 onAuthStateChange fired, event:", _e, "user:", s?.user?.email);
       if (!mounted) return;
       setSession(s);
       setLoading(false);
@@ -46,6 +50,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
 
     supabase.auth.getSession().then(({ data }) => {
+      console.log("🟢 getSession result, user:", data.session?.user?.email ?? "NO SESSION");
       if (!mounted) return;
       setSession(data.session);
       loadRoles(data.session?.user?.id);
