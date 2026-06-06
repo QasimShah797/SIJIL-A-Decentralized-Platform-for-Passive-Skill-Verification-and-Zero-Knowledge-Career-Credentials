@@ -58,6 +58,8 @@ type GhActivity = {
   occurred_at: string | null;
   synced_at: string;
 };
+// ADD after existing useState declarations (around line 60)
+const { user: ghApiUser, repos: ghApiRepos, loading: ghApiLoading } = useGitHub();
 type GhRepo = {
   id: string;
   repo_id: number;
