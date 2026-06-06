@@ -12,7 +12,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useNavigate } from "react-router-dom";
 import { declaredSkills, credentials } from "@/lib/sijil-data";
-
+// ADD this import at the top with other imports
+import { useGitHub } from "@/hooks/useGitHub";
 // Combine declared skills with skills present in wallet credentials so repos
 // can be linked to either source. Wallet-derived skills get synthetic ids.
 const walletSkills = Array.from(
