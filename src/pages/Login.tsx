@@ -6,7 +6,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { lovable } from "@/integrations/lovable";
 import { useAuth } from "@/hooks/useAuth";
 import { fetchUserRoles, pickPrimaryRole, ROLE_HOME } from "@/lib/auth-helpers";
 import sijilLogo from "@/assets/sijil-logo.png";
@@ -51,10 +50,16 @@ export default function Login() {
   const google = async () => {
     setBusy(true);
     try {
-      const r = await lovable.auth.signInWithOAuth("google", {
-        redirect_uri: `${window.location.origin}/learner/profile`,
+      const redirectUri = `${window.location.origin}/learner/profile`;
+      if (import.meta.env.DEV) {
+        // eslint-disable-next-line no-console
+        console.log("[auth] initiating Google OAuth", { redirectUri });
+      }
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: { redirectTo: redirectUri },
       });
-      if (r.error) throw r.error;
+      if (error) throw error;
     } catch (err) {
       toast({ title: "Google sign-in failed", description: err instanceof Error ? err.message : String(err), variant: "destructive" });
       setBusy(false);

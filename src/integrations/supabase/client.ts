@@ -8,10 +8,29 @@ const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 // Import the supabase client like this:
 // import { supabase } from "@/integrations/supabase/client";
 
-export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
-  auth: {
-    storage: localStorage,
-    persistSession: true,
-    autoRefreshToken: true,
-  }
-});
+// Export a single binding. Assign a stub when env vars are missing to avoid
+// crashing in dev mode.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let supabase: any;
+
+if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
+  supabase = {
+    auth: {
+      getSession: async () => ({ data: { session: null } }),
+      onAuthStateChange: (_cb: any) => ({ subscription: { unsubscribe: () => {} } }),
+      signOut: async () => ({ error: null }),
+      // Used by lovable to set session tokens after OAuth flows
+      setSession: async (_tokens: { access_token?: string; refresh_token?: string }) => ({ data: { session: null }, error: null }),
+    },
+  };
+} else {
+  supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+    auth: {
+      storage: localStorage,
+      persistSession: true,
+      autoRefreshToken: true,
+    }
+  });
+}
+
+export { supabase };
