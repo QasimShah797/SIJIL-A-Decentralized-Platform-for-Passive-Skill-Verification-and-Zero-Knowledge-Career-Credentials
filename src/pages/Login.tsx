@@ -47,18 +47,14 @@ export default function Login() {
     }
   };
 
-<<<<<<< HEAD
   const google = async () => {
     setBusy(true);
     try {
-      const redirectUri = `${window.location.origin}/learner/profile`;
-      if (import.meta.env.DEV) {
-        // eslint-disable-next-line no-console
-        console.log("[auth] initiating Google OAuth", { redirectUri });
-      }
       const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: { redirectTo: redirectUri },
+        provider: "google",
+        options: {
+          redirectTo: `${window.location.origin}/learner/profile`,
+        },
       });
       if (error) throw error;
     } catch (err) {
@@ -66,23 +62,6 @@ export default function Login() {
       setBusy(false);
     }
   };
-=======
- const google = async () => {
-  setBusy(true);
-  try {
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo: `${window.location.origin}/learner/profile`,
-      },
-    });
-    if (error) throw error;
-  } catch (err) {
-    toast({ title: "Google sign-in failed", description: err instanceof Error ? err.message : String(err), variant: "destructive" });
-    setBusy(false);
-  }
-};
->>>>>>> 88f304ddb1c9e33e3854b90f3dce9db3acf9e6df
 
   return (
     <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-gradient-to-br from-background via-background to-secondary/40 px-4 py-10">
