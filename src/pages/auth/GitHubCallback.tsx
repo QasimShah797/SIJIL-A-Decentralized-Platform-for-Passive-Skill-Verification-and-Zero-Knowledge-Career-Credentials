@@ -25,6 +25,8 @@ export default function GitHubCallback() {
             code,
             state,
             redirect_uri: `${window.location.origin}/auth/github/callback`,
+           
+toast({ title: "GitHub connected", ...});
           },
         });
         if (error) throw error;
