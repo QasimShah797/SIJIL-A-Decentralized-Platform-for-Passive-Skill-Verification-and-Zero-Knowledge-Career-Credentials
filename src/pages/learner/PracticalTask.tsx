@@ -14,6 +14,40 @@ import { useDeclaredSkills } from "@/hooks/useLearnerData";
 import { useAuth } from "@/hooks/useAuth";
 import { fetchAttempts, saveAttemptDb } from "@/lib/db/practical-attempts";
 import { toast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
+
+async function generateTaskWithAI(skill: { name: string; domain: string }): Promise<Partial<SkillTask>> {
+  try {
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-20250514", max_tokens: 1000,
+        messages: [{ role: "user", content: `Generate a 20-minute practical assessment task for a learner claiming the skill: "${skill.name}" (domain: "${skill.domain}"). Return ONLY valid JSON (no markdown): {"title":"...","type":"Coding|Debugging|MCQ + Short Answer|Design|Hands-on","durationMinutes":20,"prompt":"2-4 sentence instructions","expectedDeliverable":"..."}` }],
+      }),
+    });
+    const data = await res.json();
+    const text = data.content?.find((b: { type: string }) => b.type === "text")?.text ?? "{}";
+    return JSON.parse(text);
+  } catch { return {}; }
+}
+
+async function evaluateSubmissionWithAI(task: SkillTask | null, submission: string): Promise<{ passed: boolean; feedback: string }> {
+  if (!task || !submission.trim()) return { passed: false, feedback: "No submission." };
+  try {
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-20250514", max_tokens: 500,
+        messages: [{ role: "user", content: `Evaluate this practical task submission.\nTask: ${task.title}\nInstructions: ${task.prompt}\nExpected: ${task.expectedDeliverable}\nSubmission:\n${submission}\n\nReturn ONLY valid JSON: {"passed":true|false,"score":0-100,"feedback":"1-2 sentences for learner"}` }],
+      }),
+    });
+    const data = await res.json();
+    const text = data.content?.find((b: { type: string }) => b.type === "text")?.text ?? "{}";
+    return JSON.parse(text);
+  } catch { return { passed: false, feedback: "Evaluation unavailable. Try again." }; }
+}
 
 function genAttemptId() {
   return `att-${Math.random().toString(36).slice(2, 8).toUpperCase()}-${Date.now().toString(36).toUpperCase()}`;
@@ -88,9 +122,14 @@ export default function PracticalTask() {
 
   const openSkill = (skill: DeclaredSkill) => {
     const t = getTaskForSkill(skill);
+    if (t.title === `Demonstrate ${skill.name}`) {
+      generateTaskWithAI({ name: skill.name, domain: skill.domain ?? "General" }).then((aiTask) => {
+        setTask((prev) => prev ? { ...prev, ...aiTask } : prev);
+      });
+    }
+    setTask(t);
     const existing = getAttempt(skill.id);
     setActiveSkill(skill);
-    setTask(t);
     setAttempt(existing && (existing.credentialSyncSnapshot ?? null) === (skill.lastCredentialSyncAt ?? null) ? existing : null);
     setSubmission(existing?.submission ?? "");
   };
@@ -123,6 +162,14 @@ export default function PracticalTask() {
     saveAttempt(updated).then(() => {
       setAttempt(updated);
       toast({ title: "Submitted", description: "Submission locked against this skill." });
+      evaluateSubmissionWithAI(task, submission).then((result) => {
+        toast({ title: result.passed ? "✓ Task passed" : "✗ Task not passed", description: result.feedback });
+        if (result.passed) {
+          supabase.from("declared_skills")
+            .update({ status: "Evidence Linked", last_related_activity_at: new Date().toISOString() })
+            .eq("id", activeSkill.id).eq("user_id", user?.id ?? "");
+        }
+      });
     });
   };
 

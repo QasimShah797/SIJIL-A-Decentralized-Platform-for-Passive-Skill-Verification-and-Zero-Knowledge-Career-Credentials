@@ -83,3 +83,24 @@ export async function updateSkillActivityTimestamp(userId: string, skillId: stri
     .eq("id", skillId);
   if (error) throw error;
 }
+
+export async function uploadSkillEvidenceFile(
+  userId: string, skillId: string, file: File,
+): Promise<string> {
+  const ext  = file.name.split(".").pop();
+  const path = `${userId}/${skillId}/${Date.now()}.${ext}`;
+  const { error } = await supabase.storage.from("skill-evidence").upload(path, file, { upsert: false });
+  if (error) throw error;
+  const { data } = supabase.storage.from("skill-evidence").getPublicUrl(path);
+  return data.publicUrl;
+}
+
+export async function insertSkillSupportingRecord(
+  userId: string, skillId: string, fileName: string, fileUrl: string,
+): Promise<void> {
+  const { error } = await supabase.from("supporting_records").insert({
+    user_id: userId, skill_id: skillId, source: "Upload",
+    title: fileName, url: fileUrl, occurred_at: new Date().toISOString(),
+  });
+  if (error) throw error;
+}

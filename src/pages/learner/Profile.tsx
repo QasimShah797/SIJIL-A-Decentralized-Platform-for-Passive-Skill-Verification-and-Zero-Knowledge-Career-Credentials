@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useRef } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { AppShell } from "@/components/sijil/AppShell";
 import { PageHeader } from "@/components/sijil/PageHeader";
@@ -10,7 +10,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
-import { Plus, Pencil, Trash2, ChevronRight, ShieldCheck, AlertTriangle, Bell, MessageSquare } from "lucide-react";
+import { Plus, Pencil, Trash2, ChevronRight, ShieldCheck, AlertTriangle, Bell, MessageSquare, UploadCloud, X, FileText } from "lucide-react";
+import { useAuth } from "@/hooks/useAuth";
+import { uploadSkillEvidenceFile, insertSkillSupportingRecord } from "@/lib/db/skills";
+import { supabase } from "@/integrations/supabase/client";
 import { isSkillDecaying, daysSince, SKILL_DECAY_DAYS, computeTrustSignals } from "@/lib/sijil-data";
 import { useLearnerProfile, useDeclaredSkills, usePeerReviews } from "@/hooks/useLearnerData";
 import { toast } from "@/hooks/use-toast";
@@ -25,21 +28,44 @@ export default function LearnerProfile() {
   const [name, setName] = useState("");
   const [domain, setDomain] = useState("");
   const [desc, setDesc] = useState("");
+  const { user } = useAuth();
+  const [file, setFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const ACCEPTED = ".pdf,.doc,.docx,.png,.jpg,.jpeg,.zip";
+  const MAX_MB = 10;
+  const handleFilePick = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const picked = e.target.files?.[0] ?? null;
+    if (!picked) return;
+    if (picked.size > MAX_MB * 1024 * 1024) {
+      toast({ title: "File too large", description: `Max ${MAX_MB} MB.`, variant: "destructive" });
+      return;
+    }
+    setFile(picked);
+  };
+  const clearFile = () => { setFile(null); if (fileRef.current) fileRef.current.value = ""; };
 
   const decaying = useMemo(() => skills.filter((s) => isSkillDecaying(s)), [skills]);
   const trust = useMemo(() => computeTrustSignals(reviews), [reviews]);
   const notifPanelOpen = location.hash === "#notifications";
 
   const handleAddSkill = async () => {
-    if (!name) return;
+    if (!name || !user) return;
+    setUploading(true);
     try {
-      await addSkill({ name, domain: domain || "General", description: desc });
-      setName(""); setDomain(""); setDesc("");
-      setOpen(false);
-      toast({ title: "Skill claimed", description: `${name} added as a skill claim.` });
+      const created = await addSkill({ name, domain: domain || "General", description: desc });
+      if (file && created) {
+        const url = await uploadSkillEvidenceFile(user.id, created.id, file);
+        await insertSkillSupportingRecord(user.id, created.id, file.name, url);
+        await supabase.from("declared_skills")
+          .update({ status: "Evidence Linked", last_related_activity_at: new Date().toISOString() })
+          .eq("id", created.id).eq("user_id", user.id);
+      }
+      toast({ title: "Skill claimed", description: file ? `${name} added with file.` : `${name} added.` });
+      setName(""); setDomain(""); setDesc(""); clearFile(); setOpen(false);
     } catch (e) {
-      toast({ title: "Could not add skill", description: e instanceof Error ? e.message : String(e), variant: "destructive" });
-    }
+      toast({ title: "Error", description: e instanceof Error ? e.message : String(e), variant: "destructive" });
+    } finally { setUploading(false); }
   };
 
   const handleRemove = async (id: string) => {
@@ -85,10 +111,37 @@ export default function LearnerProfile() {
                   <Label>Description (optional)</Label>
                   <Textarea value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="Short description of the skill claim" className="mt-1.5" />
                 </div>
+                <div>
+                  <div className="flex items-center gap-1.5 mb-1.5">
+                    <Label>Supporting file</Label>
+                    <span className="text-muted-foreground text-xs">(optional)</span>
+                    <InfoHint text="Upload a project file, certificate, or any document supporting this skill. Max 10 MB." />
+                  </div>
+                  {file ? (
+                    <div className="flex items-center gap-2 rounded-md border bg-muted/40 px-3 py-2 text-sm">
+                      <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
+                      <span className="flex-1 truncate">{file.name}</span>
+                      <span className="text-xs text-muted-foreground shrink-0">{(file.size / 1024).toFixed(0)} KB</span>
+                      <button onClick={clearFile} className="text-muted-foreground hover:text-destructive transition-colors">
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                  ) : (
+                    <button type="button" onClick={() => fileRef.current?.click()}
+                      className="w-full rounded-md border-2 border-dashed border-border hover:border-primary/50 hover:bg-muted/30 transition-colors px-4 py-5 flex flex-col items-center gap-1.5 text-sm text-muted-foreground">
+                      <UploadCloud className="h-6 w-6" />
+                      <span>Click to upload or drag & drop</span>
+                      <span className="text-xs">PDF, DOC, PNG, JPG, ZIP · max 10 MB</span>
+                    </button>
+                  )}
+                  <input ref={fileRef} type="file" accept={ACCEPTED} onChange={handleFilePick} className="hidden" />
+                </div>
               </div>
               <DialogFooter>
                 <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-                <Button onClick={handleAddSkill}>Add skill</Button>
+                <Button onClick={handleAddSkill} disabled={!name || uploading}>
+                  {uploading ? "Adding…" : "Add skill"}
+                </Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>
