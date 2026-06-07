@@ -14,9 +14,9 @@ Deno.serve(async (req) => {
       { global: { headers: { Authorization: authHeader } } },
     );
     const token = authHeader.replace("Bearer ", "");
-    const { data: claims, error: cerr } = await userClient.auth.getClaims(token);
-    if (cerr || !claims?.claims) return json({ error: "Unauthorized" }, 401);
-    const userId = claims.claims.sub as string;
+    const { data: userData, error: uerr } = await userClient.auth.getUser(token);
+    if (uerr || !userData.user) return json({ error: "Unauthorized" }, 401);
+    const userId = userData.user.id;
 
     const { code, state, redirect_uri } = await req.json();
     if (!code || !state || !redirect_uri) return json({ error: "missing params" }, 400);

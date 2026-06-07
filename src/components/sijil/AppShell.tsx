@@ -4,18 +4,11 @@ import {
   Wallet, Search, Building2, LogOut, Sparkles, Bell, BadgeCheck, MessageSquare,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { Role, declaredSkills, getDecayingSkills } from "@/lib/sijil-data";
+import { Role, getDecayingSkills } from "@/lib/sijil-data";
 import { useAuth } from "@/hooks/useAuth";
+import { useLearnerProfile, useDeclaredSkills } from "@/hooks/useLearnerData";
 import sijilLogo from "@/assets/sijil-logo.png";
 
-const learnerNav = [
-  { to: "/learner/profile", icon: User, label: "Profile & Skills" },
-  { to: "/learner/integrations", icon: Plug, label: "Integrations" },
-  { to: "/learner/task", icon: ClipboardCheck, label: "Practical Task" },
-  { to: "/learner/validation/sk-001", icon: ShieldCheck, label: "Validation Trail" },
-  { to: "/learner/wallet", icon: Wallet, label: "Wallet" },
-  { to: "/learner/peer-reviews", icon: MessageSquare, label: "Peer Reviews" },
-];
 const recruiterNav = [
   { to: "/recruiter/search", icon: Search, label: "Search Candidates" },
   { to: "/recruiter/compare", icon: BadgeCheck, label: "Compare" },
@@ -26,11 +19,31 @@ const institutionNav = [
 ];
 
 export function AppShell({ role, children }: { role: Role; children: React.ReactNode }) {
-  const nav = role === "learner" ? learnerNav : role === "recruiter" ? recruiterNav : institutionNav;
   const { pathname } = useLocation();
   const navigate = useNavigate();
-  const { signOut } = useAuth();
+  const { signOut, user } = useAuth();
+  const { profile } = useLearnerProfile();
+  const { skills } = useDeclaredSkills();
   const roleLabel = role === "learner" ? "Learner" : role === "recruiter" ? "Recruiter" : "Institution";
+
+  const firstSkillId = skills[0]?.id;
+  const learnerNav = [
+    { to: "/learner/profile", icon: User, label: "Profile & Skills" },
+    { to: "/learner/integrations", icon: Plug, label: "Integrations" },
+    { to: "/learner/task", icon: ClipboardCheck, label: "Practical Task" },
+    { to: firstSkillId ? `/learner/validation/${firstSkillId}` : "/learner/profile", icon: ShieldCheck, label: "Validation Trail" },
+    { to: "/learner/wallet", icon: Wallet, label: "Wallet" },
+    { to: "/learner/peer-reviews", icon: MessageSquare, label: "Peer Reviews" },
+  ];
+  const nav = role === "learner" ? learnerNav : role === "recruiter" ? recruiterNav : institutionNav;
+
+  const decayCount = role === "learner" ? getDecayingSkills(skills).length : 0;
+  const avatar = role === "learner"
+    ? (profile?.avatar ?? "?")
+    : role === "recruiter"
+      ? (user?.email?.slice(0, 2).toUpperCase() ?? "RC")
+      : "IN";
+  const didShort = profile?.did ? `${profile.did.slice(0, 12)}…${profile.did.slice(-4)}` : "";
 
   return (
     <div className="min-h-screen flex w-full bg-gradient-to-b from-background to-muted/30">
@@ -91,27 +104,26 @@ export function AppShell({ role, children }: { role: Role; children: React.React
             <span className="font-medium text-foreground">{roleLabel} workspace</span>
           </div>
           <div className="flex items-center gap-3">
-            {role === "learner" && (() => {
-              const count = getDecayingSkills(declaredSkills).length;
-              return (
-                <button
-                  onClick={() => navigate("/learner/profile#notifications")}
-                  className="relative h-8 w-8 rounded-md hover:bg-muted/60 flex items-center justify-center transition-colors"
-                  aria-label="Notifications"
-                  title="Notifications"
-                >
-                  <Bell className="h-4 w-4" />
-                  {count > 0 && (
-                    <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-amber-500 text-[10px] font-semibold text-white flex items-center justify-center">
-                      {count}
-                    </span>
-                  )}
-                </button>
-              );
-            })()}
-            <span className="hidden md:inline text-xs text-muted-foreground mono">did:key:z6Mkp…ZJF</span>
+            {role === "learner" && (
+              <button
+                onClick={() => navigate("/learner/profile#notifications")}
+                className="relative h-8 w-8 rounded-md hover:bg-muted/60 flex items-center justify-center transition-colors"
+                aria-label="Notifications"
+                title="Notifications"
+              >
+                <Bell className="h-4 w-4" />
+                {decayCount > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-amber-500 text-[10px] font-semibold text-white flex items-center justify-center">
+                    {decayCount}
+                  </span>
+                )}
+              </button>
+            )}
+            {didShort && (
+              <span className="hidden md:inline text-xs text-muted-foreground mono">{didShort}</span>
+            )}
             <div className="h-8 w-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-semibold">
-              {role === "learner" ? "AK" : role === "recruiter" ? "RC" : "IN"}
+              {avatar}
             </div>
           </div>
         </header>

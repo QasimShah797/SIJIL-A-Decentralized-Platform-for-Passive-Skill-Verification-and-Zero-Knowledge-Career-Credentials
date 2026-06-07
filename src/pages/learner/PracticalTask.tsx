@@ -9,18 +9,10 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
 import { Play, Timer, Lock, Send, CheckCircle2, AlertTriangle, RefreshCcw } from "lucide-react";
-import {
-  declaredSkills as seedSkills,
-  skillTaskBank,
-  getAttempt,
-  saveAttempt,
-  isAttemptLocked,
-  isSkillDecaying,
-  daysSince,
-  type DeclaredSkill,
-  type AttemptRecord,
-  type SkillTask,
-} from "@/lib/sijil-data";
+import { getTaskForSkill, isAttemptLocked, isSkillDecaying, daysSince, type DeclaredSkill, type AttemptRecord, type SkillTask } from "@/lib/sijil-data";
+import { useDeclaredSkills } from "@/hooks/useLearnerData";
+import { useAuth } from "@/hooks/useAuth";
+import { fetchAttempts, saveAttemptDb } from "@/lib/db/practical-attempts";
 import { toast } from "@/hooks/use-toast";
 
 function genAttemptId() {
@@ -35,10 +27,23 @@ function fmt(ms: number) {
 }
 
 export default function PracticalTask() {
-  // Skills are sourced from declared/synced skill list. (LMS/GitHub sync would update this list in a real backend.)
-  const [skills] = useState<DeclaredSkill[]>(seedSkills);
+  const { user } = useAuth();
+  const { skills, loading: skillsLoading } = useDeclaredSkills();
+  const [attemptsMap, setAttemptsMap] = useState<Record<string, AttemptRecord>>({});
   const [, force] = useState(0);
   const refresh = () => force((n) => n + 1);
+
+  useEffect(() => {
+    if (!user) return;
+    fetchAttempts(user.id).then(setAttemptsMap);
+  }, [user, skills.length]);
+
+  const getAttempt = (skillId: string) => attemptsMap[skillId] ?? null;
+  const saveAttempt = async (rec: AttemptRecord) => {
+    if (!user) return;
+    await saveAttemptDb(user.id, rec);
+    setAttemptsMap((m) => ({ ...m, [rec.skillId]: rec }));
+  };
 
   // Active attempt panel state
   const [activeSkill, setActiveSkill] = useState<DeclaredSkill | null>(null);
@@ -68,24 +73,21 @@ export default function PracticalTask() {
       ? "auto_submitted"
       : "expired_no_submission";
     const updated: AttemptRecord = { ...attempt, status: finalStatus, submission };
-    saveAttempt(updated);
-    setAttempt(updated);
-    toast({
-      title: finalStatus === "auto_submitted" ? "Time up — auto-submitted" : "Time up — no submission recorded",
-      description: finalStatus === "auto_submitted"
-        ? "Your work was captured and locked against this skill."
-        : "Attempt closed with no artifact. New attempt available only after next credential sync.",
-      variant: finalStatus === "auto_submitted" ? "default" : "destructive",
+    saveAttempt(updated).then(() => {
+      setAttempt(updated);
+      toast({
+        title: finalStatus === "auto_submitted" ? "Time up — auto-submitted" : "Time up — no submission recorded",
+        description: finalStatus === "auto_submitted"
+          ? "Your work was captured and locked against this skill."
+          : "Attempt closed with no artifact. New attempt available only after next credential sync.",
+        variant: finalStatus === "auto_submitted" ? "default" : "destructive",
+      });
+      refresh();
     });
-    refresh();
-  }, [remainingMs, attempt?.status]);
+  }, [remainingMs, attempt?.status, submission]);
 
   const openSkill = (skill: DeclaredSkill) => {
-    const t = skillTaskBank[skill.id];
-    if (!t) {
-      toast({ title: "No task defined for this skill yet", variant: "destructive" });
-      return;
-    }
+    const t = getTaskForSkill(skill);
     const existing = getAttempt(skill.id);
     setActiveSkill(skill);
     setTask(t);
@@ -107,19 +109,21 @@ export default function PracticalTask() {
       submission: "",
       credentialSyncSnapshot: activeSkill.lastCredentialSyncAt ?? null,
     };
-    saveAttempt(rec);
-    setAttempt(rec);
-    setSubmission("");
-    setNow(Date.now());
-    toast({ title: "Attempt started", description: `Timer running · ${task.durationMinutes} min window.` });
+    saveAttempt(rec).then(() => {
+      setAttempt(rec);
+      setSubmission("");
+      setNow(Date.now());
+      toast({ title: "Attempt started", description: `Timer running · ${task.durationMinutes} min window.` });
+    });
   };
 
   const submitNow = () => {
     if (!attempt) return;
     const updated: AttemptRecord = { ...attempt, status: "submitted", submission };
-    saveAttempt(updated);
-    setAttempt(updated);
-    toast({ title: "Submitted", description: "Submission locked against this skill." });
+    saveAttempt(updated).then(() => {
+      setAttempt(updated);
+      toast({ title: "Submitted", description: "Submission locked against this skill." });
+    });
   };
 
   const closePanel = () => {
@@ -138,6 +142,10 @@ export default function PracticalTask() {
     return locked ? <StatusBadge variant="neutral">Locked</StatusBadge> : <StatusBadge variant="neutral">Available</StatusBadge>;
   };
 
+  if (skillsLoading) {
+    return <AppShell role="learner"><div className="text-sm text-muted-foreground">Loading skills…</div></AppShell>;
+  }
+
   return (
     <AppShell role="learner">
       <PageHeader
@@ -152,7 +160,7 @@ export default function PracticalTask() {
         <CardContent className="p-0">
           <div className="divide-y">
             {skills.map((s) => {
-              const t = skillTaskBank[s.id];
+              const t = getTaskForSkill(s);
               const a = getAttempt(s.id);
               const locked = isAttemptLocked(s);
               const decaying = isSkillDecaying(s);

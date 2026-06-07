@@ -6,19 +6,44 @@ import { FieldRow } from "@/components/sijil/FieldRow";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, ShieldCheck, ArrowRight, Lock, Building2 } from "lucide-react";
-import { candidates, candidateSkills, seededPresentations, getPeerReviews, computeTrustSignals } from "@/lib/sijil-data";
+import { useCandidates } from "@/hooks/useCandidates";
+import { fetchPeerReviews } from "@/lib/db/peer-reviews";
+import { fetchPresentationsForCandidate } from "@/lib/db/presentations";
+import { computeTrustSignals } from "@/lib/sijil-data";
+import { useEffect, useState } from "react";
+import type { PeerReview } from "@/lib/sijil-data";
 import { ReviewCard } from "@/pages/learner/PeerReviews";
 
 export default function CandidateSummary() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const c = candidates.find((x) => x.id === id) || candidates[0];
-  const skills = candidateSkills[c.id] || [];
-  const peerReviews = getPeerReviews();
-  const trust = computeTrustSignals(peerReviews);
+  const { candidates, candidateSkills, loading } = useCandidates();
+  const c = candidates.find((x) => x.id === id);
+  const skills = c ? (candidateSkills[c.id] || []) : [];
+  const [peerReviews, setPeerReviews] = useState<PeerReview[]>([]);
+  const [presentations, setPresentations] = useState<Awaited<ReturnType<typeof fetchPresentationsForCandidate>>>([]);
 
-  // Find any active presentation the candidate has shared with verifiers
-  const presentation = Object.values(seededPresentations).find((p) => p.candidateId === c.id);
+  useEffect(() => {
+    if (!id) return;
+    fetchPeerReviews(id).then(setPeerReviews);
+    fetchPresentationsForCandidate(id).then(setPresentations);
+  }, [id]);
+
+  const trust = computeTrustSignals(peerReviews);
+  const presentation = presentations[0] ?? null;
+
+  if (loading) {
+    return <AppShell role="recruiter"><div className="text-sm text-muted-foreground">Loading…</div></AppShell>;
+  }
+
+  if (!c) {
+    return (
+      <AppShell role="recruiter">
+        <PageHeader title="Candidate not found" />
+        <Button onClick={() => navigate("/recruiter/search")}>Back to search</Button>
+      </AppShell>
+    );
+  }
 
   return (
     <AppShell role="recruiter">
@@ -45,7 +70,7 @@ export default function CandidateSummary() {
               <Stat label="Credentials" value={c.credentialCount} />
               <Stat label="Evidence records" value={c.evidence} />
               <Stat label="Reviews" value={c.reviews} />
-              <Stat label="Shared presentations" value={presentation ? 1 : 0} />
+              <Stat label="Shared presentations" value={presentations.length} />
             </div>
           </div>
         </CardContent>

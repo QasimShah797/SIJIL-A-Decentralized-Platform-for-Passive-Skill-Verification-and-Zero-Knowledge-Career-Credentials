@@ -8,11 +8,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Search, GitCompare, ArrowRight, ShieldCheck, X } from "lucide-react";
-import { candidates, candidateSkills } from "@/lib/sijil-data";
+import { useCandidates } from "@/hooks/useCandidates";
 
 export default function RecruiterSearch() {
   const navigate = useNavigate();
-  const [q, setQ] = useState("React");
+  const { candidates, candidateSkills, loading } = useCandidates();
+  const [q, setQ] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
 
   const results = useMemo(() => {
@@ -48,6 +49,8 @@ export default function RecruiterSearch() {
           )
         }
       />
+
+      {loading && <div className="text-sm text-muted-foreground mb-4">Loading candidates…</div>}
 
       <Card className="mb-6">
         <CardContent className="p-5">

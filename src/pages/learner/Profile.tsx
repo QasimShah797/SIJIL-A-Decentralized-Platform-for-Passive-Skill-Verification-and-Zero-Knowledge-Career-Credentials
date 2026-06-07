@@ -11,42 +11,54 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Plus, Pencil, Trash2, ChevronRight, ShieldCheck, AlertTriangle, Bell, MessageSquare } from "lucide-react";
-import { declaredSkills, learnerProfile, isSkillDecaying, daysSince, SKILL_DECAY_DAYS, type DeclaredSkill, computeTrustSignals, getPeerReviews } from "@/lib/sijil-data";
+import { isSkillDecaying, daysSince, SKILL_DECAY_DAYS, computeTrustSignals } from "@/lib/sijil-data";
+import { useLearnerProfile, useDeclaredSkills, usePeerReviews } from "@/hooks/useLearnerData";
 import { toast } from "@/hooks/use-toast";
 
 export default function LearnerProfile() {
   const navigate = useNavigate();
   const location = useLocation();
-  const [skills, setSkills] = useState<DeclaredSkill[]>(declaredSkills);
+  const { profile, loading: profileLoading } = useLearnerProfile();
+  const { skills, loading: skillsLoading, addSkill, removeSkill } = useDeclaredSkills();
+  const { reviews } = usePeerReviews();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [domain, setDomain] = useState("");
   const [desc, setDesc] = useState("");
 
   const decaying = useMemo(() => skills.filter((s) => isSkillDecaying(s)), [skills]);
-  const trust = useMemo(() => computeTrustSignals(getPeerReviews()), []);
+  const trust = useMemo(() => computeTrustSignals(reviews), [reviews]);
   const notifPanelOpen = location.hash === "#notifications";
 
-  const addSkill = () => {
+  const handleAddSkill = async () => {
     if (!name) return;
-    const newSkill: DeclaredSkill = {
-      id: `sk-${Date.now()}`,
-      name,
-      domain: domain || "General",
-      description: desc,
-      status: "Skill Claimed",
-      lastRelatedActivityAt: null,
-      lastCredentialSyncAt: null,
-    };
-    setSkills((s) => [...s, newSkill]);
-    setName(""); setDomain(""); setDesc("");
-    setOpen(false);
-    toast({ title: "Skill claimed", description: `${name} added as a skill claim.` });
+    try {
+      await addSkill({ name, domain: domain || "General", description: desc });
+      setName(""); setDomain(""); setDesc("");
+      setOpen(false);
+      toast({ title: "Skill claimed", description: `${name} added as a skill claim.` });
+    } catch (e) {
+      toast({ title: "Could not add skill", description: e instanceof Error ? e.message : String(e), variant: "destructive" });
+    }
   };
 
-  const remove = (id: string) => setSkills((s) => s.filter((x) => x.id !== id));
+  const handleRemove = async (id: string) => {
+    try {
+      await removeSkill(id);
+    } catch (e) {
+      toast({ title: "Could not remove skill", description: e instanceof Error ? e.message : String(e), variant: "destructive" });
+    }
+  };
 
   const variant = (s: string) => s === "Credential Issued" ? "verified" : s === "Evidence Linked" ? "info" : "neutral";
+
+  if (profileLoading || skillsLoading) {
+    return (
+      <AppShell role="learner">
+        <div className="text-sm text-muted-foreground">Loading profile…</div>
+      </AppShell>
+    );
+  }
 
   return (
     <AppShell role="learner">
@@ -76,14 +88,13 @@ export default function LearnerProfile() {
               </div>
               <DialogFooter>
                 <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-                <Button onClick={addSkill}>Add skill</Button>
+                <Button onClick={handleAddSkill}>Add skill</Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>
         }
       />
 
-      {/* Notifications panel — opens via top-bar bell (#notifications hash) */}
       {notifPanelOpen && (
         <Card id="notifications" className="mb-6 border-amber-300/50">
           <CardHeader className="flex-row items-center justify-between">
@@ -116,29 +127,29 @@ export default function LearnerProfile() {
         </Card>
       )}
 
-      {/* Profile card */}
-      <Card className="mb-6">
-        <CardContent className="p-6 flex flex-col md:flex-row md:items-center gap-6">
-          <div className="h-16 w-16 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xl font-semibold">
-            {learnerProfile.avatar}
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <h2 className="text-xl font-semibold">{learnerProfile.name}</h2>
-              <StatusBadge variant="verified" icon={<ShieldCheck className="h-3 w-3" />}>DID active</StatusBadge>
+      {profile && (
+        <Card className="mb-6">
+          <CardContent className="p-6 flex flex-col md:flex-row md:items-center gap-6">
+            <div className="h-16 w-16 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xl font-semibold">
+              {profile.avatar}
             </div>
-            <div className="text-sm text-muted-foreground">{learnerProfile.program} · {learnerProfile.batch} · {learnerProfile.institution}</div>
-            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs">
-              <span className="text-muted-foreground">Holder DID</span>
-              <span className="mono break-all">{learnerProfile.did}</span>
-              <InfoHint text="Decentralized Identifier under learner's control. Used to bind issued credentials to the holder." />
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <h2 className="text-xl font-semibold">{profile.name}</h2>
+                <StatusBadge variant="verified" icon={<ShieldCheck className="h-3 w-3" />}>DID active</StatusBadge>
+              </div>
+              <div className="text-sm text-muted-foreground">{profile.program} · {profile.batch} · {profile.institution}</div>
+              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs">
+                <span className="text-muted-foreground">Holder DID</span>
+                <span className="mono break-all">{profile.did}</span>
+                <InfoHint text="Decentralized Identifier under learner's control. Used to bind issued credentials to the holder." />
+              </div>
             </div>
-          </div>
-          <Button variant="outline"><Pencil className="h-4 w-4 mr-1.5" />Edit profile</Button>
-        </CardContent>
-      </Card>
+            <Button variant="outline"><Pencil className="h-4 w-4 mr-1.5" />Edit profile</Button>
+          </CardContent>
+        </Card>
+      )}
 
-      {/* Review & Trust Signals */}
       <Card className="mb-6">
         <CardHeader className="flex-row items-center justify-between">
           <CardTitle className="text-base flex items-center gap-2">
@@ -164,62 +175,57 @@ export default function LearnerProfile() {
               </div>
             ))}
           </div>
-          <div className="flex flex-wrap gap-2 mt-4">
-            <StatusBadge variant="info">Peer Reviewed</StatusBadge>
-            <StatusBadge variant="verified">Context Verified</StatusBadge>
-            <StatusBadge variant="info">Trust Signals Available</StatusBadge>
-            <StatusBadge variant="neutral">Evidence Supported</StatusBadge>
-            <StatusBadge variant="warning">Needs More Evidence</StatusBadge>
-          </div>
           <p className="text-xs text-muted-foreground mt-3">
             Trust signals indicate context-verified peer feedback. They are not skill scores or expertise levels.
           </p>
         </CardContent>
       </Card>
 
-      {/* Skills list */}
       <Card>
         <CardHeader className="flex-row items-center justify-between">
           <CardTitle className="text-base">Declared skills <span className="text-muted-foreground font-normal">({skills.length})</span></CardTitle>
         </CardHeader>
         <CardContent className="p-0">
-          <div className="divide-y">
-            {skills.map((s) => {
-              const decay = isSkillDecaying(s);
-              const d = daysSince(s.lastRelatedActivityAt);
-              return (
-                <div key={s.id} className="flex items-center gap-4 px-6 py-4 hover:bg-muted/40 transition-colors group">
-                  <button
-                    onClick={() => navigate(`/learner/validation/${s.id}`)}
-                    className="flex-1 text-left"
-                  >
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-medium">{s.name}</span>
-                      <StatusBadge variant={variant(s.status) as any}>{s.status}</StatusBadge>
-                      {decay && (
-                        <StatusBadge variant="warning" icon={<AlertTriangle className="h-3 w-3" />}>Decaying</StatusBadge>
-                      )}
-                    </div>
-                    <div className="text-xs text-muted-foreground mt-1">
-                      {s.domain}{s.description ? ` · ${s.description}` : ""}
-                    </div>
-                    <div className="text-[11px] text-muted-foreground mt-0.5">
-                      Last related sync: {d === null ? "never" : `${d}d ago`}
-                    </div>
-                  </button>
-                  <Button variant="ghost" size="icon" onClick={() => toast({ title: "Edit skill", description: s.name })}>
-                    <Pencil className="h-4 w-4" />
-                  </Button>
-                  <Button variant="ghost" size="icon" onClick={() => remove(s.id)}>
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                  <Button variant="ghost" size="icon" onClick={() => navigate(`/learner/validation/${s.id}`)}>
-                    <ChevronRight className="h-4 w-4" />
-                  </Button>
-                </div>
-              );
-            })}
-          </div>
+          {skills.length === 0 ? (
+            <div className="px-6 py-10 text-sm text-muted-foreground text-center">
+              No skills declared yet. Click &quot;Declare skill&quot; to add your first skill claim.
+            </div>
+          ) : (
+            <div className="divide-y">
+              {skills.map((s) => {
+                const decay = isSkillDecaying(s);
+                const d = daysSince(s.lastRelatedActivityAt);
+                return (
+                  <div key={s.id} className="flex items-center gap-4 px-6 py-4 hover:bg-muted/40 transition-colors group">
+                    <button
+                      onClick={() => navigate(`/learner/validation/${s.id}`)}
+                      className="flex-1 text-left"
+                    >
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-medium">{s.name}</span>
+                        <StatusBadge variant={variant(s.status) as "verified" | "info" | "neutral"}>{s.status}</StatusBadge>
+                        {decay && (
+                          <StatusBadge variant="warning" icon={<AlertTriangle className="h-3 w-3" />}>Decaying</StatusBadge>
+                        )}
+                      </div>
+                      <div className="text-xs text-muted-foreground mt-1">
+                        {s.domain}{s.description ? ` · ${s.description}` : ""}
+                      </div>
+                      <div className="text-[11px] text-muted-foreground mt-0.5">
+                        Last related sync: {d === null ? "never" : `${d}d ago`}
+                      </div>
+                    </button>
+                    <Button variant="ghost" size="icon" onClick={() => handleRemove(s.id)}>
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                    <Button variant="ghost" size="icon" onClick={() => navigate(`/learner/validation/${s.id}`)}>
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </CardContent>
       </Card>
     </AppShell>

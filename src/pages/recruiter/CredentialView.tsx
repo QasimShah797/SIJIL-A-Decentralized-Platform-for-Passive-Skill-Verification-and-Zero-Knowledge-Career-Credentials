@@ -1,5 +1,5 @@
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { AppShell } from "@/components/sijil/AppShell";
 import { PageHeader } from "@/components/sijil/PageHeader";
 import { StatusBadge } from "@/components/sijil/StatusBadge";
@@ -10,7 +10,12 @@ import {
   ArrowLeft, ShieldCheck, ShieldAlert, CheckCircle2, EyeOff, Lock,
   Github, BookOpen, FileText, FileUp, MessageSquare, Building2,
 } from "lucide-react";
-import { credentials, getPresentation, candidateSkills } from "@/lib/sijil-data";
+import { useEffect, useState } from "react";
+import { fetchPresentation } from "@/lib/db/presentations";
+import { fetchCredentialByUriGlobal } from "@/lib/db/credentials";
+import { useCandidates } from "@/hooks/useCandidates";
+import type { SharedPresentation } from "@/lib/sijil-data";
+import type { CredentialView } from "@/lib/db/credentials";
 import { toast } from "@/hooks/use-toast";
 
 type IntegrityState = "idle" | "passed" | "failed";
@@ -20,9 +25,27 @@ export default function RecruiterCredentialView() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
 
-  const presentation = useMemo(() => getPresentation(decodeURIComponent(token || "")), [token]);
+  const { candidateSkills } = useCandidates();
+  const [presentation, setPresentation] = useState<SharedPresentation | null>(null);
+  const [cred, setCred] = useState<CredentialView | null>(null);
+  const [loading, setLoading] = useState(true);
   const [integrity, setIntegrity] = useState<IntegrityState>("idle");
   const [issuerVerified, setIssuerVerified] = useState(false);
+
+  useEffect(() => {
+    if (!token) { setLoading(false); return; }
+    setLoading(true);
+    fetchPresentation(decodeURIComponent(token))
+      .then(async (p) => {
+        setPresentation(p);
+        if (p) setCred(await fetchCredentialByUriGlobal(p.credentialId));
+      })
+      .finally(() => setLoading(false));
+  }, [token]);
+
+  if (loading) {
+    return <AppShell role="recruiter"><div className="text-sm text-muted-foreground">Loading presentation…</div></AppShell>;
+  }
 
   if (!presentation) {
     return (
@@ -33,7 +56,16 @@ export default function RecruiterCredentialView() {
     );
   }
 
-  const cred = credentials.find((c) => c.id === presentation.credentialId);
+
+  if (!cred) {
+    return (
+      <AppShell role="recruiter">
+        <PageHeader title="Credential not found" description="The linked credential could not be loaded." />
+        <Button variant="outline" onClick={() => navigate(-1)}><ArrowLeft className="h-4 w-4 mr-1.5" />Back</Button>
+      </AppShell>
+    );
+  }
+
   const isExpired = new Date(presentation.expiresAt).getTime() < Date.now();
   const status = presentation.revoked ? "Revoked" : isExpired ? "Expired" : "Active";
 

@@ -4,6 +4,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { RequireAuth } from "@/components/RequireAuth";
+import { AuthProvider } from "@/hooks/useAuth";
 import Login from "./pages/Login";
 import Landing from "./pages/Landing";
 import NotFound from "./pages/NotFound";
@@ -35,6 +36,7 @@ const queryClient = new QueryClient();
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
+    <AuthProvider>
     <TooltipProvider>
       <Toaster />
       <Sonner />
@@ -49,7 +51,7 @@ const App = () => (
             <Route path="/signup/institution" element={<InstitutionSignup />} />
             <Route path="/register" element={<SignupChooser />} />
             <Route path="/review/:invitationId" element={<ReviewInvite />} />
-            <Route path="/auth/github/callback" element={<RequireAuth><GitHubCallback /></RequireAuth>} />
+            <Route path="/auth/github/callback" element={<GitHubCallback />} />
 
             <Route path="/learner/profile" element={<RequireAuth><LearnerProfile /></RequireAuth>} />
             <Route path="/learner/integrations" element={<RequireAuth><Integrations /></RequireAuth>} />
@@ -78,6 +80,7 @@ const App = () => (
         </>
       </BrowserRouter>
     </TooltipProvider>
+    </AuthProvider>
   </QueryClientProvider>
 );
 

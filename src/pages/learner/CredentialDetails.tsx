@@ -7,7 +7,7 @@ import { FieldRow } from "@/components/sijil/FieldRow";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, Share2, ShieldCheck, Download, FileText, Github, BookOpen, FileUp, MessageSquare, ExternalLink } from "lucide-react";
-import { credentials } from "@/lib/sijil-data";
+import { useCredentials } from "@/hooks/useLearnerData";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 
@@ -37,11 +37,12 @@ export default function CredentialDetails() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const c = credentials.find((x) => x.id === decodeURIComponent(id || "")) || credentials[0];
+  const { credentials, loading } = useCredentials();
+  const c = credentials.find((x) => x.id === decodeURIComponent(id || ""));
   const [repoEvidence, setRepoEvidence] = useState<RepoEvidence[]>([]);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || !c) return;
     (async () => {
       const { data } = await supabase
         .from("github_repos")
@@ -50,7 +51,24 @@ export default function CredentialDetails() {
       const tokens = tokensFromSkill(c.skill);
       setRepoEvidence((data ?? []).filter((r) => languageMatches(r.primary_language, tokens)));
     })();
-  }, [user, c.skill]);
+  }, [user, c?.skill]);
+
+  if (loading) {
+    return (
+      <AppShell role="learner">
+        <div className="text-sm text-muted-foreground">Loading credential…</div>
+      </AppShell>
+    );
+  }
+
+  if (!c) {
+    return (
+      <AppShell role="learner">
+        <PageHeader title="Credential not found" />
+        <Button onClick={() => navigate("/learner/wallet")}>Back to wallet</Button>
+      </AppShell>
+    );
+  }
 
   const totalSupporting = repoEvidence.length;
 

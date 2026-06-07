@@ -112,6 +112,24 @@ export const skillTaskBank: Record<string, SkillTask> = {
   },
 };
 
+/** Resolve a practical task template for a declared skill (by name matching). */
+export function getTaskForSkill(skill: DeclaredSkill): SkillTask {
+  const n = skill.name.toLowerCase();
+  if (n.includes("react")) return { ...skillTaskBank["sk-001"], skillId: skill.id };
+  if (n.includes("node") || n.includes("express")) return { ...skillTaskBank["sk-002"], skillId: skill.id };
+  if (n.includes("postgres") || n.includes("sql")) return { ...skillTaskBank["sk-003"], skillId: skill.id };
+  if (n.includes("python") || n.includes("data")) return { ...skillTaskBank["sk-004"], skillId: skill.id };
+  if (n.includes("docker") || n.includes("devops")) return { ...skillTaskBank["sk-005"], skillId: skill.id };
+  return {
+    skillId: skill.id,
+    title: `Demonstrate ${skill.name}`,
+    type: "Hands-on",
+    durationMinutes: 20,
+    prompt: `Complete a practical demonstration of your ${skill.name} skills. Submit your work below.`,
+    expectedDeliverable: "Written response or code in the editor.",
+  };
+}
+
 export const validationSummary = {
   skill: "React.js",
   result: "Passed",

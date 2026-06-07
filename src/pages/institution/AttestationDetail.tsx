@@ -7,7 +7,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ArrowLeft, Check, X, MessageSquare, ShieldCheck, BadgeCheck, ChevronRight, ExternalLink } from "lucide-react";
-import { getAttestations, subscribeAttestations, updateAttestation, AttestationRecord, AttestationStatus } from "@/lib/sijil-data";
+import { useAttestations } from "@/hooks/useAttestations";
+import { AttestationStatus } from "@/lib/sijil-data";
 import { toast } from "@/hooks/use-toast";
 
 const statusVariant = (s: AttestationStatus) =>
@@ -18,11 +19,10 @@ const statusVariant = (s: AttestationStatus) =>
 export default function AttestationDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const [tick, setTick] = useState(0);
-  useEffect(() => subscribeAttestations(() => setTick((t) => t + 1)), []);
-  const record: AttestationRecord | undefined = useMemo(
-    () => getAttestations().find((a) => a.id === id),
-    [id, tick],
+  const { attestations, updateAttestation } = useAttestations();
+  const record = useMemo(
+    () => attestations.find((a) => a.id === id),
+    [attestations, id],
   );
   const [remarks, setRemarks] = useState("");
 

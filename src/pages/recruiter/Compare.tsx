@@ -6,11 +6,12 @@ import { StatusBadge } from "@/components/sijil/StatusBadge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, ArrowRight, ShieldCheck } from "lucide-react";
-import { candidates, candidateSkills } from "@/lib/sijil-data";
+import { useCandidates } from "@/hooks/useCandidates";
 
 export default function RecruiterCompare() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
+  const { candidates, candidateSkills, loading } = useCandidates();
   const ids = (params.get("ids") || "").split(",").filter(Boolean);
   const skillFilter = params.get("skill") || "";
 

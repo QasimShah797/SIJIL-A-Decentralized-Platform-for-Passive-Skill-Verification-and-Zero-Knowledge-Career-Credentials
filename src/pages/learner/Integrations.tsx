@@ -11,25 +11,34 @@ import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useNavigate } from "react-router-dom";
-import { declaredSkills, credentials } from "@/lib/sijil-data";
-import { useGitHub } from "@/hooks/useGitHub";
+import { useDeclaredSkills, useCredentials } from "@/hooks/useLearnerData";
+import {
+  fetchLmsEvidence, getLmsConnection, syncOdoo, uploadAndParseTranscript, toCardEvidence, type CustEvidence,
+} from "@/lib/cust-lms";
+import {
+  startGitHubOAuth, syncGitHubPortfolio, disconnectGitHub, linkRepoToSkill,
+} from "@/lib/github-integration";
 
-// Combine declared skills with skills present in wallet credentials so repos
-// can be linked to either source. Wallet-derived skills get synthetic ids.
-const walletSkills = Array.from(
-  new Set(
-    credentials.flatMap((c) =>
-      c.skill.split(/\s*[+&/]\s*/).map((s) => s.trim()).filter(Boolean),
+// Combine declared skills with skills present in wallet credentials
+function buildAllSkills(
+  declared: { id: string; name: string }[],
+  creds: { skill: string }[],
+): { id: string; name: string }[] {
+  const walletSkills = Array.from(
+    new Set(
+      creds.flatMap((c) =>
+        c.skill.split(/\s*[+&/]\s*/).map((s) => s.trim()).filter(Boolean),
+      ),
     ),
-  ),
-).map((name) => ({ id: `wallet-${name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`, name }));
+  ).map((name) => ({ id: `wallet-${name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`, name }));
 
-const allSkills: { id: string; name: string }[] = [
-  ...declaredSkills.map((s) => ({ id: s.id, name: s.name })),
-  ...walletSkills.filter((w) => !declaredSkills.some((d) => d.name.toLowerCase() === w.name.toLowerCase())),
-];
+  return [
+    ...declared.map((s) => ({ id: s.id, name: s.name })),
+    ...walletSkills.filter((w) => !declared.some((d) => d.name.toLowerCase() === w.name.toLowerCase())),
+  ];
+}
 
-function matchSkillByLanguage(lang: string | null) {
+function matchSkillByLanguage(lang: string | null, allSkills: { id: string; name: string }[]) {
   if (!lang) return null;
   const l = lang.toLowerCase();
   return (
@@ -75,7 +84,9 @@ type GhRepo = {
 export default function Integrations() {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const { user: ghApiUser, repos: ghApiRepos, loading: ghApiLoading } = useGitHub(); // ✅ MOVED INSIDE COMPONENT
+  const { skills: declaredSkills } = useDeclaredSkills();
+  const { credentials } = useCredentials();
+  const allSkills = buildAllSkills(declaredSkills, credentials);
   const [ghConn, setGhConn] = useState<GhConn | null>(null);
   const [ghActivities, setGhActivities] = useState<GhActivity[]>([]);
   const [ghRepos, setGhRepos] = useState<GhRepo[]>([]);
@@ -83,11 +94,23 @@ export default function Integrations() {
   const [connecting, setConnecting] = useState(false);
   const [syncing, setSyncing] = useState(false);
 
-  // LMS is not yet wired up to a real backend — keep state local & honest.
   const [lmsConnected, setLmsConnected] = useState(false);
   const [lmsLastSync, setLmsLastSync] = useState<string | null>(null);
-  const [lmsRecords, setLmsRecords] = useState(0);
+  const [lmsRecords, setLmsRecords] = useState<CustEvidence[]>([]);
   const [lmsSyncing, setLmsSyncing] = useState(false);
+
+  const loadLms = async () => {
+    try {
+      const conn = await getLmsConnection();
+      setLmsConnected(!!conn);
+      setLmsLastSync(conn?.last_synced_at ? new Date(conn.last_synced_at).toLocaleString() : null);
+      const evidence = await fetchLmsEvidence();
+      setLmsRecords(evidence.map(toCardEvidence));
+    } catch {
+      setLmsConnected(false);
+      setLmsRecords([]);
+    }
+  };
 
   const loadGitHub = async () => {
     if (!user) return;
@@ -116,31 +139,16 @@ export default function Integrations() {
     setLoading(false);
   };
 
-  useEffect(() => { loadGitHub(); }, [user]); // eslint-disable-line
+  useEffect(() => {
+    loadGitHub();
+    loadLms();
+  }, [user]); // eslint-disable-line
 
   const connectGithub = async () => {
     setConnecting(true);
     try {
-      const redirect = `${window.location.origin}/auth/github/callback`;
-      const { data, error } = await supabase.functions.invoke("github-oauth-start", {
-        body: { redirect_uri: redirect },
-      });
-      if (error) throw error;
-      const url = (data as { authorize_url?: string })?.authorize_url;
-      if (!url) throw new Error("No authorize URL returned");
-      try {
-        const top = window.top ?? window;
-        top.location.href = url;
-      } catch {
-        const win = window.open(url, "_blank", "noopener,noreferrer");
-        if (!win) {
-          toast({
-            title: "Popup blocked",
-            description: "Allow popups, or open the preview in a new tab and try again.",
-            variant: "destructive",
-          });
-        }
-      }
+      const url = await startGitHubOAuth();
+      window.location.href = url;
     } catch (e) {
       toast({ title: "Could not start GitHub OAuth", description: e instanceof Error ? e.message : String(e), variant: "destructive" });
       setConnecting(false);
@@ -150,14 +158,11 @@ export default function Integrations() {
   const syncGithub = async () => {
     setSyncing(true);
     try {
-      const declared_skills = allSkills;
-      const { data, error } = await supabase.functions.invoke("github-sync", {
-        body: { declared_skills },
+      const result = await syncGitHubPortfolio(allSkills);
+      toast({
+        title: "GitHub sync completed",
+        description: `${result.synced} activities, ${result.repos} repos, ${result.contributors} contributors imported.`,
       });
-      if (error) throw error;
-      const n = (data as { synced?: number })?.synced ?? 0;
-      const r = (data as { repos?: number })?.repos ?? 0;
-      toast({ title: "GitHub sync completed successfully", description: `${n} activities and ${r} repositories imported.` });
       await loadGitHub();
     } catch (e) {
       toast({ title: "Sync failed", description: e instanceof Error ? e.message : String(e), variant: "destructive" });
@@ -169,31 +174,72 @@ export default function Integrations() {
   const disconnectGithub = async () => {
     if (!user) return;
     if (!confirm("Disconnect GitHub and remove all synced GitHub activities and repositories?")) return;
-    await supabase.from("github_repos").delete().eq("user_id", user.id);
-    await supabase.from("github_activities").delete().eq("user_id", user.id);
-    await supabase.from("github_connections").delete().eq("user_id", user.id);
+    await disconnectGitHub(user.id);
     setGhConn(null);
     setGhActivities([]);
     setGhRepos([]);
     toast({ title: "GitHub disconnected" });
   };
 
-  const connectLms = () => {
-    setLmsConnected(true);
-    setLmsLastSync(new Date().toLocaleString());
-    toast({ title: "LMS connected successfully" });
+  const handleLinkRepo = async (repoId: string, skillId: string | null, skillName: string | null) => {
+    try {
+      await linkRepoToSkill(repoId, skillId, skillName);
+      await loadGitHub();
+      toast({ title: skillId ? "Repository linked to skill" : "Repository unlinked" });
+    } catch (e) {
+      toast({ title: "Could not update link", description: e instanceof Error ? e.message : String(e), variant: "destructive" });
+    }
+  };
+
+  const connectLms = async () => {
+    const url = prompt("Odoo URL (e.g. https://your-school.odoo.com)");
+    const db = prompt("Odoo database name");
+    const login = prompt("Odoo login email");
+    const apiKey = prompt("Odoo API key");
+    if (!url || !db || !login || !apiKey) return;
+    setLmsSyncing(true);
+    try {
+      await syncOdoo({ odoo_url: url, odoo_db: db, odoo_login: login, odoo_api_key: apiKey });
+      await loadLms();
+      toast({ title: "LMS connected and synced" });
+    } catch (e) {
+      toast({ title: "LMS connection failed", description: e instanceof Error ? e.message : String(e), variant: "destructive" });
+    } finally {
+      setLmsSyncing(false);
+    }
   };
   const syncLms = async () => {
     setLmsSyncing(true);
-    await new Promise((r) => setTimeout(r, 600));
-    setLmsLastSync(new Date().toLocaleString());
-    setLmsSyncing(false);
-    toast({ title: "LMS sync completed successfully", description: `${lmsRecords} LMS records imported and stored.` });
+    try {
+      const conn = await getLmsConnection();
+      if (!conn?.odoo_url || !conn.odoo_db || !conn.odoo_login) {
+        toast({ title: "LMS not configured", description: "Connect LMS first with Odoo credentials.", variant: "destructive" });
+        return;
+      }
+      const apiKey = prompt("Enter Odoo API key to sync");
+      if (!apiKey) return;
+      await syncOdoo({
+        odoo_url: conn.odoo_url,
+        odoo_db: conn.odoo_db,
+        odoo_login: conn.odoo_login,
+        odoo_api_key: apiKey,
+      });
+      await loadLms();
+      toast({ title: "LMS sync completed", description: `${lmsRecords.length} records loaded.` });
+    } catch (e) {
+      toast({ title: "LMS sync failed", description: e instanceof Error ? e.message : String(e), variant: "destructive" });
+    } finally {
+      setLmsSyncing(false);
+    }
   };
-  const disconnectLms = () => {
+  const disconnectLms = async () => {
     if (!confirm("Disconnect LMS?")) return;
+    if (user) {
+      await supabase.from("lms_evidence").delete().eq("user_id", user.id);
+      await supabase.from("lms_connections").delete().eq("user_id", user.id);
+    }
     setLmsConnected(false);
-    setLmsRecords(0);
+    setLmsRecords([]);
     setLmsLastSync(null);
     toast({ title: "LMS disconnected" });
   };
@@ -225,7 +271,7 @@ export default function Integrations() {
           name="LMS"
           connected={lmsConnected}
           lastSync={lmsLastSync}
-          records={lmsRecords}
+          records={lmsRecords.length}
           onConnect={connectLms}
           onSync={syncLms}
           onDisconnect={disconnectLms}
@@ -275,7 +321,7 @@ export default function Integrations() {
           </CardTitle>
           {ghConn && ghRepos.length > 0 && (
             <span className="text-xs text-muted-foreground">
-              {ghRepos.length} repositories · {ghRepos.filter((r) => r.linked_skill_id || matchSkillByLanguage(r.primary_language)).length} linked to skills
+              {ghRepos.length} repositories · {ghRepos.filter((r) => r.linked_skill_id || matchSkillByLanguage(r.primary_language, allSkills)).length} linked to skills
             </span>
           )}
         </CardHeader>
@@ -302,7 +348,13 @@ export default function Integrations() {
           ) : (
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {ghRepos.map((r) => (
-                <RepoCard key={r.id} repo={r} onOpenSkill={(id) => navigate(id.startsWith("wallet-") ? "/learner/wallet" : `/learner/validation/${id}`)} />
+                <RepoCard
+                  key={r.id}
+                  repo={r}
+                  allSkills={allSkills}
+                  onLinkSkill={handleLinkRepo}
+                  onOpenSkill={(id) => navigate(id.startsWith("wallet-") ? "/learner/wallet" : `/learner/validation/${id}`)}
+                />
               ))}
             </div>
           )}
@@ -324,8 +376,19 @@ export default function Integrations() {
               hint="Assignments, quizzes, and module completions will appear here."
               action={<Button size="sm" onClick={connectLms}><Link2 className="h-4 w-4 mr-1.5" />Connect LMS</Button>}
             />
-          ) : (
+          ) : lmsRecords.length === 0 ? (
             <EmptyState icon={BookOpen} title="No LMS activity synced yet" hint="Run a sync to import your latest LMS records." />
+          ) : (
+            <div className="divide-y">
+              {lmsRecords.map((r) => (
+                <div key={r.id} className="grid grid-cols-12 gap-4 px-6 py-3.5 items-center">
+                  <div className="col-span-6 text-sm font-medium">{r.course_name}</div>
+                  <div className="col-span-2 text-xs text-muted-foreground">{r.grade}</div>
+                  <div className="col-span-2 text-xs text-muted-foreground">{r.completion_status}</div>
+                  <div className="col-span-2 text-xs text-muted-foreground">{new Date(r.fetched_at).toLocaleDateString()}</div>
+                </div>
+              ))}
+            </div>
           )}
         </CardContent>
       </Card>
@@ -464,8 +527,15 @@ function EmptyState({ icon: Icon, title, hint, action }: { icon: any; title: str
   );
 }
 
-function RepoCard({ repo, onOpenSkill }: { repo: GhRepo; onOpenSkill: (skillId: string) => void }) {
-  const fallback = !repo.linked_skill_id ? matchSkillByLanguage(repo.primary_language) : null;
+function RepoCard({
+  repo, allSkills, onLinkSkill, onOpenSkill,
+}: {
+  repo: GhRepo;
+  allSkills: { id: string; name: string }[];
+  onLinkSkill: (repoId: string, skillId: string | null, skillName: string | null) => void;
+  onOpenSkill: (skillId: string) => void;
+}) {
+  const fallback = !repo.linked_skill_id ? matchSkillByLanguage(repo.primary_language, allSkills) : null;
   const linkedId = repo.linked_skill_id ?? fallback?.id ?? null;
   const linkedName = repo.linked_skill_name ?? fallback?.name ?? null;
   const linked = !!linkedId;
@@ -506,12 +576,33 @@ function RepoCard({ repo, onOpenSkill }: { repo: GhRepo; onOpenSkill: (skillId: 
         )}
       </div>
 
+      <div className="mt-3">
+        <label className="text-[11px] text-muted-foreground">Link to skill</label>
+        <select
+          className="mt-1 w-full h-8 rounded-md border border-input bg-background px-2 text-xs"
+          value={linkedId ?? ""}
+          onChange={(e) => {
+            const val = e.target.value;
+            if (!val) onLinkSkill(repo.id, null, null);
+            else {
+              const skill = allSkills.find((s) => s.id === val);
+              onLinkSkill(repo.id, val, skill?.name ?? null);
+            }
+          }}
+        >
+          <option value="">— Not linked —</option>
+          {allSkills.map((s) => (
+            <option key={s.id} value={s.id}>{s.name}</option>
+          ))}
+        </select>
+      </div>
+
       {linked && linkedId && (
         <button
           onClick={() => onOpenSkill(linkedId)}
-          className="mt-3 text-xs text-primary hover:underline text-left"
+          className="mt-2 text-xs text-primary hover:underline text-left"
         >
-          → Linked to skill: {linkedName}
+          → View validation trail: {linkedName}
         </button>
       )}
     </div>

@@ -8,7 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ChevronRight, Search } from "lucide-react";
-import { getAttestations, subscribeAttestations, AttestationRecord, AttestationStatus } from "@/lib/sijil-data";
+import { useAttestations } from "@/hooks/useAttestations";
+import { AttestationRecord, AttestationStatus } from "@/lib/sijil-data";
 
 const FILTERS: ("All" | AttestationStatus)[] = ["All", "Pending Attestation", "Attestation Approved", "Attestation Rejected", "Needs Clarification"];
 
@@ -19,12 +20,10 @@ const variantFor = (s: AttestationStatus) =>
 
 export default function AttestationQueue() {
   const navigate = useNavigate();
-  const [rows, setRows] = useState<AttestationRecord[]>(getAttestations());
+  const { attestations: rows, loading } = useAttestations();
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>("All");
   const [batch, setBatch] = useState<string>("All");
-
-  useEffect(() => subscribeAttestations(() => setRows([...getAttestations()])), []);
 
   const batches = useMemo(() => {
     const set = new Set(rows.map((r) => r.batch));
@@ -48,6 +47,8 @@ export default function AttestationQueue() {
         title="Attestation Queue"
         description="Learner competency records waiting for an institutional decision."
       />
+
+      {loading && <div className="text-sm text-muted-foreground mb-4">Loading attestations…</div>}
 
       <Card className="mb-4">
         <CardContent className="p-3 flex flex-col md:flex-row gap-3 md:items-center">

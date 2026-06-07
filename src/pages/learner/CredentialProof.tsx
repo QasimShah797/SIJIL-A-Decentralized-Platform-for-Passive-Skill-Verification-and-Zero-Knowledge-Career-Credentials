@@ -7,15 +7,19 @@ import { FieldRow } from "@/components/sijil/FieldRow";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, Copy, ShieldCheck, CheckCircle2, Lock } from "lucide-react";
-import { credentials } from "@/lib/sijil-data";
+import { useCredentials, useLearnerProfile } from "@/hooks/useLearnerData";
 import { toast } from "@/hooks/use-toast";
 
 export default function CredentialProof() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const c = credentials.find((x) => x.id === decodeURIComponent(id || "")) || credentials[0];
+  const { credentials, loading } = useCredentials();
+  const c = credentials.find((x) => x.id === decodeURIComponent(id || ""));
   const [verified, setVerified] = useState(false);
-  const proofHash = "0xA91F3C77B82D4E19D55C031F92B7E04AC8";
+  const proofHash = (c?.proof?.proofValue as string) ?? "—";
+
+  if (loading) return <AppShell role="learner"><div className="text-sm text-muted-foreground">Loading…</div></AppShell>;
+  if (!c) return <AppShell role="learner"><PageHeader title="Credential not found" /><Button onClick={() => navigate("/learner/wallet")}>Back</Button></AppShell>;
 
   return (
     <AppShell role="learner">

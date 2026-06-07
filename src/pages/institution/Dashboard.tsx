@@ -1,4 +1,3 @@
-import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { AppShell } from "@/components/sijil/AppShell";
 import { PageHeader } from "@/components/sijil/PageHeader";
@@ -6,12 +5,12 @@ import { StatusBadge } from "@/components/sijil/StatusBadge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ChevronRight, ClipboardCheck, CheckCircle2, XCircle, MessageSquareWarning, BadgeCheck } from "lucide-react";
-import { getAttestations, subscribeAttestations, AttestationRecord } from "@/lib/sijil-data";
+import { useAttestations } from "@/hooks/useAttestations";
+import { AttestationRecord } from "@/lib/sijil-data";
 
 export default function InstitutionDashboard() {
   const navigate = useNavigate();
-  const [rows, setRows] = useState<AttestationRecord[]>(getAttestations());
-  useEffect(() => subscribeAttestations(() => setRows([...getAttestations()])), []);
+  const { attestations: rows, loading } = useAttestations();
 
   const counts = {
     pending: rows.filter((r) => r.status === "Pending Attestation").length,
@@ -33,6 +32,8 @@ export default function InstitutionDashboard() {
         description="Final official trust layer. Review evidence-backed competency records and issue verified credentials."
         actions={<Button onClick={() => navigate("/institution/queue")}>Open Attestation Queue</Button>}
       />
+
+      {loading && <div className="text-sm text-muted-foreground mb-4">Loading…</div>}
 
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
         <SummaryCard icon={<ClipboardCheck className="h-4 w-4" />} label="Pending Attestation" value={counts.pending} tone="info" />

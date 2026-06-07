@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
+import { completeGitHubOAuth, syncGitHubPortfolio } from "@/lib/github-integration";
+import { fetchDeclaredSkills } from "@/lib/db/skills";
+import { supabase } from "@/integrations/supabase/client";
 
 export default function GitHubCallback() {
   const navigate = useNavigate();
@@ -11,38 +13,39 @@ export default function GitHubCallback() {
   useEffect(() => {
     if (ran.current) return;
     ran.current = true;
+
     (async () => {
       try {
         const params = new URLSearchParams(window.location.search);
         const code = params.get("code");
         const state = params.get("state");
         const err = params.get("error");
-        if (err) throw new Error(err);
-        if (!code || !state) throw new Error("Missing code/state");
-        // ADD: store token for direct API calls
-if ((data as any)?.access_token) {
-  localStorage.setItem("github_token", (data as any).access_token);
-}
+        const errDesc = params.get("error_description");
 
-        const { data, error } = await supabase.functions.invoke("github-oauth-callback", {
-          body: {
-            code,
-            state,
-            redirect_uri: `${window.location.origin}/auth/github/callback`,
-           
-          },
+        if (err) throw new Error(errDesc ?? err);
+        if (!code || !state) throw new Error("Missing OAuth code or state");
+
+        const { data: sessionData } = await supabase.auth.getSession();
+        if (!sessionData.session) throw new Error("You must be signed in to connect GitHub");
+
+        setMsg("Exchanging authorization code…");
+        const result = await completeGitHubOAuth(code, state);
+
+        setMsg("Syncing repositories and activity from GitHub API…");
+        const skills = await fetchDeclaredSkills(sessionData.session.user.id);
+        const sync = await syncGitHubPortfolio(skills.map((s) => ({ id: s.id, name: s.name })));
+
+        toast({
+          title: "GitHub connected",
+          description: `@${result.github_username} — ${sync.repos} repos, ${sync.synced} activities synced.`,
         });
-        if (error) throw error;
-        if ((data as { error?: string })?.error) throw new Error((data as { error: string }).error);
-
-        setMsg("Connected. Syncing your activity…");
-        const sync = await supabase.functions.invoke("github-sync", { body: {} });
-        if (sync.error) console.warn("sync error", sync.error);
-
-        toast({ title: "GitHub connected", description: `@${(data as { github_username?: string }).github_username ?? ""} synced.` });
         navigate("/learner/integrations", { replace: true });
       } catch (e) {
-        toast({ title: "GitHub connection failed", description: e instanceof Error ? e.message : String(e), variant: "destructive" });
+        toast({
+          title: "GitHub connection failed",
+          description: e instanceof Error ? e.message : String(e),
+          variant: "destructive",
+        });
         navigate("/learner/integrations", { replace: true });
       }
     })();
