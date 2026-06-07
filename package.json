@@ -10,11 +10,11 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "supabase:deploy-github": "supabase functions deploy github-oauth-callback && supabase functions deploy github-sync && supabase functions deploy github-oauth-start --no-verify-jwt"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
-    
     "@radix-ui/react-accordion": "^1.2.11",
     "@radix-ui/react-alert-dialog": "^1.1.14",
     "@radix-ui/react-aspect-ratio": "^1.1.7",

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AppShell } from "@/components/sijil/AppShell";
 import { PageHeader } from "@/components/sijil/PageHeader";
 import { StatusBadge } from "@/components/sijil/StatusBadge";
@@ -17,6 +17,7 @@ import {
 } from "@/lib/cust-lms";
 import {
   startGitHubOAuth, syncGitHubPortfolio, disconnectGitHub, linkRepoToSkill,
+  buildSkillsForGitHubSync,
 } from "@/lib/github-integration";
 
 // Combine declared skills with skills present in wallet credentials
@@ -24,18 +25,7 @@ function buildAllSkills(
   declared: { id: string; name: string }[],
   creds: { skill: string }[],
 ): { id: string; name: string }[] {
-  const walletSkills = Array.from(
-    new Set(
-      creds.flatMap((c) =>
-        c.skill.split(/\s*[+&/]\s*/).map((s) => s.trim()).filter(Boolean),
-      ),
-    ),
-  ).map((name) => ({ id: `wallet-${name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`, name }));
-
-  return [
-    ...declared.map((s) => ({ id: s.id, name: s.name })),
-    ...walletSkills.filter((w) => !declared.some((d) => d.name.toLowerCase() === w.name.toLowerCase())),
-  ];
+  return buildSkillsForGitHubSync(declared, creds);
 }
 
 function matchSkillByLanguage(lang: string | null, allSkills: { id: string; name: string }[]) {
@@ -93,6 +83,7 @@ export default function Integrations() {
   const [loading, setLoading] = useState(true);
   const [connecting, setConnecting] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const autoSyncAttempted = useRef(false);
 
   const [lmsConnected, setLmsConnected] = useState(false);
   const [lmsLastSync, setLmsLastSync] = useState<string | null>(null);
@@ -117,7 +108,7 @@ export default function Integrations() {
     setLoading(true);
     const [{ data: conn }, { data: acts }, { data: repos }] = await Promise.all([
       supabase
-        .from("github_connections")
+        .from("github_connections_public")
         .select("github_username,github_avatar_url,scopes,connected_at,last_synced_at")
         .eq("user_id", user.id)
         .maybeSingle(),
@@ -145,6 +136,10 @@ export default function Integrations() {
   }, [user]); // eslint-disable-line
 
   const connectGithub = async () => {
+    if (!user) {
+      toast({ title: "Sign in required", description: "Please sign in before connecting GitHub.", variant: "destructive" });
+      return;
+    }
     setConnecting(true);
     try {
       const url = await startGitHubOAuth();
@@ -170,6 +165,14 @@ export default function Integrations() {
       setSyncing(false);
     }
   };
+
+  useEffect(() => {
+    if (!user || loading || syncing || autoSyncAttempted.current || !ghConn) return;
+    if (ghRepos.length === 0 && ghActivities.length === 0) {
+      autoSyncAttempted.current = true;
+      void syncGithub();
+    }
+  }, [user, loading, ghConn, ghRepos.length, ghActivities.length, syncing]); // eslint-disable-line
 
   const disconnectGithub = async () => {
     if (!user) return;

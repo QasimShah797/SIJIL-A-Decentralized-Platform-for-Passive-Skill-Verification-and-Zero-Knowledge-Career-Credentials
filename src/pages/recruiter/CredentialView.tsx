@@ -10,7 +10,6 @@ import {
   ArrowLeft, ShieldCheck, ShieldAlert, CheckCircle2, EyeOff, Lock,
   Github, BookOpen, FileText, FileUp, MessageSquare, Building2,
 } from "lucide-react";
-import { useEffect, useState } from "react";
 import { fetchPresentation } from "@/lib/db/presentations";
 import { fetchCredentialByUriGlobal } from "@/lib/db/credentials";
 import { useCandidates } from "@/hooks/useCandidates";

@@ -1,8 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "@/hooks/use-toast";
-import { completeGitHubOAuth, syncGitHubPortfolio } from "@/lib/github-integration";
+import {
+  buildSkillsForGitHubSync,
+  completeGitHubOAuth,
+  syncGitHubPortfolio,
+} from "@/lib/github-integration";
 import { fetchDeclaredSkills } from "@/lib/db/skills";
+import { fetchCredentials } from "@/lib/db/credentials";
 import { supabase } from "@/integrations/supabase/client";
 
 export default function GitHubCallback() {
@@ -31,13 +36,25 @@ export default function GitHubCallback() {
         setMsg("Exchanging authorization code…");
         const result = await completeGitHubOAuth(code, state);
 
-        setMsg("Syncing repositories and activity from GitHub API…");
-        const skills = await fetchDeclaredSkills(sessionData.session.user.id);
-        const sync = await syncGitHubPortfolio(skills.map((s) => ({ id: s.id, name: s.name })));
+        let sync = result.sync;
+        const userId = sessionData.session.user.id;
+
+        if (!sync || (sync.repos === 0 && sync.synced === 0)) {
+          setMsg("Syncing repositories and activity from GitHub…");
+          const [skills, credentials] = await Promise.all([
+            fetchDeclaredSkills(userId),
+            fetchCredentials(userId),
+          ]);
+          const allSkills = buildSkillsForGitHubSync(
+            skills.map((s) => ({ id: s.id, name: s.name })),
+            credentials.map((c) => ({ skill: c.skill })),
+          );
+          sync = await syncGitHubPortfolio(allSkills);
+        }
 
         toast({
           title: "GitHub connected",
-          description: `@${result.github_username} — ${sync.repos} repos, ${sync.synced} activities synced.`,
+          description: `@${result.github_username} — ${sync.repos} repos, ${sync.synced} activities imported.`,
         });
         navigate("/learner/integrations", { replace: true });
       } catch (e) {
