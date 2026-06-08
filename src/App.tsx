@@ -4,8 +4,10 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { RequireAuth } from "@/components/RequireAuth";
+import { RequireLearnerProfile } from "@/components/RequireLearnerProfile";
 import { AuthProvider } from "@/hooks/useAuth";
-import Login from "./pages/Login";
+import LoginChooser from "./pages/LoginChooser";
+import RoleLogin from "./pages/login/RoleLogin";
 import Landing from "./pages/Landing";
 import NotFound from "./pages/NotFound";
 import SignupChooser from "./pages/SignupChooser";
@@ -14,6 +16,7 @@ import RecruiterSignup from "./pages/signup/RecruiterSignup";
 import InstitutionSignup from "./pages/signup/InstitutionSignup";
 import GitHubCallback from "./pages/auth/GitHubCallback";
 import LearnerProfile from "./pages/learner/Profile";
+import CompleteProfile from "./pages/learner/CompleteProfile";
 import Integrations from "./pages/learner/Integrations";
 import PracticalTask from "./pages/learner/PracticalTask";
 import Validation from "./pages/learner/Validation";
@@ -44,7 +47,10 @@ const App = () => (
         <>
           <Routes>
             <Route path="/" element={<Landing />} />
-            <Route path="/login" element={<Login />} />
+            <Route path="/login" element={<LoginChooser />} />
+            <Route path="/login/learner" element={<RoleLogin role="learner" />} />
+            <Route path="/login/recruiter" element={<RoleLogin role="recruiter" />} />
+            <Route path="/login/institution" element={<RoleLogin role="institution" />} />
             <Route path="/signup" element={<SignupChooser />} />
             <Route path="/signup/learner" element={<LearnerSignup />} />
             <Route path="/signup/recruiter" element={<RecruiterSignup />} />
@@ -53,15 +59,16 @@ const App = () => (
             <Route path="/review/:invitationId" element={<ReviewInvite />} />
             <Route path="/auth/github/callback" element={<GitHubCallback />} />
 
-            <Route path="/learner/profile" element={<RequireAuth><LearnerProfile /></RequireAuth>} />
-            <Route path="/learner/integrations" element={<RequireAuth><Integrations /></RequireAuth>} />
-            <Route path="/learner/task" element={<RequireAuth><PracticalTask /></RequireAuth>} />
-            <Route path="/learner/validation/:skillId" element={<RequireAuth><Validation /></RequireAuth>} />
-            <Route path="/learner/wallet" element={<RequireAuth><WalletPage /></RequireAuth>} />
-            <Route path="/learner/peer-reviews" element={<RequireAuth><PeerReviews /></RequireAuth>} />
-            <Route path="/learner/credential/:id" element={<RequireAuth><CredentialDetails /></RequireAuth>} />
-            <Route path="/learner/credential/:id/proof" element={<RequireAuth><CredentialProof /></RequireAuth>} />
-            <Route path="/learner/credential/:id/share" element={<RequireAuth><SelectiveDisclosure /></RequireAuth>} />
+            <Route path="/learner/complete-profile" element={<RequireAuth><CompleteProfile /></RequireAuth>} />
+            <Route path="/learner/profile" element={<RequireAuth><RequireLearnerProfile><LearnerProfile /></RequireLearnerProfile></RequireAuth>} />
+            <Route path="/learner/integrations" element={<RequireAuth><RequireLearnerProfile><Integrations /></RequireLearnerProfile></RequireAuth>} />
+            <Route path="/learner/task" element={<RequireAuth><RequireLearnerProfile><PracticalTask /></RequireLearnerProfile></RequireAuth>} />
+            <Route path="/learner/validation/:skillId" element={<RequireAuth><RequireLearnerProfile><Validation /></RequireLearnerProfile></RequireAuth>} />
+            <Route path="/learner/wallet" element={<RequireAuth><RequireLearnerProfile><WalletPage /></RequireLearnerProfile></RequireAuth>} />
+            <Route path="/learner/peer-reviews" element={<RequireAuth><RequireLearnerProfile><PeerReviews /></RequireLearnerProfile></RequireAuth>} />
+            <Route path="/learner/credential/:id" element={<RequireAuth><RequireLearnerProfile><CredentialDetails /></RequireLearnerProfile></RequireAuth>} />
+            <Route path="/learner/credential/:id/proof" element={<RequireAuth><RequireLearnerProfile><CredentialProof /></RequireLearnerProfile></RequireAuth>} />
+            <Route path="/learner/credential/:id/share" element={<RequireAuth><RequireLearnerProfile><SelectiveDisclosure /></RequireLearnerProfile></RequireAuth>} />
 
             <Route path="/recruiter/search" element={<RequireAuth><RecruiterSearch /></RequireAuth>} />
             <Route path="/recruiter/candidate/:id" element={<RequireAuth><CandidateSummary /></RequireAuth>} />

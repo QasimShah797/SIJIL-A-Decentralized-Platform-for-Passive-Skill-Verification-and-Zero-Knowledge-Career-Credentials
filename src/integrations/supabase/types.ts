@@ -298,46 +298,64 @@ export type Database = {
       }
       learner_profiles: {
         Row: {
+          bio: string | null
+          batch: string | null
           contact_number: string | null
           created_at: string
-          first_name: string
+          first_name: string | null
           github_url: string | null
+          holder_did: string | null
           institution_name: string | null
-          last_name: string
+          last_name: string | null
           linkedin_url: string | null
+          portfolio_url: string | null
+          profile_completed: boolean
           program: string | null
           status: Database["public"]["Enums"]["learner_status"]
           student_id: string | null
           updated_at: string
           user_id: string
+          username: string | null
         }
         Insert: {
+          bio?: string | null
+          batch?: string | null
           contact_number?: string | null
           created_at?: string
-          first_name: string
+          first_name?: string | null
           github_url?: string | null
+          holder_did?: string | null
           institution_name?: string | null
-          last_name: string
+          last_name?: string | null
           linkedin_url?: string | null
+          portfolio_url?: string | null
+          profile_completed?: boolean
           program?: string | null
           status?: Database["public"]["Enums"]["learner_status"]
           student_id?: string | null
           updated_at?: string
           user_id: string
+          username?: string | null
         }
         Update: {
+          bio?: string | null
+          batch?: string | null
           contact_number?: string | null
           created_at?: string
-          first_name?: string
+          first_name?: string | null
           github_url?: string | null
+          holder_did?: string | null
           institution_name?: string | null
-          last_name?: string
+          last_name?: string | null
           linkedin_url?: string | null
+          portfolio_url?: string | null
+          profile_completed?: boolean
           program?: string | null
           status?: Database["public"]["Enums"]["learner_status"]
           student_id?: string | null
           updated_at?: string
           user_id?: string
+          username?: string | null
         }
         Relationships: []
       }
