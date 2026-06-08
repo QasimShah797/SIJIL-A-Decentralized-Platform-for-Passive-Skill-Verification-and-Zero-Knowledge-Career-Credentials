@@ -54,6 +54,7 @@ export async function runGitHubSync(
   const rows: Array<Record<string, unknown>> = [];
   const repoRows: Array<Record<string, unknown>> = [];
   const contributorRows: Array<Record<string, unknown>> = [];
+  if (declaredSkills.length === 0) return { synced: 0, upserted: 0, repos: 0, contributors: 0 };
 
   const reposResp = await fetch(
     `${GH}/user/repos?per_page=50&sort=updated&affiliation=owner,collaborator,organization_member`,
@@ -62,6 +63,9 @@ export async function runGitHubSync(
   const repos = reposResp.ok ? await reposResp.json() : [];
 
   for (const r of repos) {
+    const skill = matchSkill(r.language, declaredSkills);
+    if (!skill) continue;
+
     let commitCount: number | null = null;
     try {
       const cResp = await fetch(`${GH}/repos/${r.full_name}/commits?per_page=1`, { headers: ghHeaders });
@@ -124,7 +128,6 @@ export async function runGitHubSync(
       }
     } catch { /* ignore contributor failures */ }
 
-    const skill = matchSkill(r.language, declaredSkills);
     repoRows.push({
       user_id: userId,
       github_username: connection.github_username,
@@ -155,10 +158,13 @@ export async function runGitHubSync(
     });
   }
 
+  const matchedRepoFullNames = new Set(repoRows.map((r) => r.full_name as string));
+
   const eventsResp = await fetch(`${GH}/users/${connection.github_username}/events?per_page=50`, { headers: ghHeaders });
   const events = eventsResp.ok ? await eventsResp.json() : [];
   for (const ev of events) {
     const repoFull = ev.repo?.name as string | undefined;
+    if (repoFull && !matchedRepoFullNames.has(repoFull)) continue;
     if (ev.type === "PushEvent") {
       for (const c of ev.payload?.commits ?? []) {
         rows.push({
@@ -226,6 +232,7 @@ export async function runGitHubSync(
     const prs = await prSearchResp.json();
     for (const pr of (prs.items ?? [])) {
       const repoFull = pr.repository_url?.replace("https://api.github.com/repos/", "");
+      if (repoFull && !matchedRepoFullNames.has(repoFull)) continue;
       rows.push({
         user_id: userId,
         github_username: connection.github_username,

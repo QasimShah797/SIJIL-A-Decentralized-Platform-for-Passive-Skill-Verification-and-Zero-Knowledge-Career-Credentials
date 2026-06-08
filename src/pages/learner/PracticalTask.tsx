@@ -15,37 +15,41 @@ import { useAuth } from "@/hooks/useAuth";
 import { fetchAttempts, saveAttemptDb } from "@/lib/db/practical-attempts";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import { useGitHub } from "@/hooks/useGitHub";
 
-async function generateTaskWithAI(skill: { name: string; domain: string }): Promise<Partial<SkillTask>> {
+async function generateTaskWithAI(
+  skill: { name: string; domain: string },
+  githubRepos: { name: string; language: string | null; full_name: string }[]
+): Promise<Partial<SkillTask>> {
   try {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return {};
+    const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/rapid-task`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-20250514", max_tokens: 1000,
-        messages: [{ role: "user", content: `Generate a 20-minute practical assessment task for a learner claiming the skill: "${skill.name}" (domain: "${skill.domain}"). Return ONLY valid JSON (no markdown): {"title":"...","type":"Coding|Debugging|MCQ + Short Answer|Design|Hands-on","durationMinutes":20,"prompt":"2-4 sentence instructions","expectedDeliverable":"..."}` }],
-      }),
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+      body: JSON.stringify({ action: "generate", skill, repos: githubRepos }),
     });
-    const data = await res.json();
-    const text = data.content?.find((b: { type: string }) => b.type === "text")?.text ?? "{}";
-    return JSON.parse(text);
+    if (!res.ok) return {};
+    return await res.json();
   } catch { return {}; }
 }
 
-async function evaluateSubmissionWithAI(task: SkillTask | null, submission: string): Promise<{ passed: boolean; feedback: string }> {
+async function evaluateSubmissionWithAI(
+  task: SkillTask | null,
+  submission: string,
+  githubRepos: { name: string; language: string | null; full_name: string }[]
+): Promise<{ passed: boolean; feedback: string }> {
   if (!task || !submission.trim()) return { passed: false, feedback: "No submission." };
   try {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return { passed: false, feedback: "Evaluation unavailable. Try again." };
+    const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/rapid-task`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-20250514", max_tokens: 500,
-        messages: [{ role: "user", content: `Evaluate this practical task submission.\nTask: ${task.title}\nInstructions: ${task.prompt}\nExpected: ${task.expectedDeliverable}\nSubmission:\n${submission}\n\nReturn ONLY valid JSON: {"passed":true|false,"score":0-100,"feedback":"1-2 sentences for learner"}` }],
-      }),
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+      body: JSON.stringify({ action: "evaluate", task, submission, repos: githubRepos }),
     });
-    const data = await res.json();
-    const text = data.content?.find((b: { type: string }) => b.type === "text")?.text ?? "{}";
-    return JSON.parse(text);
+    if (!res.ok) return { passed: false, feedback: "Evaluation unavailable. Try again." };
+    return await res.json();
   } catch { return { passed: false, feedback: "Evaluation unavailable. Try again." }; }
 }
 
@@ -63,6 +67,7 @@ function fmt(ms: number) {
 export default function PracticalTask() {
   const { user } = useAuth();
   const { skills, loading: skillsLoading } = useDeclaredSkills();
+  const { repos } = useGitHub();
   const [attemptsMap, setAttemptsMap] = useState<Record<string, AttemptRecord>>({});
   const [, force] = useState(0);
   const refresh = () => force((n) => n + 1);
@@ -82,6 +87,7 @@ export default function PracticalTask() {
   // Active attempt panel state
   const [activeSkill, setActiveSkill] = useState<DeclaredSkill | null>(null);
   const [task, setTask] = useState<SkillTask | null>(null);
+  const [taskLoading, setTaskLoading] = useState(false);
   const [attempt, setAttempt] = useState<AttemptRecord | null>(null);
   const [submission, setSubmission] = useState("");
   const [now, setNow] = useState(Date.now());
@@ -120,18 +126,39 @@ export default function PracticalTask() {
     });
   }, [remainingMs, attempt?.status, submission]);
 
-  const openSkill = (skill: DeclaredSkill) => {
-    const t = getTaskForSkill(skill);
-    if (t.title === `Demonstrate ${skill.name}`) {
-      generateTaskWithAI({ name: skill.name, domain: skill.domain ?? "General" }).then((aiTask) => {
-        setTask((prev) => prev ? { ...prev, ...aiTask } : prev);
-      });
-    }
-    setTask(t);
-    const existing = getAttempt(skill.id);
+  const openSkill = async (skill: DeclaredSkill) => {
     setActiveSkill(skill);
-    setAttempt(existing && (existing.credentialSyncSnapshot ?? null) === (skill.lastCredentialSyncAt ?? null) ? existing : null);
-    setSubmission(existing?.submission ?? "");
+    setSubmission("");
+    setAttempt(null);
+    setTask(null);
+    setTaskLoading(true);
+    try {
+      const matchedRepos = repos.filter(r =>
+        r.language?.toLowerCase().includes(skill.name.toLowerCase()) ||
+        skill.name.toLowerCase().includes((r.language ?? "").toLowerCase())
+      );
+      const aiTask = await generateTaskWithAI(
+        { name: skill.name, domain: skill.domain ?? "General" },
+        matchedRepos
+      );
+      if (aiTask?.title) {
+        setTask(aiTask as SkillTask);
+      } else {
+        setTask(getTaskForSkill(skill));
+      }
+    } catch {
+      setTask(getTaskForSkill(skill));
+    } finally {
+      setTaskLoading(false);
+    }
+    const existing = getAttempt(skill.id);
+    // Only restore existing attempt if it has a real AI-generated task
+    // (not the old static fallback task)
+    if (existing && task && task.prompt !== `Complete a practical demonstration of your ${skill.name} skills. Submit your work below.`) {
+      setAttempt(existing);
+    } else {
+      setAttempt(null);
+    }
   };
 
   const startAttempt = () => {
@@ -162,7 +189,7 @@ export default function PracticalTask() {
     saveAttempt(updated).then(() => {
       setAttempt(updated);
       toast({ title: "Submitted", description: "Submission locked against this skill." });
-      evaluateSubmissionWithAI(task, submission).then((result) => {
+      evaluateSubmissionWithAI(task, submission, repos.filter(r => r.language?.toLowerCase().includes(activeSkill?.name.toLowerCase() ?? "") || activeSkill?.name.toLowerCase().includes((r.language ?? "").toLowerCase()))).then((result) => {
         toast({ title: result.passed ? "✓ Task passed" : "✗ Task not passed", description: result.feedback });
         if (result.passed) {
           supabase.from("declared_skills")
@@ -261,85 +288,92 @@ export default function PracticalTask() {
       {/* Task / attempt dialog */}
       <Dialog open={!!activeSkill} onOpenChange={(o) => { if (!o) closePanel(); }}>
         <DialogContent className="max-w-3xl">
-          {activeSkill && task && (
-            <>
-              <DialogHeader>
-                <DialogTitle className="flex items-center gap-2">
-                  {task.title}
-                  <span className="text-xs text-muted-foreground font-normal">· {activeSkill.name}</span>
-                </DialogTitle>
-                <DialogDescription>
-                  {task.type} · {task.durationMinutes}-minute window. Timer starts when you click Start.
-                </DialogDescription>
-              </DialogHeader>
+          {activeSkill && (
+            taskLoading ? (
+              <div className="flex flex-col items-center justify-center py-16 gap-3">
+                <RefreshCcw className="h-6 w-6 animate-spin text-muted-foreground" />
+                <span className="text-sm text-muted-foreground">Generating your task…</span>
+              </div>
+            ) : task ? (
+              <>
+                <DialogHeader>
+                  <DialogTitle className="flex items-center gap-2">
+                    {task.title}
+                    <span className="text-xs text-muted-foreground font-normal">· {activeSkill.name}</span>
+                  </DialogTitle>
+                  <DialogDescription>
+                    {task.type} · {task.durationMinutes}-minute window. Timer starts when you click Start.
+                  </DialogDescription>
+                </DialogHeader>
 
-              {!attempt ? (
-                <div className="rounded-lg border-2 border-dashed border-border p-6 text-center bg-muted/30">
-                  <Lock className="h-6 w-6 mx-auto text-muted-foreground mb-2" />
-                  <div className="text-sm font-medium">Task is hidden until you start the attempt.</div>
-                  <div className="text-xs text-muted-foreground mt-1">One attempt per skill until next credential sync.</div>
-                  <Button className="mt-4" onClick={startAttempt}>
-                    <Play className="h-4 w-4 mr-1.5" />Start task
-                  </Button>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/40 px-3 py-2 text-sm">
-                    <div className="flex items-center gap-3">
-                      <span className="text-muted-foreground">Attempt</span>
-                      <span className="mono text-xs">{attempt.attemptId}</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <Timer className="h-3.5 w-3.5 text-muted-foreground" />
-                      <span className="mono">
-                        {attempt.status === "in_progress" ? fmt(remainingMs) : "00:00"}
-                      </span>
-                      <span className="ml-2">{
-                        attempt.status === "in_progress" ? <StatusBadge variant="info">In Progress</StatusBadge> :
-                        attempt.status === "submitted" ? <StatusBadge variant="verified">Submitted</StatusBadge> :
-                        attempt.status === "auto_submitted" ? <StatusBadge variant="info">Auto-Submitted</StatusBadge> :
-                        <StatusBadge variant="warning">No Submission</StatusBadge>
-                      }</span>
-                    </div>
+                {!attempt ? (
+                  <div className="rounded-lg border-2 border-dashed border-border p-6 text-center bg-muted/30">
+                    <Lock className="h-6 w-6 mx-auto text-muted-foreground mb-2" />
+                    <div className="text-sm font-medium">Task is hidden until you start the attempt.</div>
+                    <div className="text-xs text-muted-foreground mt-1">One attempt per skill until next credential sync.</div>
+                    <Button className="mt-4" onClick={startAttempt} disabled={taskLoading}>
+                      <Play className="h-4 w-4 mr-1.5" />Start task
+                    </Button>
                   </div>
-
-                  <div>
-                    <div className="text-sm font-medium mb-1">Prompt</div>
-                    <p className="text-sm text-muted-foreground leading-relaxed">{task.prompt}</p>
-                  </div>
-
-                  {task.starterCode && (
-                    <div>
-                      <div className="text-sm font-medium mb-1">Starter</div>
-                      <pre className="text-xs bg-muted/60 border rounded-md p-3 overflow-auto mono whitespace-pre">{task.starterCode}</pre>
-                    </div>
-                  )}
-
-                  <div>
-                    <div className="text-sm font-medium mb-1">Your work</div>
-                    <Textarea
-                      value={submission}
-                      onChange={(e) => setSubmission(e.target.value)}
-                      placeholder="Write or paste your code/answer here…"
-                      rows={10}
-                      className="mono text-xs"
-                      disabled={attempt.status !== "in_progress"}
-                    />
-                    <div className="text-[11px] text-muted-foreground mt-1">
-                      Expected: {task.expectedDeliverable}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              <DialogFooter>
-                {attempt && attempt.status === "in_progress" ? (
-                  <Button onClick={submitNow}><Send className="h-4 w-4 mr-1.5" />Submit attempt</Button>
                 ) : (
-                  <Button variant="outline" onClick={closePanel}>Close</Button>
+                  <div className="space-y-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/40 px-3 py-2 text-sm">
+                      <div className="flex items-center gap-3">
+                        <span className="text-muted-foreground">Attempt</span>
+                        <span className="mono text-xs">{attempt.attemptId}</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <Timer className="h-3.5 w-3.5 text-muted-foreground" />
+                        <span className="mono">
+                          {attempt.status === "in_progress" ? fmt(remainingMs) : "00:00"}
+                        </span>
+                        <span className="ml-2">{
+                          attempt.status === "in_progress" ? <StatusBadge variant="info">In Progress</StatusBadge> :
+                          attempt.status === "submitted" ? <StatusBadge variant="verified">Submitted</StatusBadge> :
+                          attempt.status === "auto_submitted" ? <StatusBadge variant="info">Auto-Submitted</StatusBadge> :
+                          <StatusBadge variant="warning">No Submission</StatusBadge>
+                        }</span>
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="text-sm font-medium mb-1">Prompt</div>
+                      <p className="text-sm text-muted-foreground leading-relaxed">{task.prompt}</p>
+                    </div>
+
+                    {task.starterCode && (
+                      <div>
+                        <div className="text-sm font-medium mb-1">Starter</div>
+                        <pre className="text-xs bg-muted/60 border rounded-md p-3 overflow-auto mono whitespace-pre">{task.starterCode}</pre>
+                      </div>
+                    )}
+
+                    <div>
+                      <div className="text-sm font-medium mb-1">Your work</div>
+                      <Textarea
+                        value={submission}
+                        onChange={(e) => setSubmission(e.target.value)}
+                        placeholder="Write or paste your code/answer here…"
+                        rows={10}
+                        className="mono text-xs"
+                        disabled={attempt.status !== "in_progress"}
+                      />
+                      <div className="text-[11px] text-muted-foreground mt-1">
+                        Expected: {task.expectedDeliverable}
+                      </div>
+                    </div>
+                  </div>
                 )}
-              </DialogFooter>
-            </>
+
+                <DialogFooter>
+                  {attempt && attempt.status === "in_progress" ? (
+                    <Button onClick={submitNow}><Send className="h-4 w-4 mr-1.5" />Submit attempt</Button>
+                  ) : (
+                    <Button variant="outline" onClick={closePanel}>Close</Button>
+                  )}
+                </DialogFooter>
+              </>
+            ) : null
           )}
         </DialogContent>
       </Dialog>

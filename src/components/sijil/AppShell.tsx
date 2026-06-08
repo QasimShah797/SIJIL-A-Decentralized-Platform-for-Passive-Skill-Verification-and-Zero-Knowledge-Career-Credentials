@@ -31,7 +31,7 @@ export function AppShell({ role, children }: { role: Role; children: React.React
     { to: "/learner/profile", icon: User, label: "Profile & Skills" },
     { to: "/learner/integrations", icon: Plug, label: "Integrations" },
     { to: "/learner/task", icon: ClipboardCheck, label: "Practical Task" },
-    { to: firstSkillId ? `/learner/validation/${firstSkillId}` : "/learner/profile", icon: ShieldCheck, label: "Validation Trail" },
+    ...(firstSkillId ? [{ to: `/learner/validation/${firstSkillId}`, icon: ShieldCheck, label: "Validation Trail" }] : []),
     { to: "/learner/wallet", icon: Wallet, label: "Wallet" },
     { to: "/learner/peer-reviews", icon: MessageSquare, label: "Peer Reviews" },
   ];

@@ -50,6 +50,6 @@ export async function saveAttemptDb(userId: string, rec: AttemptRecord): Promise
     submission: rec.submission,
     credential_sync_snapshot: rec.credentialSyncSnapshot,
     updated_at: new Date().toISOString(),
-  });
+  }, { onConflict: "user_id,skill_id" });
   if (error) throw error;
 }
