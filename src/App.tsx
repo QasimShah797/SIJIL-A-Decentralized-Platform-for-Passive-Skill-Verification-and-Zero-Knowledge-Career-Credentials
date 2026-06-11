@@ -15,6 +15,7 @@ import LearnerSignup from "./pages/signup/LearnerSignup";
 import RecruiterSignup from "./pages/signup/RecruiterSignup";
 import InstitutionSignup from "./pages/signup/InstitutionSignup";
 import GitHubCallback from "./pages/auth/GitHubCallback";
+import GitHubPrepare from "./pages/auth/GitHubPrepare";
 import LearnerProfile from "./pages/learner/Profile";
 import CompleteProfile from "./pages/learner/CompleteProfile";
 import Integrations from "./pages/learner/Integrations";
@@ -57,6 +58,7 @@ const App = () => (
             <Route path="/signup/institution" element={<InstitutionSignup />} />
             <Route path="/register" element={<SignupChooser />} />
             <Route path="/review/:invitationId" element={<ReviewInvite />} />
+            <Route path="/auth/github/prepare" element={<RequireAuth><GitHubPrepare /></RequireAuth>} />
             <Route path="/auth/github/callback" element={<GitHubCallback />} />
 
             <Route path="/learner/complete-profile" element={<RequireAuth><CompleteProfile /></RequireAuth>} />

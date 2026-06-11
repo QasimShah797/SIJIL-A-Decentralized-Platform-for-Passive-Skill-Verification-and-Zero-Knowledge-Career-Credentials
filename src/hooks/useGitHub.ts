@@ -1,6 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
-import { fetchGitHubConnection, type GitHubConnection } from "@/lib/github-integration";
+import {
+  ensureGitHubContextForUser,
+  fetchGitHubConnection,
+  type GitHubConnection,
+} from "@/lib/github-integration";
 import { supabase } from "@/integrations/supabase/client";
 
 export type GitHubRepoSummary = {
@@ -19,27 +23,43 @@ export function useGitHub() {
   const [repos, setRepos] = useState<GitHubRepoSummary[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const fetchGen = useRef(0);
+
+  const clearLocalState = useCallback(() => {
+    fetchGen.current += 1;
+    setConnection(null);
+    setRepos([]);
+    setError(null);
+    setLoading(false);
+  }, []);
 
   const refresh = useCallback(async () => {
     if (!user) {
-      setConnection(null);
-      setRepos([]);
+      clearLocalState();
       return;
     }
+
+    ensureGitHubContextForUser(user.id);
+    const gen = ++fetchGen.current;
+    const userId = user.id;
+
     setLoading(true);
     setError(null);
     try {
-      const conn = await fetchGitHubConnection(user.id);
+      const conn = await fetchGitHubConnection(userId);
+      if (gen !== fetchGen.current) return;
+
       setConnection(conn);
 
       if (conn) {
         const { data, error: repoErr } = await supabase
           .from("github_repos")
           .select("repo_id, repo_name, full_name, github_url, primary_language, last_updated")
-          .eq("user_id", user.id)
+          .eq("user_id", userId)
           .order("last_updated", { ascending: false, nullsFirst: false })
           .limit(50);
         if (repoErr) throw repoErr;
+        if (gen !== fetchGen.current) return;
         setRepos(
           (data ?? []).map((r) => ({
             id: r.repo_id as number,
@@ -54,15 +74,20 @@ export function useGitHub() {
         setRepos([]);
       }
     } catch (err) {
+      if (gen !== fetchGen.current) return;
       setError(err instanceof Error ? err.message : String(err));
     } finally {
-      setLoading(false);
+      if (gen === fetchGen.current) setLoading(false);
     }
-  }, [user]);
+  }, [user, clearLocalState]);
 
   useEffect(() => {
+    if (!user) {
+      clearLocalState();
+      return;
+    }
     refresh();
-  }, [refresh]);
+  }, [user?.id, refresh, clearLocalState]);
 
   return {
     connected: !!connection,

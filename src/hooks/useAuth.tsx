@@ -1,7 +1,8 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, useState, ReactNode } from "react";
 import { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { AppRole, fetchUserRoles, pickPrimaryRole } from "@/lib/auth-helpers";
+import { clearAllGitHubConnectionState } from "@/lib/github-env";
 
 type AuthCtx = {
   user: User | null;
@@ -22,6 +23,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [roles, setRoles] = useState<AppRole[]>([]);
+  const prevUserIdRef = useRef<string | null>(null);
 
   const loadRoles = async (uid: string | undefined) => {
     if (!uid) { setRoles([]); return; }
@@ -40,9 +42,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (mounted) setLoading(false);
     }, 3000);
 
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => {
-      console.log("🟡 onAuthStateChange fired, event:", _e, "user:", s?.user?.email);
+    const { data: sub } = supabase.auth.onAuthStateChange((event, s) => {
+      console.log("🟡 onAuthStateChange fired, event:", event, "user:", s?.user?.email);
       if (!mounted) return;
+
+      const nextUserId = s?.user?.id ?? null;
+      if (
+        event === "SIGNED_OUT" ||
+        (prevUserIdRef.current && prevUserIdRef.current !== nextUserId)
+      ) {
+        clearAllGitHubConnectionState();
+      }
+      prevUserIdRef.current = nextUserId;
+
       setSession(s);
       setLoading(false);
       clearTimeout(timeout);
@@ -52,6 +64,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     supabase.auth.getSession().then(({ data }) => {
       console.log("🟢 getSession result, user:", data.session?.user?.email ?? "NO SESSION");
       if (!mounted) return;
+      prevUserIdRef.current = data.session?.user?.id ?? null;
       setSession(data.session);
       loadRoles(data.session?.user?.id);
       setLoading(false);
@@ -74,7 +87,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         role: pickPrimaryRole(roles),
         roles,
         refreshRoles: async () => loadRoles(session?.user?.id),
-        signOut: async () => { await supabase.auth.signOut(); },
+        signOut: async () => {
+          clearAllGitHubConnectionState();
+          await supabase.auth.signOut();
+        },
       }}
     >
       {children}

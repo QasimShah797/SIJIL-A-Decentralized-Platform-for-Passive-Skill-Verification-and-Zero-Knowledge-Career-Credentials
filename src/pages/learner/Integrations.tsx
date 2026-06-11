@@ -16,6 +16,7 @@ import {
   fetchLmsEvidence, getLmsConnection, syncOdoo, uploadAndParseTranscript, toCardEvidence, type CustEvidence,
 } from "@/lib/cust-lms";
 import {
+  ensureGitHubContextForUser,
   startGitHubOAuth, syncGitHubPortfolio, disconnectGitHub, linkRepoToSkill,
   buildSkillsForGitHubSync,
 } from "@/lib/github-integration";
@@ -84,6 +85,7 @@ export default function Integrations() {
   const [connecting, setConnecting] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const autoSyncAttempted = useRef(false);
+  const ghFetchGen = useRef(0);
 
   const [lmsConnected, setLmsConnected] = useState(false);
   const [lmsLastSync, setLmsLastSync] = useState<string | null>(null);
@@ -103,27 +105,45 @@ export default function Integrations() {
     }
   };
 
+  const clearGitHubState = () => {
+    ghFetchGen.current += 1;
+    setGhConn(null);
+    setGhActivities([]);
+    setGhRepos([]);
+    setLoading(false);
+    autoSyncAttempted.current = false;
+  };
+
   const loadGitHub = async () => {
-    if (!user) return;
+    if (!user) {
+      clearGitHubState();
+      return;
+    }
+
+    ensureGitHubContextForUser(user.id);
+    const gen = ++ghFetchGen.current;
+    const userId = user.id;
+
     setLoading(true);
     const [{ data: conn }, { data: acts }, { data: repos }] = await Promise.all([
       supabase
         .from("github_connections_public")
         .select("github_username,github_avatar_url,scopes,connected_at,last_synced_at")
-        .eq("user_id", user.id)
+        .eq("user_id", userId)
         .maybeSingle(),
       supabase
         .from("github_activities")
         .select("*")
-        .eq("user_id", user.id)
+        .eq("user_id", userId)
         .order("occurred_at", { ascending: false, nullsFirst: false })
         .limit(50),
       supabase
         .from("github_repos")
         .select("*")
-        .eq("user_id", user.id)
+        .eq("user_id", userId)
         .order("last_updated", { ascending: false, nullsFirst: false }),
     ]);
+    if (gen !== ghFetchGen.current) return;
     setGhConn(conn as GhConn | null);
     setGhActivities((acts ?? []) as GhActivity[]);
     setGhRepos((repos ?? []) as GhRepo[]);
@@ -131,9 +151,13 @@ export default function Integrations() {
   };
 
   useEffect(() => {
+    if (!user) {
+      clearGitHubState();
+      return;
+    }
     loadGitHub();
     loadLms();
-  }, [user]); // eslint-disable-line
+  }, [user?.id]); // eslint-disable-line
 
   const connectGithub = async () => {
     if (!user) {
@@ -142,6 +166,10 @@ export default function Integrations() {
     }
     setConnecting(true);
     try {
+      toast({
+        title: "Connecting GitHub",
+        description: "On the next screens, sign in with YOUR GitHub account — not someone else's on this computer.",
+      });
       const url = await startGitHubOAuth();
       window.location.href = url;
     } catch (e) {
@@ -178,9 +206,7 @@ export default function Integrations() {
     if (!user) return;
     if (!confirm("Disconnect GitHub and remove all synced GitHub activities and repositories?")) return;
     await disconnectGitHub(user.id);
-    setGhConn(null);
-    setGhActivities([]);
-    setGhRepos([]);
+    clearGitHubState();
     toast({ title: "GitHub disconnected" });
   };
 

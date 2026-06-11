@@ -1,9 +1,11 @@
 import { supabase } from "@/integrations/supabase/client";
 import {
-  clearGitHubOAuthContext,
+  clearAllGitHubConnectionState,
+  ensureGitHubContextForUser,
   getGitHubOAuthConfig,
   loadGitHubOAuthContext,
   saveGitHubOAuthContext,
+  type GitHubOAuthContext,
 } from "@/lib/github-env";
 
 export type GitHubConnection = {
@@ -96,33 +98,64 @@ export function buildSkillsForGitHubSync(
   ];
 }
 
+/** Build the GitHub authorize URL for a saved OAuth context. */
+export function buildGitHubAuthorizeUrl(ctx: GitHubOAuthContext): string {
+  const stateB64 = btoa(`${ctx.userId}.${ctx.nonce}`);
+  const url = new URL("https://github.com/login/oauth/authorize");
+  url.searchParams.set("client_id", ctx.clientId);
+  url.searchParams.set("redirect_uri", ctx.redirectUri);
+  url.searchParams.set("scope", "read:user user:email repo");
+  url.searchParams.set("state", stateB64);
+  url.searchParams.set("allow_signup", "true");
+  // Force account picker on shared computers (GitHub OAuth standard param, June 2024+).
+  url.searchParams.set("prompt", "select_account");
+  return url.toString();
+}
+
 /**
- * Start GitHub OAuth — builds authorize URL in the browser.
- * client_id + redirect_uri must match Supabase GITHUB_OAUTH_* secrets and your GitHub OAuth app.
+ * Start GitHub OAuth — saves per-user context then routes through /auth/github/prepare
+ * which clears any lingering GitHub browser session before authorize.
  */
 export async function startGitHubOAuth(): Promise<string> {
   const { clientId, redirectUri } = getGitHubOAuthConfig();
   const session = await requireSession();
+  const userId = session.user.id;
 
-  saveGitHubOAuthContext(clientId, redirectUri);
+  clearAllGitHubConnectionState();
 
-  const stateRaw = `${session.user.id}.${crypto.randomUUID()}`;
-  const stateB64 = btoa(stateRaw);
+  const nonce = crypto.randomUUID();
+  saveGitHubOAuthContext(clientId, redirectUri, userId, nonce);
 
-  const url = new URL("https://github.com/login/oauth/authorize");
-  url.searchParams.set("client_id", clientId);
-  url.searchParams.set("redirect_uri", redirectUri);
-  url.searchParams.set("scope", "read:user user:email repo");
-  url.searchParams.set("state", stateB64);
-  url.searchParams.set("allow_signup", "true");
-
-  return url.toString();
+  return `${window.location.origin}/auth/github/prepare`;
 }
 
 /** Exchange OAuth code for a stored connection; server runs initial portfolio sync. */
 export async function completeGitHubOAuth(code: string, state: string): Promise<GitHubOAuthResult> {
+  const session = await requireSession();
+  const userId = session.user.id;
+
   const ctx = loadGitHubOAuthContext();
-  const { clientId, redirectUri } = ctx ?? getGitHubOAuthConfig();
+  if (!ctx) {
+    throw new Error("GitHub OAuth session expired. Please connect GitHub again.");
+  }
+  if (ctx.userId !== userId) {
+    clearAllGitHubConnectionState();
+    throw new Error("GitHub OAuth was started by a different account. Please connect GitHub again.");
+  }
+
+  let stateUserId = "";
+  let stateNonce = "";
+  try {
+    const decoded = atob(state);
+    [stateUserId, stateNonce] = decoded.split(".", 2);
+  } catch {
+    throw new Error("Invalid GitHub OAuth state");
+  }
+  if (stateUserId !== userId || stateNonce !== ctx.nonce) {
+    throw new Error("GitHub OAuth state mismatch. Please connect GitHub again.");
+  }
+
+  const { clientId, redirectUri } = ctx;
 
   try {
     const data = await invokeEdge<{
@@ -139,9 +172,11 @@ export async function completeGitHubOAuth(code: string, state: string): Promise<
       sync: data.sync,
     };
   } finally {
-    clearGitHubOAuthContext();
+    clearAllGitHubConnectionState();
   }
 }
+
+export { clearAllGitHubConnectionState, ensureGitHubContextForUser };
 
 /** Pull repos, commits, PRs, contributors from GitHub API via edge function. */
 export async function syncGitHubPortfolio(
