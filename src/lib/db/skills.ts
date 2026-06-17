@@ -7,6 +7,7 @@ function rowToSkill(row: {
   domain: string;
   description: string | null;
   status: string;
+  pipeline_stage?: string | null;
   last_related_activity_at: string | null;
   last_credential_sync_at: string | null;
 }): DeclaredSkill {
@@ -16,6 +17,7 @@ function rowToSkill(row: {
     domain: row.domain,
     description: row.description ?? "",
     status: row.status,
+    pipelineStage: row.pipeline_stage ?? "declared",
     lastRelatedActivityAt: row.last_related_activity_at,
     lastCredentialSyncAt: row.last_credential_sync_at,
   };
@@ -70,6 +72,26 @@ export async function deleteDeclaredSkill(userId: string, skillId: string): Prom
   const { error } = await supabase
     .from("declared_skills")
     .delete()
+    .eq("user_id", userId)
+    .eq("id", skillId);
+  if (error) throw error;
+}
+
+export async function updateSkillPipelineStage(
+  userId: string,
+  skillId: string,
+  pipelineStage: string,
+  status?: string,
+): Promise<void> {
+  const patch: Record<string, unknown> = {
+    pipeline_stage: pipelineStage,
+    updated_at: new Date().toISOString(),
+  };
+  if (status) patch.status = status;
+
+  const { error } = await supabase
+    .from("declared_skills")
+    .update(patch)
     .eq("user_id", userId)
     .eq("id", skillId);
   if (error) throw error;

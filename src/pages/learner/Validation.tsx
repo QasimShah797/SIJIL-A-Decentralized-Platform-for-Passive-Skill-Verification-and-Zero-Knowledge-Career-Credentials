@@ -5,11 +5,12 @@ import { PageHeader } from "@/components/sijil/PageHeader";
 import { StatusBadge } from "@/components/sijil/StatusBadge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ArrowRight, ShieldCheck, RefreshCw, Github, ExternalLink } from "lucide-react";
+import { ArrowRight, ShieldCheck, RefreshCw, Github, ExternalLink, ChevronRight } from "lucide-react";
 import { useDeclaredSkills } from "@/hooks/useLearnerData";
-import { buildValidationSummary, type ValidationSummary } from "@/lib/db/validation";
+import { buildAllValidationSummaries, buildValidationSummary, type ValidationSummary } from "@/lib/db/validation";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
+import { PIPELINE_STAGES, pipelineStageIndex } from "@/lib/competency-pipeline";
 
 type LinkedRepo = {
   id: string;
@@ -23,22 +24,33 @@ type LinkedRepo = {
 
 export default function Validation() {
   const navigate = useNavigate();
-  const { skillId } = useParams<{ skillId: string }>();
+  const { skillId } = useParams<{ skillId?: string }>();
   const { user } = useAuth();
   const { skills, loading: skillsLoading } = useDeclaredSkills();
-  const skill = skills.find((s) => s.id === skillId);
+  const skill = skillId ? skills.find((s) => s.id === skillId) : undefined;
   const [v, setV] = useState<ValidationSummary | null>(null);
+  const [allSummaries, setAllSummaries] = useState<ValidationSummary[]>([]);
   const [linkedRepos, setLinkedRepos] = useState<LinkedRepo[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!user || !skillId || !skill) {
+    if (!user) {
       setLoading(false);
       return;
     }
     setLoading(true);
+    if (!skillId) {
+      buildAllValidationSummaries(user.id, skills)
+        .then(setAllSummaries)
+        .finally(() => setLoading(false));
+      return;
+    }
+    if (!skill) {
+      setLoading(false);
+      return;
+    }
     buildValidationSummary(user.id, skill).then(setV).finally(() => setLoading(false));
-  }, [user, skillId, skill]);
+  }, [user, skillId, skill, skills]);
 
   useEffect(() => {
     if (!user || !skillId) return;
@@ -59,14 +71,65 @@ export default function Validation() {
     );
   }
 
-  if (!skill || !v) {
+  if (!skillId) {
     return (
       <AppShell role="learner">
-        <PageHeader title="Skill not found" description="Declare a skill on your profile first." />
+        <PageHeader
+          title="Validation Trail"
+          description="Current location of each declared competency in the verification pipeline."
+        />
+        {skills.length === 0 ? (
+          <Card>
+            <CardContent className="py-10 text-center text-sm text-muted-foreground">
+              No declared competencies yet. Declare a skill on your profile first.
+              <div className="mt-4">
+                <Button onClick={() => navigate("/learner/profile")}>Go to profile</Button>
+              </div>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="grid md:grid-cols-2 gap-4">
+            {allSummaries.map((summary) => (
+              <PipelineCard
+                key={summary.skillId}
+                summary={summary}
+                onOpen={() => navigate(`/learner/validation/${summary.skillId}`)}
+              />
+            ))}
+          </div>
+        )}
+      </AppShell>
+    );
+  }
+
+  if (!skill || !v) {
+    if (skills.length > 0) {
+      return (
+        <AppShell role="learner">
+          <PageHeader title="Validation Trail" description="Select a declared competency to view its pipeline status." />
+          <div className="grid md:grid-cols-2 gap-4">
+            {skills.map((s) => (
+              <Card key={s.id} className="cursor-pointer hover:bg-muted/30" onClick={() => navigate(`/learner/validation/${s.id}`)}>
+                <CardContent className="p-5 flex items-center justify-between">
+                  <span className="font-medium">{s.name}</span>
+                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </AppShell>
+      );
+    }
+    return (
+      <AppShell role="learner">
+        <PageHeader title="No competencies" description="Declare a skill on your profile first." />
         <Button onClick={() => navigate("/learner/profile")}>Go to profile</Button>
       </AppShell>
     );
   }
+
+  const walletReady = v.pipelineStage === "wallet_ready" || v.pipelineStage === "in_wallet";
+  const stageIdx = pipelineStageIndex(v.pipelineStage);
 
   return (
     <AppShell role="learner">
@@ -75,23 +138,49 @@ export default function Validation() {
         description="An evidence-driven view of what supports this skill. SIJIL surfaces the trail — it does not declare a final expertise label."
         actions={
           <>
-            <Button variant="outline" onClick={() => navigate("/learner/wallet")}>View credential <ArrowRight className="h-4 w-4 ml-1.5" /></Button>
-            <Button><ShieldCheck className="h-4 w-4 mr-1.5" />Ready for Credential Issuance</Button>
+            {walletReady && (
+              <Button variant="outline" onClick={() => navigate("/learner/wallet")}>
+                View credential <ArrowRight className="h-4 w-4 ml-1.5" />
+              </Button>
+            )}
+            {walletReady && (
+              <Button onClick={() => navigate("/learner/wallet")}>
+                <ShieldCheck className="h-4 w-4 mr-1.5" />Add to wallet
+              </Button>
+            )}
           </>
         }
       />
 
+      <PipelineCard summary={v} showStages className="mb-6" />
+
+      <Card className="mb-6">
+        <CardHeader><CardTitle className="text-base">Pipeline stages</CardTitle></CardHeader>
+        <CardContent>
+          <div className="flex flex-wrap gap-2">
+            {PIPELINE_STAGES.map((stage, i) => {
+              const isRejected = v.pipelineStage === "institution_attestation_rejected"
+                || v.pipelineStage === "institution_rejected";
+              const active = i <= stageIdx && !isRejected;
+              const stageRejected = isRejected && stage.key === "institution_attestation_pending";
+              return (
+                <StatusBadge
+                  key={stage.key}
+                  variant={stageRejected ? "destructive" : active ? "verified" : "neutral"}
+                >
+                  {stage.label}
+                  {stageRejected ? " (Rejected)" : ""}
+                </StatusBadge>
+              );
+            })}
+            {v.pipelineStage === "in_wallet" && (
+              <StatusBadge variant="verified">In Wallet</StatusBadge>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
       <div className="grid lg:grid-cols-3 gap-6 mb-6">
-        <Card>
-          <CardContent className="p-5">
-            <div className="text-xs text-muted-foreground">Skill</div>
-            <div className="text-xl font-semibold mt-1">{v.skill}</div>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <StatusBadge variant="verified">Result: {v.result}</StatusBadge>
-              <StatusBadge variant="info">{v.status}</StatusBadge>
-            </div>
-          </CardContent>
-        </Card>
         <Card>
           <CardContent className="p-5 grid grid-cols-2 gap-4">
             <Stat label="Supporting Records" value={v.supportingRecords} />
@@ -99,10 +188,10 @@ export default function Validation() {
             <Stat label="Last Evaluated" value={v.evaluatedOn} />
             <Stat label="Latest Activity" value={v.latestActivity} />
             <Stat label="Related Practical Task" value={v.task} />
-            <Stat label="Current Status" value={v.status} />
+            <Stat label="Institution" value={v.institution} />
           </CardContent>
         </Card>
-        <Card>
+        <Card className="lg:col-span-2">
           <CardContent className="p-5">
             <div className="text-xs text-muted-foreground mb-2">Contributing sources</div>
             <div className="flex flex-wrap gap-2">
@@ -155,6 +244,84 @@ export default function Validation() {
         </Card>
       )}
     </AppShell>
+  );
+}
+
+function PipelineCard({
+  summary,
+  onOpen,
+  showStages,
+  className,
+}: {
+  summary: ValidationSummary;
+  onOpen?: () => void;
+  showStages?: boolean;
+  className?: string;
+}) {
+  const variant =
+    summary.pipelineStage === "institution_attestation_rejected" || summary.pipelineStage === "institution_rejected" ? "destructive" :
+    summary.pipelineStage === "wallet_ready" || summary.pipelineStage === "in_wallet" ? "verified" :
+    summary.pipelineStage === "institution_attestation_pending" ? "warning" : "info";
+
+  return (
+    <Card className={className} onClick={onOpen} role={onOpen ? "button" : undefined}>
+      <CardContent className="p-5 space-y-3">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="text-xs text-muted-foreground">Skill</div>
+            <div className="text-lg font-semibold">{summary.skill}</div>
+          </div>
+          {onOpen && <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0 mt-1" />}
+        </div>
+        <div className="grid sm:grid-cols-2 gap-3 text-sm">
+          <div>
+            <div className="text-[11px] text-muted-foreground">Current Stage</div>
+            <StatusBadge variant={variant} className="mt-1">{summary.currentStageLabel}</StatusBadge>
+          </div>
+          <div>
+            <div className="text-[11px] text-muted-foreground">Evidence</div>
+            <div className="mt-1">{summary.evidence}</div>
+          </div>
+          <div>
+            <div className="text-[11px] text-muted-foreground">Institution</div>
+            <div className="mt-1">{summary.institution}</div>
+          </div>
+          {summary.evidencePackageSent && (
+            <div>
+              <div className="text-[11px] text-muted-foreground">Evidence Package</div>
+              <div className="mt-1">Sent</div>
+            </div>
+          )}
+          {summary.institutionFeedback && (
+            <div className="sm:col-span-2">
+              <div className="text-[11px] text-muted-foreground">Institution feedback</div>
+              <div className="mt-1 text-muted-foreground">{summary.institutionFeedback}</div>
+            </div>
+          )}
+        </div>
+        <div className="text-sm">
+          <span className="text-muted-foreground">Next Step: </span>
+          {summary.nextStep}
+        </div>
+        {showStages && (
+          <div className="flex flex-wrap gap-1.5 pt-1">
+            {PIPELINE_STAGES.map((stage, i) => {
+              const active = i <= pipelineStageIndex(summary.pipelineStage);
+              return (
+                <span
+                  key={stage.key}
+                  className={`text-[10px] px-2 py-0.5 rounded border ${
+                    active ? "bg-primary/10 border-primary/30 text-foreground" : "text-muted-foreground border-border"
+                  }`}
+                >
+                  {stage.label}
+                </span>
+              );
+            })}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

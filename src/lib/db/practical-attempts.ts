@@ -11,6 +11,9 @@ function rowToAttempt(row: Record<string, unknown>): AttemptRecord {
     status: row.status as AttemptRecord["status"],
     submission: row.submission as string,
     credentialSyncSnapshot: row.credential_sync_snapshot as string | null,
+    passed: row.passed as boolean | undefined,
+    score: row.score != null ? Number(row.score) : undefined,
+    feedback: row.feedback as string | undefined,
   };
 }
 
@@ -49,7 +52,25 @@ export async function saveAttemptDb(userId: string, rec: AttemptRecord): Promise
     status: rec.status,
     submission: rec.submission,
     credential_sync_snapshot: rec.credentialSyncSnapshot,
+    passed: rec.passed ?? null,
+    score: rec.score ?? null,
+    feedback: rec.feedback ?? null,
     updated_at: new Date().toISOString(),
   }, { onConflict: "user_id,skill_id" });
   if (error) throw error;
+}
+
+export async function markAttemptPassed(
+  userId: string,
+  rec: AttemptRecord,
+  score: number,
+  feedback: string,
+): Promise<void> {
+  await saveAttemptDb(userId, {
+    ...rec,
+    status: "passed",
+    passed: true,
+    score,
+    feedback,
+  });
 }

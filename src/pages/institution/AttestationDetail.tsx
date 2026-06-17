@@ -118,6 +118,8 @@ export default function AttestationDetail() {
               <Field label="Submission Type" value={<StatusBadge variant={record.task.submissionType === "Manual" ? "info" : "warning"}>{record.task.submissionType}</StatusBadge>} />
               <Field label="Submitted At" value={record.task.submittedAt} />
               <Field label="Review Status" value={record.task.reviewStatus} />
+              {record.source && <Field label="Evidence Source" value={record.source === "practical_task_passed" ? "Practical Task Passed" : record.source} />}
+              {record.institutionName && <Field label="Institution" value={record.institutionName} />}
             </div>
             <div className="mt-3 rounded-md bg-muted/40 p-3 text-sm">
               <div className="text-[11px] uppercase text-muted-foreground mb-1">Linked Artifact</div>

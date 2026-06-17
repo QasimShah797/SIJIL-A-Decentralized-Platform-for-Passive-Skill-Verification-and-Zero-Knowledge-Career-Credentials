@@ -13,7 +13,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useNavigate } from "react-router-dom";
 import { useDeclaredSkills, useCredentials } from "@/hooks/useLearnerData";
 import {
-  fetchLmsEvidence, getLmsConnection, syncOdoo, uploadAndParseTranscript, toCardEvidence, type CustEvidence,
+  fetchLmsEvidence, toCardEvidence, type CustEvidence,
 } from "@/lib/cust-lms";
 import {
   ensureGitHubContextForUser,
@@ -72,6 +72,15 @@ type GhRepo = {
   linked_skill_name: string | null;
 };
 
+const MOODLE_SITE_URL = "https://sijil.moodlecloud.com";
+const MOODLE_STORAGE_KEY = "sijil_moodle";
+
+type MoodleCourse = {
+  id: number;
+  fullname?: string;
+  shortname?: string;
+};
+
 export default function Integrations() {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -89,18 +98,79 @@ export default function Integrations() {
 
   const [lmsConnected, setLmsConnected] = useState(false);
   const [lmsLastSync, setLmsLastSync] = useState<string | null>(null);
+  const [lmsImportedCount, setLmsImportedCount] = useState(0);
+  const [moodleCourses, setMoodleCourses] = useState<MoodleCourse[]>([]);
   const [lmsRecords, setLmsRecords] = useState<CustEvidence[]>([]);
   const [lmsSyncing, setLmsSyncing] = useState(false);
 
-  const loadLms = async () => {
+  const loadMoodleState = () => {
     try {
-      const conn = await getLmsConnection();
-      setLmsConnected(!!conn);
-      setLmsLastSync(conn?.last_synced_at ? new Date(conn.last_synced_at).toLocaleString() : null);
+      const raw = localStorage.getItem(MOODLE_STORAGE_KEY);
+      if (!raw) return;
+      const saved = JSON.parse(raw) as {
+        connected?: boolean;
+        lastSync?: string | null;
+        courseCount?: number;
+        courses?: MoodleCourse[];
+      };
+      setLmsConnected(!!saved.connected);
+      setLmsLastSync(saved.lastSync ?? null);
+      setMoodleCourses(saved.courses ?? []);
+      setLmsImportedCount(saved.courseCount ?? saved.courses?.length ?? 0);
+    } catch {
+      setLmsConnected(false);
+      setLmsImportedCount(0);
+      setLmsLastSync(null);
+      setMoodleCourses([]);
+    }
+  };
+
+  const saveMoodleState = (
+    connected: boolean,
+    courses: MoodleCourse[],
+    lastSync: string | null,
+  ) => {
+    localStorage.setItem(
+      MOODLE_STORAGE_KEY,
+      JSON.stringify({
+        connected,
+        courseCount: courses.length,
+        courses,
+        lastSync,
+      }),
+    );
+  };
+
+  const fetchAndStoreMoodleCourses = async () => {
+    const { data, error } = await supabase.functions.invoke("moodle-sync", {
+      body: { action: "get_courses" },
+    });
+
+    console.log("Moodle courses response:", data);
+    console.log("Moodle courses error:", error);
+
+    if (error || data?.error) {
+      throw new Error(data?.error || error?.message || "Moodle sync failed");
+    }
+
+    const courses = (Array.isArray(data?.courses) ? data.courses : []) as MoodleCourse[];
+    const lastSync = new Date().toLocaleString();
+
+    setMoodleCourses(courses);
+    setLmsConnected(true);
+    setLmsImportedCount(courses.length);
+    setLmsLastSync(lastSync);
+    saveMoodleState(true, courses, lastSync);
+
+    return courses;
+  };
+
+  const loadLms = async () => {
+    loadMoodleState();
+    try {
       const evidence = await fetchLmsEvidence();
       setLmsRecords(evidence.map(toCardEvidence));
     } catch {
-      setLmsConnected(false);
       setLmsRecords([]);
     }
   };
@@ -220,64 +290,78 @@ export default function Integrations() {
     }
   };
 
-  const connectLms = async () => {
-    const url = prompt("Odoo URL (e.g. https://your-school.odoo.com)");
-    const db = prompt("Odoo database name");
-    const login = prompt("Odoo login email");
-    const apiKey = prompt("Odoo API key");
-    if (!url || !db || !login || !apiKey) return;
+  const connectMoodle = async () => {
     setLmsSyncing(true);
     try {
-      await syncOdoo({ odoo_url: url, odoo_db: db, odoo_login: login, odoo_api_key: apiKey });
-      await loadLms();
-      toast({ title: "LMS connected and synced" });
-    } catch (e) {
-      toast({ title: "LMS connection failed", description: e instanceof Error ? e.message : String(e), variant: "destructive" });
-    } finally {
-      setLmsSyncing(false);
-    }
-  };
-  const syncLms = async () => {
-    setLmsSyncing(true);
-    try {
-      const conn = await getLmsConnection();
-      if (!conn?.odoo_url || !conn.odoo_db || !conn.odoo_login) {
-        toast({ title: "LMS not configured", description: "Connect LMS first with Odoo credentials.", variant: "destructive" });
-        return;
-      }
-      const apiKey = prompt("Enter Odoo API key to sync");
-      if (!apiKey) return;
-      await syncOdoo({
-        odoo_url: conn.odoo_url,
-        odoo_db: conn.odoo_db,
-        odoo_login: conn.odoo_login,
-        odoo_api_key: apiKey,
+      const { data, error } = await supabase.functions.invoke("moodle-sync", {
+        body: { action: "test" },
       });
-      await loadLms();
-      toast({ title: "LMS sync completed", description: `${lmsRecords.length} records loaded.` });
+
+      console.log("Moodle test data:", data);
+      console.log("Moodle test error:", error);
+
+      if (error || data?.error) {
+        throw new Error(data?.error || error?.message || "Moodle connection failed");
+      }
+
+      const courses = await fetchAndStoreMoodleCourses();
+      toast({
+        title: "Moodle connected successfully",
+        description: `${courses.length} courses imported.`,
+      });
     } catch (e) {
-      toast({ title: "LMS sync failed", description: e instanceof Error ? e.message : String(e), variant: "destructive" });
+      toast({
+        title: "Moodle connection failed",
+        description: e instanceof Error ? e.message : String(e),
+        variant: "destructive",
+      });
     } finally {
       setLmsSyncing(false);
     }
   };
-  const disconnectLms = async () => {
-    if (!confirm("Disconnect LMS?")) return;
-    if (user) {
-      await supabase.from("lms_evidence").delete().eq("user_id", user.id);
-      await supabase.from("lms_connections").delete().eq("user_id", user.id);
+
+  const syncMoodle = async () => {
+    if (!lmsConnected) {
+      toast({
+        title: "Moodle not connected",
+        description: "Connect Moodle first.",
+        variant: "destructive",
+      });
+      return;
     }
+    setLmsSyncing(true);
+    try {
+      const courses = await fetchAndStoreMoodleCourses();
+      toast({
+        title: "Moodle sync completed",
+        description: `${courses.length} courses imported.`,
+      });
+    } catch (e) {
+      toast({
+        title: "Moodle sync failed",
+        description: e instanceof Error ? e.message : String(e),
+        variant: "destructive",
+      });
+    } finally {
+      setLmsSyncing(false);
+    }
+  };
+
+  const disconnectMoodle = async () => {
+    if (!confirm("Disconnect Moodle?")) return;
+    localStorage.removeItem(MOODLE_STORAGE_KEY);
     setLmsConnected(false);
-    setLmsRecords([]);
+    setLmsImportedCount(0);
     setLmsLastSync(null);
-    toast({ title: "LMS disconnected" });
+    setMoodleCourses([]);
+    toast({ title: "Moodle disconnected" });
   };
 
   const syncPortfolio = async () => {
     if (ghConn) await syncGithub();
-    if (lmsConnected) await syncLms();
+    if (lmsConnected) await syncMoodle();
     if (!ghConn && !lmsConnected) {
-      toast({ title: "Nothing to sync", description: "Connect LMS or GitHub first." });
+      toast({ title: "Nothing to sync", description: "Connect Moodle or GitHub first." });
     }
   };
 
@@ -294,18 +378,20 @@ export default function Integrations() {
       />
 
       <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        {/* LMS card */}
+        {/* Moodle LMS card */}
         <IntegrationCard
           icon={BookOpen}
-          name="LMS"
+          name="Moodle LMS"
+          account={lmsConnected ? MOODLE_SITE_URL : undefined}
           connected={lmsConnected}
           lastSync={lmsLastSync}
-          records={lmsRecords.length}
-          onConnect={connectLms}
-          onSync={syncLms}
-          onDisconnect={disconnectLms}
+          records={lmsImportedCount}
+          onConnect={connectMoodle}
+          onSync={syncMoodle}
+          onDisconnect={disconnectMoodle}
           syncing={lmsSyncing}
-          connectLabel="Connect LMS"
+          connectLabel="Connect Moodle"
+          syncLabel="Sync Moodle"
         />
 
         {/* GitHub card */}
@@ -401,12 +487,38 @@ export default function Integrations() {
           {!lmsConnected ? (
             <EmptyState
               icon={BookOpen}
-              title="Connect LMS to import recent activity"
+              title="Connect Moodle to import recent activity"
               hint="Assignments, quizzes, and module completions will appear here."
-              action={<Button size="sm" onClick={connectLms}><Link2 className="h-4 w-4 mr-1.5" />Connect LMS</Button>}
+              action={<Button size="sm" onClick={connectMoodle}><Link2 className="h-4 w-4 mr-1.5" />Connect Moodle</Button>}
             />
-          ) : lmsRecords.length === 0 ? (
-            <EmptyState icon={BookOpen} title="No LMS activity synced yet" hint="Run a sync to import your latest LMS records." />
+          ) : moodleCourses.length === 0 && lmsRecords.length === 0 ? (
+            <EmptyState
+              icon={BookOpen}
+              title="No LMS activity synced yet"
+              hint="Run a sync to import your latest Moodle courses."
+              action={
+                <Button size="sm" variant="outline" onClick={syncMoodle} disabled={lmsSyncing}>
+                  <RefreshCw className={"h-3.5 w-3.5 mr-1.5 " + (lmsSyncing ? "animate-spin" : "")} />
+                  Sync Moodle
+                </Button>
+              }
+            />
+          ) : moodleCourses.length > 0 ? (
+            <div className="px-6">
+              {moodleCourses.map((course) => (
+                <div key={course.id} className="flex items-center justify-between border-b py-3">
+                  <div>
+                    <p className="font-medium">{course.fullname || course.shortname}</p>
+                    <p className="text-sm text-muted-foreground">
+                      Moodle LMS · Course ID: {course.id}
+                    </p>
+                  </div>
+                  <span className="text-xs rounded-full border px-2 py-1">
+                    Imported
+                  </span>
+                </div>
+              ))}
+            </div>
           ) : (
             <div className="divide-y">
               {lmsRecords.map((r) => (
@@ -497,12 +609,12 @@ export default function Integrations() {
 }
 
 function IntegrationCard({
-  icon: Icon, name, account, connected, lastSync, records, onConnect, onSync, onDisconnect, connecting, syncing, connectLabel,
+  icon: Icon, name, account, connected, lastSync, records, onConnect, onSync, onDisconnect, connecting, syncing, connectLabel, syncLabel,
 }: {
   icon: any; name: string; account?: string; connected: boolean;
   lastSync: string | null; records: number;
   onConnect: () => void; onSync: () => void; onDisconnect: () => void;
-  connecting?: boolean; syncing?: boolean; connectLabel: string;
+  connecting?: boolean; syncing?: boolean; connectLabel: string; syncLabel?: string;
 }) {
   return (
     <Card>
@@ -524,7 +636,7 @@ function IntegrationCard({
             <>
               <Button size="sm" variant="outline" className="flex-1" onClick={onSync} disabled={syncing}>
                 <RefreshCw className={"h-3.5 w-3.5 mr-1.5 " + (syncing ? "animate-spin" : "")} />
-                {syncing ? "Syncing…" : "Sync"}
+                {syncing ? "Syncing…" : (syncLabel ?? "Sync")}
               </Button>
               <Button size="sm" variant="ghost" onClick={onConnect} title="Reconnect">
                 <Link2 className="h-3.5 w-3.5" />

@@ -33,6 +33,7 @@ import RecruiterCredentialView from "./pages/recruiter/CredentialView";
 import InstitutionDashboard from "./pages/institution/Dashboard";
 import AttestationQueue from "./pages/institution/AttestationQueue";
 import AttestationDetail from "./pages/institution/AttestationDetail";
+import AttestationRequestDetail from "./pages/institution/AttestationRequestDetail";
 import InstitutionValidationTrail from "./pages/institution/ValidationTrail";
 import ReviewInvite from "./pages/review/ReviewInvite";
 
@@ -65,6 +66,7 @@ const App = () => (
             <Route path="/learner/profile" element={<RequireAuth><RequireLearnerProfile><LearnerProfile /></RequireLearnerProfile></RequireAuth>} />
             <Route path="/learner/integrations" element={<RequireAuth><RequireLearnerProfile><Integrations /></RequireLearnerProfile></RequireAuth>} />
             <Route path="/learner/task" element={<RequireAuth><RequireLearnerProfile><PracticalTask /></RequireLearnerProfile></RequireAuth>} />
+            <Route path="/learner/validation" element={<RequireAuth><RequireLearnerProfile><Validation /></RequireLearnerProfile></RequireAuth>} />
             <Route path="/learner/validation/:skillId" element={<RequireAuth><RequireLearnerProfile><Validation /></RequireLearnerProfile></RequireAuth>} />
             <Route path="/learner/wallet" element={<RequireAuth><RequireLearnerProfile><WalletPage /></RequireLearnerProfile></RequireAuth>} />
             <Route path="/learner/peer-reviews" element={<RequireAuth><RequireLearnerProfile><PeerReviews /></RequireLearnerProfile></RequireAuth>} />
@@ -82,6 +84,7 @@ const App = () => (
             <Route path="/institution/queue" element={<RequireAuth><AttestationQueue /></RequireAuth>} />
             <Route path="/institution/attestation" element={<RequireAuth><AttestationQueue /></RequireAuth>} />
             <Route path="/institution/attestation/:id" element={<RequireAuth><AttestationDetail /></RequireAuth>} />
+            <Route path="/institution/attestation-request/:id" element={<RequireAuth><AttestationRequestDetail /></RequireAuth>} />
             <Route path="/institution/attestation/:id/validation" element={<RequireAuth><InstitutionValidationTrail /></RequireAuth>} />
 
             <Route path="*" element={<NotFound />} />

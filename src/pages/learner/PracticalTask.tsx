@@ -9,10 +9,13 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
 import { Play, Timer, Lock, Send, CheckCircle2, AlertTriangle, RefreshCcw } from "lucide-react";
-import { getTaskForSkill, isAttemptLocked, isSkillDecaying, daysSince, type DeclaredSkill, type AttemptRecord, type SkillTask } from "@/lib/sijil-data";
+import { isAttemptLocked, isSkillDecaying, daysSince, type DeclaredSkill, type AttemptRecord, type SkillTask } from "@/lib/sijil-data";
 import { useDeclaredSkills } from "@/hooks/useLearnerData";
 import { useAuth } from "@/hooks/useAuth";
-import { fetchAttempts, saveAttemptDb } from "@/lib/db/practical-attempts";
+import { fetchAttempts, saveAttemptDb, markAttemptPassed } from "@/lib/db/practical-attempts";
+import { updateSkillPipelineStage } from "@/lib/db/skills";
+import { createInstitutionAttestationRequest, hasPendingAttestationRequest } from "@/lib/db/institution-attestation-requests";
+import { fetchLearnerProfile } from "@/lib/db/learner-profile";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useGitHub } from "@/hooks/useGitHub";
@@ -21,7 +24,69 @@ import { cn } from "@/lib/utils";
 type TaskWithInstructions = SkillTask & {
   scenario?: string;
   instructions?: string;
+  acceptance_criteria?: string[];
+  evaluation_rubric?: Record<string, unknown>;
+  hidden_test_ideas?: string[];
 };
+
+function isGenericTask(task: Partial<TaskWithInstructions> | null | undefined): boolean {
+  if (!task) return true;
+  return (
+    task.prompt?.includes("Complete a practical demonstration") === true ||
+    task.title?.startsWith("Demonstrate ") === true ||
+    task.expectedDeliverable === "Written response or code in the editor."
+  );
+}
+
+async function generateTaskFromRapidTask(
+  skill: { id?: string; name: string; domain: string },
+  githubRepos: { name: string; language: string | null; full_name: string }[],
+  skillId: string,
+): Promise<{ task: TaskWithInstructions; fallback?: boolean }> {
+  const { data, error } = await supabase.functions.invoke("rapid-task", {
+    body: {
+      action: "generate",
+      skill: { name: skill.name, domain: skill.domain },
+      repos: githubRepos,
+    },
+  });
+
+  console.log("Generated task from rapid-task:", data);
+  console.log("Generate task error:", error);
+
+  if (error || data?.error) {
+    throw new Error(
+      data?.details || data?.error || error?.message || "Task generation failed. Please try again.",
+    );
+  }
+
+  if (!data?.prompt && !data?.scenario && !data?.instructions) {
+    throw new Error("No task details were returned from rapid-task.");
+  }
+
+  const generatedTask: TaskWithInstructions = {
+    skillId,
+    title: data.title,
+    type: data.type ?? "Coding",
+    durationMinutes: data.durationMinutes ?? 20,
+    prompt: data.prompt,
+    scenario: data.scenario,
+    instructions: data.instructions,
+    starterCode: data.starterCode || undefined,
+    expectedDeliverable: data.expectedDeliverable,
+    acceptance_criteria: data.acceptance_criteria || [],
+    evaluation_rubric: data.evaluation_rubric || [],
+    hidden_test_ideas: data.hidden_test_ideas || [],
+  };
+
+  console.log("Stored currentTask:", generatedTask);
+
+  if (!data?.fallback && isGenericTask(generatedTask)) {
+    throw new Error("Task generation failed: generic fallback task returned.");
+  }
+
+  return { task: generatedTask, fallback: data?.fallback === true };
+}
 
 function blockCopyFromProtectedArea(e: KeyboardEvent) {
   const target = e.target as HTMLElement;
@@ -52,31 +117,15 @@ function ProtectedTaskText({ children, className }: { children: ReactNode; class
   );
 }
 
-async function generateTaskWithAI(
-  skill: { name: string; domain: string },
-  githubRepos: { name: string; language: string | null; full_name: string }[]
-): Promise<Partial<SkillTask>> {
-  try {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) return {};
-    const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/rapid-task`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
-      body: JSON.stringify({ action: "generate", skill, repos: githubRepos }),
-    });
-    if (!res.ok) return {};
-    return await res.json();
-  } catch { return {}; }
-}
-
 type EvalData = {
   passed?: boolean;
   feedback?: string;
   score?: number;
+  criteria_results?: Record<string, unknown>[];
   error?: string;
   details?: string;
   evaluationUnavailable?: boolean;
-  evaluation?: { evaluationUnavailable?: boolean };
+  evaluation?: { evaluationUnavailable?: boolean; criteria_results?: Record<string, unknown>[] };
 };
 
 async function evaluateSubmissionWithAI(
@@ -144,7 +193,7 @@ export default function PracticalTask() {
 
   // Active attempt panel state
   const [activeSkill, setActiveSkill] = useState<DeclaredSkill | null>(null);
-  const [task, setTask] = useState<SkillTask | null>(null);
+  const [task, setTask] = useState<TaskWithInstructions | null>(null);
   const [taskLoading, setTaskLoading] = useState(false);
   const [attempt, setAttempt] = useState<AttemptRecord | null>(null);
   const [submission, setSubmission] = useState("");
@@ -195,27 +244,36 @@ export default function PracticalTask() {
         r.language?.toLowerCase().includes(skill.name.toLowerCase()) ||
         skill.name.toLowerCase().includes((r.language ?? "").toLowerCase())
       );
-      const aiTask = await generateTaskWithAI(
+      const { task: generatedTask, fallback } = await generateTaskFromRapidTask(
         { name: skill.name, domain: skill.domain ?? "General" },
-        matchedRepos
+        matchedRepos,
+        skill.id,
       );
-      if (aiTask?.title) {
-        setTask(aiTask as SkillTask);
-      } else {
-        setTask(getTaskForSkill(skill));
+      setTask(generatedTask);
+
+      if (fallback) {
+        toast({
+          title: "AI quota reached",
+          description: "A local skill-specific task was generated for this attempt.",
+        });
       }
-    } catch {
-      setTask(getTaskForSkill(skill));
+
+      const existing = getAttempt(skill.id);
+      if (existing && !isGenericTask(generatedTask)) {
+        setAttempt(existing);
+        setSubmission(existing.submission ?? "");
+      } else {
+        setAttempt(null);
+      }
+    } catch (err) {
+      setTask(null);
+      toast({
+        title: "Task generation failed",
+        description: err instanceof Error ? err.message : String(err),
+        variant: "destructive",
+      });
     } finally {
       setTaskLoading(false);
-    }
-    const existing = getAttempt(skill.id);
-    // Only restore existing attempt if it has a real AI-generated task
-    // (not the old static fallback task)
-    if (existing && task && task.prompt !== `Complete a practical demonstration of your ${skill.name} skills. Submit your work below.`) {
-      setAttempt(existing);
-    } else {
-      setAttempt(null);
     }
   };
 
@@ -274,22 +332,82 @@ export default function PracticalTask() {
         if (data.passed === false) {
           toast({
             title: "Task not passed",
-            description: data.feedback || "Your submission did not meet the rubric.",
+            description: "Task not passed. Review feedback and try again.",
             variant: "destructive",
           });
           return;
         }
 
-        toast({
-          title: "Task passed",
-          description: data.feedback || "Your submission passed evaluation.",
-        });
+        if (!data.passed || !user || !activeSkill || !attempt) return;
 
-        if (data.passed) {
-          supabase.from("declared_skills")
-            .update({ status: "Evidence Linked", last_related_activity_at: new Date().toISOString() })
-            .eq("id", activeSkill!.id).eq("user_id", user?.id ?? "");
-        }
+        const score = data.score ?? 0;
+        const feedback = data.feedback || "";
+        const criteriaResults = data.criteria_results
+          ?? data.evaluation?.criteria_results
+          ?? [];
+        const passedAttempt: AttemptRecord = {
+          ...attempt,
+          status: "passed",
+          submission,
+          passed: true,
+          score,
+          feedback,
+        };
+
+        markAttemptPassed(user.id, passedAttempt, score, feedback)
+          .then(async () => {
+            setAttempt(passedAttempt);
+            await updateSkillPipelineStage(
+              user.id,
+              activeSkill.id,
+              "institution_attestation_pending",
+              "pending_institution_attestation",
+            );
+            const profile = await fetchLearnerProfile(user.id, user.email);
+            console.log("Learner profile for attestation:", profile);
+            console.log("Skill for attestation:", activeSkill);
+
+            const pending = await hasPendingAttestationRequest(user.id, activeSkill.id);
+            if (!pending) {
+              const { data: skillRow } = await supabase
+                .from("declared_skills")
+                .select("created_at")
+                .eq("id", activeSkill.id)
+                .eq("user_id", user.id)
+                .maybeSingle();
+
+              await createInstitutionAttestationRequest({
+                userId: user.id,
+                userEmail: user.email ?? "",
+                profile,
+                skill: {
+                  ...activeSkill,
+                  createdAt: skillRow?.created_at as string | undefined,
+                },
+                task,
+                attempt: passedAttempt,
+                submission,
+                evaluation: {
+                  passed: true,
+                  score,
+                  feedback,
+                  criteriaResults,
+                },
+              });
+            }
+            toast({
+              title: "Task passed",
+              description: "Task passed. Your competency has been sent to your institution for attestation.",
+            });
+            refresh();
+          })
+          .catch((err) => {
+            toast({
+              title: "Could not update competency status",
+              description: err instanceof Error ? err.message : String(err),
+              variant: "destructive",
+            });
+          });
       });
     });
   };
@@ -304,11 +422,17 @@ export default function PracticalTask() {
     const locked = isAttemptLocked(skill);
     if (!a) return <StatusBadge variant="neutral">No Attempt</StatusBadge>;
     if (a.status === "in_progress") return <StatusBadge variant="info">In Progress</StatusBadge>;
-    if (a.status === "submitted") return <StatusBadge variant="verified" icon={<CheckCircle2 className="h-3 w-3" />}>Submitted</StatusBadge>;
+    if (a.status === "passed") return <StatusBadge variant="verified" icon={<CheckCircle2 className="h-3 w-3" />}>Passed</StatusBadge>;
+    if (a.status === "submitted") return <StatusBadge variant="info">Submitted</StatusBadge>;
     if (a.status === "auto_submitted") return <StatusBadge variant="info">Auto-Submitted</StatusBadge>;
     if (a.status === "expired_no_submission") return <StatusBadge variant="warning">No Submission</StatusBadge>;
     return locked ? <StatusBadge variant="neutral">Locked</StatusBadge> : <StatusBadge variant="neutral">Available</StatusBadge>;
   };
+
+  const learnerQuestion = useMemo(() => {
+    if (!task) return null;
+    return task.scenario || task.instructions || task.prompt || null;
+  }, [task]);
 
   if (skillsLoading) {
     return <AppShell role="learner"><div className="text-sm text-muted-foreground">Loading skills…</div></AppShell>;
@@ -328,7 +452,6 @@ export default function PracticalTask() {
         <CardContent className="p-0">
           <div className="divide-y">
             {skills.map((s) => {
-              const t = getTaskForSkill(s);
               const a = getAttempt(s.id);
               const locked = isAttemptLocked(s);
               const decaying = isSkillDecaying(s);
@@ -345,7 +468,7 @@ export default function PracticalTask() {
                       )}
                     </div>
                     <div className="text-xs text-muted-foreground mt-1">
-                      {t ? <>Task: <span className="text-foreground">{t.title}</span> · {t.type} · {t.durationMinutes} min</> : "No task defined yet"}
+                      Practical task · generated when you start · {s.domain}
                     </div>
                     <div className="text-[11px] text-muted-foreground mt-0.5">
                       Last related sync: {lastDays === null ? "never" : `${lastDays}d ago`}
@@ -353,7 +476,7 @@ export default function PracticalTask() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    {a && (a.status === "submitted" || a.status === "auto_submitted" || a.status === "expired_no_submission") ? (
+                    {a && (a.status === "submitted" || a.status === "passed" || a.status === "auto_submitted" || a.status === "expired_no_submission") ? (
                       <Button variant="outline" onClick={() => openSkill(s)}>
                         <Lock className="h-4 w-4 mr-1.5" />View attempt
                       </Button>
@@ -362,7 +485,7 @@ export default function PracticalTask() {
                         <Timer className="h-4 w-4 mr-1.5" />Resume task
                       </Button>
                     ) : (
-                      <Button onClick={() => openSkill(s)} disabled={!t}>
+                      <Button onClick={() => openSkill(s)} disabled={locked && !a}>
                         <Play className="h-4 w-4 mr-1.5" />Start task
                       </Button>
                     )}
@@ -406,7 +529,7 @@ export default function PracticalTask() {
                       <Lock className="h-6 w-6 mx-auto text-muted-foreground mb-2" />
                       <div className="text-sm font-medium">Task is hidden until you start the attempt.</div>
                       <div className="text-xs text-muted-foreground mt-1">One attempt per skill until next credential sync.</div>
-                      <Button className="mt-4" onClick={startAttempt} disabled={taskLoading}>
+                      <Button className="mt-4" onClick={startAttempt} disabled={taskLoading || !learnerQuestion}>
                         <Play className="h-4 w-4 mr-1.5" />Start task
                       </Button>
                     </div>
@@ -424,7 +547,8 @@ export default function PracticalTask() {
                           </span>
                           <span className="ml-2">{
                             attempt.status === "in_progress" ? <StatusBadge variant="info">In Progress</StatusBadge> :
-                            attempt.status === "submitted" ? <StatusBadge variant="verified">Submitted</StatusBadge> :
+                            attempt.status === "passed" ? <StatusBadge variant="verified">Passed</StatusBadge> :
+                            attempt.status === "submitted" ? <StatusBadge variant="info">Submitted</StatusBadge> :
                             attempt.status === "auto_submitted" ? <StatusBadge variant="info">Auto-Submitted</StatusBadge> :
                             <StatusBadge variant="warning">No Submission</StatusBadge>
                           }</span>
@@ -433,29 +557,15 @@ export default function PracticalTask() {
 
                       <ProtectedTaskText className="space-y-4">
                         <div>
-                          <div className="text-sm font-medium mb-1">Prompt</div>
-                          <p className="text-sm text-muted-foreground leading-relaxed">{task.prompt}</p>
+                          <div className="text-sm font-medium mb-1">Scenario</div>
+                          {learnerQuestion ? (
+                            <p className="text-sm text-muted-foreground leading-relaxed">{learnerQuestion}</p>
+                          ) : (
+                            <p className="text-red-500 text-sm">
+                              Task details are missing. Please generate a new task.
+                            </p>
+                          )}
                         </div>
-
-                        {(task as TaskWithInstructions).scenario &&
-                          (task as TaskWithInstructions).scenario !== task.prompt && (
-                          <div>
-                            <div className="text-sm font-medium mb-1">Scenario</div>
-                            <p className="text-sm text-muted-foreground leading-relaxed">
-                              {(task as TaskWithInstructions).scenario}
-                            </p>
-                          </div>
-                        )}
-
-                        {(task as TaskWithInstructions).instructions &&
-                          (task as TaskWithInstructions).instructions !== task.prompt && (
-                          <div>
-                            <div className="text-sm font-medium mb-1">Instructions</div>
-                            <p className="text-sm text-muted-foreground leading-relaxed">
-                              {(task as TaskWithInstructions).instructions}
-                            </p>
-                          </div>
-                        )}
 
                         {task.starterCode && (
                           <div>
@@ -465,11 +575,6 @@ export default function PracticalTask() {
                             </pre>
                           </div>
                         )}
-
-                        <div>
-                          <div className="text-sm font-medium mb-1">Expected</div>
-                          <p className="text-[11px] text-muted-foreground">{task.expectedDeliverable}</p>
-                        </div>
 
                         <p className="text-xs text-muted-foreground mt-2">
                           Copying task text is disabled to keep the attempt fair.
@@ -499,7 +604,16 @@ export default function PracticalTask() {
                   )}
                 </DialogFooter>
               </>
-            ) : null
+            ) : (
+              <div className="flex flex-1 flex-col items-center justify-center py-16 gap-3 min-h-0">
+                <p className="text-red-500 text-sm text-center px-4">
+                  Task details are missing. Please generate a new task.
+                </p>
+                <Button onClick={() => openSkill(activeSkill)}>
+                  <RefreshCcw className="h-4 w-4 mr-1.5" />Generate new task
+                </Button>
+              </div>
+            )
           )}
         </DialogContent>
       </Dialog>

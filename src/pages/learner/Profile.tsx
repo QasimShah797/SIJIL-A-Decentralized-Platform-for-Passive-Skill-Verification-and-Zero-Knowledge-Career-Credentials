@@ -58,7 +58,11 @@ export default function LearnerProfile() {
         const url = await uploadSkillEvidenceFile(user.id, created.id, file);
         await insertSkillSupportingRecord(user.id, created.id, file.name, url);
         await supabase.from("declared_skills")
-          .update({ status: "Evidence Linked", last_related_activity_at: new Date().toISOString() })
+          .update({
+            status: "Evidence Linked",
+            pipeline_stage: "evidence_linked",
+            last_related_activity_at: new Date().toISOString(),
+          })
           .eq("id", created.id).eq("user_id", user.id);
       }
       toast({ title: "Skill claimed", description: file ? `${name} added with file.` : `${name} added.` });

@@ -568,6 +568,364 @@ export function pickBestRepo(repos: RepoRef[], skillName: string): RepoRef | nul
   return scored[0]?.repo ?? repos[0];
 }
 
+export function buildFallbackClassification(skillName: string): ClassificationResult {
+  return {
+    language: skillName,
+    frameworks: [],
+    patterns_observed: [`${skillName} practical implementation`],
+    complexity_level: "beginner",
+    evidence_quality: "weak",
+    confidence: 0.5,
+    reason: "No GitHub evidence available, generated from declared skill only.",
+  };
+}
+
+export function isQuotaError(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+  const lower = message.toLowerCase();
+  return (
+    message.includes("429") ||
+    message.includes("RESOURCE_EXHAUSTED") ||
+    lower.includes("quota")
+  );
+}
+
+export type LocalFallbackTask = {
+  title: string;
+  type: string;
+  durationMinutes: number;
+  prompt: string;
+  scenario: string;
+  instructions: string;
+  starterCode: string;
+  expectedDeliverable: string;
+  acceptance_criteria: string[];
+  evaluation_rubric: Array<{ criterion: string; points: number; pass_condition: string }>;
+  hidden_test_ideas: string[];
+};
+
+export function getLocalFallbackTask(skillName: string): LocalFallbackTask {
+  const skill = skillName.toLowerCase();
+
+  if (skill.includes("react")) {
+    return {
+      title: "Build a Controlled Login Form",
+      type: "Coding",
+      durationMinutes: 20,
+      prompt:
+        "Create a React LoginForm component using controlled inputs for email and password. Validate that email contains '@' and password has at least 8 characters. Show validation errors below each field. On valid submit, call the provided onSubmit prop with email and password.",
+      scenario:
+        "A web application needs a reusable login form with client-side validation before sending credentials to the backend.",
+      instructions:
+        "Use React state for form values and errors. Do not use external form libraries.",
+      starterCode:
+        "import { useState } from 'react';\n\nexport function LoginForm({ onSubmit }) {\n  // your code here\n}\n",
+      expectedDeliverable:
+        "A working controlled React login form with validation and submit handling.",
+      acceptance_criteria: [
+        "Uses controlled inputs for email and password",
+        "Validates email format",
+        "Validates password length",
+        "Shows error messages",
+        "Calls onSubmit only when input is valid",
+      ],
+      evaluation_rubric: [
+        {
+          criterion: "Controlled inputs",
+          points: 30,
+          pass_condition: "Email and password values are managed using React state",
+        },
+        {
+          criterion: "Validation",
+          points: 40,
+          pass_condition: "Email and password validation are correctly implemented",
+        },
+        {
+          criterion: "Submit handling",
+          points: 30,
+          pass_condition: "onSubmit is called only for valid input",
+        },
+      ],
+      hidden_test_ideas: [
+        "Invalid email should show error",
+        "Short password should show error",
+        "Valid form should call onSubmit",
+      ],
+    };
+  }
+
+  if (skill.includes("typescript")) {
+    return {
+      title: "Create a Type-Safe User Formatter",
+      type: "Coding",
+      durationMinutes: 20,
+      prompt:
+        "Create a TypeScript function formatUserProfile that accepts a User object and returns a formatted string. The User type must include id, name, email, and optional role. If role is missing, use 'Learner'. Validate that name and email are not empty.",
+      scenario:
+        "A profile page needs a type-safe formatter before displaying user information.",
+      instructions:
+        "Define proper TypeScript types/interfaces and handle missing optional role safely.",
+      starterCode:
+        "interface User {\n  id: number;\n  name: string;\n  email: string;\n  role?: string;\n}\n\nfunction formatUserProfile(user: User): string {\n  // your code here\n}\n",
+      expectedDeliverable:
+        "A type-safe TypeScript formatter with validation and optional field handling.",
+      acceptance_criteria: [
+        "Defines correct User interface",
+        "Handles optional role",
+        "Validates empty name/email",
+        "Returns formatted string",
+      ],
+      evaluation_rubric: [
+        {
+          criterion: "Type safety",
+          points: 35,
+          pass_condition: "Uses TypeScript interface/type correctly",
+        },
+        {
+          criterion: "Optional role handling",
+          points: 30,
+          pass_condition: "Uses default role when role is missing",
+        },
+        {
+          criterion: "Validation",
+          points: 35,
+          pass_condition: "Rejects or handles empty name/email",
+        },
+      ],
+      hidden_test_ideas: [
+        "User without role should use Learner",
+        "Empty name should be handled",
+        "Valid user should return formatted string",
+      ],
+    };
+  }
+
+  if (skill.includes("java") && !skill.includes("javascript")) {
+    return {
+      title: "Product Code Formatter",
+      type: "Coding",
+      durationMinutes: 15,
+      prompt:
+        "Implement the formatProductCode method in the ProductFormatter class. The method should remove all whitespace, convert the code to uppercase, truncate it to 10 characters, and return INVALID_CODE if input is null or empty after trimming.",
+      scenario:
+        "An inventory system needs product codes standardized before saving them.",
+      instructions:
+        "Use Java string handling. Handle null, whitespace, uppercase conversion, and truncation.",
+      starterCode:
+        "public class ProductFormatter {\n  public static String formatProductCode(String rawCode) {\n    // your code here\n    return null;\n  }\n}\n",
+      expectedDeliverable:
+        "A Java method that formats product codes according to the given rules.",
+      acceptance_criteria: [
+        "Handles null input",
+        "Removes whitespace",
+        "Converts to uppercase",
+        "Truncates to 10 characters",
+        "Returns INVALID_CODE for invalid input",
+      ],
+      evaluation_rubric: [
+        {
+          criterion: "Input validation",
+          points: 30,
+          pass_condition: "Null and empty input are handled correctly",
+        },
+        {
+          criterion: "Formatting logic",
+          points: 40,
+          pass_condition: "Whitespace removal and uppercase conversion work",
+        },
+        {
+          criterion: "Truncation",
+          points: 30,
+          pass_condition: "Output is truncated to 10 characters when needed",
+        },
+      ],
+      hidden_test_ideas: [
+        "Null input returns INVALID_CODE",
+        "Whitespace is removed",
+        "Long code is truncated",
+      ],
+    };
+  }
+
+  return {
+    title: `Build a ${skillName} Utility Function`,
+    type: "Coding",
+    durationMinutes: 20,
+    prompt:
+      `Create a practical ${skillName} utility function that validates input, handles edge cases, and returns a clean formatted result.`,
+    scenario:
+      `A software system needs a reliable ${skillName} utility for real-world input processing.`,
+    instructions:
+      "Write clean code, handle invalid input, and include meaningful logic.",
+    starterCode: "",
+    expectedDeliverable:
+      "A working implementation that satisfies the scenario.",
+    acceptance_criteria: [
+      "Handles valid input",
+      "Handles invalid input",
+      "Returns expected output",
+      "Code is readable",
+    ],
+    evaluation_rubric: [
+      {
+        criterion: "Correctness",
+        points: 50,
+        pass_condition: "Solution satisfies the task requirements",
+      },
+      {
+        criterion: "Edge cases",
+        points: 30,
+        pass_condition: "Invalid or empty inputs are handled",
+      },
+      {
+        criterion: "Code quality",
+        points: 20,
+        pass_condition: "Code is clear and readable",
+      },
+    ],
+    hidden_test_ideas: [],
+  };
+}
+
+export function parseGenerateRequest(body: Record<string, unknown>): {
+  skill: { name: string; domain: string };
+  repos: RepoRef[];
+} {
+  const skillRaw = body.skill;
+  const skillName =
+    (typeof body.declaredSkill === "string" ? body.declaredSkill : undefined) ||
+    (typeof skillRaw === "object" && skillRaw !== null && "name" in skillRaw
+      ? String((skillRaw as { name: unknown }).name)
+      : undefined) ||
+    (typeof body.skillName === "string" ? body.skillName : undefined) ||
+    (typeof skillRaw === "string" ? skillRaw : undefined) ||
+    "JavaScript";
+
+  const skillDomain =
+    (typeof skillRaw === "object" && skillRaw !== null && "domain" in skillRaw
+      ? String((skillRaw as { domain?: unknown }).domain ?? "")
+      : undefined) ||
+    (typeof body.domain === "string" ? body.domain : undefined) ||
+    "Software Development";
+
+  const repos = (
+    body.repos ??
+    body.githubRepos ??
+    body.repositories ??
+    []
+  ) as RepoRef[];
+
+  return {
+    skill: { name: skillName, domain: skillDomain },
+    repos: Array.isArray(repos) ? repos : [],
+  };
+}
+
+export async function runTaskGenerationPipeline(params: {
+  skill: { name: string; domain?: string };
+  repos: RepoRef[];
+  githubToken?: string;
+  classifyModel: string;
+  taskModel: string;
+}): Promise<{
+  generated: GeneratedTask;
+  classification: ClassificationResult;
+  evidenceMeta: { repo: string | null; fileCount: number };
+}> {
+  const { skill, repos, githubToken, classifyModel, taskModel } = params;
+
+  let evidence: { files: EvidenceFile[]; languages: Record<string, number> } = {
+    files: [],
+    languages: {},
+  };
+  let repoLabel: string | null = null;
+
+  const chosen = pickBestRepo(repos, skill.name);
+  const slug = chosen ? resolveRepoSlug(chosen) : null;
+
+  if (slug) {
+    try {
+      repoLabel = `${slug.owner}/${slug.repo}`;
+      evidence = await collectRepoEvidence(slug.owner, slug.repo, skill.name, githubToken);
+    } catch (repoErr) {
+      console.error("GitHub evidence collection failed, continuing without repo evidence:", repoErr);
+    }
+  }
+
+  let classification: ClassificationResult;
+  try {
+    classification = await classifyEvidence(skill, evidence, "", classifyModel);
+  } catch (classifyErr) {
+    if (isQuotaError(classifyErr)) throw classifyErr;
+    console.error("Classification failed, using fallback:", classifyErr);
+    classification = buildFallbackClassification(skill.name);
+  }
+
+  let generated: GeneratedTask;
+  try {
+    generated = await generateTask(skill, classification, "", taskModel);
+  } catch (genErr) {
+    if (isQuotaError(genErr)) throw genErr;
+    console.error("generateTask failed, retrying with fallback classification:", genErr);
+    classification = buildFallbackClassification(skill.name);
+    generated = await generateTask(skill, classification, "", taskModel);
+  }
+
+  if (!generated?.title || (!generated.scenario && !generated.instructions)) {
+    throw new Error("Gemini returned incomplete task");
+  }
+
+  return {
+    generated,
+    classification,
+    evidenceMeta: { repo: repoLabel, fileCount: evidence.files.length },
+  };
+}
+
+export function toGenerateApiResponse(
+  generated: GeneratedTask,
+  skillName: string,
+  skillDomain: string,
+  extras?: {
+    classification?: ClassificationResult;
+    evidence?: { repo: string | null; fileCount: number };
+  },
+) {
+  const legacy = toLegacyTaskResponse(
+    generated,
+    extras?.classification ?? buildFallbackClassification(skillName),
+    extras?.evidence ?? { repo: null, fileCount: 0 },
+  );
+
+  const prompt =
+    generated.scenario ||
+    generated.instructions ||
+    legacy.prompt ||
+    "";
+
+  return {
+    title: generated.title,
+    type: legacy.type,
+    durationMinutes: legacy.durationMinutes,
+    prompt,
+    scenario: generated.scenario || prompt,
+    instructions: generated.instructions || prompt,
+    starterCode: generated.starter_context || "",
+    expectedDeliverable:
+      generated.acceptance_criteria?.length
+        ? generated.acceptance_criteria.join("\n")
+        : "Submit your implementation in the editor.",
+    acceptance_criteria: generated.acceptance_criteria ?? [],
+    evaluation_rubric: generated.evaluation_rubric ?? [],
+    hidden_test_ideas: generated.hidden_test_ideas ?? [],
+    skill: skillName,
+    domain: skillDomain,
+    rawTask: generated,
+    classification: extras?.classification,
+    evidence: extras?.evidence,
+  };
+}
+
 export function toLegacyTaskResponse(
   generated: GeneratedTask,
   classification: ClassificationResult,

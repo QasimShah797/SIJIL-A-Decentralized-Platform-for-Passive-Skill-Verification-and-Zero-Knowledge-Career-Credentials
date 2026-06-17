@@ -2,9 +2,25 @@ import { supabase } from "@/integrations/supabase/client";
 import type { DeclaredSkill } from "@/lib/sijil-data";
 import { fetchPeerReviews } from "@/lib/db/peer-reviews";
 import { fetchAttempt } from "@/lib/db/practical-attempts";
+import { fetchAttestationRequestForSkill } from "@/lib/db/institution-attestation-requests";
+import { institutionDisplayName } from "@/lib/institution-routing";
+import { fetchLearnerProfile } from "@/lib/db/learner-profile";
+import { fetchCredentials } from "@/lib/db/credentials";
+import {
+  evidenceLabelForStage,
+  nextStepForStage,
+  pipelineStageLabel,
+  resolveEffectivePipelineStage,
+} from "@/lib/competency-pipeline";
 
 export type ValidationSummary = {
+  skillId: string;
   skill: string;
+  pipelineStage: string;
+  currentStageLabel: string;
+  evidence: string;
+  institution: string;
+  nextStep: string;
   result: string;
   status: string;
   evaluatedOn: string;
@@ -14,13 +30,15 @@ export type ValidationSummary = {
   latestActivity: string;
   task: string;
   rows: { name: string; type: string; date: string; role: string }[];
+  evidencePackageSent: boolean;
+  institutionFeedback?: string;
 };
 
 export async function buildValidationSummary(
   userId: string,
   skill: DeclaredSkill,
 ): Promise<ValidationSummary> {
-  const [ghActs, lmsEv, ghRepos, reviews, attempt] = await Promise.all([
+  const [ghActs, lmsEv, ghRepos, reviews, attempt, attestationRequest, profile, credentials] = await Promise.all([
     supabase
       .from("github_activities")
       .select("*")
@@ -43,10 +61,14 @@ export async function buildValidationSummary(
       .limit(10),
     fetchPeerReviews(userId),
     fetchAttempt(userId, skill.id),
+    fetchAttestationRequestForSkill(userId, skill.id),
+    fetchLearnerProfile(userId),
+    fetchCredentials(userId),
   ]);
 
   const skillReviews = reviews.filter((r) => r.skill === skill.name);
   const rows: ValidationSummary["rows"] = [];
+  const inWallet = credentials.some((c) => c.skill === skill.name);
 
   for (const e of lmsEv.data ?? []) {
     rows.push({
@@ -77,7 +99,7 @@ export async function buildValidationSummary(
       name: `Practical attempt ${attempt.attemptId}`,
       type: "Practical Submission",
       date: new Date(attempt.startedAt).toLocaleDateString(),
-      role: "Hands-on artifact",
+      role: attempt.passed ? "Passed practical task" : "Hands-on artifact",
     });
   }
   for (const r of skillReviews) {
@@ -91,7 +113,18 @@ export async function buildValidationSummary(
 
   const sources = [...new Set(rows.map((r) => r.type))];
   const supportingRecords = rows.length;
-  const hasEvidence = supportingRecords > 0;
+  const hasEvidence = supportingRecords > 0 || skill.status === "Evidence Linked";
+
+  if (attestationRequest?.status === "approved") {
+    rows.push({
+      name: "Institution attestation approved",
+      type: "Attestation",
+      date: attestationRequest.reviewedAt
+        ? new Date(attestationRequest.reviewedAt).toLocaleDateString()
+        : "—",
+      role: "Institution approval",
+    });
+  }
 
   const dates = rows
     .map((r) => r.date)
@@ -99,10 +132,35 @@ export async function buildValidationSummary(
     .sort()
     .reverse();
 
+  const institution = institutionDisplayName(
+    attestationRequest?.institutionName
+      ?? (profile.institution !== "—" ? profile.institution : "CUST"),
+  );
+
+  const pipelineStage = resolveEffectivePipelineStage(skill, {
+    hasEvidence,
+    attemptPassed: attempt?.passed === true || attempt?.status === "passed",
+    attemptInProgress: !!attempt && ["in_progress", "submitted", "auto_submitted"].includes(attempt.status),
+    attestationStatus: attestationRequest?.status,
+    inWallet,
+    peerReviewCount: skillReviews.length,
+  });
+
+  const currentStageLabel = pipelineStageLabel(pipelineStage);
+  const evidencePackageSent = !!attestationRequest && attestationRequest.status === "pending";
+
   return {
+    skillId: skill.id,
     skill: skill.name,
-    result: hasEvidence ? "Passed" : "Pending",
-    status: hasEvidence ? "Validated" : "Under Review",
+    pipelineStage,
+    currentStageLabel,
+    evidence: evidenceLabelForStage(pipelineStage),
+    institution,
+    nextStep: nextStepForStage(pipelineStage, institution),
+    result: pipelineStage === "institution_attestation_rejected" || pipelineStage === "institution_rejected"
+      ? "Rejected"
+      : hasEvidence || attempt?.passed ? "In progress" : "Pending",
+    status: currentStageLabel,
     evaluatedOn: dates[0] ?? "—",
     sources: sources.length ? sources : ["No evidence yet"],
     reviewCount: skillReviews.length,
@@ -110,5 +168,14 @@ export async function buildValidationSummary(
     latestActivity: dates[0] ?? "—",
     task: attempt ? `Attempt ${attempt.attemptId}` : "No task submitted",
     rows,
+    evidencePackageSent,
+    institutionFeedback: attestationRequest?.institutionFeedback,
   };
+}
+
+export async function buildAllValidationSummaries(
+  userId: string,
+  skills: DeclaredSkill[],
+): Promise<ValidationSummary[]> {
+  return Promise.all(skills.map((skill) => buildValidationSummary(userId, skill)));
 }

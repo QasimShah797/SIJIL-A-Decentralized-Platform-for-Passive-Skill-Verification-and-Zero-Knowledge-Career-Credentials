@@ -21,6 +21,7 @@ export type DeclaredSkill = {
   domain: string;
   status: string;
   description: string;
+  pipelineStage?: string;
   // ISO date — last time a related LMS/GitHub activity was synced for this skill
   lastRelatedActivityAt: string | null;
   // ISO date — last time credentials were synced/issued for this skill (controls one-attempt rule reset)
@@ -279,10 +280,15 @@ export type AttestationRecord = {
   lastEvaluated: string;
   evidenceCount: number;
   reviewCount: number;
-  readiness: "Ready for Attestation" | "Pending Evidence" | "Ready for Credential Issuance";
+  readiness: "Ready for Attestation" | "Pending Evidence" | "Ready for Credential Issuance" | "Pending Institution Attestation";
   status: AttestationStatus;
   submittedAt: string;
   remarks?: string;
+  source?: string;
+  institutionName?: string;
+  practicalScore?: number;
+  practicalFeedback?: string;
+  learnerUserId?: string;
   evidence: { id: string; name: string; type: "LMS" | "GitHub" | "Practical Submission" | "External Certificate" | "Review"; date: string; role: string; status: string }[];
   task: { title: string; relatedSkill: string; attemptId: string; submissionType: "Manual" | "Auto-Submitted"; submittedAt: string; reviewStatus: string; artifactSummary: string };
   reviews: { name: string; type: "Mentor" | "Teacher" | "Reviewer"; outcome: "Endorsed" | "Approved with notes" | "Needs work"; feedback: string }[];
@@ -472,10 +478,12 @@ export type AttemptRecord = {
   startedAt: string;
   endsAt: string;
   durationMinutes: number;
-  status: "in_progress" | "submitted" | "auto_submitted" | "expired_no_submission";
-  submission: string; // captured work (text/code)
-  // Snapshot of the credential-sync timestamp at attempt time. Reset when this changes.
+  status: "in_progress" | "submitted" | "auto_submitted" | "expired_no_submission" | "passed";
+  submission: string;
   credentialSyncSnapshot: string | null;
+  passed?: boolean;
+  score?: number;
+  feedback?: string;
 };
 
 const ATTEMPT_KEY = "sijil.attempts.v1";

@@ -26,12 +26,11 @@ export function AppShell({ role, children }: { role: Role; children: React.React
   const { skills } = useDeclaredSkills();
   const roleLabel = role === "learner" ? "Learner" : role === "recruiter" ? "Recruiter" : "Institution";
 
-  const firstSkillId = skills[0]?.id;
   const learnerNav = [
     { to: "/learner/profile", icon: User, label: "Profile & Skills" },
     { to: "/learner/integrations", icon: Plug, label: "Integrations" },
     { to: "/learner/task", icon: ClipboardCheck, label: "Practical Task" },
-    ...(firstSkillId ? [{ to: `/learner/validation/${firstSkillId}`, icon: ShieldCheck, label: "Validation Trail" }] : []),
+    ...(skills.length ? [{ to: "/learner/validation", icon: ShieldCheck, label: "Validation Trail" }] : []),
     { to: "/learner/wallet", icon: Wallet, label: "Wallet" },
     { to: "/learner/peer-reviews", icon: MessageSquare, label: "Peer Reviews" },
   ];

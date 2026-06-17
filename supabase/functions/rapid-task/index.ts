@@ -1,12 +1,9 @@
 import {
-  classifyEvidence,
-  collectRepoEvidence,
-  evaluateSubmission,
-  generateTask,
-  pickBestRepo,
-  resolveRepoSlug,
-  toLegacyTaskResponse,
-  type RepoRef,
+  getLocalFallbackTask,
+  isQuotaError,
+  parseGenerateRequest,
+  runTaskGenerationPipeline,
+  toGenerateApiResponse,
 } from "../_shared/github-task-pipeline.ts";
 
 const corsHeaders = {
@@ -28,42 +25,73 @@ Deno.serve(async (req) => {
 
   try {
     const body = await req.json();
-    const { action, repos } = body;
 
     const GEMINI_KEY = Deno.env.get("GEMINI_API_KEY");
     if (!GEMINI_KEY) throw new Error("GEMINI_API_KEY not set");
 
     const GITHUB_TOKEN = Deno.env.get("GITHUB_TOKEN") ?? undefined;
-    const CLASSIFY_MODEL = Deno.env.get("GEMINI_CLASSIFY_MODEL") ?? "gemini-3.5-flash";
-    const TASK_MODEL = Deno.env.get("GEMINI_TASK_MODEL") ?? "gemini-3.5-flash";
+    const CLASSIFY_MODEL = Deno.env.get("GEMINI_CLASSIFY_MODEL") ?? "gemini-2.5-flash";
+    const TASK_MODEL = Deno.env.get("GEMINI_TASK_MODEL") ?? "gemini-2.5-flash";
 
-    if (action === "generate") {
-      const skill = body.skill;
-      if (!skill?.name) {
-        return json({ error: "skill.name is required for generate" }, 400);
+    if (body.action === "generate") {
+      console.log("Generate branch reached");
+
+      const { skill, repos } = parseGenerateRequest(body);
+      const skillName = skill.name;
+      const skillDomain = skill.domain;
+
+      try {
+        console.log("rapid-task generate request:", {
+          skillName,
+          skillDomain,
+          reposCount: repos.length,
+          bodyKeys: Object.keys(body),
+        });
+        console.log("Skill name:", skillName);
+        console.log("Repos:", repos);
+
+        const { generated, classification, evidenceMeta } = await runTaskGenerationPipeline({
+          skill,
+          repos,
+          githubToken: GITHUB_TOKEN,
+          classifyModel: CLASSIFY_MODEL,
+          taskModel: TASK_MODEL,
+        });
+
+        console.log("Generated task:", generated);
+
+        const payload = toGenerateApiResponse(generated, skillName, skillDomain, {
+          classification,
+          evidence: evidenceMeta,
+        });
+
+        return json(payload);
+      } catch (err) {
+        console.error("rapid-task generate failed:", err);
+
+        const message = err instanceof Error ? err.message : String(err);
+
+        if (isQuotaError(err)) {
+          console.log("Gemini quota exceeded, returning local fallback task for:", skillName);
+          const fallbackTask = getLocalFallbackTask(skillName);
+
+          return json({
+            ...fallbackTask,
+            skill: skillName,
+            domain: skillDomain,
+            fallback: true,
+            fallbackReason: "Gemini quota exceeded, local specific task used.",
+          });
+        }
+
+        return json(
+          {
+            error: "Task generation failed",
+            details: message,
+          },
+          500,
+        );
       }
-
-      const repoList = (repos ?? []) as RepoRef[];
-      const chosen = pickBestRepo(repoList, skill.name);
-      const slug = chosen ? resolveRepoSlug(chosen) : null;
-
-      let evidence = { files: [] as Awaited<ReturnType<typeof collectRepoEvidence>>["files"], languages: {} as Record<string, number> };
-      let repoLabel: string | null = null;
-
-      if (slug) {
-        repoLabel = `${slug.owner}/${slug.repo}`;
-        evidence = await collectRepoEvidence(slug.owner, slug.repo, skill.name, GITHUB_TOKEN);
-      }
-
-      const classification = await classifyEvidence(skill, evidence, GEMINI_KEY, CLASSIFY_MODEL);
-      const generated = await generateTask(skill, classification, GEMINI_KEY, TASK_MODEL);
-
-      const payload = toLegacyTaskResponse(generated, classification, {
-        repo: repoLabel,
-        fileCount: evidence.files.length,
-      });
-
-      return json(payload);
     }
 
     if (body.action === "evaluate") {
@@ -97,6 +125,8 @@ Deno.serve(async (req) => {
           400,
         );
       }
+
+      const { evaluateSubmission } = await import("../_shared/github-task-pipeline.ts");
 
       const evaluationTask = {
         ...task,
