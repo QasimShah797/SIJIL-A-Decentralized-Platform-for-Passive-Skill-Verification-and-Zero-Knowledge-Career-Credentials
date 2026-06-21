@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AppShell } from "@/components/sijil/AppShell";
 import { PageHeader } from "@/components/sijil/PageHeader";
 import { StatusBadge } from "@/components/sijil/StatusBadge";
@@ -16,12 +16,26 @@ import {
   RefreshCw, Eye, Inbox,
 } from "lucide-react";
 import {
-  declaredSkills, learnerProfile, getProjects, getPeerReviews, addPeerReview,
-  getInvitations, addInvitation, computeTrustSignals,
-  autoProcessProjectContributors, getContributorRows, resendInvitation,
-  type PeerReview, type ContextSource, type Project, type ProjectContributor,
-  type ReviewInvitation, type ContributorVerification, type ContributorReviewStatus,
+  computeTrustSignals,
+  type PeerReview, type ContextSource, type ProjectContributor,
+  type ReviewInvitation, type ContributorVerification,
 } from "@/lib/sijil-data";
+import { useAuth } from "@/hooks/useAuth";
+import { useDeclaredSkills } from "@/hooks/useLearnerData";
+import { fetchLearnerProfile } from "@/lib/db/learner-profile";
+import {
+  loadPeerReviewPageData,
+  buildContributorRows,
+  contextRequestToInvitation,
+  type PeerReviewProject,
+  type ContextReviewRequestDisplay,
+} from "@/lib/db/peer-review-page";
+import {
+  createReviewRequestApi,
+  importExternalReviewsApi,
+  getEligibleReviewersApi,
+} from "@/services/api/reviews.api";
+import { isApiEnabled } from "@/services/api/client";
 import { toast } from "@/hooks/use-toast";
 
 function sourceIcon(s: ContextSource) {
@@ -45,40 +59,77 @@ function trustVariant(t: PeerReview["trustWeight"]) {
 }
 
 export default function PeerReviewsPage() {
-  const [projects] = useState<Project[]>(getProjects());
-  const [reviews, setReviews] = useState<PeerReview[]>(getPeerReviews());
-  const [invitations, setInvitations] = useState<ReviewInvitation[]>(getInvitations());
-  const signals = useMemo(() => computeTrustSignals(reviews), [reviews]);
+  const { user } = useAuth();
+  const { skills: declaredSkills } = useDeclaredSkills();
+  const [loading, setLoading] = useState(true);
+  const [projects, setProjects] = useState<PeerReviewProject[]>([]);
+  const [reviews, setReviews] = useState<PeerReview[]>([]);
+  const [legacyInvitations, setLegacyInvitations] = useState<ReviewInvitation[]>([]);
+  const [contextRequests, setContextRequests] = useState<ContextReviewRequestDisplay[]>([]);
+  const [learnerName, setLearnerName] = useState("Learner");
 
-  const [selectedProjectId, setSelectedProjectId] = useState<string>(projects[0]?.id ?? "");
-  const selectedProject = projects.find((p) => p.id === selectedProjectId);
-  const [skillForProject, setSkillForProject] = useState<string>(
-    selectedProject?.linkedSkills[0] ?? declaredSkills[0]?.name ?? "",
+  const invitations = useMemo(
+    () => [
+      ...contextRequests.map(contextRequestToInvitation),
+      ...legacyInvitations,
+    ],
+    [contextRequests, legacyInvitations],
   );
 
-  // Auto-detect: when a project is opened (or skill changes for it), import existing
-  // platform reviews and send invites to the rest. Avoids duplicates.
-  const processedRef = useRef<Set<string>>(new Set());
-  useEffect(() => {
-    if (!selectedProject) return;
-    const key = `${selectedProject.id}::${skillForProject}`;
-    if (processedRef.current.has(key)) return;
-    processedRef.current.add(key);
-    const r = autoProcessProjectContributors(selectedProject, learnerProfile.name, skillForProject);
-    if (r.imported || r.invited) {
-      setReviews(getPeerReviews());
-      setInvitations(getInvitations());
-      toast({
-        title: "Contributors processed automatically",
-        description: `${r.imported} imported review(s), ${r.invited} invite(s) sent for ${selectedProject.name}.`,
-      });
+  const signals = useMemo(() => computeTrustSignals(reviews), [reviews]);
+
+  const [selectedProjectId, setSelectedProjectId] = useState<string>("");
+  const selectedProject = projects.find((p) => p.id === selectedProjectId);
+  const [skillForProject, setSkillForProject] = useState<string>("");
+
+  const reload = async () => {
+    if (!user?.id) return;
+    try {
+      const data = await loadPeerReviewPageData(user.id);
+      setProjects(data.projects);
+      setReviews(data.reviews);
+      setLegacyInvitations(data.legacyInvitations);
+      setContextRequests(data.contextRequests);
+      if (!selectedProjectId && data.projects[0]) {
+        setSelectedProjectId(data.projects[0].id);
+        setSkillForProject(
+          data.projects[0].linkedSkills[0] ?? declaredSkills[0]?.name ?? "",
+        );
+      }
+    } catch {
+      throw new Error("load failed");
     }
-  }, [selectedProject, skillForProject]);
+  };
+
+  useEffect(() => {
+    if (!user?.id) return;
+    setLoading(true);
+    fetchLearnerProfile(user.id, user.email)
+      .then((p) => setLearnerName(p.name))
+      .catch(() => setLearnerName(user.email?.split("@")[0] ?? "Learner"));
+    reload()
+      .catch(() => {
+        toast({
+          title: "Could not load reviews",
+          description: "Check GitHub sync on Integrations and try refreshing.",
+          variant: "destructive",
+        });
+      })
+      .finally(() => setLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (selectedProject && !skillForProject) {
+      setSkillForProject(selectedProject.linkedSkills[0] ?? declaredSkills[0]?.name ?? "");
+    }
+  }, [selectedProject, skillForProject, declaredSkills]);
 
   const contributorRows = useMemo(
-    () => (selectedProject ? getContributorRows(selectedProject) : []),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [selectedProject, reviews, invitations],
+    () => (selectedProject
+      ? buildContributorRows(selectedProject, reviews, contextRequests, legacyInvitations)
+      : []),
+    [selectedProject, reviews, contextRequests, legacyInvitations],
   );
 
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -117,75 +168,78 @@ export default function PeerReviewsPage() {
     setInviteOpen(true);
   };
 
-  const sendInvite = () => {
+  const sendInvite = async () => {
     if (!selectedProject || !inviteContrib) return;
     if (!inviteEmail.trim()) {
       toast({ title: "Email required", description: "We need a contact email to send the review invitation." });
       return;
     }
-    const inv: ReviewInvitation = {
-      id: `inv-${Date.now()}`,
-      projectId: selectedProject.id,
-      projectName: selectedProject.name,
-      source: selectedProject.source,
-      contributorId: inviteContrib.id,
-      contributorName: inviteContrib.name,
-      contributorEmail: inviteEmail.trim(),
-      contributorRole: inviteContrib.role,
-      learnerName: learnerProfile.name,
-      skill: inviteSkill,
-      status: "Sent",
-      sentAt: new Date().toISOString(),
-    };
-    addInvitation(inv);
-    setInvitations([inv, ...invitations]);
-    const link = `${window.location.origin}/review/${inv.id}`;
-    setGeneratedLink(link);
+    if (!isApiEnabled() || !selectedProject.evidenceRecordId) {
+      toast({
+        title: "Backend required",
+        description: "Sync GitHub from Integrations and ensure VITE_API_BASE_URL is configured.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const skillLink = selectedProject.skillLinks.find((s) => s.skillName === inviteSkill)
+      ?? selectedProject.skillLinks[0];
+    if (!skillLink) {
+      toast({ title: "Link a skill first", description: "Link this repository to a declared skill on Integrations." });
+      return;
+    }
+
+    const eligible = await getEligibleReviewersApi(selectedProject.evidenceRecordId);
+    const reviewerContext = eligible?.find(
+      (r) => r.name === inviteContrib.handle
+        || r.name === inviteContrib.name
+        || r.login === inviteContrib.handle,
+    );
+    if (!reviewerContext) {
+      toast({
+        title: "Reviewer not eligible",
+        description: "This person is not a verified context-linked contributor for this evidence.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const result = await createReviewRequestApi({
+      evidenceId: selectedProject.evidenceRecordId,
+      skillId: skillLink.skillId,
+      reviewerContextId: reviewerContext.id,
+      reviewerEmail: inviteEmail.trim(),
+    });
+    if (!result) {
+      toast({ title: "Request failed", description: "Could not send review request.", variant: "destructive" });
+      return;
+    }
+
+    setGeneratedLink(result.reviewLink);
+    await reload();
     toast({
-      title: "Invitation email sent",
-      description: `Invited ${inviteContrib.name} to review ${learnerProfile.name} for ${inviteSkill} on ${selectedProject.name}.`,
+      title: "Context review request sent",
+      description: `Awaiting feedback from ${inviteContrib.name} for ${inviteSkill} on ${selectedProject.name}.`,
     });
   };
 
-  const importExisting = () => {
-    if (!selectedProject) return;
-    // Demo: synthesize an "imported review" from an existing contributor of the project.
-    const verified = selectedProject.contributors.find(
-      (c) => !reviewedContributorIds.has(c.id),
-    );
-    if (!verified) {
-      toast({ title: "No more reviews to import", description: "All contributors of this project already have a stored review." });
+  const importExisting = async () => {
+    if (!selectedProject?.evidenceRecordId || !isApiEnabled()) {
+      toast({
+        title: "Nothing to import",
+        description: "Sync GitHub evidence first, then try importing context reviews.",
+      });
       return;
     }
-    const skill = skillForProject;
-    const origin: PeerReview["origin"] =
-      selectedProject.source === "GitHub" ? "GitHub PR"
-      : selectedProject.source === "LMS" ? "LMS Assignment"
-      : selectedProject.source === "Spark" ? "Spark Comment"
-      : "SIJIL";
-    const rec: PeerReview = {
-      id: `pr-${Date.now()}`,
-      reviewerName: verified.handle ?? verified.name,
-      reviewerRole: verified.role,
-      source: selectedProject.source,
-      origin,
-      skill,
-      projectId: selectedProject.id,
-      projectName: selectedProject.name,
-      evidenceLabel: `${selectedProject.evidenceLabel} — auto-imported ${origin}`,
-      evidenceUrl: selectedProject.url,
-      rating: 4,
-      comment: `Auto-imported ${origin} from ${verified.name}: contributed code/feedback on ${selectedProject.name}.`,
-      recommendation: "Recommended",
-      date: new Date().toISOString(),
-      contextStatus: "Context Verified",
-      contributorVerification: "Contributor Verified",
-      trustWeight: "High Trust",
-      imported: true,
-    };
-    addPeerReview(rec);
-    setReviews([rec, ...reviews]);
-    toast({ title: "Review imported", description: `${rec.reviewerName}'s ${origin} stored as a verified trust signal.` });
+    const result = await importExternalReviewsApi(selectedProject.evidenceRecordId);
+    await reload();
+    const imported = (result as { imported?: number } | null)?.imported ?? 0;
+    if (imported > 0) {
+      toast({ title: "Reviews imported", description: `${imported} external review(s) imported from GitHub.` });
+    } else {
+      toast({ title: "No external reviews found", description: "No PR reviews or comments were found for this repo." });
+    }
   };
 
   return (
@@ -194,11 +248,19 @@ export default function PeerReviewsPage() {
         title="Peer Reviews & Trust Signals"
         description="Only verified contributors of the same project can review this learner. SIJIL stores reviews as evidence-based trust signals — never as expert/intermediate/beginner labels."
         actions={
-          <Button variant="outline" onClick={importExisting} disabled={!selectedProject}>
+          <Button variant="outline" onClick={() => void importExisting()} disabled={!selectedProject || loading}>
             <Download className="h-4 w-4 mr-1.5" />Import existing review
           </Button>
         }
       />
+
+      {loading ? (
+        <div className="text-sm text-muted-foreground mb-6">Loading your reviews…</div>
+      ) : projects.length === 0 ? (
+        <div className="rounded-md border p-6 text-sm text-muted-foreground mb-6">
+          No synced project evidence yet. Open <strong>Integrations</strong>, connect GitHub, and run sync — your repositories will appear here for context reviews.
+        </div>
+      ) : null}
 
       {/* Trust signals summary */}
       <div className="grid grid-cols-2 md:grid-cols-6 gap-3 mb-6">
@@ -353,7 +415,10 @@ export default function PeerReviewsPage() {
                   <div className="flex items-center gap-2">
                     <StatusBadge variant={i.status === "Completed" ? "verified" : "warning"}>{i.status}</StatusBadge>
                     <Button size="sm" variant="outline" onClick={() => {
-                      const link = `${window.location.origin}/review/${i.id}`;
+                      const ctx = contextRequests.find((r) => r.id === i.id);
+                      const link = ctx
+                        ? `${window.location.origin}/review/request/${ctx.token}`
+                        : `${window.location.origin}/review/${i.id}`;
                       navigator.clipboard.writeText(link);
                       toast({ title: "Link copied", description: link });
                     }}>
@@ -428,13 +493,12 @@ export default function PeerReviewsPage() {
                             <Eye className="h-3 w-3 mr-1" />View submitted review
                           </Button>
                         )}
-                        {row.status === "Invite Sent" && row.invitationId && (
+                        {row.status === "Invite Sent" && row.reviewLink && (
                           <Button size="sm" variant="outline" onClick={() => {
-                            resendInvitation(row.invitationId!);
-                            setInvitations(getInvitations());
-                            toast({ title: "Invite resent", description: `${c.name} has been re-invited to review.` });
+                            navigator.clipboard.writeText(row.reviewLink!);
+                            toast({ title: "Link copied", description: row.reviewLink! });
                           }}>
-                            <RefreshCw className="h-3 w-3 mr-1" />Resend invite
+                            <RefreshCw className="h-3 w-3 mr-1" />Copy review link
                           </Button>
                         )}
                         {row.status === "Review Pending" && (
@@ -533,7 +597,7 @@ export default function PeerReviewsPage() {
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setInviteOpen(false)}>Close</Button>
-            {!generatedLink && <Button onClick={sendInvite}><Mail className="h-4 w-4 mr-1.5" />Send invitation email</Button>}
+            {!generatedLink && <Button onClick={() => void sendInvite()}><Mail className="h-4 w-4 mr-1.5" />Send invitation email</Button>}
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -576,7 +640,11 @@ export function ReviewCard({ r }: { r: PeerReview }) {
           </StatusBadge>
           <StatusBadge variant={trustVariant(r.trustWeight)}>Trust signal: {r.trustWeight}</StatusBadge>
           {r.recommendation && (
-            <StatusBadge variant={r.recommendation === "Recommended" ? "verified" : "warning"}>
+            <StatusBadge variant={
+              r.recommendation === "Recommended" || r.recommendation === "Support"
+                ? "verified"
+                : "warning"
+            }>
               {r.recommendation}
             </StatusBadge>
           )}

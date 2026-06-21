@@ -2,14 +2,21 @@ import { supabase } from "@/integrations/supabase/client";
 import type { PeerReview, ReviewInvitation } from "@/lib/sijil-data";
 
 function rowToReview(row: Record<string, unknown>): PeerReview {
+  const reviewType = row.review_type as string | undefined;
+  const imported =
+    typeof row.imported === "boolean"
+      ? row.imported
+      : reviewType === "Imported Context Review";
+
   return {
     id: row.id as string,
     reviewerName: row.reviewer_name as string,
     reviewerRole: row.reviewer_role as PeerReview["reviewerRole"],
     source: row.source as PeerReview["source"],
-    origin: row.origin as PeerReview["origin"],
+    origin: (row.origin as PeerReview["origin"]) ?? (imported ? "GitHub PR" : "SIJIL"),
     skill: row.skill as string,
-    projectId: row.project_id as string | undefined,
+    projectId: (row.project_id as string | undefined)
+      ?? (row.evidence_record_id ? `ev-${row.evidence_record_id}` : undefined),
     projectName: row.project_name as string | undefined,
     evidenceLabel: row.evidence_label as string,
     evidenceUrl: row.evidence_url as string | undefined,
@@ -17,10 +24,11 @@ function rowToReview(row: Record<string, unknown>): PeerReview {
     comment: row.comment as string,
     recommendation: row.recommendation as PeerReview["recommendation"],
     date: row.review_date as string,
-    contextStatus: row.context_status as PeerReview["contextStatus"],
+    contextStatus: (row.context_status as PeerReview["contextStatus"])
+      ?? (imported ? "Imported Context Review" : "Context Verified Review"),
     contributorVerification: row.contributor_verification as PeerReview["contributorVerification"],
     trustWeight: row.trust_weight as PeerReview["trustWeight"],
-    imported: row.imported as boolean,
+    imported,
   };
 }
 
@@ -30,7 +38,7 @@ export async function fetchPeerReviews(userId: string): Promise<PeerReview[]> {
     .select("*")
     .eq("learner_user_id", userId)
     .order("review_date", { ascending: false });
-  if (error) throw error;
+  if (error) return [];
   return (data ?? []).map(rowToReview);
 }
 

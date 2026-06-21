@@ -12,8 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Plus, Pencil, Trash2, ChevronRight, ShieldCheck, AlertTriangle, Bell, MessageSquare, UploadCloud, X, FileText } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
-import { uploadSkillEvidenceFile, insertSkillSupportingRecord } from "@/lib/db/skills";
-import { supabase } from "@/integrations/supabase/client";
+import { uploadSkillEvidenceFile, submitSkillEvidenceAfterUpload } from "@/lib/db/skills";
 import { isSkillDecaying, daysSince, SKILL_DECAY_DAYS, computeTrustSignals } from "@/lib/sijil-data";
 import { useLearnerProfile, useDeclaredSkills, usePeerReviews } from "@/hooks/useLearnerData";
 import { toast } from "@/hooks/use-toast";
@@ -56,16 +55,14 @@ export default function LearnerProfile() {
       const created = await addSkill({ name, domain: domain || "General", description: desc });
       if (file && created) {
         const url = await uploadSkillEvidenceFile(user.id, created.id, file);
-        await insertSkillSupportingRecord(user.id, created.id, file.name, url);
-        await supabase.from("declared_skills")
-          .update({
-            status: "Evidence Linked",
-            pipeline_stage: "evidence_linked",
-            last_related_activity_at: new Date().toISOString(),
-          })
-          .eq("id", created.id).eq("user_id", user.id);
+        await submitSkillEvidenceAfterUpload(user.id, created.id, file.name, url);
       }
-      toast({ title: "Skill claimed", description: file ? `${name} added with file.` : `${name} added.` });
+      toast({
+        title: "Skill claimed",
+        description: created?.status === "Evidence Linked"
+          ? `${name} added and linked to matching GitHub evidence.`
+          : file ? `${name} added with file.` : `${name} added.`,
+      });
       setName(""); setDomain(""); setDesc(""); clearFile(); setOpen(false);
     } catch (e) {
       toast({ title: "Error", description: e instanceof Error ? e.message : String(e), variant: "destructive" });

@@ -7,6 +7,7 @@ import {
   saveGitHubOAuthContext,
   type GitHubOAuthContext,
 } from "@/lib/github-env";
+import { syncGitHubViaBackend } from "@/lib/db/github-evidence";
 
 export type GitHubConnection = {
   github_username: string;
@@ -176,12 +177,43 @@ export async function completeGitHubOAuth(code: string, state: string): Promise<
   }
 }
 
-export { clearAllGitHubConnectionState, ensureGitHubContextForUser };
+/** After skill declare — sync GitHub and auto-match evidence (silent, best-effort). */
+export async function syncGitHubAfterSkillDeclare(
+  declaredSkills: Array<{ id: string; name: string; domain?: string }>,
+): Promise<void> {
+  try {
+    const session = await supabase.auth.getSession();
+    if (!session.data.session) return;
 
-/** Pull repos, commits, PRs, contributors from GitHub API via edge function. */
+    const { data: conn } = await supabase
+      .from("github_connections_public")
+      .select("github_username")
+      .eq("user_id", session.data.session.user.id)
+      .maybeSingle();
+
+    if (!conn) return;
+
+    await syncGitHubPortfolio(
+      declaredSkills.map((s) => ({ id: s.id, name: s.name })),
+    );
+  } catch {
+    // GitHub sync should not block skill declaration.
+  }
+}
+
+/** Pull repos, commits, PRs via backend API when available; edge function fallback. */
 export async function syncGitHubPortfolio(
   declaredSkills: Array<{ id: string; name: string }> = [],
 ): Promise<GitHubSyncStats> {
+  const backend = await syncGitHubViaBackend(declaredSkills);
+  if (backend.usedBackend && backend.result) {
+    return {
+      synced: backend.result.activitiesSynced,
+      repos: backend.result.reposFetched,
+      contributors: 0,
+    };
+  }
+
   const data = await invokeEdge<GitHubSyncStats & { upserted?: number }>("github-sync", {
     declared_skills: declaredSkills,
   });
@@ -224,3 +256,5 @@ export async function linkRepoToSkill(
     .eq("id", repoId);
   if (error) throw error;
 }
+
+export { clearAllGitHubConnectionState, ensureGitHubContextForUser };

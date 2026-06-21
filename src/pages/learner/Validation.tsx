@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { ArrowRight, ShieldCheck, RefreshCw, Github, ExternalLink, ChevronRight } from "lucide-react";
 import { useDeclaredSkills } from "@/hooks/useLearnerData";
 import { buildAllValidationSummaries, buildValidationSummary, type ValidationSummary } from "@/lib/db/validation";
+import { issueCredentialForSkill } from "@/lib/db/credentials";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { PIPELINE_STAGES, pipelineStageIndex } from "@/lib/competency-pipeline";
@@ -144,7 +145,10 @@ export default function Validation() {
               </Button>
             )}
             {walletReady && (
-              <Button onClick={() => navigate("/learner/wallet")}>
+              <Button onClick={async () => {
+                if (user && skillId) await issueCredentialForSkill(user.id, skillId);
+                navigate("/learner/wallet");
+              }}>
                 <ShieldCheck className="h-4 w-4 mr-1.5" />Add to wallet
               </Button>
             )}

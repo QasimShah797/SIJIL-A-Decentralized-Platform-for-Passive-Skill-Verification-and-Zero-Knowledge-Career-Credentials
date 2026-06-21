@@ -45,8 +45,16 @@ export function useDeclaredSkills() {
 
   const addSkill = async (skill: Pick<DeclaredSkill, "name" | "domain" | "description">) => {
     if (!user) return;
-    const created = await insertDeclaredSkill(user.id, skill);
-    setSkills((s) => [...s, created]);
+    const created = await insertDeclaredSkill(user.id, skill, skills);
+    setSkills((s) => {
+      const idx = s.findIndex((x) => x.id === created.id);
+      if (idx >= 0) {
+        const next = [...s];
+        next[idx] = created;
+        return next;
+      }
+      return [...s, created];
+    });
     return created;
   };
 

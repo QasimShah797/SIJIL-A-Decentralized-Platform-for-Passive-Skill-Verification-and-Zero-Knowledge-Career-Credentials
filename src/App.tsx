@@ -36,6 +36,7 @@ import AttestationDetail from "./pages/institution/AttestationDetail";
 import AttestationRequestDetail from "./pages/institution/AttestationRequestDetail";
 import InstitutionValidationTrail from "./pages/institution/ValidationTrail";
 import ReviewInvite from "./pages/review/ReviewInvite";
+import ContextReviewRequest from "./pages/review/ContextReviewRequest";
 
 const queryClient = new QueryClient();
 
@@ -58,6 +59,7 @@ const App = () => (
             <Route path="/signup/recruiter" element={<RecruiterSignup />} />
             <Route path="/signup/institution" element={<InstitutionSignup />} />
             <Route path="/register" element={<SignupChooser />} />
+            <Route path="/review/request/:token" element={<ContextReviewRequest />} />
             <Route path="/review/:invitationId" element={<ReviewInvite />} />
             <Route path="/auth/github/prepare" element={<RequireAuth><GitHubPrepare /></RequireAuth>} />
             <Route path="/auth/github/callback" element={<GitHubCallback />} />

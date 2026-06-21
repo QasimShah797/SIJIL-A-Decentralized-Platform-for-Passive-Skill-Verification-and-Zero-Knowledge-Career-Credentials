@@ -1,12 +1,14 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AppShell } from "@/components/sijil/AppShell";
 import { PageHeader } from "@/components/sijil/PageHeader";
 import { StatusBadge } from "@/components/sijil/StatusBadge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
-  RefreshCw, Github, BookOpen, FileUp, Link2, ExternalLink, Unplug, FolderSync, Code2,
+  RefreshCw, Github, BookOpen, FileUp, Link2, ExternalLink, Unplug, FolderSync, Code2, Search,
 } from "lucide-react";
+import { formatLanguageBreakdown } from "@/lib/evidence-matching";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -20,6 +22,18 @@ import {
   startGitHubOAuth, syncGitHubPortfolio, disconnectGitHub, linkRepoToSkill,
   buildSkillsForGitHubSync,
 } from "@/lib/github-integration";
+import { fetchLinkedProjectEvidence, unlinkGitHubRepoFromSkill } from "@/lib/db/github-evidence";
+import type { ProjectEvidenceApiView, SkillLinkApiView } from "@/lib/db/github-evidence";
+import {
+  getEvidenceReviewsApi,
+  getEligibleReviewersApi,
+  createReviewRequestApi,
+  importExternalReviewsApi,
+  canRequestContextReview,
+  type EvidenceReviewSummary,
+  type EligibleReviewerView,
+} from "@/services/api/reviews.api";
+import { isApiEnabled } from "@/services/api/client";
 
 // Combine declared skills with skills present in wallet credentials
 function buildAllSkills(
@@ -29,15 +43,28 @@ function buildAllSkills(
   return buildSkillsForGitHubSync(declared, creds);
 }
 
-function matchSkillByLanguage(lang: string | null, allSkills: { id: string; name: string }[]) {
-  if (!lang) return null;
-  const l = lang.toLowerCase();
-  return (
-    allSkills.find((s) => {
-      const n = s.name.toLowerCase();
-      return n === l || n.includes(l) || l.includes(n.split(/[ .&+/]/)[0]);
-    }) ?? null
-  );
+type LanguageFilter = "all" | "javascript" | "typescript" | "java" | "python" | "other";
+
+const REPO_PAGE_SIZE = 6;
+
+function isProjectLinked(project: ProjectEvidenceApiView): boolean {
+  return project.skillLinks.length > 0;
+}
+
+function projectMatchesLanguageFilter(
+  breakdown: Record<string, number>,
+  primaryLanguage: string | null,
+  filter: LanguageFilter,
+): boolean {
+  if (filter === "all") return true;
+  const langs = [
+    ...Object.keys(breakdown),
+    primaryLanguage ?? "",
+  ].map((l) => l.trim().toLowerCase()).filter(Boolean);
+  if (filter === "other") {
+    return langs.some((l) => !["javascript", "typescript", "java", "python"].includes(l));
+  }
+  return langs.includes(filter);
 }
 
 type GhConn = {
@@ -46,30 +73,6 @@ type GhConn = {
   scopes: string | null;
   connected_at: string;
   last_synced_at: string | null;
-};
-type GhActivity = {
-  id: string;
-  github_username: string;
-  repo_name: string | null;
-  activity_type: string;
-  activity_title: string;
-  activity_url: string | null;
-  commit_hash: string | null;
-  occurred_at: string | null;
-  synced_at: string;
-};
-type GhRepo = {
-  id: string;
-  repo_id: number;
-  repo_name: string;
-  full_name: string;
-  github_url: string;
-  description: string | null;
-  primary_language: string | null;
-  last_updated: string | null;
-  commit_count: number | null;
-  linked_skill_id: string | null;
-  linked_skill_name: string | null;
 };
 
 const MOODLE_SITE_URL = "https://sijil.moodlecloud.com";
@@ -88,13 +91,12 @@ export default function Integrations() {
   const { credentials } = useCredentials();
   const allSkills = buildAllSkills(declaredSkills, credentials);
   const [ghConn, setGhConn] = useState<GhConn | null>(null);
-  const [ghActivities, setGhActivities] = useState<GhActivity[]>([]);
-  const [ghRepos, setGhRepos] = useState<GhRepo[]>([]);
+  const [ghProjects, setGhProjects] = useState<ProjectEvidenceApiView[]>([]);
   const [loading, setLoading] = useState(true);
   const [connecting, setConnecting] = useState(false);
   const [syncing, setSyncing] = useState(false);
-  const autoSyncAttempted = useRef(false);
   const ghFetchGen = useRef(0);
+  const prevSkillSyncKey = useRef("");
 
   const [lmsConnected, setLmsConnected] = useState(false);
   const [lmsLastSync, setLmsLastSync] = useState<string | null>(null);
@@ -102,6 +104,45 @@ export default function Integrations() {
   const [moodleCourses, setMoodleCourses] = useState<MoodleCourse[]>([]);
   const [lmsRecords, setLmsRecords] = useState<CustEvidence[]>([]);
   const [lmsSyncing, setLmsSyncing] = useState(false);
+
+  const [repoSearch, setRepoSearch] = useState("");
+  const [languageFilter, setLanguageFilter] = useState<LanguageFilter>("all");
+  const [showAllRepos, setShowAllRepos] = useState(false);
+
+  const linkedProjects = useMemo(() => ghProjects.filter(isProjectLinked), [ghProjects]);
+  const linkedRepoCount = linkedProjects.length;
+
+  const skillSyncKey = useMemo(
+    () => declaredSkills.map((s) => `${s.id}:${s.status}`).sort().join("|"),
+    [declaredSkills],
+  );
+
+  const filteredLinkedProjects = useMemo(() => {
+    let list = linkedProjects;
+    const q = repoSearch.trim().toLowerCase();
+    if (q) {
+      list = list.filter(
+        (p) =>
+          p.repositoryName.toLowerCase().includes(q) ||
+          p.repoFullName.toLowerCase().includes(q),
+      );
+    }
+
+    if (languageFilter !== "all") {
+      list = list.filter((p) =>
+        projectMatchesLanguageFilter(p.languageBreakdown, p.primaryLanguage, languageFilter),
+      );
+    }
+
+    return list;
+  }, [linkedProjects, repoSearch, languageFilter]);
+
+  const visibleGhProjects = showAllRepos ? filteredLinkedProjects : filteredLinkedProjects.slice(0, REPO_PAGE_SIZE);
+  const hasMoreRepos = filteredLinkedProjects.length > REPO_PAGE_SIZE;
+
+  useEffect(() => {
+    setShowAllRepos(false);
+  }, [repoSearch, languageFilter]);
 
   const loadMoodleState = () => {
     try {
@@ -178,10 +219,9 @@ export default function Integrations() {
   const clearGitHubState = () => {
     ghFetchGen.current += 1;
     setGhConn(null);
-    setGhActivities([]);
-    setGhRepos([]);
+    setGhProjects([]);
     setLoading(false);
-    autoSyncAttempted.current = false;
+    prevSkillSyncKey.current = "";
   };
 
   const loadGitHub = async () => {
@@ -195,28 +235,18 @@ export default function Integrations() {
     const userId = user.id;
 
     setLoading(true);
-    const [{ data: conn }, { data: acts }, { data: repos }] = await Promise.all([
-      supabase
-        .from("github_connections_public")
-        .select("github_username,github_avatar_url,scopes,connected_at,last_synced_at")
-        .eq("user_id", userId)
-        .maybeSingle(),
-      supabase
-        .from("github_activities")
-        .select("*")
-        .eq("user_id", userId)
-        .order("occurred_at", { ascending: false, nullsFirst: false })
-        .limit(50),
-      supabase
-        .from("github_repos")
-        .select("*")
-        .eq("user_id", userId)
-        .order("last_updated", { ascending: false, nullsFirst: false }),
-    ]);
+    const { data: conn } = await supabase
+      .from("github_connections_public")
+      .select("github_username,github_avatar_url,scopes,connected_at,last_synced_at")
+      .eq("user_id", userId)
+      .maybeSingle();
     if (gen !== ghFetchGen.current) return;
     setGhConn(conn as GhConn | null);
-    setGhActivities((acts ?? []) as GhActivity[]);
-    setGhRepos((repos ?? []) as GhRepo[]);
+    try {
+      setGhProjects(await fetchLinkedProjectEvidence(userId));
+    } catch {
+      setGhProjects([]);
+    }
     setLoading(false);
   };
 
@@ -248,29 +278,39 @@ export default function Integrations() {
     }
   };
 
-  const syncGithub = async () => {
+  const syncGithub = async (quiet = false) => {
     setSyncing(true);
     try {
       const result = await syncGitHubPortfolio(allSkills);
-      toast({
-        title: "GitHub sync completed",
-        description: `${result.synced} activities, ${result.repos} repos, ${result.contributors} contributors imported.`,
-      });
+      if (!quiet) {
+        toast({
+          title: "GitHub sync completed",
+          description: `${result.repos} repositories checked. Related evidence is linked automatically to your declared skills.`,
+        });
+      }
       await loadGitHub();
     } catch (e) {
-      toast({ title: "Sync failed", description: e instanceof Error ? e.message : String(e), variant: "destructive" });
+      if (!quiet) {
+        const msg = e instanceof Error ? e.message : String(e);
+        toast({
+          title: "Sync failed",
+          description: msg.includes("expired") || msg.includes("401")
+            ? "GitHub authorization expired. Please reconnect GitHub."
+            : msg,
+          variant: "destructive",
+        });
+      }
     } finally {
       setSyncing(false);
     }
   };
 
   useEffect(() => {
-    if (!user || loading || syncing || autoSyncAttempted.current || !ghConn) return;
-    if (ghRepos.length === 0 && ghActivities.length === 0) {
-      autoSyncAttempted.current = true;
-      void syncGithub();
-    }
-  }, [user, loading, ghConn, ghRepos.length, ghActivities.length, syncing]); // eslint-disable-line
+    if (!user || !ghConn || loading || syncing || !skillSyncKey) return;
+    if (prevSkillSyncKey.current === skillSyncKey) return;
+    prevSkillSyncKey.current = skillSyncKey;
+    void syncGithub(true);
+  }, [skillSyncKey, ghConn, user, loading]); // eslint-disable-line
 
   const disconnectGithub = async () => {
     if (!user) return;
@@ -281,10 +321,17 @@ export default function Integrations() {
   };
 
   const handleLinkRepo = async (repoId: string, skillId: string | null, skillName: string | null) => {
+    if (!user) return;
     try {
-      await linkRepoToSkill(repoId, skillId, skillName);
+      const project = ghProjects.find((p) => p.repoId === repoId);
+      if (!skillId) {
+        const linkedSkillId = project?.skillLinks[0]?.skillId ?? null;
+        await unlinkGitHubRepoFromSkill(user.id, repoId, linkedSkillId);
+      } else {
+        await linkRepoToSkill(repoId, skillId, skillName);
+      }
       await loadGitHub();
-      toast({ title: skillId ? "Repository linked to skill" : "Repository unlinked" });
+      toast({ title: skillId ? "Project linked to skill" : "Skill link removed" });
     } catch (e) {
       toast({ title: "Could not update link", description: e instanceof Error ? e.message : String(e), variant: "destructive" });
     }
@@ -401,9 +448,9 @@ export default function Integrations() {
           connected={!!ghConn}
           account={ghConn ? `@${ghConn.github_username}` : undefined}
           lastSync={ghConn?.last_synced_at ? new Date(ghConn.last_synced_at).toLocaleString() : (ghConn ? "Not synced yet" : null)}
-          records={ghActivities.length}
+          records={ghProjects.length}
           onConnect={connectGithub}
-          onSync={syncGithub}
+          onSync={() => void syncGithub()}
           onDisconnect={disconnectGithub}
           connecting={connecting}
           syncing={syncing}
@@ -428,17 +475,12 @@ export default function Integrations() {
         </Card>
       </div>
 
-      {/* GitHub Repositories */}
+      {/* GitHub Evidence */}
       <Card className="mb-6">
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="text-base flex items-center gap-2">
-            <Code2 className="h-4 w-4" /> GitHub Repositories
+            <Code2 className="h-4 w-4" /> GitHub Evidence
           </CardTitle>
-          {ghConn && ghRepos.length > 0 && (
-            <span className="text-xs text-muted-foreground">
-              {ghRepos.length} repositories · {ghRepos.filter((r) => r.linked_skill_id || matchSkillByLanguage(r.primary_language, allSkills)).length} linked to skills
-            </span>
-          )}
         </CardHeader>
         <CardContent>
           {!ghConn ? (
@@ -449,11 +491,11 @@ export default function Integrations() {
             />
           ) : loading ? (
             <div className="px-2 py-6 text-sm text-muted-foreground">Loading…</div>
-          ) : ghRepos.length === 0 ? (
+          ) : ghProjects.length === 0 ? (
             <EmptyState
               icon={Github}
               title="No GitHub repositories found"
-              hint="Run a sync to import your repositories."
+              hint="Declare a skill on your profile — matching GitHub repositories will appear here automatically."
               action={
                 <Button size="sm" variant="outline" onClick={syncGithub} disabled={syncing}>
                   <RefreshCw className={"h-3.5 w-3.5 mr-1.5 " + (syncing ? "animate-spin" : "")} />Sync now
@@ -461,16 +503,92 @@ export default function Integrations() {
               }
             />
           ) : (
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {ghRepos.map((r) => (
-                <RepoCard
-                  key={r.id}
-                  repo={r}
-                  allSkills={allSkills}
-                  onLinkSkill={handleLinkRepo}
-                  onOpenSkill={(id) => navigate(id.startsWith("wallet-") ? "/learner/wallet" : `/learner/validation/${id}`)}
-                />
-              ))}
+            <div className="space-y-5">
+              {/* Connected summary */}
+              <div className="rounded-lg border bg-muted/30 p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <StatusBadge variant="verified">GitHub Connected</StatusBadge>
+                      <span className="text-sm font-medium">@{ghConn.github_username}</span>
+                    </div>
+                    <div className="text-sm text-muted-foreground space-y-0.5">
+                      <p>{linkedRepoCount} project repositories linked to declared competencies</p>
+                      {syncing && <p>Syncing GitHub evidence…</p>}
+                    </div>
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    Last sync:{" "}
+                    {ghConn.last_synced_at
+                      ? new Date(ghConn.last_synced_at).toLocaleString()
+                      : "Not synced yet"}
+                  </div>
+                </div>
+              </div>
+
+              {/* Evidence summary */}
+              <div className="rounded-lg border p-3 bg-card">
+                <div className="text-sm font-medium mb-1">GitHub Evidence Summary</div>
+                <div className="text-xs text-muted-foreground space-y-0.5">
+                  <p>Related project evidence shown below: {linkedRepoCount}</p>
+                  <p>Only projects matched to your declared skills are displayed.</p>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <div className="relative flex-1">
+                    <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      className="pl-8 h-9"
+                      placeholder="Search related evidence..."
+                      value={repoSearch}
+                      onChange={(e) => setRepoSearch(e.target.value)}
+                    />
+                  </div>
+                  <select
+                    className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+                    value={languageFilter}
+                    onChange={(e) => setLanguageFilter(e.target.value as LanguageFilter)}
+                  >
+                    <option value="all">All languages</option>
+                    <option value="javascript">JavaScript</option>
+                    <option value="typescript">TypeScript</option>
+                    <option value="java">Java</option>
+                    <option value="python">Python</option>
+                    <option value="other">Other</option>
+                  </select>
+                </div>
+
+                {filteredLinkedProjects.length === 0 ? (
+                  <EmptyState
+                    icon={Code2}
+                    title="No related project evidence yet"
+                    hint="Declare a skill on your profile. GitHub will sync automatically and show matching project repositories here."
+                  />
+                ) : (
+                  <>
+                    <div className="grid sm:grid-cols-2 gap-3">
+                      {visibleGhProjects.map((project) => (
+                        <ProjectEvidenceCard
+                          key={project.repoId}
+                          project={project}
+                          declaredSkills={declaredSkills}
+                          onLinkSkill={handleLinkRepo}
+                          onOpenSkill={(id) => navigate(`/learner/validation/${id}`)}
+                        />
+                      ))}
+                    </div>
+                    {hasMoreRepos && !showAllRepos && (
+                      <div className="flex justify-center pt-1">
+                        <Button size="sm" variant="outline" onClick={() => setShowAllRepos(true)}>
+                          Show more
+                        </Button>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
             </div>
           )}
         </CardContent>
@@ -528,61 +646,6 @@ export default function Integrations() {
                   <div className="col-span-2 text-xs text-muted-foreground">{r.completion_status}</div>
                   <div className="col-span-2 text-xs text-muted-foreground">{new Date(r.fetched_at).toLocaleDateString()}</div>
                 </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Recent GitHub Activity */}
-      <Card className="mb-6">
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="text-base flex items-center gap-2">
-            <Github className="h-4 w-4" /> Recent GitHub Activity
-          </CardTitle>
-          {ghConn && (
-            <span className="text-xs text-muted-foreground">@{ghConn.github_username} · {ghActivities.length} records</span>
-          )}
-        </CardHeader>
-        <CardContent className="p-0">
-          {loading ? (
-            <div className="px-6 py-10 text-sm text-muted-foreground">Loading…</div>
-          ) : !ghConn ? (
-            <EmptyState
-              icon={Github}
-              title="Connect GitHub to import recent activity"
-              hint="Repos, commits, and pull requests will be pulled in as supporting records."
-              action={<Button size="sm" onClick={connectGithub} disabled={connecting}><Github className="h-4 w-4 mr-1.5" />Connect GitHub</Button>}
-            />
-          ) : ghActivities.length === 0 ? (
-            <EmptyState
-              icon={Github}
-              title="No GitHub activity synced yet"
-              action={
-                <Button size="sm" variant="outline" onClick={syncGithub} disabled={syncing}>
-                  <RefreshCw className={"h-3.5 w-3.5 mr-1.5 " + (syncing ? "animate-spin" : "")} />Sync now
-                </Button>
-              }
-            />
-          ) : (
-            <div className="divide-y">
-              {ghActivities.map((a) => (
-                <button
-                  key={a.id}
-                  onClick={() => {
-                    if (a.activity_url) window.open(a.activity_url, "_blank", "noreferrer");
-                    else navigate("/learner/validation/sk-001");
-                  }}
-                  className="w-full grid grid-cols-12 items-center gap-4 px-6 py-3.5 hover:bg-muted/40 text-left transition"
-                >
-                  <div className="col-span-2 text-xs text-muted-foreground capitalize">{a.activity_type.replace("_", " ")}</div>
-                  <div className="col-span-6 text-sm font-medium truncate">{a.activity_title}</div>
-                  <div className="col-span-2 text-xs text-muted-foreground truncate">{a.repo_name ?? "—"}</div>
-                  <div className="col-span-2 flex items-center justify-end gap-2 text-xs text-muted-foreground">
-                    {a.occurred_at ? new Date(a.occurred_at).toLocaleDateString() : ""}
-                    <ExternalLink className="h-3.5 w-3.5" />
-                  </div>
-                </button>
               ))}
             </div>
           )}
@@ -668,84 +731,242 @@ function EmptyState({ icon: Icon, title, hint, action }: { icon: any; title: str
   );
 }
 
-function RepoCard({
-  repo, allSkills, onLinkSkill, onOpenSkill,
+function reviewStatusVariant(status: string): "verified" | "neutral" | "info" | "destructive" {
+  if (status === "Imported Context Review" || status === "Context Verified Review") return "verified";
+  if (status === "Review Request Sent" || status === "Awaiting Feedback") return "info";
+  return "neutral";
+}
+
+function ProjectEvidenceCard({
+  project, declaredSkills, onLinkSkill, onOpenSkill,
 }: {
-  repo: GhRepo;
-  allSkills: { id: string; name: string }[];
+  project: ProjectEvidenceApiView;
+  declaredSkills: { id: string; name: string }[];
   onLinkSkill: (repoId: string, skillId: string | null, skillName: string | null) => void;
   onOpenSkill: (skillId: string) => void;
 }) {
-  const fallback = !repo.linked_skill_id ? matchSkillByLanguage(repo.primary_language, allSkills) : null;
-  const linkedId = repo.linked_skill_id ?? fallback?.id ?? null;
-  const linkedName = repo.linked_skill_name ?? fallback?.name ?? null;
-  const linked = !!linkedId;
+  const linked = isProjectLinked(project);
+  const breakdownText = formatLanguageBreakdown(project.languageBreakdown);
+  const primaryLink = project.skillLinks[0];
+  const [reviewSummary, setReviewSummary] = useState<EvidenceReviewSummary | null>(null);
+  const [eligibleReviewers, setEligibleReviewers] = useState<EligibleReviewerView[]>([]);
+  const [requestOpen, setRequestOpen] = useState(false);
+  const [selectedReviewerId, setSelectedReviewerId] = useState("");
+  const [reviewerEmail, setReviewerEmail] = useState("");
+  const [requesting, setRequesting] = useState(false);
+
+  useEffect(() => {
+    if (!isApiEnabled() || !project.evidenceRecordId || !linked) return;
+    (async () => {
+      await importExternalReviewsApi(project.evidenceRecordId);
+      const summary = await getEvidenceReviewsApi(project.evidenceRecordId);
+      setReviewSummary(summary);
+    })();
+  }, [project.evidenceRecordId, linked]);
+
+  const loadEligibleReviewers = async () => {
+    if (!project.evidenceRecordId) return;
+    const list = await getEligibleReviewersApi(project.evidenceRecordId);
+    setEligibleReviewers(list ?? []);
+    if (list?.length === 1) {
+      setSelectedReviewerId(list[0].id);
+      setReviewerEmail(list[0].email ?? "");
+    }
+  };
+
+  const handleRequestReview = async () => {
+    if (!primaryLink || !project.evidenceRecordId || !selectedReviewerId || !reviewerEmail.trim()) {
+      toast({ title: "Missing details", description: "Select a reviewer and enter their email." });
+      return;
+    }
+    setRequesting(true);
+    try {
+      const result = await createReviewRequestApi({
+        evidenceId: project.evidenceRecordId,
+        skillId: primaryLink.skillId,
+        reviewerContextId: selectedReviewerId,
+        reviewerEmail: reviewerEmail.trim(),
+      });
+      if (!result) throw new Error("Review request failed");
+      toast({
+        title: "Review request sent",
+        description: `Awaiting feedback from ${reviewerEmail.trim()}. Link: ${result.reviewLink}`,
+      });
+      setRequestOpen(false);
+      const updated = await getEvidenceReviewsApi(project.evidenceRecordId);
+      setReviewSummary(updated);
+    } catch (e) {
+      toast({
+        title: "Could not send request",
+        description: e instanceof Error ? e.message : "Try again later",
+        variant: "destructive",
+      });
+    } finally {
+      setRequesting(false);
+    }
+  };
+
   return (
-    <div className="rounded-lg border bg-card p-4 hover:shadow-sm transition flex flex-col">
-      <div className="flex items-start justify-between gap-2 mb-2">
+    <div className="rounded-lg border bg-card p-3 hover:shadow-sm transition flex flex-col">
+      <div className="flex items-start justify-between gap-2 mb-1.5">
         <div className="min-w-0">
           <a
-            href={repo.github_url}
+            href={project.repositoryUrl}
             target="_blank"
             rel="noreferrer"
             className="font-medium text-sm hover:underline inline-flex items-center gap-1 truncate"
           >
-            {repo.repo_name}
+            {project.repositoryName}
             <ExternalLink className="h-3 w-3 opacity-60 shrink-0" />
           </a>
-          <div className="text-[11px] text-muted-foreground mt-0.5 truncate">{repo.full_name}</div>
+          <div className="text-[11px] text-muted-foreground truncate">{project.repoFullName}</div>
         </div>
         <StatusBadge variant={linked ? "verified" : "neutral"}>
-          {linked ? "Evidence Linked" : "Unlinked"}
+          {linked ? "Project Evidence" : "Unlinked"}
         </StatusBadge>
       </div>
 
-      {repo.description && (
-        <div className="text-xs text-muted-foreground mb-3 line-clamp-2">{repo.description}</div>
+      {breakdownText ? (
+        <div className="text-xs text-muted-foreground mb-2">
+          <div className="font-medium text-foreground/80 mb-0.5">Project language breakdown from GitHub</div>
+          <div>{breakdownText}</div>
+        </div>
+      ) : (
+        <div className="text-xs text-muted-foreground mb-2">
+          Primary language: {project.primaryLanguage ?? "—"}
+        </div>
       )}
 
-      <div className="mt-auto flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-        <span className="inline-flex items-center gap-1">
-          <span className="h-2 w-2 rounded-full bg-primary/70" />
-          {repo.primary_language ?? "Language not detected"}
-        </span>
-        {typeof repo.commit_count === "number" && (
-          <span>{repo.commit_count} commits</span>
-        )}
-        {repo.last_updated && (
-          <span>Updated {new Date(repo.last_updated).toLocaleDateString()}</span>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground mb-2">
+        {typeof project.commitCount === "number" && (
+          <span>{project.commitCount} commits</span>
         )}
       </div>
 
-      <div className="mt-3">
-        <label className="text-[11px] text-muted-foreground">Link to skill</label>
-        <select
-          className="mt-1 w-full h-8 rounded-md border border-input bg-background px-2 text-xs"
-          value={linkedId ?? ""}
-          onChange={(e) => {
-            const val = e.target.value;
-            if (!val) onLinkSkill(repo.id, null, null);
-            else {
-              const skill = allSkills.find((s) => s.id === val);
-              onLinkSkill(repo.id, val, skill?.name ?? null);
-            }
-          }}
-        >
-          <option value="">— Not linked —</option>
-          {allSkills.map((s) => (
-            <option key={s.id} value={s.id}>{s.name}</option>
+      {project.skillLinks.length > 0 && (
+        <div className="space-y-1.5 mb-2">
+          {project.skillLinks.map((link) => (
+            <div key={link.skillId} className="text-xs text-muted-foreground">
+              <span className="font-medium text-foreground">{link.skillName}</span>
+              {link.matchReason && (
+                <div className="mt-0.5">{link.matchReason}</div>
+              )}
+            </div>
           ))}
-        </select>
-      </div>
-
-      {linked && linkedId && (
-        <button
-          onClick={() => onOpenSkill(linkedId)}
-          className="mt-2 text-xs text-primary hover:underline text-left"
-        >
-          → View validation trail: {linkedName}
-        </button>
+        </div>
       )}
+
+      {reviewSummary && linked && (
+        <div className="mb-2 space-y-1.5">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[11px] text-muted-foreground">Context review</span>
+            <StatusBadge variant={reviewStatusVariant(reviewSummary.displayStatus)}>
+              {reviewSummary.displayStatus}
+            </StatusBadge>
+          </div>
+          {reviewSummary.reviews.slice(0, 1).map((r) => (
+            <div key={r.id} className="text-[11px] text-muted-foreground line-clamp-2">
+              {r.reviewerName}: {r.comment}
+            </div>
+          ))}
+          {canRequestContextReview(reviewSummary) && primaryLink && (
+            <div className="pt-1">
+              {!requestOpen ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-xs w-full"
+                  onClick={() => {
+                    setRequestOpen(true);
+                    void loadEligibleReviewers();
+                  }}
+                >
+                  Request Context Review
+                </Button>
+              ) : (
+                <div className="space-y-1.5 rounded-md border p-2">
+                  {eligibleReviewers.length === 0 ? (
+                    <p className="text-[11px] text-muted-foreground">No eligible context-linked reviewers found yet. Sync GitHub to refresh contributors.</p>
+                  ) : (
+                    <>
+                      <select
+                        className="w-full h-7 rounded-md border border-input bg-background px-2 text-xs"
+                        value={selectedReviewerId}
+                        onChange={(e) => {
+                          const id = e.target.value;
+                          setSelectedReviewerId(id);
+                          const rev = eligibleReviewers.find((r) => r.id === id);
+                          if (rev?.email) setReviewerEmail(rev.email);
+                        }}
+                      >
+                        <option value="">Select reviewer…</option>
+                        {eligibleReviewers.map((r) => (
+                          <option key={r.id} value={r.id}>
+                            {r.name} · {r.contextRole}
+                          </option>
+                        ))}
+                      </select>
+                      <Input
+                        type="email"
+                        placeholder="Reviewer email"
+                        className="h-7 text-xs"
+                        value={reviewerEmail}
+                        onChange={(e) => setReviewerEmail(e.target.value)}
+                      />
+                    </>
+                  )}
+                  <div className="flex gap-1">
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="h-7 text-xs flex-1"
+                      disabled={requesting || eligibleReviewers.length === 0}
+                      onClick={() => void handleRequestReview()}
+                    >
+                      {requesting ? "Sending…" : "Send request"}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 text-xs"
+                      onClick={() => setRequestOpen(false)}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="mt-auto">
+        {primaryLink && (
+          <button
+            onClick={() => onOpenSkill(primaryLink.skillId)}
+            className="mb-2 text-xs text-primary hover:underline text-left block"
+          >
+            → View validation trail: {primaryLink.skillName}
+          </button>
+        )}
+        <label className="text-[11px] text-muted-foreground">Remove skill link</label>
+        {declaredSkills.length > 0 && primaryLink ? (
+          <select
+            className="mt-1 w-full h-8 rounded-md border border-input bg-background px-2 text-xs"
+            defaultValue={primaryLink.skillId}
+            onChange={(e) => {
+              const val = e.target.value;
+              if (!val) onLinkSkill(project.repoId, null, null);
+            }}
+          >
+            <option value={primaryLink.skillId}>{primaryLink.skillName} (linked)</option>
+            <option value="">— Remove link —</option>
+          </select>
+        ) : null}
+      </div>
     </div>
   );
 }

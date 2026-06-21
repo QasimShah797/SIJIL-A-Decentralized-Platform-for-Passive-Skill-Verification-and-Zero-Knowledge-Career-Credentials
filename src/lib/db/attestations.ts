@@ -1,4 +1,9 @@
 import { supabase } from "@/integrations/supabase/client";
+import {
+  approveAttestationApi,
+  rejectAttestationApi,
+  clarificationAttestationApi,
+} from "@/services/api/attestation.api";
 import type { LearnerProfileView } from "@/lib/db/learner-profile";
 import { updateSkillPipelineStage } from "@/lib/db/skills";
 import type { AttestationRecord, AttestationStatus } from "@/lib/sijil-data";
@@ -70,6 +75,17 @@ export async function fetchAttestationForSkill(
 }
 
 export async function updateAttestationDb(id: string, patch: Partial<AttestationRecord>): Promise<void> {
+  if (patch.status === "Attestation Approved") {
+    const viaApi = await approveAttestationApi(id, patch.remarks);
+    if (viaApi) return;
+  } else if (patch.status === "Attestation Rejected" && patch.remarks) {
+    const viaApi = await rejectAttestationApi(id, patch.remarks);
+    if (viaApi) return;
+  } else if (patch.status === "Needs Clarification" && patch.remarks) {
+    const viaApi = await clarificationAttestationApi(id, patch.remarks);
+    if (viaApi) return;
+  }
+
   const dbPatch: Record<string, unknown> = { updated_at: new Date().toISOString() };
   if (patch.status !== undefined) dbPatch.status = patch.status;
   if (patch.remarks !== undefined) dbPatch.remarks = patch.remarks;
