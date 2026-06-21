@@ -123,7 +123,10 @@ export function buildContributorRows(
         status: "Invite Sent",
         lastInviteAt: legacyInv.sentAt,
         invitationId: legacyInv.id,
-        reviewLink: `${window.location.origin}/review/${legacyInv.id}`,
+        reviewLink: legacyInv.reviewLink
+          ?? (legacyInv.token
+            ? `${window.location.origin}/review/invite/${legacyInv.token}`
+            : `${window.location.origin}/review/${legacyInv.id}`),
       };
     }
     return {

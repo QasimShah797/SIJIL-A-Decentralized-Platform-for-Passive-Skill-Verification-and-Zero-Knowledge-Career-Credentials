@@ -645,7 +645,7 @@ export type ContextSource = "GitHub" | "LMS" | "Spark" | "Manual Project";
 export type ContextStatus = "Context Verified" | "Context Pending" | "Context Not Verified";
 export type Recommendation = "Recommended" | "Needs More Evidence" | "Cannot Confirm";
 export type TrustWeight = "High Trust" | "Medium Trust" | "Low Trust" | "Blocked";
-export type ReviewOrigin = "SIJIL" | "GitHub PR" | "GitHub Issue" | "LMS Assignment" | "LMS Teacher" | "Spark Comment";
+export type ReviewOrigin = "SIJIL" | "SIJIL Form Review" | "GitHub PR" | "GitHub Issue" | "LMS Assignment" | "LMS Teacher" | "Spark Comment";
 export type ContributorVerification = "Contributor Verified" | "Contributor Pending Verification" | "Not a Project Contributor";
 
 // A project contributor pulled from a source platform (GitHub repo, LMS group, Spark project, manual team).
@@ -764,6 +764,9 @@ export type ReviewInvitation = {
   status: InvitationStatus;
   sentAt: string;
   completedReviewId?: string;
+  reviewLink?: string;
+  token?: string;
+  expiresAt?: string;
 };
 
 const INV_KEY = "sijil.reviewInvitations.v1";

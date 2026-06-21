@@ -30,11 +30,8 @@ import {
   type PeerReviewProject,
   type ContextReviewRequestDisplay,
 } from "@/lib/db/peer-review-page";
-import {
-  createReviewRequestApi,
-  importExternalReviewsApi,
-  getEligibleReviewersApi,
-} from "@/services/api/reviews.api";
+import { supabase } from "@/integrations/supabase/client";
+import { importExternalReviewsApi } from "@/services/api/reviews.api";
 import { isApiEnabled } from "@/services/api/client";
 import { toast } from "@/hooks/use-toast";
 
@@ -56,6 +53,33 @@ function trustVariant(t: PeerReview["trustWeight"]) {
   if (t === "Medium Trust") return "info" as const;
   if (t === "Blocked") return "destructive" as const;
   return "neutral" as const;
+}
+
+type InviteReviewer = {
+  id?: string;
+  name: string;
+  githubUsername: string | null;
+  role: ProjectContributor["role"];
+};
+
+/** Contributor GitHub login only — never the repo owner / learner login. */
+function contributorToInviteReviewer(
+  contributor: ProjectContributor,
+  learnerGithubLogin: string | null,
+): InviteReviewer {
+  const rawLogin =
+    contributor.handle?.replace("@", "").trim()
+    || null;
+  const learnerLogin = learnerGithubLogin?.replace("@", "").trim().toLowerCase() || null;
+  const loginLower = rawLogin?.toLowerCase() ?? null;
+  const isLearnerLogin = Boolean(loginLower && learnerLogin && loginLower === learnerLogin);
+
+  return {
+    id: contributor.id,
+    name: contributor.name,
+    githubUsername: rawLogin && !isLearnerLogin ? rawLogin : null,
+    role: contributor.role,
+  };
 }
 
 export default function PeerReviewsPage() {
@@ -107,6 +131,12 @@ export default function PeerReviewsPage() {
     fetchLearnerProfile(user.id, user.email)
       .then((p) => setLearnerName(p.name))
       .catch(() => setLearnerName(user.email?.split("@")[0] ?? "Learner"));
+    supabase
+      .from("github_connections")
+      .select("github_username")
+      .eq("user_id", user.id)
+      .maybeSingle()
+      .then(({ data }) => setLearnerGithub(data?.github_username ?? null));
     reload()
       .catch(() => {
         toast({
@@ -133,10 +163,17 @@ export default function PeerReviewsPage() {
   );
 
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [inviteByEmail, setInviteByEmail] = useState(false);
   const [inviteContrib, setInviteContrib] = useState<ProjectContributor | null>(null);
   const [inviteSkill, setInviteSkill] = useState<string>(skillForProject);
   const [inviteEmail, setInviteEmail] = useState<string>("");
   const [generatedLink, setGeneratedLink] = useState<string | null>(null);
+  const [learnerGithub, setLearnerGithub] = useState<string | null>(null);
+
+  const selectedReviewer = useMemo(
+    () => (inviteContrib ? contributorToInviteReviewer(inviteContrib, learnerGithub) : null),
+    [inviteContrib, learnerGithub],
+  );
 
   const reviewedContributorIds = useMemo(() => {
     if (!selectedProject) return new Set<string>();
@@ -161,6 +198,7 @@ export default function PeerReviewsPage() {
   }, [invitations, selectedProject]);
 
   const openInvite = (c: ProjectContributor) => {
+    setInviteByEmail(false);
     setInviteContrib(c);
     setInviteSkill(skillForProject);
     setInviteEmail(c.email ?? "");
@@ -168,60 +206,159 @@ export default function PeerReviewsPage() {
     setInviteOpen(true);
   };
 
+  const openInviteByEmail = () => {
+    setInviteByEmail(true);
+    setInviteContrib(null);
+    setInviteSkill(skillForProject);
+    setInviteEmail("");
+    setGeneratedLink(null);
+    setInviteOpen(true);
+  };
+
   const sendInvite = async () => {
-    if (!selectedProject || !inviteContrib) return;
-    if (!inviteEmail.trim()) {
-      toast({ title: "Email required", description: "We need a contact email to send the review invitation." });
+    if (!selectedProject || !user?.id) return;
+    if (!inviteByEmail && !inviteContrib) return;
+
+    const contactEmail = inviteEmail.trim();
+
+    if (inviteByEmail && !contactEmail) {
+      toast({
+        title: "Email required",
+        description: "Enter the reviewer's email address to send an invitation.",
+      });
       return;
     }
-    if (!isApiEnabled() || !selectedProject.evidenceRecordId) {
+
+    if (!inviteByEmail && !contactEmail && !selectedReviewer?.githubUsername) {
       toast({
-        title: "Backend required",
-        description: "Sync GitHub from Integrations and ensure VITE_API_BASE_URL is configured.",
+        title: "Contact required",
+        description: "Provide a contact email or select a contributor with a GitHub username.",
+      });
+      return;
+    }
+
+    console.log("Learner email:", user?.email);
+    console.log("Learner GitHub:", learnerGithub);
+    console.log("Selected reviewer:", selectedReviewer);
+    console.log("Contact email:", contactEmail);
+
+    const learnerEmail = user.email?.trim().toLowerCase();
+    const reviewerEmail = contactEmail?.trim().toLowerCase();
+
+    const learnerGithubNormalized =
+      learnerGithub?.replace("@", "").trim().toLowerCase();
+
+    const reviewerGithub =
+      inviteByEmail
+        ? null
+        : selectedReviewer?.githubUsername
+          ?.replace("@", "")
+          .trim()
+          .toLowerCase() ?? null;
+
+    const hasReviewerGithub = Boolean(reviewerGithub);
+    const hasReviewerEmail = Boolean(reviewerEmail);
+
+    const isSameEmail =
+      hasReviewerEmail &&
+      learnerEmail &&
+      reviewerEmail === learnerEmail;
+
+    const isSameGithub =
+      hasReviewerGithub &&
+      learnerGithubNormalized &&
+      reviewerGithub === learnerGithubNormalized;
+
+    if (isSameEmail || isSameGithub) {
+      toast({
+        title: "Invalid reviewer",
+        description: "You cannot invite yourself as a reviewer.",
         variant: "destructive",
       });
       return;
     }
 
-    const skillLink = selectedProject.skillLinks.find((s) => s.skillName === inviteSkill)
-      ?? selectedProject.skillLinks[0];
-    if (!skillLink) {
-      toast({ title: "Link a skill first", description: "Link this repository to a declared skill on Integrations." });
-      return;
-    }
+    const selectedSkill = declaredSkills.find((s) => s.name === inviteSkill)
+      ?? declaredSkills.find((s) => selectedProject.linkedSkills.includes(s.name));
 
-    const eligible = await getEligibleReviewersApi(selectedProject.evidenceRecordId);
-    const reviewerContext = eligible?.find(
-      (r) => r.name === inviteContrib.handle
-        || r.name === inviteContrib.name
-        || r.login === inviteContrib.handle,
-    );
-    if (!reviewerContext) {
+    const competencyName = selectedSkill?.name ?? inviteSkill ?? "Declared competency";
+    const competencyDomain = selectedSkill?.domain ?? "Not specified";
+
+    const token = `${crypto.randomUUID()}-${crypto.randomUUID()}`;
+    const appUrl = import.meta.env.VITE_APP_URL || window.location.origin;
+    const reviewLink = `${appUrl}/review/invite/${token}`;
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+
+    const invitationPayload = {
+      learner_user_id: user.id,
+
+      project_id: selectedProject.id,
+
+      project_name: selectedProject.name || "GitHub project",
+
+      source: "github",
+
+      contributor_id:
+        selectedReviewer?.id
+        || selectedReviewer?.githubUsername
+        || (contactEmail ? `email-${Date.now()}` : `external-${Date.now()}`),
+
+      contributor_name:
+        selectedReviewer?.name
+        || selectedReviewer?.githubUsername
+        || contactEmail
+        || "External reviewer",
+
+      contributor_email: contactEmail || null,
+
+      contributor_role:
+        selectedReviewer?.role
+        || "Project Collaborator",
+
+      skill_id: selectedSkill?.id || null,
+
+      competency_name: competencyName,
+
+      competency_domain: competencyDomain,
+
+      token,
+      review_link: reviewLink,
+      status: "pending",
+      expires_at: expiresAt,
+      email_status: "not_sent",
+
+      // Legacy NOT NULL columns
+      learner_name: learnerName,
+      skill: competencyName,
+    };
+
+    console.log("Review invitation payload:", invitationPayload);
+
+    const { data: invitation, error: invitationError } = await supabase
+      .from("review_invitations")
+      .insert(invitationPayload)
+      .select()
+      .single();
+
+    console.log("Created invitation:", invitation);
+    console.log("Invitation insert error:", invitationError);
+
+    if (invitationError) {
       toast({
-        title: "Reviewer not eligible",
-        description: "This person is not a verified context-linked contributor for this evidence.",
+        title: "Invitation failed",
+        description: invitationError.message || "Could not create invitation",
         variant: "destructive",
       });
       return;
     }
 
-    const result = await createReviewRequestApi({
-      evidenceId: selectedProject.evidenceRecordId,
-      skillId: skillLink.skillId,
-      reviewerContextId: reviewerContext.id,
-      reviewerEmail: inviteEmail.trim(),
-    });
-    if (!result) {
-      toast({ title: "Request failed", description: "Could not send review request.", variant: "destructive" });
-      return;
-    }
-
-    setGeneratedLink(result.reviewLink);
-    await reload();
     toast({
-      title: "Context review request sent",
-      description: `Awaiting feedback from ${inviteContrib.name} for ${inviteSkill} on ${selectedProject.name}.`,
+      title: "Secure invitation created",
+      description: "Review link was created successfully.",
     });
+
+    setGeneratedLink(invitation.review_link ?? reviewLink);
+    await reload();
   };
 
   const importExisting = async () => {
@@ -338,12 +475,20 @@ export default function PeerReviewsPage() {
               {selectedProject?.contributors.map((c) => {
                 const reviewed = reviewedContributorIds.has(c.id);
                 const invited = invitedContributorIds.has(c.id);
+                const displayHandle =
+                  c.handle
+                  && c.handle.replace("@", "").toLowerCase()
+                    !== learnerGithub?.replace("@", "").toLowerCase()
+                    ? c.handle
+                    : null;
                 return (
                   <div key={c.id} className="flex items-center justify-between gap-3 p-3 text-sm">
                     <div className="min-w-0">
                       <div className="font-medium flex items-center gap-2 flex-wrap">
                         {c.name}
-                        {c.handle && <span className="text-xs text-muted-foreground">@{c.handle}</span>}
+                        {displayHandle && (
+                          <span className="text-xs text-muted-foreground">@{displayHandle}</span>
+                        )}
                         <StatusBadge variant="outline">{c.role}</StatusBadge>
                         <StatusBadge variant="verified" icon={<ShieldCheck className="h-3 w-3" />}>
                           Contributor Verified
@@ -368,8 +513,15 @@ export default function PeerReviewsPage() {
                 );
               })}
               {!selectedProject?.contributors.length && (
-                <div className="p-4 text-sm text-muted-foreground">No contributors found for this project.</div>
+                <div className="p-4 text-sm text-muted-foreground">
+                  No contributors found for this project.
+                </div>
               )}
+              <div className="p-3 border-t">
+                <Button size="sm" variant="outline" className="w-full sm:w-auto" onClick={openInviteByEmail}>
+                  <Mail className="h-4 w-4 mr-1.5" />Invite by email
+                </Button>
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -416,9 +568,12 @@ export default function PeerReviewsPage() {
                     <StatusBadge variant={i.status === "Completed" ? "verified" : "warning"}>{i.status}</StatusBadge>
                     <Button size="sm" variant="outline" onClick={() => {
                       const ctx = contextRequests.find((r) => r.id === i.id);
-                      const link = ctx
-                        ? `${window.location.origin}/review/request/${ctx.token}`
-                        : `${window.location.origin}/review/${i.id}`;
+                      const link = i.reviewLink
+                        ?? (ctx
+                          ? `${window.location.origin}/review/request/${ctx.token}`
+                          : i.token
+                            ? `${window.location.origin}/review/invite/${i.token}`
+                            : `${window.location.origin}/review/${i.id}`);
                       navigator.clipboard.writeText(link);
                       toast({ title: "Link copied", description: link });
                     }}>
@@ -548,23 +703,43 @@ export default function PeerReviewsPage() {
       <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Invite contributor to review</DialogTitle>
+            <DialogTitle>
+              {inviteByEmail ? "Invite reviewer by email" : "Invite contributor to review"}
+            </DialogTitle>
           </DialogHeader>
-          {inviteContrib && selectedProject && (
+          {selectedProject && (inviteByEmail || inviteContrib) && (
             <div className="space-y-3 text-sm">
               <p className="text-muted-foreground">
-                You are inviting a verified contributor of <span className="font-medium text-foreground">{selectedProject.name}</span> to review your work on this project. SIJIL will send them an email with a secure form link.
+                {inviteByEmail ? (
+                  <>Invite someone to review your work on <span className="font-medium text-foreground">{selectedProject.name}</span>. They will receive a secure form link bound to their email.</>
+                ) : (
+                  <>You are inviting a verified contributor of <span className="font-medium text-foreground">{selectedProject.name}</span> to review your work on this project. SIJIL will send them a secure form link.</>
+                )}
               </p>
-              <div>
-                <Label>Reviewer</Label>
-                <div className="mt-1.5 rounded-md border p-2 bg-muted/30">
-                  {inviteContrib.name} {inviteContrib.handle && <span className="text-xs text-muted-foreground">@{inviteContrib.handle}</span>}
-                  <div className="text-xs text-muted-foreground">{inviteContrib.role} · Contributor Verified</div>
+              {!inviteByEmail && selectedReviewer && (
+                <div>
+                  <Label>Reviewer</Label>
+                  <div className="mt-1.5 rounded-md border p-2 bg-muted/30">
+                    <div className="font-medium">{selectedReviewer.name}</div>
+                    {selectedReviewer.githubUsername ? (
+                      <p className="text-xs text-muted-foreground">@{selectedReviewer.githubUsername}</p>
+                    ) : contactEmailForDisplay(inviteEmail) ? (
+                      <p className="text-xs text-muted-foreground">{inviteEmail.trim()}</p>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">Enter contact email below</p>
+                    )}
+                    <div className="text-xs text-muted-foreground mt-0.5">{selectedReviewer.role} · Contributor Verified</div>
+                  </div>
                 </div>
-              </div>
+              )}
               <div>
                 <Label>Contact email</Label>
-                <Input className="mt-1.5" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} placeholder="reviewer@example.com" />
+                <Input
+                  className="mt-1.5"
+                  value={inviteEmail}
+                  onChange={(e) => setInviteEmail(e.target.value)}
+                  placeholder="reviewer@example.com"
+                />
               </div>
               <div>
                 <Label>Skill / competency</Label>
@@ -581,8 +756,13 @@ export default function PeerReviewsPage() {
               </div>
               {generatedLink && (
                 <div className="rounded-md border p-2 bg-success-soft/40 text-xs">
-                  <div className="flex items-center gap-1 font-medium text-success"><LinkIcon className="h-3 w-3" /> Email sent — preview reviewer link:</div>
+                  <div className="flex items-center gap-1 font-medium text-success">
+                    <LinkIcon className="h-3 w-3" /> Secure review link ready
+                  </div>
                   <div className="mt-1 mono break-all">{generatedLink}</div>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    This link is secure and can only be used by the invited reviewer.
+                  </p>
                   <div className="flex gap-2 mt-2">
                     <Button size="sm" variant="outline" onClick={() => { navigator.clipboard.writeText(generatedLink); toast({ title: "Link copied" }); }}>
                       <Copy className="h-3 w-3 mr-1" />Copy
@@ -597,7 +777,11 @@ export default function PeerReviewsPage() {
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setInviteOpen(false)}>Close</Button>
-            {!generatedLink && <Button onClick={() => void sendInvite()}><Mail className="h-4 w-4 mr-1.5" />Send invitation email</Button>}
+            {!generatedLink && (
+              <Button onClick={() => void sendInvite()}>
+                <Mail className="h-4 w-4 mr-1.5" />Create secure invitation
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -606,6 +790,10 @@ export default function PeerReviewsPage() {
 }
 
 export function ReviewCard({ r }: { r: PeerReview }) {
+  const originLabel = r.imported ? r.origin : (r.origin === "SIJIL Form Review" ? r.origin : "SIJIL Form Review");
+  const projectLabel = r.projectName || "GitHub project";
+  const skillLabel = r.skill || "Declared competency";
+
   return (
     <div id={`review-${r.id}`} className="px-6 py-4 scroll-mt-24">
       <div className="flex flex-wrap items-start gap-3 justify-between">
@@ -616,12 +804,14 @@ export function ReviewCard({ r }: { r: PeerReview }) {
             <StatusBadge variant="neutral" icon={sourceIcon(r.source)}>{r.source}</StatusBadge>
             {r.imported
               ? <StatusBadge variant="info">Imported · {r.origin}</StatusBadge>
-              : <StatusBadge variant="info">SIJIL Form Review</StatusBadge>}
+              : <StatusBadge variant="info">{originLabel}</StatusBadge>}
           </div>
           <div className="text-xs text-muted-foreground mt-1">
-            On <span className="font-medium text-foreground">{r.skill}</span>
-            {r.projectName && <> · project: <span className="font-medium text-foreground">{r.projectName}</span></>}
-            {" · evidence: "}{r.evidenceLabel || "—"}
+            Skill: <span className="font-medium text-foreground">{skillLabel}</span>
+            {" · "}Project: <span className="font-medium text-foreground">{projectLabel}</span>
+            {r.evidenceLabel && r.evidenceLabel !== projectLabel && (
+              <> · Evidence: <span className="font-medium text-foreground">{r.evidenceLabel}</span></>
+            )}
             {r.evidenceUrl && (
               <> · <a href={r.evidenceUrl} target="_blank" rel="noreferrer" className="underline">open</a></>
             )}
@@ -645,7 +835,7 @@ export function ReviewCard({ r }: { r: PeerReview }) {
                 ? "verified"
                 : "warning"
             }>
-              {r.recommendation}
+              Decision: {r.recommendation}
             </StatusBadge>
           )}
           <div className="flex items-center text-amber-500 text-sm">
@@ -659,6 +849,10 @@ export function ReviewCard({ r }: { r: PeerReview }) {
       <div className="text-[11px] text-muted-foreground mt-2">{new Date(r.date).toLocaleDateString()}</div>
     </div>
   );
+}
+
+function contactEmailForDisplay(email: string): boolean {
+  return Boolean(email.trim());
 }
 
 function Stat({ label, value }: { label: string; value: number }) {

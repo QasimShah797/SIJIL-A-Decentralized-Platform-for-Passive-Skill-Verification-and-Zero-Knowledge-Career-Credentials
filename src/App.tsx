@@ -59,8 +59,8 @@ const App = () => (
             <Route path="/signup/recruiter" element={<RecruiterSignup />} />
             <Route path="/signup/institution" element={<InstitutionSignup />} />
             <Route path="/register" element={<SignupChooser />} />
+            <Route path="/review/invite/:token" element={<ReviewInvite />} />
             <Route path="/review/request/:token" element={<ContextReviewRequest />} />
-            <Route path="/review/:invitationId" element={<ReviewInvite />} />
             <Route path="/auth/github/prepare" element={<RequireAuth><GitHubPrepare /></RequireAuth>} />
             <Route path="/auth/github/callback" element={<GitHubCallback />} />
 
