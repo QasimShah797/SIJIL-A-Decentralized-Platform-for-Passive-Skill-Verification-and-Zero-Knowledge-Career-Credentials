@@ -164,7 +164,6 @@ function rowToReview(row: Record<string, unknown>): PeerReview {
     recommendation: (decision ?? row.recommendation) as PeerReview["recommendation"],
     date: reviewedAt ?? (row.review_date as string) ?? new Date().toISOString(),
     contextStatus: (row.context_status as PeerReview["contextStatus"])
-<<<<<<< HEAD
       ?? ((row.verification_status as string) === "verified"
         ? "Context Verified"
         : imported ? "Imported Context Review" : "Context Verified Review"),
@@ -172,13 +171,8 @@ function rowToReview(row: Record<string, unknown>): PeerReview {
       (row.verification_status as string) === "verified" || row.contributor_verification
         ? "Contributor Verified"
         : undefined,
-    trustWeight: (row.trust_weight as PeerReview["trustWeight"]) ?? "High Trust",
-=======
-      ?? (imported ? "Context Verified" : "Context Verified"),
-    contributorVerification: row.contributor_verification as PeerReview["contributorVerification"],
     trustWeight: (row.trust_weight as PeerReview["trustWeight"])
       ?? (Number(row.trust_weight_score) >= 0.85 ? "High Trust" : "Medium Trust"),
->>>>>>> 59cb1d8 (My changes)
     imported,
   };
 }

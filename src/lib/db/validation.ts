@@ -1,14 +1,18 @@
 import { supabase } from "@/integrations/supabase/client";
 import type { DeclaredSkill } from "@/lib/sijil-data";
 import { fetchPeerReviews } from "@/lib/db/peer-reviews";
-import { fetchAttempt } from "@/lib/db/practical-attempts";
+import {
+  attemptTaskLabel,
+  isAttemptSubmitted,
+  resolveAttempt,
+} from "@/lib/db/practical-attempts";
 import { fetchAttestationRequestForSkill } from "@/lib/db/institution-attestation-requests";
 import { institutionDisplayName } from "@/lib/institution-routing";
 import { fetchLearnerProfile } from "@/lib/db/learner-profile";
 import { fetchCredentials } from "@/lib/db/credentials";
 import {
-  evidenceLabelForStage,
-  nextStepForStage,
+  evidenceLabelForAttempt,
+  nextStepForAttempt,
   pipelineStageLabel,
   resolveEffectivePipelineStage,
 } from "@/lib/competency-pipeline";
@@ -60,7 +64,7 @@ export async function buildValidationSummary(
       .eq("linked_skill_id", skill.id)
       .limit(10),
     fetchPeerReviews(userId),
-    fetchAttempt(userId, skill.id),
+    resolveAttempt(userId, skill.id),
     fetchAttestationRequestForSkill(userId, skill.id),
     fetchLearnerProfile(userId),
     fetchCredentials(userId),
@@ -99,7 +103,13 @@ export async function buildValidationSummary(
       name: `Practical attempt ${attempt.attemptId}`,
       type: "Practical Submission",
       date: new Date(attempt.startedAt).toLocaleDateString(),
-      role: attempt.passed ? "Passed practical task" : "Hands-on artifact",
+      role: attempt.passed || attempt.status === "passed"
+        ? "Passed practical task"
+        : attempt.status === "submitted" || attempt.status === "auto_submitted"
+          ? "Submitted — awaiting evaluation"
+          : attempt.status === "in_progress"
+            ? "In progress"
+            : "Hands-on artifact",
     });
   }
   for (const r of skillReviews) {
@@ -148,25 +158,26 @@ export async function buildValidationSummary(
 
   const currentStageLabel = pipelineStageLabel(pipelineStage);
   const evidencePackageSent = !!attestationRequest && attestationRequest.status === "pending";
+  const attemptSubmitted = isAttemptSubmitted(attempt);
 
   return {
     skillId: skill.id,
     skill: skill.name,
     pipelineStage,
     currentStageLabel,
-    evidence: evidenceLabelForStage(pipelineStage),
+    evidence: evidenceLabelForAttempt(pipelineStage, attempt),
     institution,
-    nextStep: nextStepForStage(pipelineStage, institution),
+    nextStep: nextStepForAttempt(pipelineStage, attempt, institution),
     result: pipelineStage === "institution_attestation_rejected" || pipelineStage === "institution_rejected"
       ? "Rejected"
-      : hasEvidence || attempt?.passed ? "In progress" : "Pending",
+      : attemptSubmitted || attempt?.passed ? "In progress" : "Pending",
     status: currentStageLabel,
     evaluatedOn: dates[0] ?? "—",
     sources: sources.length ? sources : ["No evidence yet"],
     reviewCount: skillReviews.length,
     supportingRecords,
     latestActivity: dates[0] ?? "—",
-    task: attempt ? `Attempt ${attempt.attemptId}` : "No task submitted",
+    task: attemptTaskLabel(attempt),
     rows,
     evidencePackageSent,
     institutionFeedback: attestationRequest?.institutionFeedback,

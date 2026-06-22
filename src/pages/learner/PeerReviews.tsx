@@ -35,7 +35,13 @@ import {
   importExternalReviewsApi,
   getEligibleReviewersApi,
 } from "@/services/api/reviews.api";
+import {
+  getPeerReviewStatsApi,
+  getPeerReviewContributorsApi,
+  type PeerReviewStatsApi,
+} from "@/services/api/peer-review.api";
 import { isApiEnabled } from "@/services/api/client";
+import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 
 function sourceIcon(s: ContextSource) {
@@ -314,9 +320,6 @@ export default function PeerReviewsPage() {
       title: "Context review request sent",
       description: `Awaiting feedback from ${inviteContrib.name} for ${inviteSkill} on ${selectedProject.name}.`,
     });
-
-    setGeneratedLink(invitation.review_link ?? reviewLink);
-    await reload();
   };
 
   const importExisting = async () => {

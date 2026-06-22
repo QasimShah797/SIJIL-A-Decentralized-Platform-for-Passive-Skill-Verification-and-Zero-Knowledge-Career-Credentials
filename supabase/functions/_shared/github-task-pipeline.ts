@@ -387,6 +387,194 @@ export async function geminiJson<T>(
   }
 }
 
+type AiProvider = "gemini" | "groq";
+type AiPurpose = "classify" | "task" | "eval";
+
+const DEFAULT_GROQ_MODEL = "llama-3.3-70b-versatile";
+
+function parseJsonText<T>(text: string): T {
+  const trimmed = text.trim();
+  const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  const payload = fenced ? fenced[1].trim() : trimmed;
+  return JSON.parse(payload) as T;
+}
+
+export function getAiProviderChain(): AiProvider[] {
+  const configured = Deno.env.get("AI_PROVIDERS")?.trim();
+  if (configured) {
+    return configured
+      .split(",")
+      .map((value) => value.trim().toLowerCase())
+      .filter((value): value is AiProvider => value === "gemini" || value === "groq");
+  }
+
+  const chain: AiProvider[] = [];
+  if (Deno.env.get("GEMINI_API_KEY")) chain.push("gemini");
+  if (Deno.env.get("GROQ_API_KEY")) chain.push("groq");
+  return chain.length ? chain : ["gemini"];
+}
+
+export function hasAiProviderConfigured(): boolean {
+  return Boolean(Deno.env.get("GEMINI_API_KEY") || Deno.env.get("GROQ_API_KEY"));
+}
+
+function resolveProviderModel(
+  provider: AiProvider,
+  purpose: AiPurpose,
+  geminiModel?: string,
+): string {
+  if (provider === "gemini") {
+    if (geminiModel) return geminiModel;
+    if (purpose === "classify") {
+      return Deno.env.get("GEMINI_CLASSIFY_MODEL") ?? "gemini-2.5-flash";
+    }
+    if (purpose === "task") {
+      return Deno.env.get("GEMINI_TASK_MODEL") ?? "gemini-2.5-flash";
+    }
+    return Deno.env.get("GEMINI_EVAL_MODEL")
+      ?? Deno.env.get("GEMINI_TASK_MODEL")
+      ?? "gemini-2.5-flash";
+  }
+
+  const purposeModel = Deno.env.get(`GROQ_${purpose.toUpperCase()}_MODEL`);
+  return purposeModel ?? Deno.env.get("GROQ_MODEL") ?? DEFAULT_GROQ_MODEL;
+}
+
+function providerConfigured(provider: AiProvider): boolean {
+  if (provider === "gemini") return Boolean(Deno.env.get("GEMINI_API_KEY"));
+  return Boolean(Deno.env.get("GROQ_API_KEY"));
+}
+
+export function isRetryableProviderError(err: unknown): boolean {
+  if (isQuotaError(err)) return true;
+  const message = err instanceof Error ? err.message : String(err);
+  const lower = message.toLowerCase();
+  return (
+    lower.includes("missing gemini_api_key")
+    || lower.includes("missing groq_api_key")
+    || lower.includes("rate limit")
+    || lower.includes("model_not_found")
+    || message.includes("503")
+    || message.includes("502")
+    || message.includes("504")
+    || message.includes("429")
+    || lower.includes("unavailable")
+    || lower.includes("high demand")
+    || lower.includes("overloaded")
+    || lower.includes("temporarily unavailable")
+    || lower.includes("resource_exhausted")
+  );
+}
+
+async function groqJson<T>(
+  model: string,
+  prompt: string,
+  schema: Record<string, unknown>,
+): Promise<T> {
+  const apiKey = Deno.env.get("GROQ_API_KEY");
+  if (!apiKey) {
+    throw new Error("Missing GROQ_API_KEY secret");
+  }
+
+  const schemaPrompt = `${prompt}
+
+Return valid JSON only (no markdown fences) matching this schema:
+${JSON.stringify(schema)}`;
+
+  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model,
+      messages: [
+        {
+          role: "system",
+          content: "You are a precise technical assistant. Respond with JSON only.",
+        },
+        { role: "user", content: schemaPrompt },
+      ],
+      temperature: 0.2,
+      response_format: { type: "json_object" },
+    }),
+  });
+
+  const rawText = await res.text();
+
+  if (!res.ok) {
+    console.error("Groq API error:", {
+      status: res.status,
+      model,
+      rawText,
+    });
+    throw new Error(`Groq API error ${res.status}: ${rawText}`);
+  }
+
+  let data: { choices?: Array<{ message?: { content?: string } }> };
+  try {
+    data = JSON.parse(rawText);
+  } catch {
+    console.error("Groq HTTP response was not JSON:", rawText);
+    throw new Error("Groq HTTP response was not JSON");
+  }
+
+  const text = data?.choices?.[0]?.message?.content?.trim() ?? "";
+  if (!text) {
+    console.error("Groq returned empty model text:", data);
+    throw new Error("Groq returned empty response text");
+  }
+
+  try {
+    return parseJsonText<T>(text);
+  } catch {
+    console.error("Groq returned invalid JSON text:", text);
+    throw new Error(`Groq returned invalid JSON text: ${text.slice(0, 500)}`);
+  }
+}
+
+/** Try configured AI providers in order (default: gemini, then groq). */
+export async function llmJson<T>(params: {
+  purpose: AiPurpose;
+  prompt: string;
+  schema: Record<string, unknown>;
+  geminiModel?: string;
+}): Promise<T> {
+  const providers = getAiProviderChain();
+  const errors: string[] = [];
+
+  for (const provider of providers) {
+    if (!providerConfigured(provider)) {
+      errors.push(`${provider}: not configured`);
+      continue;
+    }
+
+    const model = resolveProviderModel(provider, params.purpose, params.geminiModel);
+
+    try {
+      console.log(`llmJson using ${provider} (${model}) for ${params.purpose}`);
+      if (provider === "gemini") {
+        return await geminiJson<T>(model, params.prompt, params.schema);
+      }
+      return await groqJson<T>(model, params.prompt, params.schema);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      errors.push(`${provider}: ${message}`);
+      if (!isRetryableProviderError(err)) {
+        throw err;
+      }
+      console.warn(`llmJson ${provider} failed, trying next provider:`, message);
+    }
+  }
+
+  throw new Error(
+    errors.length
+      ? `All AI providers failed: ${errors.join(" | ")}`
+      : "No AI provider configured. Set GEMINI_API_KEY and/or GROQ_API_KEY.",
+  );
+}
+
 function formatEvidenceForPrompt(files: EvidenceFile[], languages: Record<string, number>): string {
   if (files.length === 0) {
     return "No source files collected from the repository.";
@@ -430,7 +618,12 @@ Rules:
 - If evidence is sparse, lower confidence and say so in reason
 - Do not invent files or patterns not supported by the snippets`;
 
-  return await geminiJson<ClassificationResult>(model, prompt, CLASSIFICATION_SCHEMA);
+  return await llmJson<ClassificationResult>({
+    purpose: "classify",
+    prompt,
+    schema: CLASSIFICATION_SCHEMA,
+    geminiModel: model,
+  });
 }
 
 export async function generateTask(
@@ -471,7 +664,12 @@ Rules:
 - weights in evaluation_rubric must sum to 100
 - hidden_test_ideas are for evaluators only`;
 
-  return await geminiJson<GeneratedTask>(model, prompt, TASK_SCHEMA);
+  return await llmJson<GeneratedTask>({
+    purpose: "task",
+    prompt,
+    schema: TASK_SCHEMA,
+    geminiModel: model,
+  });
 }
 
 export async function evaluateSubmission(params: {
@@ -539,12 +737,17 @@ Rules:
 - overall_pass should be true only if the submission satisfies the task.
 `;
 
-  const model =
-    Deno.env.get("GEMINI_EVAL_MODEL") ||
-    Deno.env.get("GEMINI_TASK_MODEL") ||
-    "gemini-2.5-flash";
+  const geminiModel =
+    Deno.env.get("GEMINI_EVAL_MODEL")
+    || Deno.env.get("GEMINI_TASK_MODEL")
+    || "gemini-2.5-flash";
 
-  return await geminiJson<EvaluationResult>(model, prompt, evaluationSchema);
+  return await llmJson<EvaluationResult>({
+    purpose: "eval",
+    prompt,
+    schema: evaluationSchema,
+    geminiModel,
+  });
 }
 
 export function pickBestRepo(repos: RepoRef[], skillName: string): RepoRef | null {
@@ -586,7 +789,8 @@ export function isQuotaError(err: unknown): boolean {
   return (
     message.includes("429") ||
     message.includes("RESOURCE_EXHAUSTED") ||
-    lower.includes("quota")
+    lower.includes("quota") ||
+    lower.includes("rate limit")
   );
 }
 

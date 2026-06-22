@@ -1,4 +1,5 @@
 import {
+  hasAiProviderConfigured,
   parseGenerateRequest,
   runTaskGenerationPipeline,
   toGenerateApiResponse,
@@ -24,8 +25,9 @@ Deno.serve(async (req) => {
   try {
     const body = await req.json();
 
-    const GEMINI_KEY = Deno.env.get("GEMINI_API_KEY");
-    if (!GEMINI_KEY) throw new Error("GEMINI_API_KEY not set");
+    if (!hasAiProviderConfigured()) {
+      throw new Error("No AI provider configured. Set GEMINI_API_KEY and/or GROQ_API_KEY in Supabase secrets.");
+    }
 
     const GITHUB_TOKEN = Deno.env.get("GITHUB_TOKEN") ?? undefined;
     const CLASSIFY_MODEL = Deno.env.get("GEMINI_CLASSIFY_MODEL") ?? "gemini-2.5-flash";

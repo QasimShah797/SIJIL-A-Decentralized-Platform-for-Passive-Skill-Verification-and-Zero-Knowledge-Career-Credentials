@@ -151,7 +151,6 @@ export async function updateSkillPipelineStage(
 ): Promise<void> {
   const patch: Record<string, unknown> = {
     pipeline_stage: pipelineStage,
-    updated_at: new Date().toISOString(),
   };
   if (status) patch.status = status;
 

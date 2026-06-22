@@ -78,6 +78,42 @@ export function evidenceLabelForStage(stage: string): string {
   }
 }
 
+type AttemptContext = {
+  status?: string;
+  passed?: boolean;
+} | null | undefined;
+
+export function evidenceLabelForAttempt(stage: string, attempt: AttemptContext): string {
+  if (stage !== "practical_task" || !attempt) {
+    return evidenceLabelForStage(stage);
+  }
+  if (attempt.status === "passed" || attempt.passed) return "Practical task passed";
+  if (attempt.status === "submitted" || attempt.status === "auto_submitted") {
+    return "Practical task submitted";
+  }
+  if (attempt.status === "in_progress") return "Practical task in progress";
+  return evidenceLabelForStage(stage);
+}
+
+export function nextStepForAttempt(
+  stage: string,
+  attempt: AttemptContext,
+  institution?: string,
+): string {
+  if (stage === "practical_task" && attempt) {
+    if (attempt.status === "passed" || attempt.passed) {
+      return nextStepForStage("institution_attestation_pending", institution);
+    }
+    if (attempt.status === "submitted" || attempt.status === "auto_submitted") {
+      return "Awaiting practical task evaluation";
+    }
+    if (attempt.status === "in_progress") {
+      return "Complete and submit your practical task";
+    }
+  }
+  return nextStepForStage(stage, institution);
+}
+
 export function pipelineStageIndex(stage: string): number {
   const order: PipelineStage[] = [
     "declared",

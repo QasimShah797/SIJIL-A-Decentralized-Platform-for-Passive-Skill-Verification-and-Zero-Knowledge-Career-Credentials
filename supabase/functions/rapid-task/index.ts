@@ -1,5 +1,6 @@
 import {
   getLocalFallbackTask,
+  hasAiProviderConfigured,
   isQuotaError,
   parseGenerateRequest,
   runTaskGenerationPipeline,
@@ -26,8 +27,9 @@ Deno.serve(async (req) => {
   try {
     const body = await req.json();
 
-    const GEMINI_KEY = Deno.env.get("GEMINI_API_KEY");
-    if (!GEMINI_KEY) throw new Error("GEMINI_API_KEY not set");
+    if (!hasAiProviderConfigured()) {
+      throw new Error("No AI provider configured. Set GEMINI_API_KEY and/or GROQ_API_KEY in Supabase secrets.");
+    }
 
     const GITHUB_TOKEN = Deno.env.get("GITHUB_TOKEN") ?? undefined;
     const CLASSIFY_MODEL = Deno.env.get("GEMINI_CLASSIFY_MODEL") ?? "gemini-2.5-flash";
@@ -80,7 +82,7 @@ Deno.serve(async (req) => {
             skill: skillName,
             domain: skillDomain,
             fallback: true,
-            fallbackReason: "Gemini quota exceeded, local specific task used.",
+            fallbackReason: "Primary AI quota exceeded, local specific task used.",
           });
         }
 
@@ -186,12 +188,12 @@ Deno.serve(async (req) => {
             ],
             missing_requirements: [],
             feedback:
-              "The AI evaluation service failed before grading. Check Supabase Edge Function logs for Gemini error details.",
+              "The AI evaluation service failed before grading. Check Supabase Edge Function logs for provider error details.",
             improvement_suggestions: [
-              "Check GEMINI_API_KEY.",
-              "Check GEMINI_EVAL_MODEL.",
-              "Use gemini-2.5-flash for evaluation.",
-              "Check responseSchema format.",
+              "Set GEMINI_API_KEY and/or GROQ_API_KEY in Supabase secrets.",
+              "Optional: AI_PROVIDERS=groq,gemini to prefer Groq first.",
+              "Optional: GROQ_EVAL_MODEL=llama-3.3-70b-versatile",
+              "Redeploy the rapid-task edge function after updating secrets.",
             ],
           },
         });
