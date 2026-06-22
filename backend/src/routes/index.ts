@@ -10,6 +10,7 @@ import credentialsRoutes from "./credentials.routes";
 import recruiterRoutes from "./recruiter.routes";
 import integrationsRoutes from "./integrations.routes";
 import reviewsRoutes from "./reviews.routes";
+import peerReviewRoutes from "./peer-review.routes";
 
 const router = Router();
 
@@ -22,5 +23,6 @@ router.use("/recruiter", recruiterRoutes);
 router.use("/integrations", integrationsRoutes);
 router.use("/github", integrationsRoutes);
 router.use("/reviews", reviewsRoutes);
+router.use("/peer-review", peerReviewRoutes);
 
 export default router;

@@ -12,6 +12,23 @@ import {
   CONTEXT_RECOMMENDATION,
 } from "../constants/reviews";
 import { buildReviewLink, sendReviewRequestEmail } from "../utils/reviewEmail";
+import { withPeerReviewUserColumns } from "../utils/peerReviewInsert";
+import {
+  importGitHubReviewsForEvidence,
+  importGitHubReviewsForProject,
+  resolveGitHubImportTarget,
+  syncContributorsForRepo,
+} from "./github-review-import.service";
+import {
+  relationshipFromRole,
+  categoricalTrustWeight,
+  trustScoreForRelationship,
+  displayRoleForRelationship,
+  CONTEXT_STATUS,
+  CONTRIBUTOR_VERIFICATION,
+  PEER_REVIEW_INVITE_STATUS,
+} from "../constants/peer-review";
+import type { Relationship } from "../constants/peer-review";
 import type {
   ContextReviewView,
   CreateReviewRequestInput,
@@ -21,8 +38,6 @@ import type {
   ReviewRequestFormView,
   SubmitContextReviewInput,
 } from "../types/reviews.types";
-
-const GH = "https://api.github.com";
 
 type EvidenceRow = {
   id: string;
@@ -34,6 +49,17 @@ type EvidenceRow = {
   github_repo_id: number | null;
   metadata: Record<string, unknown> | null;
 };
+
+function reviewTrustFields(reviewerRole: string, contextVerified = true) {
+  const relationship = relationshipFromRole(reviewerRole);
+  const score = trustScoreForRelationship(relationship, contextVerified);
+  return {
+    reviewer_role: displayRoleForRelationship(relationship),
+    relationship,
+    trust_weight_score: score,
+    trust_weight: categoricalTrustWeight(score),
+  };
+}
 
 function generateToken(): string {
   return randomBytes(32).toString("hex");
@@ -99,321 +125,79 @@ async function getGitHubToken(userId: string): Promise<{ token: string; username
   };
 }
 
-async function syncContributorsForRepo(
-  userId: string,
-  evidence: EvidenceRow,
-  ghConn: { token: string; username: string },
-): Promise<void> {
-  const repoId = evidence.github_repo_id;
-  const fullName = evidence.repo_full_name
-    ?? (evidence.metadata?.full_name as string | undefined);
-  if (!repoId || !fullName) return;
-
-  const ghHeaders = {
-    Authorization: `Bearer ${ghConn.token}`,
-    Accept: "application/vnd.github+json",
-    "User-Agent": "SIJIL-backend",
-  };
-
-  try {
-    const resp = await fetch(`${GH}/repos/${fullName}/contributors?per_page=30`, { headers: ghHeaders });
-    if (!resp.ok) return;
-    const contributors = await resp.json() as Array<Record<string, unknown>>;
-    if (!Array.isArray(contributors)) return;
-
-    const contributorRows = contributors.map((c) => ({
-      user_id: userId,
-      repo_id: repoId,
-      full_name: (c.login as string) ?? "Contributor",
-      github_url: evidence.repository_url,
-      contributor_login: c.login as string,
-      contributor_avatar_url: (c.avatar_url as string) ?? null,
-      contributor_html_url: (c.html_url as string) ?? null,
-      contributions: (c.contributions as number) ?? 0,
-      synced_at: new Date().toISOString(),
-    }));
-
-    if (contributorRows.length) {
-      await supabaseService.client
-        .from("github_repo_contributors")
-        .upsert(contributorRows, { onConflict: "user_id,repo_id,contributor_login" });
-    }
-
-    const contextRows = contributors
-      .filter((c) => (c.login as string)?.toLowerCase() !== ghConn.username.toLowerCase())
-      .map((c) => ({
-        evidence_record_id: evidence.id,
-        user_id: userId,
-        reviewer_name: (c.login as string) ?? "Contributor",
-        reviewer_login: c.login as string,
-        context_role: "Same repo contributor",
-        source: evidence.source,
-        external_ref: `github:contributor:${c.login}`,
-        synced_at: new Date().toISOString(),
-      }));
-
-    if (contextRows.length) {
-      await supabaseService.client
-        .from("reviewer_contexts")
-        .upsert(contextRows, { onConflict: "evidence_record_id,reviewer_login" });
-    }
-  } catch {
-    // Best-effort contributor sync.
-  }
-}
-
-async function insertImportedReview(
-  row: Record<string, unknown>,
-): Promise<boolean> {
-  const { error: insErr } = await supabaseService.client.from("peer_reviews").insert(row);
-  if (insErr && process.env.NODE_ENV === "development") {
-    console.warn("[SIJIL review import] insert failed:", insErr.message);
-  }
-  return !insErr;
-}
-
-async function importGitHubExternalReviews(
-  userId: string,
-  evidence: EvidenceRow,
-  ghConn: { token: string; username: string },
-): Promise<number> {
-  const fullName = evidence.repo_full_name
-    ?? (evidence.metadata?.full_name as string | undefined);
-  if (!fullName) return 0;
-
-  const ghHeaders = {
-    Authorization: `Bearer ${ghConn.token}`,
-    Accept: "application/vnd.github+json",
-    "User-Agent": "SIJIL-backend",
-  };
-
-  const learnerLogin = ghConn.username.toLowerCase();
-
-  const { data: skillLinks } = await supabaseService.client
-    .from("skill_evidence_links")
-    .select("skill_id, declared_skills(name)")
-    .eq("evidence_record_id", evidence.id)
-    .eq("user_id", userId)
-    .limit(1);
-
-  const skillLink = skillLinks?.[0] as {
-    skill_id: string;
-    declared_skills: { name: string } | { name: string }[] | null;
-  } | undefined;
-  const skillId = skillLink?.skill_id ?? null;
-  const skillName = skillLink?.declared_skills
-    ? (Array.isArray(skillLink.declared_skills)
-      ? skillLink.declared_skills[0]?.name
-      : skillLink.declared_skills.name)
-    : "General";
-
-  const { data: existing } = await supabaseService.client
-    .from("peer_reviews")
-    .select("external_reference")
-    .eq("evidence_record_id", evidence.id)
-    .eq("learner_user_id", userId);
-
-  const existingRefs = new Set(
-    (existing ?? [])
-      .map((r) => r.external_reference as string)
-      .filter(Boolean),
-  );
-  let imported = 0;
-
-  const baseReview = {
-    learner_user_id: userId,
-    source: evidence.source,
-    origin: "GitHub",
-    skill: skillName ?? "General",
-    project_id: String(evidence.github_repo_id ?? evidence.id),
-    project_name: evidence.repository_name,
-    review_type: REVIEW_TYPE.IMPORTED,
-    evidence_record_id: evidence.id,
-    skill_id: skillId,
-    context_status: "Imported Context Review",
-    imported: true,
-  };
-
-  try {
-    const prResp = await fetch(
-      `${GH}/repos/${fullName}/pulls?state=all&per_page=30&sort=updated&direction=desc`,
-      { headers: ghHeaders },
-    );
-    if (!prResp.ok) {
-      if (process.env.NODE_ENV === "development") {
-        console.warn(`[SIJIL review import] pulls fetch failed for ${fullName}: ${prResp.status}`);
-      }
-      return 0;
-    }
-    const pulls = await prResp.json() as Array<Record<string, unknown>>;
-    if (!Array.isArray(pulls)) return 0;
-
-    for (const pr of pulls) {
-      const prNumber = pr.number as number;
-      const prAuthor = (pr.user as { login?: string } | undefined)?.login?.toLowerCase() ?? "";
-      const prUrl = (pr.html_url as string) ?? evidence.repository_url;
-
-      // Official PR reviews (approve / request changes / comment)
-      const reviewsResp = await fetch(
-        `${GH}/repos/${fullName}/pulls/${prNumber}/reviews`,
-        { headers: ghHeaders },
-      );
-      if (reviewsResp.ok) {
-        const reviews = await reviewsResp.json() as Array<Record<string, unknown>>;
-        if (Array.isArray(reviews)) {
-          for (const rv of reviews) {
-            const reviewer = rv.user as { login?: string } | undefined;
-            const reviewerLogin = reviewer?.login?.toLowerCase() ?? "";
-            if (!reviewerLogin || reviewerLogin === learnerLogin) continue;
-
-            const extRef = `github:pr-review:${fullName}#${prNumber}:${rv.id}`;
-            if (existingRefs.has(extRef)) continue;
-
-            const state = (rv.state as string) ?? "COMMENTED";
-            const body = (rv.body as string) ?? "";
-            if (!body.trim() && state === "COMMENTED") continue;
-
-            const recommendation = state === "APPROVED"
-              ? CONTEXT_RECOMMENDATION.SUPPORT
-              : state === "CHANGES_REQUESTED"
-                ? CONTEXT_RECOMMENDATION.NEEDS_MORE
-                : CONTEXT_RECOMMENDATION.NOT_ENOUGH;
-
-            const ok = await insertImportedReview({
-              ...baseReview,
-              reviewer_name: reviewer!.login!,
-              reviewer_role: prAuthor === learnerLogin ? "Same repo contributor" : "Repo collaborator",
-              evidence_label: `${evidence.repository_name} — PR #${prNumber}${prAuthor ? ` by @${prAuthor}` : ""}`,
-              evidence_url: prUrl,
-              rating: state === "APPROVED" ? 4 : state === "CHANGES_REQUESTED" ? 2 : 3,
-              comment: body.trim() || `GitHub PR review: ${state}`,
-              recommendation,
-              external_reference: extRef,
-            });
-
-            if (ok) {
-              existingRefs.add(extRef);
-              imported += 1;
-            }
-          }
-        }
-      }
-
-      // PR conversation comments (timeline — often where approval text lives)
-      const issueCommentsResp = await fetch(
-        `${GH}/repos/${fullName}/issues/${prNumber}/comments?per_page=30`,
-        { headers: ghHeaders },
-      );
-      if (issueCommentsResp.ok) {
-        const issueComments = await issueCommentsResp.json() as Array<Record<string, unknown>>;
-        if (Array.isArray(issueComments)) {
-          for (const cm of issueComments) {
-            const author = cm.user as { login?: string } | undefined;
-            const authorLogin = author?.login?.toLowerCase() ?? "";
-            if (!authorLogin || authorLogin === learnerLogin) continue;
-
-            const extRef = `github:issue-comment:${fullName}#${prNumber}:${cm.id}`;
-            if (existingRefs.has(extRef)) continue;
-            const body = (cm.body as string) ?? "";
-            if (!body.trim()) continue;
-            if (/^approved these changes/i.test(body.trim())) continue;
-
-            const ok = await insertImportedReview({
-              ...baseReview,
-              reviewer_name: author!.login!,
-              reviewer_role: "Same repo contributor",
-              evidence_label: `${evidence.repository_name} — PR #${prNumber} comment`,
-              evidence_url: (cm.html_url as string) ?? prUrl,
-              rating: 3,
-              comment: body,
-              recommendation: CONTEXT_RECOMMENDATION.SUPPORT,
-              external_reference: extRef,
-            });
-
-            if (ok) {
-              existingRefs.add(extRef);
-              imported += 1;
-            }
-          }
-        }
-      }
-
-      // Inline code review comments on the PR diff
-      const commentsResp = await fetch(
-        `${GH}/repos/${fullName}/pulls/${prNumber}/comments?per_page=30`,
-        { headers: ghHeaders },
-      );
-      if (commentsResp.ok) {
-        const comments = await commentsResp.json() as Array<Record<string, unknown>>;
-        if (Array.isArray(comments)) {
-          for (const cm of comments) {
-            const author = cm.user as { login?: string } | undefined;
-            const authorLogin = author?.login?.toLowerCase() ?? "";
-            if (!authorLogin || authorLogin === learnerLogin) continue;
-
-            const extRef = `github:pr-comment:${fullName}#${prNumber}:${cm.id}`;
-            if (existingRefs.has(extRef)) continue;
-            const body = (cm.body as string) ?? "";
-            if (!body.trim()) continue;
-
-            const ok = await insertImportedReview({
-              ...baseReview,
-              reviewer_name: author!.login!,
-              reviewer_role: "Same repo contributor",
-              evidence_label: `${evidence.repository_name} — PR #${prNumber} review comment`,
-              evidence_url: (cm.html_url as string) ?? prUrl,
-              rating: 3,
-              comment: body,
-              recommendation: CONTEXT_RECOMMENDATION.SUPPORT,
-              external_reference: extRef,
-            });
-
-            if (ok) {
-              existingRefs.add(extRef);
-              imported += 1;
-            }
-          }
-        }
-      }
-    }
-  } catch (err) {
-    if (process.env.NODE_ENV === "development") {
-      console.warn("[SIJIL review import] error:", err);
-    }
-  }
-
-  return imported;
-}
-
 export class ReviewsService {
   async importExternalForEvidence(userId: string, evidenceId: string): Promise<ImportExternalResult> {
-    const evidence = await getEvidenceForUser(userId, evidenceId);
-    let imported = 0;
+    const target = await resolveGitHubImportTarget(userId, { evidenceId });
+    if (!target) throw new AppError("Evidence not found", 404);
 
-    if (evidence.source === "GitHub") {
+    let imported = 0;
+    if (target.source === "GitHub") {
       const ghConn = await getGitHubToken(userId);
       if (ghConn) {
-        await syncContributorsForRepo(userId, evidence, ghConn);
-        imported = await importGitHubExternalReviews(userId, evidence, ghConn);
+        imported = await importGitHubReviewsForEvidence(userId, target, ghConn);
       }
     }
 
-    return { evidenceId, imported };
+    return { evidenceId, imported, projectId: target.github_repo_id ? `gh-${target.github_repo_id}` : undefined };
+  }
+
+  async importExternalForProject(userId: string, projectId: string): Promise<ImportExternalResult> {
+    const target = await resolveGitHubImportTarget(userId, { projectId });
+    if (!target) throw new AppError("Synced GitHub project not found", 404);
+
+    const ghConn = await getGitHubToken(userId);
+    if (!ghConn) throw new AppError("GitHub connection required for import", 400);
+
+    const imported = await importGitHubReviewsForProject(userId, projectId, ghConn);
+    return {
+      evidenceId: target.evidence_record_id ?? projectId,
+      projectId,
+      imported,
+    };
   }
 
   async importExternalForUser(userId: string): Promise<ImportExternalResult[]> {
+    const ghConn = await getGitHubToken(userId);
+    if (!ghConn) return [];
+
     const { data: records } = await supabaseService.client
       .from("evidence_records")
-      .select("id")
-      .eq("user_id", userId);
+      .select("id, user_id, source, repository_name, repository_url, repo_full_name, github_repo_id, metadata")
+      .eq("user_id", userId)
+      .eq("source", "GitHub");
 
     const results: ImportExternalResult[] = [];
     for (const row of records ?? []) {
       try {
-        const result = await this.importExternalForEvidence(userId, row.id as string);
-        results.push(result);
+        const target = await resolveGitHubImportTarget(userId, { evidenceId: row.id as string });
+        if (!target) continue;
+        const imported = await importGitHubReviewsForEvidence(userId, target, ghConn);
+        results.push({
+          evidenceId: row.id as string,
+          projectId: target.github_repo_id ? `gh-${target.github_repo_id}` : undefined,
+          imported,
+        });
       } catch {
-        // Continue with other evidence records.
+        // Continue with other synced repositories.
+      }
+    }
+
+    const { data: repos } = await supabaseService.client
+      .from("github_repos")
+      .select("repo_id")
+      .eq("user_id", userId);
+
+    const seen = new Set(results.map((r) => r.projectId));
+    for (const row of repos ?? []) {
+      const projectId = `gh-${row.repo_id}`;
+      if (seen.has(projectId)) continue;
+      try {
+        const imported = await importGitHubReviewsForProject(userId, projectId, ghConn);
+        if (imported > 0) {
+          results.push({ evidenceId: projectId, projectId, imported });
+        }
+      } catch {
+        // Continue.
       }
     }
     return results;
@@ -459,12 +243,12 @@ export class ReviewsService {
   }
 
   async getEligibleReviewers(userId: string, evidenceId: string): Promise<EligibleReviewerView[]> {
-    const evidence = await getEvidenceForUser(userId, evidenceId);
+    const target = await resolveGitHubImportTarget(userId, { evidenceId });
 
-    if (evidence.source === "GitHub") {
+    if (target?.source === "GitHub") {
       const ghConn = await getGitHubToken(userId);
       if (ghConn) {
-        await syncContributorsForRepo(userId, evidence, ghConn);
+        await syncContributorsForRepo(userId, target, ghConn);
       }
     }
 
@@ -579,7 +363,45 @@ export class ReviewsService {
       .eq("token", token)
       .maybeSingle();
 
-    if (!request) throw new AppError("Review link is invalid or expired", 404);
+    if (!request) {
+      const { data: invite } = await supabaseService.client
+        .from("peer_review_invites")
+        .select("*")
+        .eq("token", token)
+        .maybeSingle();
+      if (!invite) throw new AppError("Review link is invalid or expired", 404);
+      if (invite.status === PEER_REVIEW_INVITE_STATUS.COMPLETED) {
+        throw new AppError("This review has already been submitted", 410);
+      }
+      if (new Date(invite.expires_at as string) < new Date()) {
+        await supabaseService.client
+          .from("peer_review_invites")
+          .update({ status: PEER_REVIEW_INVITE_STATUS.EXPIRED })
+          .eq("id", invite.id);
+        throw new AppError("Review link has expired", 410);
+      }
+      const { data: profile } = await supabaseService.client
+        .from("learner_profiles")
+        .select("first_name, last_name")
+        .eq("user_id", invite.learner_user_id)
+        .maybeSingle();
+      const learnerName = profile
+        ? [profile.first_name, profile.last_name].filter(Boolean).join(" ") || "Learner"
+        : "Learner";
+      return {
+        token,
+        status: invite.status as string,
+        learnerName,
+        skillClaim: invite.skill as string,
+        evidenceName: invite.project_name as string,
+        contextSource: invite.source as string,
+        reviewerContext: displayRoleForRelationship(
+          (invite.relationship as Relationship) ?? "contributor",
+        ),
+        reviewerName: invite.contributor_name as string,
+        expiresAt: invite.expires_at as string,
+      };
+    }
 
     if (request.status === REVIEW_REQUEST_STATUS.COMPLETED) {
       throw new AppError("This review has already been submitted", 410);
@@ -620,6 +442,35 @@ export class ReviewsService {
   }
 
   async submitReviewByToken(token: string, input: SubmitContextReviewInput): Promise<ContextReviewView> {
+    const { data: invite } = await supabaseService.client
+      .from("peer_review_invites")
+      .select("*")
+      .eq("token", token)
+      .maybeSingle();
+
+    if (invite) {
+      const { peerReviewService } = await import("./peer-review.service");
+      const review = await peerReviewService.submitReview({
+        token,
+        rating: input.rating,
+        feedback: input.feedback,
+        recommendation: input.recommendation,
+      });
+      return {
+        id: review.id,
+        reviewType: "Context Verified Review",
+        reviewerName: review.reviewerName,
+        reviewerRole: review.reviewerRole,
+        source: review.source,
+        skillName: review.skill,
+        rating: review.rating,
+        comment: review.comment,
+        recommendation: review.recommendation ?? null,
+        externalReference: null,
+        reviewDate: review.date,
+      };
+    }
+
     const { data: request } = await supabaseService.client
       .from("review_requests")
       .select(`
@@ -655,15 +506,18 @@ export class ReviewsService {
     } | null;
     const skill = request.declared_skills as { id: string; name: string } | null;
 
+    const trust = reviewTrustFields(request.reviewer_context_role as string);
     const { data: review, error: reviewErr } = await supabaseService.client
       .from("peer_reviews")
-      .insert({
+      .insert(withPeerReviewUserColumns({
         learner_user_id: request.learner_user_id,
         reviewer_name: request.reviewer_name,
-        reviewer_role: request.reviewer_context_role,
+        reviewer_email: request.reviewer_email,
+        ...trust,
         source: evidence?.source ?? (request.context_source as string),
         origin: "SIJIL",
         skill: skill?.name ?? "General",
+        project_id: evidence?.id ? `ev-${evidence.id}` : undefined,
         project_name: evidence?.repository_name,
         evidence_label: `${evidence?.repository_name ?? "Evidence"} (${evidence?.source ?? "Context"})`,
         evidence_url: evidence?.repository_url,
@@ -674,10 +528,10 @@ export class ReviewsService {
         evidence_record_id: evidence?.id ?? request.evidence_record_id,
         skill_id: skill?.id ?? request.skill_id,
         review_request_id: request.id,
-        context_status: "Context Verified Review",
-        contributor_verification: "Context Verified",
+        context_status: CONTEXT_STATUS.VERIFIED,
+        contributor_verification: CONTRIBUTOR_VERIFICATION.VERIFIED,
         imported: false,
-      })
+      }))
       .select("*")
       .single();
 

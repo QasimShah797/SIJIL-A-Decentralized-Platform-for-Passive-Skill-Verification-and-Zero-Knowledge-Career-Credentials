@@ -6,6 +6,11 @@ import { fetchProjectsFromDb } from "@/lib/db/projects";
 import { fetchLinkedProjectEvidence } from "@/lib/db/github-evidence";
 import type { ProjectEvidenceApiView } from "@/lib/db/github-evidence";
 import { fetchPeerReviews, fetchInvitations } from "@/lib/db/peer-reviews";
+import { isApiEnabled } from "@/services/api/client";
+import {
+  getPeerReviewProjectsApi,
+  getPeerReviewsApi,
+} from "@/services/api/peer-review.api";
 import type {
   PeerReview,
   Project,
@@ -351,6 +356,41 @@ export async function fetchContextReviewRequests(
   return (data ?? []).map((row) => mapReviewRequestRow(row as Record<string, unknown>));
 }
 
+export async function fetchPeerReviewInvites(
+  userId: string,
+): Promise<ContextReviewRequestDisplay[]> {
+  const { data, error } = await supabase
+    .from("peer_review_invites")
+    .select("*")
+    .eq("learner_user_id", userId)
+    .order("created_at", { ascending: false });
+
+  if (error) return [];
+  return (data ?? []).map((row) => {
+    const statusRaw = row.status as string;
+    const status: ContextReviewRequestDisplay["status"] =
+      statusRaw === "completed" ? "Completed"
+        : statusRaw === "expired" ? "Expired"
+          : "Sent";
+    return {
+      id: row.id as string,
+      token: row.token as string,
+      projectId: row.project_id as string,
+      projectName: row.project_name as string,
+      source: row.source as Project["source"],
+      contributorId: row.contributor_id as string,
+      contributorName: row.contributor_name as string,
+      contributorEmail: row.contributor_email as string,
+      contributorRole: row.contributor_role as string,
+      skill: row.skill as string,
+      skillId: (row.skill_id as string) ?? null,
+      status,
+      sentAt: row.created_at as string,
+      completedReviewId: (row.completed_review_id as string) ?? undefined,
+    };
+  });
+}
+
 export async function loadPeerReviewPageData(userId: string): Promise<{
   projects: PeerReviewProject[];
   reviews: PeerReview[];
@@ -358,20 +398,43 @@ export async function loadPeerReviewPageData(userId: string): Promise<{
   contextRequests: ContextReviewRequestDisplay[];
 }> {
   const [
+    legacyInvitations,
+    contextRequests,
+    peerReviewInvites,
+  ] = await Promise.all([
+    safeLoad(() => fetchInvitations(userId), [] as ReviewInvitation[]),
+    safeLoad(() => fetchContextReviewRequests(userId), [] as ContextReviewRequestDisplay[]),
+    safeLoad(() => fetchPeerReviewInvites(userId), [] as ContextReviewRequestDisplay[]),
+  ]);
+
+  const allContextRequests = [...peerReviewInvites, ...contextRequests];
+
+  if (isApiEnabled()) {
+    const [apiProjects, apiReviews] = await Promise.all([
+      getPeerReviewProjectsApi(),
+      getPeerReviewsApi(),
+    ]);
+    if (apiProjects) {
+      return {
+        projects: apiProjects,
+        reviews: apiReviews ?? [],
+        legacyInvitations,
+        contextRequests: allContextRequests,
+      };
+    }
+  }
+
+  const [
     dbProjects,
     linkedEvidence,
     evidenceProjects,
     reviews,
-    legacyInvitations,
-    contextRequests,
     contributors,
   ] = await Promise.all([
     safeLoad(() => fetchProjectsFromDb(userId), [] as Project[]),
     safeLoad(() => fetchLinkedProjectEvidence(userId), [] as ProjectEvidenceApiView[]),
     safeLoad(() => fetchEvidenceRecordProjects(userId), [] as ProjectEvidenceApiView[]),
     safeLoad(() => fetchPeerReviews(userId), [] as PeerReview[]),
-    safeLoad(() => fetchInvitations(userId), [] as ReviewInvitation[]),
-    safeLoad(() => fetchContextReviewRequests(userId), [] as ContextReviewRequestDisplay[]),
     safeLoad(() => fetchContributors(userId), [] as Array<ProjectContributor & { repoId: number }>),
   ]);
 
@@ -380,5 +443,5 @@ export async function loadPeerReviewPageData(userId: string): Promise<{
     contributors,
   );
 
-  return { projects, reviews, legacyInvitations, contextRequests };
+  return { projects, reviews, legacyInvitations, contextRequests: allContextRequests };
 }

@@ -53,11 +53,17 @@ export interface ReviewRequestFormView {
 
 export type ContextRecommendation = "Support" | "Needs More Evidence" | "Not Enough Context";
 
-export async function importExternalReviewsApi(evidenceId?: string): Promise<unknown | null> {
+export async function importExternalReviewsApi(
+  input?: {
+    evidenceId?: string;
+    projectId?: string;
+  },
+  onError?: (message: string) => void,
+): Promise<{ imported?: number; evidenceId?: string; projectId?: string } | null> {
   return tryApiRequest("/reviews/import-external", {
     method: "POST",
-    body: JSON.stringify(evidenceId ? { evidenceId } : {}),
-  });
+    body: JSON.stringify(input ?? {}),
+  }, onError);
 }
 
 export async function getEvidenceReviewsApi(

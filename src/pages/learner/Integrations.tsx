@@ -758,7 +758,11 @@ function ProjectEvidenceCard({
   useEffect(() => {
     if (!isApiEnabled() || !project.evidenceRecordId || !linked) return;
     (async () => {
-      await importExternalReviewsApi(project.evidenceRecordId);
+      await importExternalReviewsApi(
+        project.evidenceRecordId
+          ? { evidenceId: project.evidenceRecordId, projectId: project.id }
+          : { projectId: project.id },
+      );
       const summary = await getEvidenceReviewsApi(project.evidenceRecordId);
       setReviewSummary(summary);
     })();

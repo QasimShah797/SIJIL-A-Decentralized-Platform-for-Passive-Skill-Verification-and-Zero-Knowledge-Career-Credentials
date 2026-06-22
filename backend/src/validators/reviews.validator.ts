@@ -3,6 +3,9 @@ import { CONTEXT_RECOMMENDATION } from "../constants/reviews";
 
 export const importExternalSchema = z.object({
   evidenceId: z.string().uuid().optional(),
+  projectId: z.string().min(1).optional(),
+}).refine((v) => v.evidenceId || v.projectId, {
+  message: "Provide evidenceId or projectId",
 });
 
 export const createReviewRequestSchema = z.object({

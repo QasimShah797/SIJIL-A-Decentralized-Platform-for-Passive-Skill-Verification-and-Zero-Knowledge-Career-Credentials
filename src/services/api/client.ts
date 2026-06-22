@@ -45,7 +45,14 @@ export async function apiRequest<T>(
   });
 
   if (!res.ok) {
-    throw new ApiUnavailableError(`API ${res.status}: ${res.statusText}`);
+    let detail = res.statusText;
+    try {
+      const errJson = (await res.json()) as { message?: string; errors?: unknown };
+      if (errJson.message) detail = errJson.message;
+    } catch {
+      // ignore non-JSON bodies
+    }
+    throw new ApiUnavailableError(`API ${res.status}: ${detail}`);
   }
 
   const json = (await res.json()) as ApiResponse<T>;
@@ -56,14 +63,16 @@ export async function apiRequest<T>(
   return json.data;
 }
 
-/** Try backend API; return null on any failure so callers can fall back to Supabase. */
+/** Try backend API; return null on failure. Pass `onError` to surface the message. */
 export async function tryApiRequest<T>(
   path: string,
   options: RequestInit = {},
+  onError?: (message: string) => void,
 ): Promise<T | null> {
   try {
     return await apiRequest<T>(path, options);
-  } catch {
+  } catch (err) {
+    if (onError && err instanceof Error) onError(err.message);
     return null;
   }
 }

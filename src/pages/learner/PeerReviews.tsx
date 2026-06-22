@@ -30,8 +30,11 @@ import {
   type PeerReviewProject,
   type ContextReviewRequestDisplay,
 } from "@/lib/db/peer-review-page";
-import { supabase } from "@/integrations/supabase/client";
-import { importExternalReviewsApi } from "@/services/api/reviews.api";
+import {
+  createReviewRequestApi,
+  importExternalReviewsApi,
+  getEligibleReviewersApi,
+} from "@/services/api/reviews.api";
 import { isApiEnabled } from "@/services/api/client";
 import { toast } from "@/hooks/use-toast";
 
@@ -92,6 +95,8 @@ export default function PeerReviewsPage() {
   const [contextRequests, setContextRequests] = useState<ContextReviewRequestDisplay[]>([]);
   const [learnerName, setLearnerName] = useState("Learner");
 
+  const [apiStats, setApiStats] = useState<PeerReviewStatsApi | null>(null);
+
   const invitations = useMemo(
     () => [
       ...contextRequests.map(contextRequestToInvitation),
@@ -100,7 +105,19 @@ export default function PeerReviewsPage() {
     [contextRequests, legacyInvitations],
   );
 
-  const signals = useMemo(() => computeTrustSignals(reviews), [reviews]);
+  const signals = useMemo(() => {
+    if (apiStats) {
+      return {
+        total: apiStats.totalReviews,
+        verifiedContext: apiStats.contextVerified,
+        imported: apiStats.imported,
+        sijil: apiStats.fromSIJILForm,
+        highTrust: apiStats.highTrust,
+        pending: apiStats.pendingInvites,
+      };
+    }
+    return computeTrustSignals(reviews);
+  }, [apiStats, reviews]);
 
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
   const selectedProject = projects.find((p) => p.id === selectedProjectId);
@@ -109,11 +126,15 @@ export default function PeerReviewsPage() {
   const reload = async () => {
     if (!user?.id) return;
     try {
-      const data = await loadPeerReviewPageData(user.id);
+      const [data, stats] = await Promise.all([
+        loadPeerReviewPageData(user.id),
+        isApiEnabled() ? getPeerReviewStatsApi() : Promise.resolve(null),
+      ]);
       setProjects(data.projects);
       setReviews(data.reviews);
       setLegacyInvitations(data.legacyInvitations);
       setContextRequests(data.contextRequests);
+      if (stats) setApiStats(stats);
       if (!selectedProjectId && data.projects[0]) {
         setSelectedProjectId(data.projects[0].id);
         setSkillForProject(
@@ -154,6 +175,30 @@ export default function PeerReviewsPage() {
       setSkillForProject(selectedProject.linkedSkills[0] ?? declaredSkills[0]?.name ?? "");
     }
   }, [selectedProject, skillForProject, declaredSkills]);
+
+  useEffect(() => {
+    if (!selectedProjectId || !isApiEnabled()) return;
+    getPeerReviewContributorsApi(selectedProjectId)
+      .then((contributors) => {
+        if (!contributors?.length) return;
+        setProjects((prev) => prev.map((p) => (
+          p.id === selectedProjectId
+            ? {
+              ...p,
+              contributors: contributors.map((c) => ({
+                id: c.id,
+                name: c.name,
+                handle: c.handle,
+                email: c.email,
+                role: c.role as ProjectContributor["role"],
+                avatarUrl: c.avatarUrl,
+              })),
+            }
+            : p
+        )));
+      })
+      .catch(() => undefined);
+  }, [selectedProjectId]);
 
   const contributorRows = useMemo(
     () => (selectedProject
@@ -216,145 +261,58 @@ export default function PeerReviewsPage() {
   };
 
   const sendInvite = async () => {
-    if (!selectedProject || !user?.id) return;
-    if (!inviteByEmail && !inviteContrib) return;
-
-    const contactEmail = inviteEmail.trim();
-
-    if (inviteByEmail && !contactEmail) {
-      toast({
-        title: "Email required",
-        description: "Enter the reviewer's email address to send an invitation.",
-      });
+    if (!selectedProject || !inviteContrib) return;
+    if (!inviteEmail.trim()) {
+      toast({ title: "Email required", description: "We need a contact email to send the review invitation." });
       return;
     }
-
-    if (!inviteByEmail && !contactEmail && !selectedReviewer?.githubUsername) {
+    if (!isApiEnabled() || !selectedProject.evidenceRecordId) {
       toast({
-        title: "Contact required",
-        description: "Provide a contact email or select a contributor with a GitHub username.",
-      });
-      return;
-    }
-
-    console.log("Learner email:", user?.email);
-    console.log("Learner GitHub:", learnerGithub);
-    console.log("Selected reviewer:", selectedReviewer);
-    console.log("Contact email:", contactEmail);
-
-    const learnerEmail = user.email?.trim().toLowerCase();
-    const reviewerEmail = contactEmail?.trim().toLowerCase();
-
-    const learnerGithubNormalized =
-      learnerGithub?.replace("@", "").trim().toLowerCase();
-
-    const reviewerGithub =
-      inviteByEmail
-        ? null
-        : selectedReviewer?.githubUsername
-          ?.replace("@", "")
-          .trim()
-          .toLowerCase() ?? null;
-
-    const hasReviewerGithub = Boolean(reviewerGithub);
-    const hasReviewerEmail = Boolean(reviewerEmail);
-
-    const isSameEmail =
-      hasReviewerEmail &&
-      learnerEmail &&
-      reviewerEmail === learnerEmail;
-
-    const isSameGithub =
-      hasReviewerGithub &&
-      learnerGithubNormalized &&
-      reviewerGithub === learnerGithubNormalized;
-
-    if (isSameEmail || isSameGithub) {
-      toast({
-        title: "Invalid reviewer",
-        description: "You cannot invite yourself as a reviewer.",
+        title: "Backend required",
+        description: "Sync GitHub from Integrations and ensure VITE_API_BASE_URL is configured.",
         variant: "destructive",
       });
       return;
     }
 
-    const selectedSkill = declaredSkills.find((s) => s.name === inviteSkill)
-      ?? declaredSkills.find((s) => selectedProject.linkedSkills.includes(s.name));
+    const skillLink = selectedProject.skillLinks.find((s) => s.skillName === inviteSkill)
+      ?? selectedProject.skillLinks[0];
+    if (!skillLink) {
+      toast({ title: "Link a skill first", description: "Link this repository to a declared skill on Integrations." });
+      return;
+    }
 
-    const competencyName = selectedSkill?.name ?? inviteSkill ?? "Declared competency";
-    const competencyDomain = selectedSkill?.domain ?? "Not specified";
-
-    const token = `${crypto.randomUUID()}-${crypto.randomUUID()}`;
-    const appUrl = import.meta.env.VITE_APP_URL || window.location.origin;
-    const reviewLink = `${appUrl}/review/invite/${token}`;
-    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-
-    const invitationPayload = {
-      learner_user_id: user.id,
-
-      project_id: selectedProject.id,
-
-      project_name: selectedProject.name || "GitHub project",
-
-      source: "github",
-
-      contributor_id:
-        selectedReviewer?.id
-        || selectedReviewer?.githubUsername
-        || (contactEmail ? `email-${Date.now()}` : `external-${Date.now()}`),
-
-      contributor_name:
-        selectedReviewer?.name
-        || selectedReviewer?.githubUsername
-        || contactEmail
-        || "External reviewer",
-
-      contributor_email: contactEmail || null,
-
-      contributor_role:
-        selectedReviewer?.role
-        || "Project Collaborator",
-
-      skill_id: selectedSkill?.id || null,
-
-      competency_name: competencyName,
-
-      competency_domain: competencyDomain,
-
-      token,
-      review_link: reviewLink,
-      status: "pending",
-      expires_at: expiresAt,
-      email_status: "not_sent",
-
-      // Legacy NOT NULL columns
-      learner_name: learnerName,
-      skill: competencyName,
-    };
-
-    console.log("Review invitation payload:", invitationPayload);
-
-    const { data: invitation, error: invitationError } = await supabase
-      .from("review_invitations")
-      .insert(invitationPayload)
-      .select()
-      .single();
-
-    console.log("Created invitation:", invitation);
-    console.log("Invitation insert error:", invitationError);
-
-    if (invitationError) {
+    const eligible = await getEligibleReviewersApi(selectedProject.evidenceRecordId);
+    const reviewerContext = eligible?.find(
+      (r) => r.name === inviteContrib.handle
+        || r.name === inviteContrib.name
+        || r.login === inviteContrib.handle,
+    );
+    if (!reviewerContext) {
       toast({
-        title: "Invitation failed",
-        description: invitationError.message || "Could not create invitation",
+        title: "Reviewer not eligible",
+        description: "This person is not a verified context-linked contributor for this evidence.",
         variant: "destructive",
       });
       return;
     }
 
+    const result = await createReviewRequestApi({
+      evidenceId: selectedProject.evidenceRecordId,
+      skillId: skillLink.skillId,
+      reviewerContextId: reviewerContext.id,
+      reviewerEmail: inviteEmail.trim(),
+    });
+    if (!result) {
+      toast({ title: "Request failed", description: "Could not send review request.", variant: "destructive" });
+      return;
+    }
+
+    setGeneratedLink(result.reviewLink);
+    await reload();
     toast({
-      title: "Secure invitation created",
-      description: "Review link was created successfully.",
+      title: "Context review request sent",
+      description: `Awaiting feedback from ${inviteContrib.name} for ${inviteSkill} on ${selectedProject.name}.`,
     });
 
     setGeneratedLink(invitation.review_link ?? reviewLink);
@@ -362,20 +320,46 @@ export default function PeerReviewsPage() {
   };
 
   const importExisting = async () => {
-    if (!selectedProject?.evidenceRecordId || !isApiEnabled()) {
+    if (!selectedProject || !isApiEnabled()) {
       toast({
-        title: "Nothing to import",
-        description: "Sync GitHub evidence first, then try importing context reviews.",
+        title: "Backend required",
+        description: "Ensure VITE_API_BASE_URL is set and the backend is running.",
+        variant: "destructive",
       });
       return;
     }
-    const result = await importExternalReviewsApi(selectedProject.evidenceRecordId);
+    if (selectedProject.source !== "GitHub") {
+      toast({
+        title: "GitHub only",
+        description: "GitHub REST import is available for synced GitHub repositories.",
+      });
+      return;
+    }
+
+    let apiError = "";
+    const result = await importExternalReviewsApi({
+      evidenceId: selectedProject.evidenceRecordId,
+      projectId: selectedProject.id,
+    }, (msg) => { apiError = msg; });
+
+    if (!result) {
+      toast({
+        title: "Import failed",
+        description: apiError || "Could not reach the import API. Is the backend running?",
+        variant: "destructive",
+      });
+      return;
+    }
+
     await reload();
-    const imported = (result as { imported?: number } | null)?.imported ?? 0;
+    const imported = result.imported ?? 0;
     if (imported > 0) {
-      toast({ title: "Reviews imported", description: `${imported} external review(s) imported from GitHub.` });
+      toast({ title: "Reviews imported", description: `${imported} GitHub review(s) imported from verified contributors.` });
     } else {
-      toast({ title: "No external reviews found", description: "No PR reviews or comments were found for this repo." });
+      toast({
+        title: "No external reviews found",
+        description: "No PR reviews or comments from verified repo contributors were found for this project.",
+      });
     }
   };
 
@@ -406,7 +390,7 @@ export default function PeerReviewsPage() {
         <Stat label="Imported" value={signals.imported} />
         <Stat label="From SIJIL form" value={signals.sijil} />
         <Stat label="High trust" value={signals.highTrust} />
-        <Stat label="Pending invites" value={invitations.filter((i) => i.status !== "Completed").length} />
+        <Stat label="Pending invites" value={apiStats?.pendingInvites ?? invitations.filter((i) => i.status !== "Completed").length} />
       </div>
 
       <div className="grid lg:grid-cols-3 gap-6 mb-6">

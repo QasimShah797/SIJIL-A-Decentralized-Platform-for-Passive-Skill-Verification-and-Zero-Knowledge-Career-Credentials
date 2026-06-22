@@ -13,6 +13,10 @@ import {
 
 export async function importExternalReviews(req: Request, res: Response): Promise<Response> {
   const body = importExternalSchema.parse(req.body ?? {});
+  if (body.projectId) {
+    const result = await reviewsService.importExternalForProject(req.user!.id, body.projectId);
+    return sendSuccess(res, result, "External reviews imported");
+  }
   if (body.evidenceId) {
     const result = await reviewsService.importExternalForEvidence(req.user!.id, body.evidenceId);
     return sendSuccess(res, result, "External reviews imported");

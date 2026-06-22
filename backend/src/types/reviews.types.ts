@@ -65,5 +65,6 @@ export interface SubmitContextReviewInput {
 
 export interface ImportExternalResult {
   evidenceId: string;
+  projectId?: string;
   imported: number;
 }

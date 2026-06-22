@@ -11,7 +11,13 @@ const envSchema = z.object({
   PORT: z.coerce.number().default(5000),
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
   SUPABASE_URL: z.string().url(),
-  SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
+  SUPABASE_SERVICE_ROLE_KEY: z
+    .string()
+    .min(1)
+    .refine(
+      (v) => !v.includes("PASTE_") && !v.includes("your_service_role"),
+      "Set SUPABASE_SERVICE_ROLE_KEY in backend/.env (Supabase Dashboard → API → service_role)",
+    ),
   SUPABASE_ANON_KEY: z.string().min(1),
   CORS_ORIGIN: z.string().default("http://localhost:8080"),
   FRONTEND_URL: z.string().default("http://localhost:8080"),
