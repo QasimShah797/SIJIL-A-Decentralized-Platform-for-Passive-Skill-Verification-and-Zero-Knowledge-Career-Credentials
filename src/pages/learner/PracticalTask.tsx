@@ -363,7 +363,7 @@ export default function PracticalTask() {
 
       if (fallback) {
         toast({
-          title: "AI quota reached",
+          title: "AI temporarily unavailable",
           description: "A local skill-specific task was generated for this attempt.",
         });
       }

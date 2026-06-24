@@ -1,7 +1,7 @@
 import {
-  getLocalFallbackTask,
+  buildLocalFallbackGeneratePayload,
   hasAiProviderConfigured,
-  isQuotaError,
+  isRecoverableAIError,
   parseGenerateRequest,
   runTaskGenerationPipeline,
   toGenerateApiResponse,
@@ -27,10 +27,6 @@ Deno.serve(async (req) => {
   try {
     const body = await req.json();
 
-    if (!hasAiProviderConfigured()) {
-      throw new Error("No AI provider configured. Set GEMINI_API_KEY and/or GROQ_API_KEY in Supabase secrets.");
-    }
-
     const GITHUB_TOKEN = Deno.env.get("GITHUB_TOKEN") ?? undefined;
     const CLASSIFY_MODEL = Deno.env.get("GEMINI_CLASSIFY_MODEL") ?? "gemini-2.5-flash";
     const TASK_MODEL = Deno.env.get("GEMINI_TASK_MODEL") ?? "gemini-2.5-flash";
@@ -41,6 +37,11 @@ Deno.serve(async (req) => {
       const { skill, repos } = parseGenerateRequest(body);
       const skillName = skill.name;
       const skillDomain = skill.domain;
+
+      if (!hasAiProviderConfigured()) {
+        console.log("No AI providers configured, using local fallback task for:", skillName);
+        return json(buildLocalFallbackGeneratePayload(skillName, skillDomain));
+      }
 
       try {
         console.log("rapid-task generate request:", {
@@ -69,21 +70,13 @@ Deno.serve(async (req) => {
 
         return json(payload);
       } catch (err) {
-        console.error("rapid-task generate failed:", err);
+        console.error("All AI providers failed:", err);
 
         const message = err instanceof Error ? err.message : String(err);
 
-        if (isQuotaError(err)) {
-          console.log("Gemini quota exceeded, returning local fallback task for:", skillName);
-          const fallbackTask = getLocalFallbackTask(skillName);
-
-          return json({
-            ...fallbackTask,
-            skill: skillName,
-            domain: skillDomain,
-            fallback: true,
-            fallbackReason: "Primary AI quota exceeded, local specific task used.",
-          });
+        if (isRecoverableAIError(err)) {
+          console.log("Using local fallback task for:", skillName);
+          return json(buildLocalFallbackGeneratePayload(skillName, skillDomain));
         }
 
         return json(
@@ -97,6 +90,16 @@ Deno.serve(async (req) => {
     }
 
     if (body.action === "evaluate") {
+      if (!hasAiProviderConfigured()) {
+        return json({
+          passed: false,
+          score: 0,
+          evaluationUnavailable: true,
+          feedback:
+            "Evaluation service is temporarily unavailable. The learner submission was received, but it was not graded.",
+        });
+      }
+
       const task = body.task;
       const submission = body.submission;
       const skill = body.skill;

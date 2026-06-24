@@ -392,6 +392,23 @@ type AiPurpose = "classify" | "task" | "eval";
 
 const DEFAULT_GROQ_MODEL = "llama-3.3-70b-versatile";
 
+/** Strip dashboard copy/paste noise like "(optional)" from model IDs. */
+export function sanitizeModelId(raw: string | undefined | null, fallback: string): string {
+  if (!raw?.trim()) return fallback;
+  const cleaned = raw
+    .trim()
+    .replace(/\s*\(optional\)\s*/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return cleaned || fallback;
+}
+
+export function resolveGroqModel(purpose: AiPurpose): string {
+  const purposeModel = Deno.env.get(`GROQ_${purpose.toUpperCase()}_MODEL`);
+  const configured = purposeModel ?? Deno.env.get("GROQ_MODEL");
+  return sanitizeModelId(configured, DEFAULT_GROQ_MODEL);
+}
+
 function parseJsonText<T>(text: string): T {
   const trimmed = text.trim();
   const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
@@ -436,8 +453,7 @@ function resolveProviderModel(
       ?? "gemini-2.5-flash";
   }
 
-  const purposeModel = Deno.env.get(`GROQ_${purpose.toUpperCase()}_MODEL`);
-  return purposeModel ?? Deno.env.get("GROQ_MODEL") ?? DEFAULT_GROQ_MODEL;
+  return resolveGroqModel(purpose);
 }
 
 function providerConfigured(provider: AiProvider): boolean {
@@ -445,24 +461,35 @@ function providerConfigured(provider: AiProvider): boolean {
   return Boolean(Deno.env.get("GROQ_API_KEY"));
 }
 
+export function isRecoverableAIError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+
+  return (
+    message.includes("429")
+    || message.includes("503")
+    || message.includes("502")
+    || message.includes("504")
+    || message.includes("RESOURCE_EXHAUSTED")
+    || message.includes("UNAVAILABLE")
+    || message.includes("model_not_found")
+    || message.toLowerCase().includes("quota")
+    || message.toLowerCase().includes("high demand")
+    || message.toLowerCase().includes("does not exist")
+    || message.toLowerCase().includes("do not have access")
+    || message.toLowerCase().includes("rate limit")
+    || message.toLowerCase().includes("overloaded")
+    || message.toLowerCase().includes("temporarily unavailable")
+    || message.toLowerCase().includes("all ai providers failed")
+  );
+}
+
 export function isRetryableProviderError(err: unknown): boolean {
-  if (isQuotaError(err)) return true;
+  if (isRecoverableAIError(err)) return true;
   const message = err instanceof Error ? err.message : String(err);
   const lower = message.toLowerCase();
   return (
     lower.includes("missing gemini_api_key")
     || lower.includes("missing groq_api_key")
-    || lower.includes("rate limit")
-    || lower.includes("model_not_found")
-    || message.includes("503")
-    || message.includes("502")
-    || message.includes("504")
-    || message.includes("429")
-    || lower.includes("unavailable")
-    || lower.includes("high demand")
-    || lower.includes("overloaded")
-    || lower.includes("temporarily unavailable")
-    || lower.includes("resource_exhausted")
   );
 }
 
@@ -952,7 +979,7 @@ export function getLocalFallbackTask(skillName: string): LocalFallbackTask {
   }
 
   return {
-    title: `Build a ${skillName} Utility Function`,
+    title: `${skillName} Practical Utility Task`,
     type: "Coding",
     durationMinutes: 20,
     prompt:
@@ -988,6 +1015,17 @@ export function getLocalFallbackTask(skillName: string): LocalFallbackTask {
       },
     ],
     hidden_test_ideas: [],
+  };
+}
+
+export function buildLocalFallbackGeneratePayload(skillName: string, skillDomain: string) {
+  return {
+    ...getLocalFallbackTask(skillName),
+    skill: skillName,
+    domain: skillDomain,
+    fallback: true,
+    fallbackReason:
+      "AI providers were unavailable, so SIJIL generated a local skill-specific task.",
   };
 }
 
@@ -1060,7 +1098,6 @@ export async function runTaskGenerationPipeline(params: {
   try {
     classification = await classifyEvidence(skill, evidence, "", classifyModel);
   } catch (classifyErr) {
-    if (isQuotaError(classifyErr)) throw classifyErr;
     console.error("Classification failed, using fallback:", classifyErr);
     classification = buildFallbackClassification(skill.name);
   }
@@ -1069,10 +1106,14 @@ export async function runTaskGenerationPipeline(params: {
   try {
     generated = await generateTask(skill, classification, "", taskModel);
   } catch (genErr) {
-    if (isQuotaError(genErr)) throw genErr;
     console.error("generateTask failed, retrying with fallback classification:", genErr);
     classification = buildFallbackClassification(skill.name);
-    generated = await generateTask(skill, classification, "", taskModel);
+    try {
+      generated = await generateTask(skill, classification, "", taskModel);
+    } catch (retryErr) {
+      console.error("generateTask retry failed:", retryErr);
+      throw retryErr;
+    }
   }
 
   if (!generated?.title || (!generated.scenario && !generated.instructions)) {
