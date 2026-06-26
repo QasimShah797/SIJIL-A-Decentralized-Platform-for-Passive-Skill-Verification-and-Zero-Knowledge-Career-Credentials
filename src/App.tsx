@@ -1,44 +1,53 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { RequireAuth } from "@/components/RequireAuth";
-import { RequireLearnerProfile } from "@/components/RequireLearnerProfile";
+import { AuthRebuildNotice } from "@/components/AuthRebuildNotice";
+import { RequireInstitutionRoute } from "@/components/RequireInstitutionRoute";
+import { RequireLearnerRoute } from "@/components/RequireLearnerRoute";
 import { AuthProvider } from "@/hooks/useAuth";
-import LoginChooser from "./pages/LoginChooser";
-import RoleLogin from "./pages/login/RoleLogin";
 import Landing from "./pages/Landing";
 import NotFound from "./pages/NotFound";
-import SignupChooser from "./pages/SignupChooser";
-import LearnerSignup from "./pages/signup/LearnerSignup";
-import RecruiterSignup from "./pages/signup/RecruiterSignup";
-import InstitutionSignup from "./pages/signup/InstitutionSignup";
-import GitHubCallback from "./pages/auth/GitHubCallback";
-import GitHubPrepare from "./pages/auth/GitHubPrepare";
-import LearnerProfile from "./pages/learner/Profile";
-import CompleteProfile from "./pages/learner/CompleteProfile";
-import Integrations from "./pages/learner/Integrations";
-import PracticalTask from "./pages/learner/PracticalTask";
-import Validation from "./pages/learner/Validation";
-import WalletPage from "./pages/learner/WalletPage";
-import PeerReviews from "./pages/learner/PeerReviews";
-import CredentialDetails from "./pages/learner/CredentialDetails";
-import CredentialProof from "./pages/learner/CredentialProof";
-import SelectiveDisclosure from "./pages/learner/SelectiveDisclosure";
-import RecruiterSearch from "./pages/recruiter/Search";
-import CandidateSummary from "./pages/recruiter/CandidateSummary";
-import RecruiterCompare from "./pages/recruiter/Compare";
-import RecruiterCredentialView from "./pages/recruiter/CredentialView";
-import InstitutionDashboard from "./pages/institution/Dashboard";
-import AttestationQueue from "./pages/institution/AttestationQueue";
-import AttestationDetail from "./pages/institution/AttestationDetail";
-import AttestationRequestDetail from "./pages/institution/AttestationRequestDetail";
-import InstitutionValidationTrail from "./pages/institution/ValidationTrail";
 import ReviewInvite from "./pages/review/ReviewInvite";
 import ContextReviewRequest from "./pages/review/ContextReviewRequest";
+import InstitutionLogin from "./pages/login/InstitutionLogin";
+import LearnerLogin from "./pages/login/LearnerLogin";
+import ActivateAccount from "./pages/student/ActivateAccount";
+import CompleteProfile from "./pages/learner/CompleteProfile";
+import LearnerProfile from "./pages/learner/Profile";
+import LearnerIntegrations from "./pages/learner/Integrations";
+import LearnerPracticalTask from "./pages/learner/PracticalTask";
+import LearnerValidation from "./pages/learner/Validation";
+import LearnerWallet from "./pages/learner/WalletPage";
+import LearnerPeerReviews from "./pages/learner/PeerReviews";
+import LearnerCredentialDetails from "./pages/learner/CredentialDetails";
+import LearnerCredentialProof from "./pages/learner/CredentialProof";
+import LearnerSelectiveDisclosure from "./pages/learner/SelectiveDisclosure";
+import InstitutionDashboard from "./pages/institution/Dashboard";
+import InstitutionAttestationQueue from "./pages/institution/AttestationQueue";
+import InstitutionAttestationDetail from "./pages/institution/AttestationDetail";
+import InstitutionAttestationRequestDetail from "./pages/institution/AttestationRequestDetail";
+import InstitutionValidationTrail from "./pages/institution/ValidationTrail";
+import StudentManagement from "./pages/institution/StudentManagement";
+import GitHubPrepare from "./pages/auth/GitHubPrepare";
+import GitHubCallback from "./pages/auth/GitHubCallback";
 
 const queryClient = new QueryClient();
+
+const G = <AuthRebuildNotice />;
+
+const IR = ({ children }: { children: React.ReactNode }) => (
+  <RequireInstitutionRoute>{children}</RequireInstitutionRoute>
+);
+
+const LR = ({ children }: { children: React.ReactNode }) => (
+  <RequireLearnerRoute>{children}</RequireLearnerRoute>
+);
+
+const LRIncomplete = ({ children }: { children: React.ReactNode }) => (
+  <RequireLearnerRoute requireCompleteProfile={false}>{children}</RequireLearnerRoute>
+);
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
@@ -47,51 +56,47 @@ const App = () => (
       <Toaster />
       <Sonner />
       <BrowserRouter>
-        <>
-          <Routes>
-            <Route path="/" element={<Landing />} />
-            <Route path="/login" element={<LoginChooser />} />
-            <Route path="/login/learner" element={<RoleLogin role="learner" />} />
-            <Route path="/login/recruiter" element={<RoleLogin role="recruiter" />} />
-            <Route path="/login/institution" element={<RoleLogin role="institution" />} />
-            <Route path="/signup" element={<SignupChooser />} />
-            <Route path="/signup/learner" element={<LearnerSignup />} />
-            <Route path="/signup/recruiter" element={<RecruiterSignup />} />
-            <Route path="/signup/institution" element={<InstitutionSignup />} />
-            <Route path="/register" element={<SignupChooser />} />
-            <Route path="/review/invite/:token" element={<ReviewInvite />} />
-            <Route path="/review/request/:token" element={<ContextReviewRequest />} />
-            <Route path="/auth/github/prepare" element={<RequireAuth><GitHubPrepare /></RequireAuth>} />
-            <Route path="/auth/github/callback" element={<GitHubCallback />} />
+        <Routes>
+          <Route path="/" element={<Landing />} />
 
-            <Route path="/learner/complete-profile" element={<RequireAuth><CompleteProfile /></RequireAuth>} />
-            <Route path="/learner/profile" element={<RequireAuth><RequireLearnerProfile><LearnerProfile /></RequireLearnerProfile></RequireAuth>} />
-            <Route path="/learner/integrations" element={<RequireAuth><RequireLearnerProfile><Integrations /></RequireLearnerProfile></RequireAuth>} />
-            <Route path="/learner/task" element={<RequireAuth><RequireLearnerProfile><PracticalTask /></RequireLearnerProfile></RequireAuth>} />
-            <Route path="/learner/validation" element={<RequireAuth><RequireLearnerProfile><Validation /></RequireLearnerProfile></RequireAuth>} />
-            <Route path="/learner/validation/:skillId" element={<RequireAuth><RequireLearnerProfile><Validation /></RequireLearnerProfile></RequireAuth>} />
-            <Route path="/learner/wallet" element={<RequireAuth><RequireLearnerProfile><WalletPage /></RequireLearnerProfile></RequireAuth>} />
-            <Route path="/learner/peer-reviews" element={<RequireAuth><RequireLearnerProfile><PeerReviews /></RequireLearnerProfile></RequireAuth>} />
-            <Route path="/learner/credential/:id" element={<RequireAuth><RequireLearnerProfile><CredentialDetails /></RequireLearnerProfile></RequireAuth>} />
-            <Route path="/learner/credential/:id/proof" element={<RequireAuth><RequireLearnerProfile><CredentialProof /></RequireLearnerProfile></RequireAuth>} />
-            <Route path="/learner/credential/:id/share" element={<RequireAuth><RequireLearnerProfile><SelectiveDisclosure /></RequireLearnerProfile></RequireAuth>} />
+          <Route path="/login/institution" element={<InstitutionLogin />} />
+          <Route path="/login/learner" element={<LearnerLogin />} />
+          <Route path="/student/activate" element={<ActivateAccount />} />
 
-            <Route path="/recruiter/search" element={<RequireAuth><RecruiterSearch /></RequireAuth>} />
-            <Route path="/recruiter/candidate/:id" element={<RequireAuth><CandidateSummary /></RequireAuth>} />
-            <Route path="/recruiter/compare" element={<RequireAuth><RecruiterCompare /></RequireAuth>} />
-            <Route path="/recruiter/verify/:token" element={<RequireAuth><RecruiterCredentialView /></RequireAuth>} />
+          <Route path="/review/invite/:token" element={<ReviewInvite />} />
+          <Route path="/review/request/:token" element={<ContextReviewRequest />} />
 
-            <Route path="/institution" element={<RequireAuth><InstitutionDashboard /></RequireAuth>} />
-            <Route path="/institution/dashboard" element={<RequireAuth><InstitutionDashboard /></RequireAuth>} />
-            <Route path="/institution/queue" element={<RequireAuth><AttestationQueue /></RequireAuth>} />
-            <Route path="/institution/attestation" element={<RequireAuth><AttestationQueue /></RequireAuth>} />
-            <Route path="/institution/attestation/:id" element={<RequireAuth><AttestationDetail /></RequireAuth>} />
-            <Route path="/institution/attestation-request/:id" element={<RequireAuth><AttestationRequestDetail /></RequireAuth>} />
-            <Route path="/institution/attestation/:id/validation" element={<RequireAuth><InstitutionValidationTrail /></RequireAuth>} />
+          <Route path="/auth/github/prepare" element={<LRIncomplete><GitHubPrepare /></LRIncomplete>} />
+          <Route path="/auth/github/callback" element={<GitHubCallback />} />
 
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-        </>
+          <Route path="/learner/complete-profile" element={<LRIncomplete><CompleteProfile /></LRIncomplete>} />
+          <Route path="/learner/profile" element={<LR><LearnerProfile /></LR>} />
+          <Route path="/learner/integrations" element={<LR><LearnerIntegrations /></LR>} />
+          <Route path="/learner/task" element={<LR><LearnerPracticalTask /></LR>} />
+          <Route path="/learner/validation" element={<LR><LearnerValidation /></LR>} />
+          <Route path="/learner/validation/:skillId" element={<LR><LearnerValidation /></LR>} />
+          <Route path="/learner/wallet" element={<LR><LearnerWallet /></LR>} />
+          <Route path="/learner/peer-reviews" element={<LR><LearnerPeerReviews /></LR>} />
+          <Route path="/learner/credential/:id" element={<LR><LearnerCredentialDetails /></LR>} />
+          <Route path="/learner/credential/:id/proof" element={<LR><LearnerCredentialProof /></LR>} />
+          <Route path="/learner/credential/:id/share" element={<LR><LearnerSelectiveDisclosure /></LR>} />
+
+          <Route path="/recruiter/search" element={G} />
+          <Route path="/recruiter/candidate/:id" element={G} />
+          <Route path="/recruiter/compare" element={G} />
+          <Route path="/recruiter/verify/:token" element={G} />
+
+          <Route path="/institution" element={<IR><Navigate to="/institution/dashboard" replace /></IR>} />
+          <Route path="/institution/dashboard" element={<IR><InstitutionDashboard /></IR>} />
+          <Route path="/institution/students" element={<IR><StudentManagement /></IR>} />
+          <Route path="/institution/queue" element={<IR><InstitutionAttestationQueue /></IR>} />
+          <Route path="/institution/attestation" element={<IR><InstitutionAttestationDetail /></IR>} />
+          <Route path="/institution/attestation/:id" element={<IR><InstitutionAttestationDetail /></IR>} />
+          <Route path="/institution/attestation-request/:id" element={<IR><InstitutionAttestationRequestDetail /></IR>} />
+          <Route path="/institution/attestation/:id/validation" element={<IR><InstitutionValidationTrail /></IR>} />
+
+          <Route path="*" element={<NotFound />} />
+        </Routes>
       </BrowserRouter>
     </TooltipProvider>
     </AuthProvider>

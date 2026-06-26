@@ -7,47 +7,23 @@ import { Label } from "@/components/ui/label";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
-import {
-  type AppRole,
-  fetchUserRoles,
-  resolvePostAuthRedirectForRole,
-} from "@/lib/auth-helpers";
+import { verifyInstitutionAccess } from "@/lib/institution-auth";
 import { formatSupabaseError } from "@/lib/utils";
 import sijilLogo from "@/assets/sijil-logo.png";
 
-const ROLE_LABEL: Record<AppRole, string> = {
-  learner: "Learner",
-  recruiter: "Recruiter",
-  institution: "Institution",
-  admin: "Admin",
-};
-
-const ROLE_SIGNUP: Record<AppRole, string> = {
-  learner: "/signup/learner",
-  recruiter: "/signup/recruiter",
-  institution: "/signup/institution",
-  admin: "/signup",
-};
-
-export default function RoleLogin({ role }: { role: AppRole }) {
+export default function InstitutionLogin() {
   const navigate = useNavigate();
-  const { user, loading } = useAuth();
+  const { user, loading, rolesReady } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    if (loading || !user) return;
-    fetchUserRoles(user.id).then(async (roles) => {
-      if (!roles.includes(role)) return;
-      try {
-        const path = await resolvePostAuthRedirectForRole(user.id, role);
-        navigate(path, { replace: true });
-      } catch {
-        /* wrong role — stay on login form */
-      }
+    if (loading || !user || !rolesReady) return;
+    verifyInstitutionAccess(user.id).then((result) => {
+      if (result.ok) navigate("/institution/dashboard", { replace: true });
     });
-  }, [user, loading, role, navigate]);
+  }, [user, loading, rolesReady, navigate]);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -59,31 +35,54 @@ export default function RoleLogin({ role }: { role: AppRole }) {
     setBusy(true);
     try {
       const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) throw error;
-      if (!data?.user) return;
-
-      const roles = await fetchUserRoles(data.user.id);
-      if (!roles.includes(role)) {
-        await supabase.auth.signOut();
+      if (error) {
         toast({
-          title: "Wrong account type",
-          description: `This email is not registered as a ${ROLE_LABEL[role]}. Use the correct sign-in option or create a new account.`,
+          title: "Invalid credentials",
+          description: "The email or password is incorrect. Please try again.",
           variant: "destructive",
         });
         return;
       }
+      if (!data?.user) return;
+
+      const access = await verifyInstitutionAccess(data.user.id);
+      if (!access.ok) {
+        await supabase.auth.signOut();
+        if (access.reason === "wrong_role") {
+          toast({
+            title: "Wrong account type",
+            description:
+              "This email is not registered as an institution account. Use the correct sign-in option or contact SIJIL support.",
+            variant: "destructive",
+          });
+        } else if (access.reason === "inactive") {
+          toast({
+            title: "Institution account inactive",
+            description: "Your institution account is not active yet. Contact SIJIL support.",
+            variant: "destructive",
+          });
+        } else {
+          toast({
+            title: "Institution profile missing",
+            description: "Your account is missing an institution profile. Contact SIJIL support.",
+            variant: "destructive",
+          });
+        }
+        return;
+      }
 
       toast({ title: "Signed in" });
-      const path = await resolvePostAuthRedirectForRole(data.user.id, role);
-      navigate(path, { replace: true });
+      navigate("/institution/dashboard", { replace: true });
     } catch (err) {
-      toast({ title: "Sign-in failed", description: formatSupabaseError(err), variant: "destructive" });
+      toast({
+        title: "Sign-in failed",
+        description: formatSupabaseError(err),
+        variant: "destructive",
+      });
     } finally {
       setBusy(false);
     }
   };
-
-  const label = ROLE_LABEL[role];
 
   return (
     <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-gradient-to-br from-background via-background to-secondary/40 px-4 py-10">
@@ -93,8 +92,8 @@ export default function RoleLogin({ role }: { role: AppRole }) {
       </div>
 
       <div className="relative w-full max-w-md">
-        <Link to="/login" className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
-          <ArrowLeft className="h-4 w-4" /> Back to sign-in options
+        <Link to="/" className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+          <ArrowLeft className="h-4 w-4" /> Back to home
         </Link>
 
         <div className="mb-6 flex flex-col items-center text-center">
@@ -102,18 +101,18 @@ export default function RoleLogin({ role }: { role: AppRole }) {
             <img src={sijilLogo} alt="SIJIL" className="h-16 w-16 object-contain" />
             <div className="mt-3 text-xl font-semibold tracking-tight">SIJIL</div>
           </Link>
-          <div className="mt-1 text-sm text-muted-foreground">Sign in as {label}</div>
+          <div className="mt-1 text-sm text-muted-foreground">Institution sign in</div>
         </div>
 
         <div className="rounded-2xl border border-border/70 bg-card/95 p-6 shadow-[0_2px_4px_hsl(222_47%_11%/0.04),0_24px_64px_-24px_hsl(222_47%_11%/0.18)] backdrop-blur sm:p-8">
           <h2 className="text-2xl font-semibold tracking-tight">Welcome back</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Enter your {label.toLowerCase()} account credentials.
+            Sign in with the institution credentials provided by SIJIL.
           </p>
 
           <form onSubmit={submit} className="mt-6 space-y-4">
             <div>
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor="email">Institution email</Label>
               <div className="relative mt-1.5">
                 <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                 <Input
@@ -122,7 +121,7 @@ export default function RoleLogin({ role }: { role: AppRole }) {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="pl-9"
-                  placeholder="you@institution.edu"
+                  placeholder="institution@university.edu"
                   autoComplete="email"
                 />
               </div>
@@ -144,27 +143,14 @@ export default function RoleLogin({ role }: { role: AppRole }) {
             </div>
 
             <Button type="submit" disabled={busy} className="w-full shadow-md transition-all hover:-translate-y-0.5 hover:shadow-lg">
-              <ShieldCheck className="mr-2 h-4 w-4" /> Sign in as {label}
+              <ShieldCheck className="mr-2 h-4 w-4" /> Sign in as Institution
             </Button>
           </form>
 
-          {role === "learner" && (
-            <p className="mt-4 rounded-lg border border-info/30 bg-info/5 p-3 text-xs text-muted-foreground">
-              New learner?{" "}
-              <Link to="/signup/learner" className="font-medium text-primary hover:underline">
-                Create account with username, email & password
-              </Link>
-              {" "}— then complete your profile to access the dashboard.
-            </p>
-          )}
+          <p className="mt-4 rounded-lg border border-border/60 bg-muted/30 p-3 text-xs text-muted-foreground">
+            Institution accounts are created by SIJIL. There is no public institution registration.
+          </p>
         </div>
-
-        <p className="mt-4 text-center text-sm text-muted-foreground">
-          Don't have a {label.toLowerCase()} account?{" "}
-          <Link to={ROLE_SIGNUP[role]} className="font-medium text-primary hover:underline">
-            Create one
-          </Link>
-        </p>
       </div>
     </div>
   );

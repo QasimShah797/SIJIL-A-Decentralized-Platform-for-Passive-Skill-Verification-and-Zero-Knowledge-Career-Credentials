@@ -298,61 +298,85 @@ export type Database = {
       }
       learner_profiles: {
         Row: {
+          account_activated_at: string | null
+          avatar_url: string | null
           bio: string | null
           batch: string | null
+          career_goal: string | null
+          city_country: string | null
           contact_number: string | null
           created_at: string
+          department: string | null
           first_name: string | null
           github_url: string | null
           holder_did: string | null
+          institution_id: string | null
           institution_name: string | null
           last_name: string | null
           linkedin_url: string | null
           portfolio_url: string | null
           profile_completed: boolean
           program: string | null
+          skills_summary: string | null
           status: Database["public"]["Enums"]["learner_status"]
           student_id: string | null
+          university_email: string | null
           updated_at: string
           user_id: string
           username: string | null
         }
         Insert: {
+          account_activated_at?: string | null
+          avatar_url?: string | null
           bio?: string | null
           batch?: string | null
+          career_goal?: string | null
+          city_country?: string | null
           contact_number?: string | null
           created_at?: string
+          department?: string | null
           first_name?: string | null
           github_url?: string | null
           holder_did?: string | null
+          institution_id?: string | null
           institution_name?: string | null
           last_name?: string | null
           linkedin_url?: string | null
           portfolio_url?: string | null
           profile_completed?: boolean
           program?: string | null
+          skills_summary?: string | null
           status?: Database["public"]["Enums"]["learner_status"]
           student_id?: string | null
+          university_email?: string | null
           updated_at?: string
           user_id: string
           username?: string | null
         }
         Update: {
+          account_activated_at?: string | null
+          avatar_url?: string | null
           bio?: string | null
           batch?: string | null
+          career_goal?: string | null
+          city_country?: string | null
           contact_number?: string | null
           created_at?: string
+          department?: string | null
           first_name?: string | null
           github_url?: string | null
           holder_did?: string | null
+          institution_id?: string | null
           institution_name?: string | null
           last_name?: string | null
           linkedin_url?: string | null
           portfolio_url?: string | null
           profile_completed?: boolean
           program?: string | null
+          skills_summary?: string | null
           status?: Database["public"]["Enums"]["learner_status"]
           student_id?: string | null
+          university_email?: string | null
           updated_at?: string
           user_id?: string
           username?: string | null
@@ -622,6 +646,7 @@ export type Database = {
         | "email_verified"
         | "domain_not_recognized"
         | "needs_review"
+        | "active"
       learner_status: "email_pending" | "verified"
       recruiter_status:
         | "pending"
@@ -772,6 +797,7 @@ export const Constants = {
         "email_verified",
         "domain_not_recognized",
         "needs_review",
+        "active",
       ],
       learner_status: ["email_pending", "verified"],
       recruiter_status: [

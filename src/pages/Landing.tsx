@@ -12,9 +12,7 @@ import {
   CheckCircle2,
   Share2,
   Lock,
-  ArrowRight,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import sijilLogo from "@/assets/sijil-logo.png";
 
 const Logo = ({ size = "sm" }: { size?: "sm" | "lg" }) => (
@@ -59,7 +57,7 @@ const steps = [
 ];
 
 const roles = [
-  { icon: GraduationCap, title: "Learner", text: "Build a trusted skill profile using real evidence and verified reviews." },
+  { icon: GraduationCap, title: "Learner", text: "Access your institution-verified profile, evidence wallet, and portable credentials." },
   { icon: Building2, title: "Institution", text: "Review learner evidence and issue attestations or credentials." },
   { icon: Search, title: "Recruiter", text: "View trusted evidence, reviewer context, and verifiable credentials before hiring." },
 ];
@@ -79,16 +77,20 @@ export default function Landing() {
         <header className="sticky top-0 z-30 border-b border-border/60 bg-background/70 backdrop-blur">
           <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6">
             <Logo />
-            <nav className="flex items-center gap-2 sm:gap-3">
-              <Button asChild variant="ghost" size="sm">
-                <Link to="/login">Login</Link>
-              </Button>
-              <Button asChild size="sm" className="shadow-sm hover:-translate-y-0.5 hover:shadow-md transition-all">
-                <Link to="/signup">
-                  Sign Up
-                </Link>
-              </Button>
-            </nav>
+            <div className="flex items-center gap-4">
+              <Link
+                to="/login/learner"
+                className="text-sm font-medium text-muted-foreground hover:text-foreground"
+              >
+                Learner Sign In
+              </Link>
+              <Link
+                to="/login/institution"
+                className="text-sm font-medium text-muted-foreground hover:text-foreground"
+              >
+                Institution Sign In
+              </Link>
+            </div>
           </div>
         </header>
 
@@ -110,17 +112,23 @@ export default function Landing() {
               receive institutional attestations, and share trusted digital credentials with
               recruiters.
             </p>
-            <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
-              <Button asChild size="lg" className="group shadow-md hover:-translate-y-0.5 hover:shadow-lg transition-all">
-                <Link to="/signup">
-                  Get Started
-                  <ArrowRight className="ml-1 h-4 w-4 transition-transform group-hover:translate-x-0.5" />
-                </Link>
-              </Button>
-              <Button asChild size="lg" variant="outline" className="hover:-translate-y-0.5 transition-all">
-                <Link to="/login">Login</Link>
-              </Button>
-            </div>
+            <p className="mt-8 flex flex-col items-center gap-3 text-sm text-muted-foreground sm:flex-row sm:justify-center">
+              <Link
+                to="/login/learner"
+                className="inline-flex items-center justify-center rounded-lg bg-primary px-5 py-2.5 font-medium text-primary-foreground hover:opacity-90"
+              >
+                Learner Sign In
+              </Link>
+              <Link
+                to="/login/institution"
+                className="inline-flex items-center justify-center rounded-lg border border-border px-5 py-2.5 font-medium hover:bg-muted/60"
+              >
+                Institution Sign In
+              </Link>
+            </p>
+            <p className="mt-3 text-xs text-muted-foreground">
+              Students are provisioned by their institution. There is no public learner registration.
+            </p>
           </div>
         </section>
 
@@ -196,6 +204,14 @@ export default function Landing() {
                 </div>
                 <h3 className="text-lg font-semibold">{r.title}</h3>
                 <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{r.text}</p>
+                {r.title === "Learner" && (
+                  <Link
+                    to="/login/learner"
+                    className="mt-4 inline-flex text-sm font-medium text-primary hover:underline"
+                  >
+                    Learner Sign In →
+                  </Link>
+                )}
               </div>
             ))}
           </div>
@@ -232,13 +248,19 @@ export default function Landing() {
                 Verified Skills. Trusted Credentials.
               </p>
             </div>
-            <div className="flex items-center gap-2">
-              <Button asChild variant="ghost" size="sm">
-                <Link to="/login">Login</Link>
-              </Button>
-              <Button asChild size="sm">
-                <Link to="/signup">Sign Up</Link>
-              </Button>
+            <div className="flex flex-wrap items-center justify-center gap-4">
+              <Link
+                to="/login/learner"
+                className="text-sm font-medium text-primary hover:underline"
+              >
+                Learner Sign In
+              </Link>
+              <Link
+                to="/login/institution"
+                className="text-sm font-medium text-muted-foreground hover:text-foreground"
+              >
+                Institution Sign In
+              </Link>
             </div>
           </div>
           <div className="border-t border-border/40 py-4 text-center text-xs text-muted-foreground">

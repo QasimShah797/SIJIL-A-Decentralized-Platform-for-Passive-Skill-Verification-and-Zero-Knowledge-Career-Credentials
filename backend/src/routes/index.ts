@@ -11,6 +11,8 @@ import recruiterRoutes from "./recruiter.routes";
 import integrationsRoutes from "./integrations.routes";
 import reviewsRoutes from "./reviews.routes";
 import peerReviewRoutes from "./peer-review.routes";
+import institutionStudentsRoutes from "./institution-students.routes";
+import studentActivationRoutes from "./student-activation.routes";
 
 const router = Router();
 
@@ -24,5 +26,7 @@ router.use("/integrations", integrationsRoutes);
 router.use("/github", integrationsRoutes);
 router.use("/reviews", reviewsRoutes);
 router.use("/peer-review", peerReviewRoutes);
+router.use("/institution", institutionStudentsRoutes);
+router.use("/student-activation", studentActivationRoutes);
 
 export default router;

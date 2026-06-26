@@ -1,7 +1,7 @@
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, User, Plug, ClipboardCheck, ShieldCheck,
-  Wallet, Search, Building2, LogOut, Sparkles, Bell, BadgeCheck, MessageSquare,
+  Wallet, Search, Building2, Sparkles, Bell, BadgeCheck, MessageSquare, LogOut, GraduationCap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Role, getDecayingSkills } from "@/lib/sijil-data";
@@ -15,13 +15,14 @@ const recruiterNav = [
 ];
 const institutionNav = [
   { to: "/institution/dashboard", icon: LayoutDashboard, label: "Dashboard" },
+  { to: "/institution/students", icon: GraduationCap, label: "Student Management" },
   { to: "/institution/queue", icon: ClipboardCheck, label: "Attestation Queue" },
 ];
 
 export function AppShell({ role, children }: { role: Role; children: React.ReactNode }) {
   const { pathname } = useLocation();
   const navigate = useNavigate();
-  const { signOut, user } = useAuth();
+  const { user, signOut } = useAuth();
   const { profile } = useLearnerProfile();
   const { skills } = useDeclaredSkills();
   const roleLabel = role === "learner" ? "Learner" : role === "recruiter" ? "Recruiter" : "Institution";
@@ -86,14 +87,24 @@ export function AppShell({ role, children }: { role: Role; children: React.React
           </nav>
         </div>
 
-        <div className="mt-auto p-3 border-t border-sidebar-border">
-          <button
-            onClick={async () => { await signOut(); navigate("/"); }}
-            className="flex w-full items-center gap-2 px-3 py-2 rounded-md text-sm text-sidebar-foreground/80 hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground transition-colors"
-          >
-            <LogOut className="h-4 w-4" />
-            Sign out
-          </button>
+        <div className="mt-auto p-3 border-t border-sidebar-border text-xs text-sidebar-foreground/60 px-3 space-y-2">
+          {(role === "institution" || role === "learner") && (
+            <button
+              type="button"
+              onClick={() =>
+                void signOut().then(() =>
+                  navigate(role === "institution" ? "/login/institution" : "/"),
+                )
+              }
+              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-sidebar-accent/60 transition-colors"
+            >
+              <LogOut className="h-3.5 w-3.5" />
+              Sign out
+            </button>
+          )}
+          {role !== "institution" && role !== "learner" && (
+            <span>Authentication module is being rebuilt.</span>
+          )}
         </div>
       </aside>
 

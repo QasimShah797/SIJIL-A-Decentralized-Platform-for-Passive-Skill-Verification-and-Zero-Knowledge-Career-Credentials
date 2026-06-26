@@ -184,22 +184,80 @@ export default function LearnerProfile() {
       {profile && (
         <Card className="mb-6">
           <CardContent className="p-6 flex flex-col md:flex-row md:items-center gap-6">
-            <div className="h-16 w-16 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xl font-semibold">
-              {profile.avatar}
-            </div>
+            {profile.avatarUrl ? (
+              <img
+                src={profile.avatarUrl}
+                alt={profile.name}
+                className="h-16 w-16 rounded-full object-cover border"
+              />
+            ) : (
+              <div className="h-16 w-16 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xl font-semibold">
+                {profile.avatar}
+              </div>
+            )}
             <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <h2 className="text-xl font-semibold">{profile.name}</h2>
+                {profile.isVerifiedStudent && (
+                  <StatusBadge variant="verified" icon={<ShieldCheck className="h-3 w-3" />}>
+                    Verified Student
+                  </StatusBadge>
+                )}
                 <StatusBadge variant="verified" icon={<ShieldCheck className="h-3 w-3" />}>DID active</StatusBadge>
               </div>
-              <div className="text-sm text-muted-foreground">{profile.program} · {profile.batch} · {profile.institution}</div>
+              <div className="text-sm text-muted-foreground">
+                {profile.program}
+                {profile.department && profile.department !== "—" ? ` · ${profile.department}` : ""}
+                {profile.batch && profile.batch !== "—" ? ` · ${profile.batch}` : ""}
+                {profile.institution && profile.institution !== "—" ? ` · ${profile.institution}` : ""}
+              </div>
+              {profile.isVerifiedStudent && (
+                <div className="mt-2 grid gap-1 text-xs text-muted-foreground sm:grid-cols-2">
+                  <span>Institution: <span className="text-foreground font-medium">{profile.institution}</span></span>
+                  {profile.studentId && profile.studentId !== "—" && (
+                    <span>Registration #: <span className="text-foreground font-medium">{profile.studentId}</span></span>
+                  )}
+                  {profile.universityEmail && (
+                    <span className="sm:col-span-2">University email: <span className="text-foreground">{profile.universityEmail}</span></span>
+                  )}
+                </div>
+              )}
+              {profile.bio && (
+                <p className="mt-2 text-sm text-muted-foreground">{profile.bio}</p>
+              )}
+              {(profile.githubUrl || profile.linkedinUrl || profile.portfolioUrl) && (
+                <div className="mt-2 flex flex-wrap gap-3 text-xs">
+                  {profile.githubUrl && (
+                    <a href={profile.githubUrl} target="_blank" rel="noreferrer" className="text-primary hover:underline">
+                      GitHub
+                    </a>
+                  )}
+                  {profile.linkedinUrl && (
+                    <a href={profile.linkedinUrl} target="_blank" rel="noreferrer" className="text-primary hover:underline">
+                      LinkedIn
+                    </a>
+                  )}
+                  {profile.portfolioUrl && (
+                    <a href={profile.portfolioUrl} target="_blank" rel="noreferrer" className="text-primary hover:underline">
+                      Portfolio
+                    </a>
+                  )}
+                </div>
+              )}
+              {profile.careerGoal && (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  <span className="font-medium text-foreground">Career goal:</span> {profile.careerGoal}
+                </p>
+              )}
               <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs">
                 <span className="text-muted-foreground">Holder DID</span>
                 <span className="mono break-all">{profile.did}</span>
                 <InfoHint text="Decentralized Identifier under learner's control. Used to bind issued credentials to the holder." />
               </div>
             </div>
-            <Button variant="outline"><Pencil className="h-4 w-4 mr-1.5" />Edit profile</Button>
+            <Button variant="outline" disabled className="opacity-60 cursor-not-allowed" title="University details are institution-verified">
+              <Pencil className="h-4 w-4 mr-1.5" />Institution-verified profile
+            </Button>
           </CardContent>
         </Card>
       )}
