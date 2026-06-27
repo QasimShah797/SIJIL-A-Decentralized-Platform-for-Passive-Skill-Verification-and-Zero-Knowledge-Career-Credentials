@@ -80,7 +80,7 @@ export default function MyProfile() {
   });
 
   useEffect(() => {
-    if (!profile) return;
+    if (!profile || editing) return;
     setForm({
       contactNumber: profile.contactNumber ?? "",
       cityCountry: profile.cityCountry ?? "",
@@ -91,7 +91,7 @@ export default function MyProfile() {
       skillsSummary: profile.skillsSummary ?? "",
       careerGoal: profile.careerGoal ?? "",
     });
-  }, [profile]);
+  }, [profile, editing]);
 
   const set = (key: keyof EditForm) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
     setForm((f) => ({ ...f, [key]: e.target.value }));

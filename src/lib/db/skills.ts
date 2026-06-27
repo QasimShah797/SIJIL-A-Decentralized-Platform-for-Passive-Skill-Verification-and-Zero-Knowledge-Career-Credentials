@@ -143,6 +143,27 @@ export async function deleteDeclaredSkill(userId: string, skillId: string): Prom
   if (error) throw error;
 }
 
+/** Update competency name, domain, and description (E1-US3 edit). */
+export async function updateDeclaredSkill(
+  userId: string,
+  skillId: string,
+  skill: Pick<DeclaredSkill, "name" | "domain" | "description">,
+): Promise<DeclaredSkill> {
+  const { data, error } = await supabase
+    .from("declared_skills")
+    .update({
+      name: skill.name.trim(),
+      domain: skill.domain.trim() || "General",
+      description: skill.description?.trim() ?? "",
+    })
+    .eq("user_id", userId)
+    .eq("id", skillId)
+    .select("*")
+    .single();
+  if (error) throw error;
+  return rowToSkill(data);
+}
+
 export async function updateSkillPipelineStage(
   userId: string,
   skillId: string,

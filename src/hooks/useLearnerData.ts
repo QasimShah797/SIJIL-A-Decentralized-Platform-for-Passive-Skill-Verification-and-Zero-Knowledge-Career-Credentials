@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { fetchLearnerProfile, type LearnerProfileView } from "@/lib/db/learner-profile";
-import { fetchDeclaredSkills, insertDeclaredSkill, deleteDeclaredSkill } from "@/lib/db/skills";
+import { fetchDeclaredSkills, insertDeclaredSkill, deleteDeclaredSkill, updateDeclaredSkill } from "@/lib/db/skills";
 import { fetchCredentials, type CredentialView } from "@/lib/db/credentials";
 import { fetchPeerReviews } from "@/lib/db/peer-reviews";
 import type { DeclaredSkill, PeerReview } from "@/lib/sijil-data";
@@ -64,7 +64,17 @@ export function useDeclaredSkills() {
     setSkills((s) => s.filter((x) => x.id !== skillId));
   };
 
-  return { skills, loading, refresh, addSkill, removeSkill };
+  const updateSkill = async (
+    skillId: string,
+    skill: Pick<DeclaredSkill, "name" | "domain" | "description">,
+  ) => {
+    if (!user) return;
+    const updated = await updateDeclaredSkill(user.id, skillId, skill);
+    setSkills((s) => s.map((x) => (x.id === skillId ? updated : x)));
+    return updated;
+  };
+
+  return { skills, loading, refresh, addSkill, removeSkill, updateSkill };
 }
 
 export function useCredentials() {

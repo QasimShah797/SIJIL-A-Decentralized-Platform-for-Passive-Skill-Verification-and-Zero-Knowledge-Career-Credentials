@@ -15,7 +15,9 @@ import {
   fetchLearnerProfileRow,
   isLearnerProfileComplete,
   saveLearnerOnboarding,
+  saveLearnerProfileProgress,
   uploadLearnerAvatar,
+  rowToOnboardingForm,
   type LearnerOnboardingData,
 } from "@/lib/db/learner-profile";
 import { formatSupabaseError } from "@/lib/utils";
@@ -47,6 +49,7 @@ export default function CompleteProfile() {
   const [checking, setChecking] = useState(true);
   const [isProvisioned, setIsProvisioned] = useState(false);
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [formReady, setFormReady] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const [f, setF] = useState({
@@ -57,7 +60,7 @@ export default function CompleteProfile() {
   });
 
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
-    setF({ ...f, [k]: e.target.value });
+    setF((prev) => ({ ...prev, [k]: e.target.value }));
 
   useEffect(() => {
     if (authLoading) return;
@@ -65,12 +68,13 @@ export default function CompleteProfile() {
       navigate("/login/learner", { replace: true });
       return;
     }
-    isLearnerProfileComplete(user.id).then(async (done) => {
-      if (done) {
-        navigate("/learner/profile", { replace: true });
-        return;
-      }
+
+    let cancelled = false;
+
+    (async () => {
       const row = await fetchLearnerProfileRow(user.id);
+      if (cancelled) return;
+
       if (!row?.institution_id) {
         navigate("/login/learner", { replace: true });
         return;
@@ -79,28 +83,51 @@ export default function CompleteProfile() {
         navigate("/login/learner", { replace: true });
         return;
       }
+
       setIsProvisioned(true);
-      setF({
-        firstName: row.first_name ?? "",
-        lastName: row.last_name ?? "",
-        universityEmail: row.university_email ?? user.email ?? "",
-        institutionName: row.institution_name ?? "",
-        program: row.program ?? "",
-        studentId: row.student_id ?? "",
-        department: row.department ?? "",
-        contactNumber: row.contact_number ?? "",
-        cityCountry: row.city_country ?? "",
-        batch: row.batch ?? "",
-        githubUrl: row.github_url ?? "",
-        linkedinUrl: row.linkedin_url ?? "",
-        portfolioUrl: row.portfolio_url ?? "",
-        bio: row.bio ?? "",
-        skillsSummary: row.skills_summary ?? "",
-        careerGoal: row.career_goal ?? "",
-      });
+      setF(rowToOnboardingForm(row, user.email));
+      setFormReady(true);
+
       setChecking(false);
-    });
+
+      const complete = await isLearnerProfileComplete(user.id);
+      if (cancelled) return;
+      if (complete) {
+        navigate("/learner/profile", { replace: true });
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [user, authLoading, navigate]);
+
+  useEffect(() => {
+    setFormReady(false);
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (!user || !formReady) return;
+
+    const timer = window.setTimeout(() => {
+      void saveLearnerProfileProgress(user.id, {
+        firstName: f.firstName,
+        lastName: f.lastName,
+        contactNumber: f.contactNumber,
+        cityCountry: f.cityCountry,
+        githubUrl: f.githubUrl,
+        linkedinUrl: f.linkedinUrl,
+        portfolioUrl: f.portfolioUrl || undefined,
+        bio: f.bio,
+        skillsSummary: f.skillsSummary,
+        careerGoal: f.careerGoal,
+      }).catch(() => {
+        // Silent debounced save — explicit submit still surfaces errors.
+      });
+    }, 1000);
+
+    return () => window.clearTimeout(timer);
+  }, [f, user, formReady]);
 
   const finish = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -142,7 +169,10 @@ export default function CompleteProfile() {
         avatarUrl,
       };
 
-      await saveLearnerOnboarding(user.id, data);
+      const updated = await saveLearnerOnboarding(user.id, data);
+      setF(rowToOnboardingForm(updated, user.email));
+      setAvatarFile(null);
+      if (fileRef.current) fileRef.current.value = "";
       toast({ title: "Profile complete!", description: "Welcome to your SIJIL dashboard." });
       navigate("/learner/profile", { replace: true });
     } catch (err) {

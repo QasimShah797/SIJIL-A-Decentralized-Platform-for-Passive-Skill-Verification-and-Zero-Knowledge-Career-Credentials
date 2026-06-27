@@ -119,10 +119,49 @@ export async function fetchLearnerProfile(userId: string, email?: string | null)
   };
 }
 
+function rowToOnboardingForm(
+  row: LearnerProfileRow,
+  email?: string | null,
+): {
+  firstName: string;
+  lastName: string;
+  universityEmail: string;
+  institutionName: string;
+  program: string;
+  studentId: string;
+  department: string;
+  contactNumber: string;
+  cityCountry: string;
+  batch: string;
+  githubUrl: string;
+  linkedinUrl: string;
+  portfolioUrl: string;
+  bio: string;
+  skillsSummary: string;
+  careerGoal: string;
+} {
+  return {
+    firstName: row.first_name?.trim() ?? "",
+    lastName: row.last_name?.trim() ?? "",
+    universityEmail: row.university_email?.trim() ?? email?.trim() ?? "",
+    institutionName: row.institution_name?.trim() ?? "",
+    program: row.program?.trim() ?? "",
+    studentId: row.student_id?.trim() ?? "",
+    department: row.department?.trim() ?? "",
+    contactNumber: row.contact_number?.trim() ?? "",
+    cityCountry: row.city_country?.trim() ?? "",
+    batch: row.batch?.trim() ?? "",
+    githubUrl: row.github_url?.trim() ?? "",
+    linkedinUrl: row.linkedin_url?.trim() ?? "",
+    portfolioUrl: row.portfolio_url?.trim() ?? "",
+    bio: row.bio?.trim() ?? "",
+    skillsSummary: row.skills_summary?.trim() ?? "",
+    careerGoal: row.career_goal?.trim() ?? "",
+  };
+}
+
 export async function isLearnerProfileComplete(userId: string): Promise<boolean> {
   const data = await fetchLearnerProfileRow(userId);
-  if (!data) return false;
-  if (data.profile_completed === true) return true;
   return hasRequiredLearnerFields(data);
 }
 
@@ -183,32 +222,86 @@ export async function uploadLearnerAvatar(userId: string, file: File): Promise<s
   return data.publicUrl;
 }
 
-export async function saveLearnerOnboarding(userId: string, data: LearnerOnboardingData): Promise<void> {
+export async function saveLearnerOnboarding(userId: string, data: LearnerOnboardingData): Promise<LearnerProfileRow> {
   const existing = await fetchLearnerProfileRow(userId);
   if (!existing?.institution_id) {
     throw new Error("Only institution-provisioned learners can complete this profile.");
   }
 
-  const core: Record<string, unknown> = {
-    user_id: userId,
-    first_name: data.firstName,
-    last_name: data.lastName,
-    contact_number: data.contactNumber,
-    city_country: data.cityCountry,
-    github_url: data.githubUrl,
-    linkedin_url: data.linkedinUrl,
-    bio: data.bio,
-    skills_summary: data.skillsSummary,
-    career_goal: data.careerGoal,
+  const payload: Record<string, unknown> = {
+    first_name: data.firstName.trim(),
+    last_name: data.lastName.trim(),
+    contact_number: data.contactNumber.trim(),
+    city_country: data.cityCountry.trim(),
+    github_url: data.githubUrl.trim(),
+    linkedin_url: data.linkedinUrl.trim(),
+    bio: data.bio.trim(),
+    skills_summary: data.skillsSummary.trim(),
+    career_goal: data.careerGoal.trim(),
+    portfolio_url: data.portfolioUrl?.trim() || null,
     profile_completed: true,
   };
 
-  if (data.portfolioUrl) core.portfolio_url = data.portfolioUrl;
-  if (data.avatarUrl) core.avatar_url = data.avatarUrl;
+  if (data.avatarUrl) payload.avatar_url = data.avatarUrl;
 
-  const { error } = await supabase.from("learner_profiles").upsert(core, { onConflict: "user_id" });
+  const { data: updated, error } = await supabase
+    .from("learner_profiles")
+    .update(payload)
+    .eq("user_id", userId)
+    .select(
+      "first_name, last_name, institution_name, institution_id, university_email, program, department, student_id, holder_did, batch, status, contact_number, city_country, github_url, linkedin_url, portfolio_url, bio, career_goal, skills_summary, avatar_url, profile_completed, account_activated_at",
+    )
+    .single();
+  if (error) throw error;
+  if (!updated) throw new Error("Profile update did not return a row.");
+  return updated;
+}
+
+/** Persist learner-editable onboarding fields without requiring full completion. */
+export async function saveLearnerProfileProgress(
+  userId: string,
+  data: Partial<LearnerOnboardingData> & Pick<LearnerOnboardingData, "firstName" | "lastName">,
+): Promise<void> {
+  const existing = await fetchLearnerProfileRow(userId);
+  if (!existing?.institution_id) {
+    throw new Error("Only institution-provisioned learners can save profile progress.");
+  }
+
+  const payload: Record<string, unknown> = {
+    first_name: data.firstName.trim(),
+    last_name: data.lastName.trim(),
+  };
+
+  if (data.contactNumber !== undefined) payload.contact_number = data.contactNumber.trim();
+  if (data.cityCountry !== undefined) payload.city_country = data.cityCountry.trim();
+  if (data.githubUrl !== undefined) payload.github_url = data.githubUrl.trim();
+  if (data.linkedinUrl !== undefined) payload.linkedin_url = data.linkedinUrl.trim();
+  if (data.portfolioUrl !== undefined) payload.portfolio_url = data.portfolioUrl.trim() || null;
+  if (data.bio !== undefined) payload.bio = data.bio.trim();
+  if (data.skillsSummary !== undefined) payload.skills_summary = data.skillsSummary.trim();
+  if (data.careerGoal !== undefined) payload.career_goal = data.careerGoal.trim();
+  if (data.avatarUrl) payload.avatar_url = data.avatarUrl;
+
+  const merged: LearnerProfileRow = {
+    ...existing,
+    first_name: payload.first_name as string,
+    last_name: payload.last_name as string,
+    contact_number: (payload.contact_number as string | undefined) ?? existing.contact_number,
+    city_country: (payload.city_country as string | undefined) ?? existing.city_country,
+    github_url: (payload.github_url as string | undefined) ?? existing.github_url,
+    linkedin_url: (payload.linkedin_url as string | undefined) ?? existing.linkedin_url,
+    portfolio_url: (payload.portfolio_url as string | null | undefined) ?? existing.portfolio_url,
+    bio: (payload.bio as string | undefined) ?? existing.bio,
+    skills_summary: (payload.skills_summary as string | undefined) ?? existing.skills_summary,
+    career_goal: (payload.career_goal as string | undefined) ?? existing.career_goal,
+  };
+  payload.profile_completed = hasRequiredLearnerFields(merged);
+
+  const { error } = await supabase.from("learner_profiles").update(payload).eq("user_id", userId);
   if (error) throw error;
 }
+
+export { rowToOnboardingForm };
 
 export type LearnerEditableProfile = {
   contactNumber: string;
