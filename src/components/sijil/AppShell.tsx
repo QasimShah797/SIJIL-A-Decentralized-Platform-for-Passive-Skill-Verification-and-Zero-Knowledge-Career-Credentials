@@ -1,6 +1,6 @@
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
-  LayoutDashboard, User, Plug, ClipboardCheck, ShieldCheck,
+  LayoutDashboard, User, UserCircle, Plug, ClipboardCheck, ShieldCheck,
   Wallet, Search, Building2, Sparkles, Bell, BadgeCheck, MessageSquare, LogOut, GraduationCap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -29,6 +29,7 @@ export function AppShell({ role, children }: { role: Role; children: React.React
 
   const learnerNav = [
     { to: "/learner/profile", icon: User, label: "Profile & Skills" },
+    { to: "/learner/my-profile", icon: UserCircle, label: "My Profile" },
     { to: "/learner/integrations", icon: Plug, label: "Integrations" },
     { to: "/learner/task", icon: ClipboardCheck, label: "Practical Task" },
     ...(skills.length ? [{ to: "/learner/validation", icon: ShieldCheck, label: "Validation Trail" }] : []),

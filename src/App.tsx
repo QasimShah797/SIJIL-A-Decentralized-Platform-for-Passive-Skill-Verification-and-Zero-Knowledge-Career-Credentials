@@ -16,6 +16,7 @@ import LearnerLogin from "./pages/login/LearnerLogin";
 import ActivateAccount from "./pages/student/ActivateAccount";
 import CompleteProfile from "./pages/learner/CompleteProfile";
 import LearnerProfile from "./pages/learner/Profile";
+import MyProfile from "./pages/learner/MyProfile";
 import LearnerIntegrations from "./pages/learner/Integrations";
 import LearnerPracticalTask from "./pages/learner/PracticalTask";
 import LearnerValidation from "./pages/learner/Validation";
@@ -71,6 +72,7 @@ const App = () => (
 
           <Route path="/learner/complete-profile" element={<LRIncomplete><CompleteProfile /></LRIncomplete>} />
           <Route path="/learner/profile" element={<LR><LearnerProfile /></LR>} />
+          <Route path="/learner/my-profile" element={<LR><MyProfile /></LR>} />
           <Route path="/learner/integrations" element={<LR><LearnerIntegrations /></LR>} />
           <Route path="/learner/task" element={<LR><LearnerPracticalTask /></LR>} />
           <Route path="/learner/validation" element={<LR><LearnerValidation /></LR>} />

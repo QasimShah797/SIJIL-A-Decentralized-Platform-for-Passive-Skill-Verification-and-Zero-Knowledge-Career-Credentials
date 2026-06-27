@@ -210,6 +210,47 @@ export async function saveLearnerOnboarding(userId: string, data: LearnerOnboard
   if (error) throw error;
 }
 
+export type LearnerEditableProfile = {
+  contactNumber: string;
+  cityCountry: string;
+  bio: string;
+  githubUrl: string;
+  linkedinUrl: string;
+  portfolioUrl?: string;
+  skillsSummary: string;
+  careerGoal: string;
+  avatarUrl?: string;
+};
+
+/** Update learner-editable fields only; institution-verified fields are never changed. */
+export async function updateLearnerEditableProfile(
+  userId: string,
+  data: LearnerEditableProfile,
+): Promise<void> {
+  const existing = await fetchLearnerProfileRow(userId);
+  if (!existing?.institution_id) {
+    throw new Error("Only institution-provisioned learners can update this profile.");
+  }
+
+  const payload: Record<string, unknown> = {
+    contact_number: data.contactNumber.trim(),
+    city_country: data.cityCountry.trim(),
+    bio: data.bio.trim(),
+    github_url: data.githubUrl.trim(),
+    linkedin_url: data.linkedinUrl.trim(),
+    skills_summary: data.skillsSummary.trim(),
+    career_goal: data.careerGoal.trim(),
+    portfolio_url: data.portfolioUrl?.trim() || null,
+  };
+  if (data.avatarUrl) payload.avatar_url = data.avatarUrl;
+
+  const { error } = await supabase
+    .from("learner_profiles")
+    .update(payload)
+    .eq("user_id", userId);
+  if (error) throw error;
+}
+
 export async function fetchAllLearnerProfiles(): Promise<(LearnerProfileView & { user_id: string })[]> {
   const { data, error } = await supabase.from("learner_profiles").select("*");
   if (error) throw error;
