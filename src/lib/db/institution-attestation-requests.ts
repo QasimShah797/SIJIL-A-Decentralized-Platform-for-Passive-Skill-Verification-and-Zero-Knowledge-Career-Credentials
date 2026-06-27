@@ -2,6 +2,7 @@ import { supabase } from "@/integrations/supabase/client";
 import type { LearnerProfileView } from "@/lib/db/learner-profile";
 import { fetchPeerReviews } from "@/lib/db/peer-reviews";
 import { updateSkillPipelineStage } from "@/lib/db/skills";
+import { issueCredentialForSkill } from "@/lib/db/credentials";
 import { institutionDisplayName, normalizeInstitutionName } from "@/lib/institution-routing";
 import type { AttemptRecord, DeclaredSkill, SkillTask } from "@/lib/sijil-data";
 
@@ -10,6 +11,10 @@ export type PracticalTaskResult = {
   title: string;
   status: "Passed" | "Failed";
   feedback: string;
+  summary?: string;
+  scorePercent?: number;
+  correctCount?: number;
+  totalQuestions?: number;
   submission?: string;
   criteriaResults: Record<string, unknown>[];
   submittedAt: string;
@@ -68,6 +73,8 @@ export type InstitutionAttestationRequest = {
   currentStage: string;
   evidencePackage: EvidencePackage;
   practicalTaskResult: PracticalTaskResult;
+  mcqResult?: Record<string, unknown>;
+  testPercentage?: number;
   githubEvidence: Record<string, unknown>[];
   moodleEvidence: Record<string, unknown>[];
   certificateEvidence: Record<string, unknown>[];
@@ -81,6 +88,9 @@ type EvaluationResult = {
   passed: boolean;
   score?: number;
   feedback: string;
+  summary?: string;
+  correctCount?: number;
+  totalQuestions?: number;
   criteriaResults?: Record<string, unknown>[];
 };
 
@@ -98,6 +108,102 @@ export function resolveCompetencyDomain(request: InstitutionAttestationRequest):
     || request.evidencePackage?.competency?.domain
     || "Not specified"
   );
+}
+
+export function resolveLearnerName(request: InstitutionAttestationRequest): string {
+  return (
+    request.learnerName?.trim()
+    || request.evidencePackage?.learner?.name?.trim()
+    || "Learner"
+  );
+}
+
+export function resolveLearnerEmail(request: InstitutionAttestationRequest): string {
+  return (
+    request.learnerEmail?.trim()
+    || request.evidencePackage?.learner?.email?.trim()
+    || "No email available"
+  );
+}
+
+export function resolveMcqPercentage(request: InstitutionAttestationRequest): number | null {
+  if (request.testPercentage != null && Number.isFinite(request.testPercentage)) {
+    return request.testPercentage;
+  }
+
+  const mcqPercentage = request.mcqResult?.percentage;
+  if (mcqPercentage != null && Number.isFinite(Number(mcqPercentage))) {
+    return Number(mcqPercentage);
+  }
+
+  if (request.practicalTaskResult?.scorePercent != null) {
+    return request.practicalTaskResult.scorePercent;
+  }
+
+  const rawResult = request.practicalTaskResult as unknown as Record<string, unknown> | undefined;
+  if (rawResult?.percentage != null && Number.isFinite(Number(rawResult.percentage))) {
+    return Number(rawResult.percentage);
+  }
+
+  return null;
+}
+
+export function formatMcqPercentageLabel(request: InstitutionAttestationRequest): string {
+  const percentage = resolveMcqPercentage(request);
+  return percentage != null ? `${percentage}%` : "Not available";
+}
+
+export type InstitutionStudentSummary = {
+  id: string;
+  name: string;
+  email: string;
+  competency: string;
+  domain: string;
+  status: string;
+  percentage: number | null;
+  submittedAt: string;
+};
+
+export function deriveInstitutionStudents(
+  requests: InstitutionAttestationRequest[],
+): InstitutionStudentSummary[] {
+  const byLearner = new Map<string, InstitutionStudentSummary>();
+
+  for (const request of requests) {
+    const learnerId = request.learnerUserId || request.id;
+    const next: InstitutionStudentSummary = {
+      id: learnerId,
+      name: resolveLearnerName(request),
+      email: resolveLearnerEmail(request),
+      competency: resolveCompetencyName(request),
+      domain: resolveCompetencyDomain(request),
+      status: request.status,
+      percentage: resolveMcqPercentage(request),
+      submittedAt: request.submittedToInstitutionAt || "",
+    };
+
+    const existing = byLearner.get(learnerId);
+    if (!existing) {
+      byLearner.set(learnerId, next);
+      continue;
+    }
+
+    const existingTime = existing.submittedAt ? new Date(existing.submittedAt).getTime() : 0;
+    const nextTime = next.submittedAt ? new Date(next.submittedAt).getTime() : 0;
+    if (nextTime >= existingTime) {
+      byLearner.set(learnerId, next);
+    }
+  }
+
+  return Array.from(byLearner.values()).sort((a, b) => {
+    const aTime = a.submittedAt ? new Date(a.submittedAt).getTime() : 0;
+    const bTime = b.submittedAt ? new Date(b.submittedAt).getTime() : 0;
+    return bTime - aTime;
+  });
+}
+
+export function safeEvidenceCount(items: unknown): number {
+  return Array.isArray(items) ? items.length : 0;
 }
 
 export function resolvePracticalTaskStatus(result?: PracticalTaskResult | null): "Passed" | "Failed" | "Unknown" {
@@ -119,7 +225,15 @@ export function evidencePackageForDisplay(pkg: EvidencePackage): EvidencePackage
 }
 
 function normalizePracticalTaskResult(raw: Record<string, unknown> | null | undefined): PracticalTaskResult {
-  const passed = raw?.passed === true;
+  const scorePercent = raw?.scorePercent != null
+    ? Number(raw.scorePercent)
+    : raw?.percentage != null
+      ? Number(raw.percentage)
+      : raw?.score != null
+        ? Number(raw.score)
+        : undefined;
+
+  const passed = raw?.passed === true || (scorePercent != null && scorePercent >= 70);
   const status = (raw?.status as PracticalTaskResult["status"])
     ?? (passed ? "Passed" : "Failed");
 
@@ -128,6 +242,10 @@ function normalizePracticalTaskResult(raw: Record<string, unknown> | null | unde
     title: (raw?.title as string) ?? "Practical task",
     status,
     feedback: (raw?.feedback as string) ?? "",
+    summary: (raw?.summary as string) ?? undefined,
+    scorePercent: Number.isFinite(scorePercent) ? scorePercent : undefined,
+    correctCount: raw?.correctCount != null ? Number(raw.correctCount) : undefined,
+    totalQuestions: raw?.totalQuestions != null ? Number(raw.totalQuestions) : undefined,
     submission: raw?.submission as string | undefined,
     criteriaResults: (raw?.criteriaResults as Record<string, unknown>[]) ?? [],
     submittedAt: (raw?.submittedAt as string) ?? "",
@@ -135,7 +253,8 @@ function normalizePracticalTaskResult(raw: Record<string, unknown> | null | unde
 }
 
 function rowToRequest(row: Record<string, unknown>): InstitutionAttestationRequest {
-  const evidencePackage = (row.evidence_package as EvidencePackage) ?? {
+  const rawPackage = row.evidence_package as Record<string, unknown> | null | undefined;
+  const evidencePackage = (rawPackage as EvidencePackage | undefined) ?? {
     learner: { id: "", name: "", email: "", institution: "" },
     competency: { id: "", name: "", domain: "" },
     evidence: { github: [], moodle: [], certificates: [], peerReviews: [] },
@@ -151,9 +270,41 @@ function rowToRequest(row: Record<string, unknown>): InstitutionAttestationReque
     timestamp: "",
   };
 
+  const githubEvidence = Array.isArray(row.github_evidence)
+    ? row.github_evidence as Record<string, unknown>[]
+    : Array.isArray(evidencePackage.evidence?.github)
+      ? evidencePackage.evidence.github
+      : rawPackage?.githubEvidence
+        ? [rawPackage.githubEvidence as Record<string, unknown>]
+        : [];
+
+  const moodleEvidence = Array.isArray(row.moodle_evidence)
+    ? row.moodle_evidence as Record<string, unknown>[]
+    : Array.isArray(evidencePackage.evidence?.moodle)
+      ? evidencePackage.evidence.moodle
+      : [];
+
+  const certificateEvidence = Array.isArray(row.certificate_evidence)
+    ? row.certificate_evidence as Record<string, unknown>[]
+    : Array.isArray(evidencePackage.evidence?.certificates)
+      ? evidencePackage.evidence.certificates
+      : [];
+
+  const peerReviewEvidence = Array.isArray(row.peer_review_evidence)
+    ? row.peer_review_evidence as Record<string, unknown>[]
+    : Array.isArray(evidencePackage.evidence?.peerReviews)
+      ? evidencePackage.evidence.peerReviews
+      : [];
+
   const practicalTaskResult = normalizePracticalTaskResult(
     (row.practical_task_result as Record<string, unknown>) ?? evidencePackage.practicalTask,
   );
+  const testPercentage = row.test_percentage != null
+    ? Number(row.test_percentage)
+    : practicalTaskResult.scorePercent;
+  if (testPercentage != null && practicalTaskResult.scorePercent == null) {
+    practicalTaskResult.scorePercent = testPercentage;
+  }
 
   return {
     id: row.id as string,
@@ -169,11 +320,15 @@ function rowToRequest(row: Record<string, unknown>): InstitutionAttestationReque
     currentStage: (row.current_stage as string) ?? "institution_attestation_pending",
     evidencePackage,
     practicalTaskResult,
-    githubEvidence: (row.github_evidence as Record<string, unknown>[]) ?? evidencePackage.evidence.github ?? [],
-    moodleEvidence: (row.moodle_evidence as Record<string, unknown>[]) ?? evidencePackage.evidence.moodle ?? [],
-    certificateEvidence: (row.certificate_evidence as Record<string, unknown>[]) ?? evidencePackage.evidence.certificates ?? [],
-    peerReviewEvidence: (row.peer_review_evidence as Record<string, unknown>[]) ?? evidencePackage.evidence.peerReviews ?? [],
-    submittedToInstitutionAt: row.submitted_to_institution_at as string,
+    mcqResult: row.mcq_result as Record<string, unknown> | undefined,
+    testPercentage,
+    githubEvidence,
+    moodleEvidence,
+    certificateEvidence,
+    peerReviewEvidence,
+    submittedToInstitutionAt: (row.submitted_to_institution_at as string)
+      || (row.created_at as string)
+      || "",
     reviewedAt: row.reviewed_at as string | undefined,
     institutionFeedback: row.institution_feedback as string | undefined,
   };
@@ -278,6 +433,10 @@ export async function buildEvidencePackage(params: {
       title: params.task?.title ?? "Practical task",
       status: params.evaluation.passed ? "Passed" : "Failed",
       feedback: params.evaluation.feedback,
+      summary: params.evaluation.summary,
+      scorePercent: params.evaluation.score,
+      correctCount: params.evaluation.correctCount,
+      totalQuestions: params.evaluation.totalQuestions,
       submission: params.submission,
       criteriaResults: params.evaluation.criteriaResults ?? [],
       submittedAt: now,
@@ -378,7 +537,7 @@ export async function fetchInstitutionAttestationRequests(): Promise<Institution
   const { data, error } = await supabase
     .from("institution_attestation_requests")
     .select("*")
-    .order("submitted_to_institution_at", { ascending: false });
+    .order("created_at", { ascending: false });
 
   if (error) {
     console.error("Institution attestation fetch error:", error);
@@ -455,6 +614,14 @@ export async function updateInstitutionAttestationRequest(
         "wallet_ready",
         "wallet_ready",
       );
+      try {
+        await issueCredentialForSkill(
+          existing.learner_user_id as string,
+          existing.skill_id as string,
+        );
+      } catch (issueErr) {
+        console.error("Auto credential issuance failed:", issueErr);
+      }
     } else {
       await updateSkillPipelineStage(
         existing.learner_user_id as string,

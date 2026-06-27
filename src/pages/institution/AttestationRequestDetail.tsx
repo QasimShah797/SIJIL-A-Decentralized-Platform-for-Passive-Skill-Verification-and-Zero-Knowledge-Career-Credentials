@@ -10,9 +10,11 @@ import { ArrowLeft, Check, X } from "lucide-react";
 import { useInstitutionAttestationRequest } from "@/hooks/useInstitutionAttestationRequests";
 import {
   evidencePackageForDisplay,
+  formatMcqPercentageLabel,
   resolveCompetencyDomain,
   resolveCompetencyName,
-  resolvePracticalTaskStatus,
+  resolveLearnerEmail,
+  resolveLearnerName,
   updateInstitutionAttestationRequest,
 } from "@/lib/db/institution-attestation-requests";
 import { useAuth } from "@/hooks/useAuth";
@@ -61,7 +63,7 @@ export default function AttestationRequestDetail() {
       toast({
         title: status === "approved" ? "Attestation approved" : "Attestation rejected",
         description: status === "approved"
-          ? "Learner competency is wallet-ready."
+          ? "Credential has been issued to the learner wallet."
           : "Learner has been notified.",
       });
       setFeedback("");
@@ -88,7 +90,7 @@ export default function AttestationRequestDetail() {
 
       <PageHeader
         title="Institution Attestation Request"
-        description="Full evidence package submitted after practical task pass."
+        description="Full evidence package submitted after practical MCQ completion."
         actions={<StatusBadge variant={request.status === "approved" ? "verified" : request.status === "rejected" ? "destructive" : "warning"}>{request.status}</StatusBadge>}
       />
 
@@ -97,8 +99,8 @@ export default function AttestationRequestDetail() {
           <Card>
             <CardHeader><CardTitle className="text-base">Learner</CardTitle></CardHeader>
             <CardContent className="grid sm:grid-cols-2 gap-3 text-sm">
-              <Field label="Name" value={request.learnerName} />
-              <Field label="Email" value={request.learnerEmail} />
+              <Field label="Name" value={resolveLearnerName(request)} />
+              <Field label="Email" value={resolveLearnerEmail(request)} />
               <Field label="Institution" value={request.institutionName} />
               <Field label="Student ID" value={pkg.learner.studentId ?? "—"} />
               <Field label="Program" value={pkg.learner.program ?? "—"} />
@@ -127,15 +129,46 @@ export default function AttestationRequestDetail() {
           </Card>
 
           <Card>
-            <CardHeader><CardTitle className="text-base">Practical task result</CardTitle></CardHeader>
+            <CardHeader><CardTitle className="text-base">Practical MCQ result</CardTitle></CardHeader>
             <CardContent className="space-y-3 text-sm">
               <Field label="Title" value={request.practicalTaskResult.title} />
+              <Field
+                label="MCQ percentage"
+                value={formatMcqPercentageLabel(request)}
+              />
               <Field label="Attempt ID" value={request.practicalTaskResult.attemptId} />
-              <Field label="Status" value={
-                <span className="rounded-full border px-2 py-1 text-xs">
-                  Practical Task {resolvePracticalTaskStatus(request.practicalTaskResult)}
-                </span>
-              } />
+              <Field
+                label="Review threshold"
+                value={
+                  (request.testPercentage ?? request.practicalTaskResult.scorePercent ?? 0) >= 70
+                    ? "Meets 70% threshold"
+                    : "Below 70% threshold"
+                }
+              />
+              {request.mcqResult && (
+                <div>
+                  <div className="text-[11px] text-muted-foreground">MCQ result summary</div>
+                  <pre className="mt-1 rounded-md border bg-muted/30 p-3 text-xs whitespace-pre-wrap max-h-40 overflow-y-auto">
+                    {JSON.stringify(request.mcqResult, null, 2)}
+                  </pre>
+                </div>
+              )}
+              {(request.evidencePackage as Record<string, unknown>)?.mcqQuestions && (
+                <div>
+                  <div className="text-[11px] text-muted-foreground">MCQ questions (learner view)</div>
+                  <pre className="mt-1 rounded-md border bg-muted/30 p-3 text-xs whitespace-pre-wrap max-h-64 overflow-y-auto">
+                    {JSON.stringify((request.evidencePackage as Record<string, unknown>).mcqQuestions, null, 2)}
+                  </pre>
+                </div>
+              )}
+              {(request.evidencePackage as Record<string, unknown>)?.githubEvidence && (
+                <div>
+                  <div className="text-[11px] text-muted-foreground">GitHub evidence / classification</div>
+                  <pre className="mt-1 rounded-md border bg-muted/30 p-3 text-xs whitespace-pre-wrap max-h-40 overflow-y-auto">
+                    {JSON.stringify((request.evidencePackage as Record<string, unknown>).githubEvidence, null, 2)}
+                  </pre>
+                </div>
+              )}
               <div>
                 <div className="text-[11px] text-muted-foreground">Feedback</div>
                 <div className="mt-1 rounded-md border bg-muted/30 p-3">{request.practicalTaskResult.feedback || "—"}</div>
@@ -154,7 +187,7 @@ export default function AttestationRequestDetail() {
                 </div>
               )}
               <div>
-                <div className="text-[11px] text-muted-foreground">Submission</div>
+                <div className="text-[11px] text-muted-foreground">Learner answers</div>
                 <pre className="mt-1 rounded-md border bg-muted/30 p-3 text-xs whitespace-pre-wrap max-h-64 overflow-y-auto">{request.practicalTaskResult.submission || "—"}</pre>
               </div>
             </CardContent>

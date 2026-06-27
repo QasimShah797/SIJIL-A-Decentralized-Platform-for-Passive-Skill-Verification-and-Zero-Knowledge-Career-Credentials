@@ -7,7 +7,14 @@ import { supabase } from "@/integrations/supabase/client";
 const BASE_URL = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, "") ?? "";
 
 export function isApiEnabled(): boolean {
-  return Boolean(BASE_URL);
+  if (!BASE_URL) return false;
+  try {
+    const host = new URL(BASE_URL, typeof window !== "undefined" ? window.location.origin : "http://localhost").hostname;
+    if (host === "localhost" || host === "127.0.0.1") return false;
+  } catch {
+    return false;
+  }
+  return true;
 }
 
 export async function getAuthHeaders(): Promise<Record<string, string>> {
@@ -69,6 +76,7 @@ export async function tryApiRequest<T>(
   options: RequestInit = {},
   onError?: (message: string) => void,
 ): Promise<T | null> {
+  if (!isApiEnabled()) return null;
   try {
     return await apiRequest<T>(path, options);
   } catch (err) {

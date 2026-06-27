@@ -10,12 +10,22 @@ export const ROLE_HOME: Record<AppRole, string> = {
 };
 
 export async function fetchUserRoles(userId: string): Promise<AppRole[]> {
-  const { data, error } = await supabase
-    .from("user_roles")
-    .select("role")
-    .eq("user_id", userId);
-  if (error || !data) return [];
-  return data.map((r) => r.role as AppRole);
+  try {
+    const { data, error } = await supabase
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", userId);
+
+    if (error) {
+      console.warn("Could not fetch user role:", error.message ?? error);
+      return [];
+    }
+
+    return (data ?? []).map((r) => r.role as AppRole);
+  } catch (err) {
+    console.warn("Could not fetch user role:", err);
+    return [];
+  }
 }
 
 export function pickPrimaryRole(roles: AppRole[]): AppRole | null {

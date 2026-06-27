@@ -34,7 +34,18 @@ import StudentManagement from "./pages/institution/StudentManagement";
 import GitHubPrepare from "./pages/auth/GitHubPrepare";
 import GitHubCallback from "./pages/auth/GitHubCallback";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      staleTime: 1000 * 60 * 10,
+      gcTime: 1000 * 60 * 30,
+      retry: 1,
+    },
+  },
+});
 
 const G = <AuthRebuildNotice />;
 

@@ -3,7 +3,6 @@
  */
 import { supabase } from "@/integrations/supabase/client";
 import {
-  syncGitHubApi,
   getUnmappedEvidenceApi,
   getLinkedProjectEvidenceApi,
   linkEvidenceToSkillApi,
@@ -66,22 +65,11 @@ async function loadBreakdownFromEvidence(
 }
 
 export async function syncGitHubViaBackend(
-  declaredSkills: { id: string; name: string; domain?: string }[],
+  _declaredSkills: { id: string; name: string; domain?: string }[],
 ): Promise<{
   usedBackend: boolean;
   result?: { reposFetched: number; evidenceCreated: number; activitiesSynced: number };
 }> {
-  const viaApi = await syncGitHubApi(declaredSkills);
-  if (viaApi) {
-    return {
-      usedBackend: true,
-      result: {
-        reposFetched: viaApi.reposFetched,
-        evidenceCreated: viaApi.evidenceCreated,
-        activitiesSynced: viaApi.activitiesSynced,
-      },
-    };
-  }
   return { usedBackend: false };
 }
 

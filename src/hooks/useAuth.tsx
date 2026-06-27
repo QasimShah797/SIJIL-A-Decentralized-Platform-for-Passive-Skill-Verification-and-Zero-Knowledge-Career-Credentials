@@ -43,6 +43,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const r = await fetchUserRoles(uid);
       setRoles(r);
+    } catch (err) {
+      console.warn("Could not load user roles:", err);
+      setRoles([]);
     } finally {
       setRolesReady(true);
     }

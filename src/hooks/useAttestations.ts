@@ -1,25 +1,24 @@
 import { useCallback, useEffect, useState } from "react";
-import { fetchAttestations, updateAttestationDb } from "@/lib/db/attestations";
 import type { AttestationRecord } from "@/lib/sijil-data";
 
+/**
+ * @deprecated Institution UI should use `useInstitutionAttestationRequests()` instead.
+ * Legacy hook kept to avoid importing the removed `attestations` table.
+ */
 export function useAttestations() {
-  const [attestations, setAttestations] = useState<AttestationRecord[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [attestations] = useState<AttestationRecord[]>([]);
+  const [loading] = useState(false);
 
   const refresh = useCallback(async () => {
-    setLoading(true);
-    try {
-      setAttestations(await fetchAttestations());
-    } finally {
-      setLoading(false);
-    }
+    return;
   }, []);
 
-  useEffect(() => { refresh(); }, [refresh]);
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
 
-  const updateAttestation = async (id: string, patch: Partial<AttestationRecord>) => {
-    await updateAttestationDb(id, patch);
-    setAttestations((list) => list.map((a) => (a.id === id ? { ...a, ...patch } : a)));
+  const updateAttestation = async (_id: string, _patch: Partial<AttestationRecord>) => {
+    throw new Error("Legacy attestations flow is disabled. Use institution attestation requests.");
   };
 
   return { attestations, loading, refresh, updateAttestation };
