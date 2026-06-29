@@ -223,11 +223,14 @@ Deno.serve(async (req) => {
         const { userId, admin } = auth as { userId: string; admin: ReturnType<typeof createClient> };
 
         const attemptId = String(body.attemptId ?? "");
-        const answers = (body.answers ?? {}) as Record<string, string>;
+        const answers = (body.answers ?? {}) as Record<string, unknown>;
 
         if (!attemptId) {
           return json({ error: "Missing attemptId" }, 400);
         }
+
+        console.log("[mcq-evaluate] attemptId:", attemptId);
+        console.log("[mcq-evaluate] raw selected answers:", JSON.stringify(answers));
 
         const { data: attempt, error: fetchErr } = await admin
           .from("mcq_task_attempts")
@@ -259,6 +262,7 @@ Deno.serve(async (req) => {
           answers,
         );
         const submittedAt = new Date().toISOString();
+        const resultLabel = passed ? "Passed" : "Needs Improvement";
 
         const { error: updateErr } = await admin
           .from("mcq_task_attempts")
@@ -269,7 +273,9 @@ Deno.serve(async (req) => {
             percentage,
             passed,
             status: "completed",
-            feedback: "MCQ test submitted and saved.",
+            feedback: passed
+              ? `MCQ passed with ${percentage}%.`
+              : `MCQ score ${percentage}% — needs improvement (pass threshold is 70%).`,
             submitted_at: submittedAt,
           })
           .eq("id", attemptId);
@@ -277,6 +283,8 @@ Deno.serve(async (req) => {
         if (updateErr) {
           return json({ error: updateErr.message }, 500);
         }
+
+        let attestationRequestId: string | null = null;
 
         const storedEvidence = attempt.evidence_package as Record<string, unknown> | null;
         const storedClassification = attempt.classification as Record<string, unknown> | null;
@@ -294,6 +302,7 @@ Deno.serve(async (req) => {
             correctCount,
             totalQuestions,
             submittedAt,
+            passed,
           },
           mcqQuestions: attempt.questions,
           learnerAnswers: answers,
@@ -313,8 +322,6 @@ Deno.serve(async (req) => {
           .filter(Boolean)
           .join(" ")
           || String(authUser?.user?.user_metadata?.full_name ?? "");
-
-        let attestationRequestId: string | null = null;
 
         let existingAttestationQuery = admin
           .from("institution_attestation_requests")
@@ -356,12 +363,14 @@ Deno.serve(async (req) => {
                 correctCount,
                 totalQuestions,
                 submittedAt,
+                passed,
               },
               mcq_result: {
                 attemptId,
                 percentage,
                 correctCount,
                 totalQuestions,
+                passed,
               },
               test_percentage: percentage,
               github_evidence: storedEvidence?.githubEvidence
@@ -402,7 +411,15 @@ Deno.serve(async (req) => {
         return json({
           submitted: true,
           percentage,
-          message: `Test submitted successfully. Your result is ${percentage}% and has been sent to your institution for attestation.`,
+          correctCount,
+          totalQuestions,
+          passed,
+          resultLabel,
+          passThreshold: 70,
+          attestationSent: attestationRequestId != null,
+          message: passed
+            ? `Test submitted successfully. Your result is ${percentage}% — Passed. Sent to your institution for attestation.`
+            : `Test submitted successfully. Your result is ${percentage}% — Needs Improvement. Sent to your institution for attestation.`,
         });
       }
 

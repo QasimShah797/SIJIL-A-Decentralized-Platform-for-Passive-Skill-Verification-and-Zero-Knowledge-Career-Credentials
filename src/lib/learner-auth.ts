@@ -3,11 +3,13 @@ import { fetchLearnerProfileRow, isLearnerProfileComplete } from "@/lib/db/learn
 
 export type LearnerAccessResult =
   | { ok: true; profileComplete: boolean }
-  | { ok: false; reason: "wrong_role" | "not_provisioned" | "not_activated" };
+  | { ok: false; reason: "wrong_role" | "no_profile" | "not_activated" };
 
 export async function isLearnerAccountActivated(userId: string): Promise<boolean> {
   const row = await fetchLearnerProfileRow(userId);
-  return Boolean(row?.account_activated_at);
+  if (!row) return false;
+  if (!row.institution_id) return true;
+  return Boolean(row.account_activated_at);
 }
 
 /** Learner login and route guard checks. */
@@ -18,10 +20,11 @@ export async function verifyLearnerAccess(userId: string): Promise<LearnerAccess
   }
 
   const row = await fetchLearnerProfileRow(userId);
-  if (!row?.institution_id) {
-    return { ok: false, reason: "not_provisioned" };
+  if (!row) {
+    return { ok: false, reason: "no_profile" };
   }
-  if (!row.account_activated_at) {
+
+  if (row.institution_id && !row.account_activated_at) {
     return { ok: false, reason: "not_activated" };
   }
 

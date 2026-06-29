@@ -68,7 +68,7 @@ export function RequireLearnerRoute({
   const { user, loading, rolesReady } = useAuth();
   const loc = useLocation();
   const [access, setAccess] = useState<
-    "pending" | "allowed" | "wrong_role" | "not_provisioned" | "not_activated" | "incomplete_profile"
+    "pending" | "allowed" | "wrong_role" | "no_profile" | "not_activated" | "incomplete_profile"
   >("pending");
 
   useEffect(() => {
@@ -115,11 +115,11 @@ export function RequireLearnerRoute({
     );
   }
 
-  if (access === "not_provisioned") {
+  if (access === "no_profile") {
     return (
       <LearnerAccessDenied
-        title="Learner account not provisioned"
-        description="Students must be created by their institution. There is no public learner registration."
+        title="Learner profile not found"
+        description="Your account is missing a learner profile. Please sign up again or contact support."
       />
     );
   }

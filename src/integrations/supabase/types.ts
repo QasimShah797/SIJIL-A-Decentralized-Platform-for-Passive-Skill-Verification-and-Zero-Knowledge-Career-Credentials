@@ -305,10 +305,15 @@ export type Database = {
           career_goal: string | null
           city_country: string | null
           contact_number: string | null
+          country: string | null
           created_at: string
+          city: string | null
+          date_of_birth: string | null
           department: string | null
           first_name: string | null
+          gender: string | null
           github_url: string | null
+          graduation_year: number | null
           holder_did: string | null
           institution_id: string | null
           institution_name: string | null
@@ -333,10 +338,15 @@ export type Database = {
           career_goal?: string | null
           city_country?: string | null
           contact_number?: string | null
+          country?: string | null
           created_at?: string
+          city?: string | null
+          date_of_birth?: string | null
           department?: string | null
           first_name?: string | null
+          gender?: string | null
           github_url?: string | null
+          graduation_year?: number | null
           holder_did?: string | null
           institution_id?: string | null
           institution_name?: string | null
@@ -361,10 +371,15 @@ export type Database = {
           career_goal?: string | null
           city_country?: string | null
           contact_number?: string | null
+          country?: string | null
           created_at?: string
+          city?: string | null
+          date_of_birth?: string | null
           department?: string | null
           first_name?: string | null
+          gender?: string | null
           github_url?: string | null
+          graduation_year?: number | null
           holder_did?: string | null
           institution_id?: string | null
           institution_name?: string | null

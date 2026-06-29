@@ -27,6 +27,8 @@ import {
   createInitialMcqProgress,
   evaluateSecureMcqAttempt,
   generateSecureMcqTask,
+  buildMcqSubmissionAnswers,
+  MCQ_PASS_PERCENT,
   MCQ_SECONDS_PER_QUESTION,
   parseMcqAnswers,
   parseMcqProgress,
@@ -54,6 +56,8 @@ type StoredPracticalTaskState = {
   questionEndsAt: string | null;
   resultPercentage: number | null;
   resultMessage: string | null;
+  resultLabel: string | null;
+  passed: boolean | null;
   submitted: boolean;
 };
 
@@ -98,6 +102,9 @@ function restoreFromAttemptRecord(existing: AttemptRecord) {
     questionEndsAt: progress?.questionEndsAt ?? null,
     resultPercentage: session?.resultPercentage ?? existing.score ?? null,
     resultMessage: session?.resultMessage ?? existing.feedback ?? null,
+    resultLabel: session?.resultLabel
+      ?? (existing.passed ? "Passed" : existing.score != null ? "Needs Improvement" : null),
+    passed: session?.passed ?? existing.passed ?? (existing.status === "passed" ? true : existing.score != null ? existing.score >= MCQ_PASS_PERCENT : null),
     submitted,
   };
 }
@@ -152,6 +159,8 @@ export default function PracticalTask() {
   const [evaluating, setEvaluating] = useState(false);
   const [resultPercentage, setResultPercentage] = useState<number | null>(null);
   const [resultMessage, setResultMessage] = useState<string | null>(null);
+  const [resultLabel, setResultLabel] = useState<string | null>(null);
+  const [passed, setPassed] = useState<boolean | null>(null);
   const [now, setNow] = useState(Date.now());
   const tickRef = useRef<number | null>(null);
   const advancingRef = useRef(false);
@@ -175,6 +184,8 @@ export default function PracticalTask() {
     if (stored.questionEndsAt) setQuestionEndsAt(stored.questionEndsAt);
     if (typeof stored.resultPercentage === "number") setResultPercentage(stored.resultPercentage);
     if (stored.resultMessage) setResultMessage(stored.resultMessage);
+    if (stored.resultLabel) setResultLabel(stored.resultLabel);
+    if (typeof stored.passed === "boolean") setPassed(stored.passed);
   }, []);
 
   const hydratePracticalTaskState = useCallback((skillId: string): boolean => {
@@ -200,6 +211,8 @@ export default function PracticalTask() {
     setQuestionEndsAt(null);
     setResultPercentage(null);
     setResultMessage(null);
+    setResultLabel(null);
+    setPassed(null);
     setGenerateError(null);
 
     if (userId) {
@@ -221,6 +234,8 @@ export default function PracticalTask() {
       questionEndsAt,
       resultPercentage,
       resultMessage,
+      resultLabel,
+      passed,
       submitted: Boolean(isSubmitted),
     };
 
@@ -234,6 +249,8 @@ export default function PracticalTask() {
     questionEndsAt,
     resultPercentage,
     resultMessage,
+    resultLabel,
+    passed,
     isSubmitted,
   ]);
 
@@ -282,19 +299,23 @@ export default function PracticalTask() {
     setQuestionEndsAt(nextQuestionEndsAt);
   }, [saveAttempt]);
 
-  const submitMcqAttempt = useCallback(async () => {
+  const submitMcqAttempt = useCallback(async (answersOverride?: McqAnswerMap) => {
     if (!task || !attempt || !activeSkill || !userId) return;
 
     setEvaluating(true);
     try {
-      const result = await evaluateSecureMcqAttempt(task.attemptId, answers, invokeRapidTask);
+      const submissionAnswers = buildMcqSubmissionAnswers(task, answersOverride ?? answers);
+      const result = await evaluateSecureMcqAttempt(task.attemptId, submissionAnswers, invokeRapidTask);
       setResultPercentage(result.percentage);
       setResultMessage(result.message);
+      setResultLabel(result.resultLabel);
+      setPassed(result.passed);
 
       const { attemptId, ...taskBody } = task;
       const evaluatedAttempt: AttemptRecord = {
         ...attempt,
-        status: "submitted",
+        status: result.passed ? "passed" : "submitted",
+        passed: result.passed,
         score: result.percentage,
         feedback: result.message,
         submission: serializeMcqSession({
@@ -302,12 +323,14 @@ export default function PracticalTask() {
           attemptId,
           task: taskBody,
           progress: {
-            answers,
+            answers: submissionAnswers,
             currentIndex: currentQuestionIndex,
             questionEndsAt: questionEndsAt ?? new Date().toISOString(),
           },
           resultPercentage: result.percentage,
           resultMessage: result.message,
+          resultLabel: result.resultLabel,
+          passed: result.passed,
         }),
       };
 
@@ -315,8 +338,8 @@ export default function PracticalTask() {
       setAttempt(evaluatedAttempt);
 
       toast({
-        title: "Test submitted",
-        description: `Your result is ${result.percentage}% and has been sent to institution attestation.`,
+        title: result.resultLabel,
+        description: result.message,
       });
 
       refresh();
@@ -339,7 +362,7 @@ export default function PracticalTask() {
 
     try {
       if (isLastQuestion) {
-        await submitMcqAttempt();
+        await submitMcqAttempt(answers);
         return;
       }
 
@@ -393,6 +416,8 @@ export default function PracticalTask() {
       setQuestionEndsAt(null);
       setResultPercentage(null);
       setResultMessage(null);
+      setResultLabel(null);
+      setPassed(null);
     } finally {
       setTaskLoading(false);
     }
@@ -634,8 +659,20 @@ export default function PracticalTask() {
                     <div className="space-y-4">
                       <div className="rounded-md border bg-muted/30 p-4 text-sm space-y-2">
                         <p>Test submitted successfully.</p>
-                        <p className="font-medium">Result: {resultPercentage ?? attempt.score ?? "—"}%</p>
-                        <p>Sent to institution attestation.</p>
+                        <p className="font-medium">
+                          Result: {resultPercentage ?? attempt.score ?? "—"}%
+                          {resultLabel && (
+                            <span className={passed ? " text-success" : " text-destructive"}>
+                              {" "}· {resultLabel}
+                            </span>
+                          )}
+                        </p>
+                        <p className="text-muted-foreground">
+                          Sent to institution attestation.
+                          {!passed && resultLabel === "Needs Improvement" && (
+                            <> Your institution will review this attempt alongside your score.</>
+                          )}
+                        </p>
                         {resultMessage && (
                           <p className="text-muted-foreground text-xs">{resultMessage}</p>
                         )}

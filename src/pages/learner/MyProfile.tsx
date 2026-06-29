@@ -24,18 +24,35 @@ import { toast } from "@/hooks/use-toast";
 
 const optUrl = z.string().trim().url("Invalid URL").optional().or(z.literal(""));
 
-const EditSchema = z.object({
+const baseEditSchema = {
   contactNumber: z.string().trim().min(1, "Phone number is required").max(40),
-  cityCountry: z.string().trim().min(1, "City / country is required").max(120),
   bio: z.string().trim().min(1, "Short bio is required").max(2000),
   githubUrl: z.string().trim().url("Valid GitHub URL required"),
   linkedinUrl: z.string().trim().url("Valid LinkedIn URL required"),
   portfolioUrl: optUrl,
   skillsSummary: z.string().trim().min(1, "Academic interests / skills summary is required").max(2000),
   careerGoal: z.string().trim().min(1, "Career goal is required").max(1000),
+};
+
+const institutionEditSchema = z.object({
+  ...baseEditSchema,
+  cityCountry: z.string().trim().min(1, "City / country is required").max(120),
 });
 
-type EditForm = z.infer<typeof EditSchema>;
+const selfSignupEditSchema = z.object({
+  ...baseEditSchema,
+  city: z.string().trim().min(1, "City is required").max(80),
+  country: z.string().trim().min(1, "Country is required").max(80),
+  dateOfBirth: z.string().trim().optional().or(z.literal("")),
+  gender: z.string().trim().optional().or(z.literal("")),
+  graduationYear: z.string().trim().optional().or(z.literal("")),
+  institutionName: z.string().trim().max(200).optional().or(z.literal("")),
+  program: z.string().trim().max(200).optional().or(z.literal("")),
+});
+
+type InstitutionEditForm = z.infer<typeof institutionEditSchema>;
+type SelfSignupEditForm = z.infer<typeof selfSignupEditSchema>;
+type EditForm = InstitutionEditForm | SelfSignupEditForm;
 
 function LockedField({ label, value }: { label: string; value: string }) {
   return (
@@ -70,34 +87,25 @@ export default function MyProfile() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [form, setForm] = useState<EditForm>({
     contactNumber: "",
-    cityCountry: "",
     bio: "",
     githubUrl: "",
     linkedinUrl: "",
     portfolioUrl: "",
     skillsSummary: "",
     careerGoal: "",
+    cityCountry: "",
+    city: "",
+    country: "",
+    dateOfBirth: "",
+    gender: "",
+    graduationYear: "",
+    institutionName: "",
+    program: "",
   });
 
   useEffect(() => {
     if (!profile || editing) return;
-    setForm({
-      contactNumber: profile.contactNumber ?? "",
-      cityCountry: profile.cityCountry ?? "",
-      bio: profile.bio ?? "",
-      githubUrl: profile.githubUrl ?? "",
-      linkedinUrl: profile.linkedinUrl ?? "",
-      portfolioUrl: profile.portfolioUrl ?? "",
-      skillsSummary: profile.skillsSummary ?? "",
-      careerGoal: profile.careerGoal ?? "",
-    });
-  }, [profile, editing]);
-
-  const set = (key: keyof EditForm) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
-    setForm((f) => ({ ...f, [key]: e.target.value }));
-
-  const startEdit = () => {
-    if (profile) {
+    if (profile.institutionLinked) {
       setForm({
         contactNumber: profile.contactNumber ?? "",
         cityCountry: profile.cityCountry ?? "",
@@ -108,6 +116,60 @@ export default function MyProfile() {
         skillsSummary: profile.skillsSummary ?? "",
         careerGoal: profile.careerGoal ?? "",
       });
+    } else {
+      setForm({
+        contactNumber: profile.contactNumber ?? "",
+        city: profile.city ?? "",
+        country: profile.country ?? "",
+        bio: profile.bio ?? "",
+        githubUrl: profile.githubUrl ?? "",
+        linkedinUrl: profile.linkedinUrl ?? "",
+        portfolioUrl: profile.portfolioUrl ?? "",
+        skillsSummary: profile.skillsSummary ?? "",
+        careerGoal: profile.careerGoal ?? "",
+        dateOfBirth: profile.dateOfBirth ?? "",
+        gender: profile.gender ?? "",
+        graduationYear: profile.graduationYear != null ? String(profile.graduationYear) : "",
+        institutionName: profile.institution !== "—" ? profile.institution : "",
+        program: profile.program !== "—" ? profile.program : "",
+      });
+    }
+  }, [profile, editing]);
+
+  const set = (key: keyof EditForm) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+    setForm((f) => ({ ...f, [key]: e.target.value }));
+
+  const startEdit = () => {
+    if (profile) {
+      if (profile.institutionLinked) {
+        setForm({
+          contactNumber: profile.contactNumber ?? "",
+          cityCountry: profile.cityCountry ?? "",
+          bio: profile.bio ?? "",
+          githubUrl: profile.githubUrl ?? "",
+          linkedinUrl: profile.linkedinUrl ?? "",
+          portfolioUrl: profile.portfolioUrl ?? "",
+          skillsSummary: profile.skillsSummary ?? "",
+          careerGoal: profile.careerGoal ?? "",
+        });
+      } else {
+        setForm({
+          contactNumber: profile.contactNumber ?? "",
+          city: profile.city ?? "",
+          country: profile.country ?? "",
+          bio: profile.bio ?? "",
+          githubUrl: profile.githubUrl ?? "",
+          linkedinUrl: profile.linkedinUrl ?? "",
+          portfolioUrl: profile.portfolioUrl ?? "",
+          skillsSummary: profile.skillsSummary ?? "",
+          careerGoal: profile.careerGoal ?? "",
+          dateOfBirth: profile.dateOfBirth ?? "",
+          gender: profile.gender ?? "",
+          graduationYear: profile.graduationYear != null ? String(profile.graduationYear) : "",
+          institutionName: profile.institution !== "—" ? profile.institution : "",
+          program: profile.program !== "—" ? profile.program : "",
+        });
+      }
     }
     setAvatarFile(null);
     setEditing(true);
@@ -120,8 +182,10 @@ export default function MyProfile() {
   };
 
   const save = async () => {
-    if (!user) return;
-    const parsed = EditSchema.safeParse(form);
+    if (!user || !profile) return;
+
+    const schema = profile.institutionLinked ? institutionEditSchema : selfSignupEditSchema;
+    const parsed = schema.safeParse(form);
     if (!parsed.success) {
       toast({
         title: "Please fix the form",
@@ -138,9 +202,8 @@ export default function MyProfile() {
         avatarUrl = await uploadLearnerAvatar(user.id, avatarFile);
       }
 
-      const payload: LearnerEditableProfile = {
+      const base = {
         contactNumber: parsed.data.contactNumber,
-        cityCountry: parsed.data.cityCountry,
         bio: parsed.data.bio,
         githubUrl: parsed.data.githubUrl,
         linkedinUrl: parsed.data.linkedinUrl,
@@ -149,6 +212,33 @@ export default function MyProfile() {
         careerGoal: parsed.data.careerGoal,
         avatarUrl,
       };
+
+      const payload: LearnerEditableProfile = profile.institutionLinked
+        ? { ...base, cityCountry: (parsed.data as InstitutionEditForm).cityCountry }
+        : (() => {
+            const d = parsed.data as SelfSignupEditForm;
+            const gradYearStr = d.graduationYear?.trim();
+            let graduationYear: number | null | undefined;
+            if (gradYearStr) {
+              const year = Number.parseInt(gradYearStr, 10);
+              if (Number.isNaN(year) || year < 1950 || year > 2100) {
+                throw new Error("Please enter a valid graduation year.");
+              }
+              graduationYear = year;
+            } else {
+              graduationYear = null;
+            }
+            return {
+              ...base,
+              city: d.city,
+              country: d.country,
+              dateOfBirth: d.dateOfBirth || undefined,
+              gender: d.gender || undefined,
+              graduationYear,
+              institutionName: d.institutionName || undefined,
+              program: d.program || undefined,
+            };
+          })();
 
       await updateLearnerEditableProfile(user.id, payload);
       await refresh();
@@ -179,7 +269,11 @@ export default function MyProfile() {
     <AppShell role="learner">
       <PageHeader
         title="My Profile"
-        description="View and update your personal and professional information. University details are verified by your institution."
+        description={
+          profile.institutionLinked
+            ? "View and update your personal and professional information. University details are verified by your institution."
+            : "View and update your learner-owned profile. Institution-verified fields will appear here once linked."
+        }
         actions={
           editing ? (
             <div className="flex gap-2">
@@ -220,7 +314,9 @@ export default function MyProfile() {
               </StatusBadge>
             )}
           </div>
-          <p className="text-sm text-muted-foreground">{profile.institution}</p>
+          <p className="text-sm text-muted-foreground">
+            {profile.institutionLinked ? profile.institution : profile.email}
+          </p>
         </div>
       </div>
 
@@ -239,9 +335,26 @@ export default function MyProfile() {
                 <Field label="Phone number" required>
                   <Input value={form.contactNumber} onChange={set("contactNumber")} />
                 </Field>
-                <Field label="City / country" required>
-                  <Input value={form.cityCountry} onChange={set("cityCountry")} />
-                </Field>
+                {profile.institutionLinked ? (
+                  <Field label="City / country" required>
+                    <Input value={"cityCountry" in form ? form.cityCountry : ""} onChange={set("cityCountry")} />
+                  </Field>
+                ) : (
+                  <>
+                    <Field label="Country" required>
+                      <Input value={"country" in form ? form.country : ""} onChange={set("country")} />
+                    </Field>
+                    <Field label="City" required>
+                      <Input value={"city" in form ? form.city : ""} onChange={set("city")} />
+                    </Field>
+                    <Field label="Date of birth">
+                      <Input type="date" value={"dateOfBirth" in form ? form.dateOfBirth : ""} onChange={set("dateOfBirth")} />
+                    </Field>
+                    <Field label="Gender">
+                      <Input value={"gender" in form ? form.gender : ""} onChange={set("gender")} placeholder="e.g. Female" />
+                    </Field>
+                  </>
+                )}
                 <div className="sm:col-span-2">
                   <Field label="Short bio" required>
                     <Textarea value={form.bio} onChange={set("bio")} rows={3} className="resize-none" />
@@ -285,7 +398,16 @@ export default function MyProfile() {
             ) : (
               <>
                 <ReadOnlyRow label="Phone number" value={profile.contactNumber ?? ""} />
-                <ReadOnlyRow label="City / country" value={profile.cityCountry ?? ""} />
+                {profile.institutionLinked ? (
+                  <ReadOnlyRow label="City / country" value={profile.cityCountry ?? ""} />
+                ) : (
+                  <>
+                    <ReadOnlyRow label="Country" value={profile.country ?? ""} />
+                    <ReadOnlyRow label="City" value={profile.city ?? ""} />
+                    <ReadOnlyRow label="Date of birth" value={profile.dateOfBirth ?? ""} />
+                    <ReadOnlyRow label="Gender" value={profile.gender ?? ""} />
+                  </>
+                )}
                 <div className="sm:col-span-2">
                   <ReadOnlyRow label="Short bio" value={profile.bio ?? ""} />
                 </div>
@@ -294,32 +416,78 @@ export default function MyProfile() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <GraduationCap className="h-4 w-4 text-primary" />
-              Verified university information
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-4 sm:grid-cols-2">
-            <LockedField label="Institution" value={profile.institution} />
-            <LockedField label="University email" value={profile.universityEmail ?? profile.email} />
-            <LockedField label="Registration number" value={profile.studentId} />
-            <LockedField label="Department" value={profile.department} />
-            <LockedField label="Program" value={profile.program} />
-            <LockedField label="Batch / semester" value={profile.batch} />
-            <div className="sm:col-span-2">
-              <div className="text-sm font-medium text-muted-foreground mb-1.5">Status</div>
-              {profile.isVerifiedStudent ? (
-                <StatusBadge variant="verified" icon={<ShieldCheck className="h-3 w-3" />}>
-                  Verified Student
-                </StatusBadge>
+        {profile.institutionLinked ? (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <GraduationCap className="h-4 w-4 text-primary" />
+                Verified university information
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="grid gap-4 sm:grid-cols-2">
+              <LockedField label="Institution" value={profile.institution} />
+              <LockedField label="University email" value={profile.universityEmail ?? profile.email} />
+              <LockedField label="Registration number" value={profile.studentId} />
+              <LockedField label="Department" value={profile.department} />
+              <LockedField label="Program" value={profile.program} />
+              <LockedField label="Batch / semester" value={profile.batch} />
+              <div className="sm:col-span-2">
+                <div className="text-sm font-medium text-muted-foreground mb-1.5">Status</div>
+                {profile.isVerifiedStudent ? (
+                  <StatusBadge variant="verified" icon={<ShieldCheck className="h-3 w-3" />}>
+                    Verified Student
+                  </StatusBadge>
+                ) : (
+                  <StatusBadge variant="neutral">{profile.status}</StatusBadge>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        ) : (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <GraduationCap className="h-4 w-4 text-primary" />
+                Education
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="grid gap-4 sm:grid-cols-2">
+              {editing ? (
+                <>
+                  <Field label="Current institution" hint="Optional">
+                    <Input
+                      value={"institutionName" in form ? form.institutionName : ""}
+                      onChange={set("institutionName")}
+                    />
+                  </Field>
+                  <Field label="Program / degree" hint="Optional">
+                    <Input value={"program" in form ? form.program : ""} onChange={set("program")} />
+                  </Field>
+                  <Field label="Graduation year" hint="Optional">
+                    <Input
+                      type="number"
+                      value={"graduationYear" in form ? form.graduationYear : ""}
+                      onChange={set("graduationYear")}
+                      placeholder="2026"
+                    />
+                  </Field>
+                </>
               ) : (
-                <StatusBadge variant="neutral">{profile.status}</StatusBadge>
+                <>
+                  <ReadOnlyRow
+                    label="Current institution"
+                    value={profile.institution !== "—" ? profile.institution : ""}
+                  />
+                  <ReadOnlyRow label="Program / degree" value={profile.program !== "—" ? profile.program : ""} />
+                  <ReadOnlyRow
+                    label="Graduation year"
+                    value={profile.graduationYear != null ? String(profile.graduationYear) : ""}
+                  />
+                </>
               )}
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        )}
 
         <Card>
           <CardHeader>

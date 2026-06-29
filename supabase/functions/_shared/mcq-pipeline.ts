@@ -40,6 +40,7 @@ export type GeneratedMcqTest = {
 };
 
 const MCQ_PASS_THRESHOLD = 0.7;
+export const MCQ_PASS_PERCENT = Math.round(MCQ_PASS_THRESHOLD * 100);
 
 const MCQ_GENERATION_SCHEMA = {
   type: "object",
@@ -77,7 +78,10 @@ const MCQ_GENERATION_SCHEMA = {
 };
 
 function normalizeOptionId(value: unknown): McqOptionId | null {
-  const id = String(value ?? "").toUpperCase();
+  if (typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 3) {
+    return (["A", "B", "C", "D"] as const)[value];
+  }
+  const id = String(value ?? "").trim().toUpperCase();
   if (id === "A" || id === "B" || id === "C" || id === "D") return id;
   return null;
 }
@@ -103,29 +107,92 @@ export type McqAnswerKeyEntry = {
   explanation: string;
 };
 
+function readCorrectOptionId(row: Record<string, unknown>): McqOptionId | null {
+  return normalizeOptionId(
+    row.correctOptionId
+      ?? row.correct_option_id
+      ?? row.correctAnswer
+      ?? row.correct_answer
+      ?? row.correctOption
+      ?? row.answer
+      ?? row.correct_index
+      ?? row.correctIndex,
+  );
+}
+
+function readQuestionId(row: Record<string, unknown>, index: number): string {
+  return String(row.id ?? row.question_id ?? row.questionId ?? `q${index + 1}`).trim();
+}
+
+export function parseAnswerKeyEntries(answerKeyRaw: unknown): McqAnswerKeyEntry[] {
+  if (Array.isArray(answerKeyRaw)) {
+    return answerKeyRaw
+      .map((item, index) => {
+        const row = item as Record<string, unknown>;
+        const id = readQuestionId(row, index);
+        const correctOptionId = readCorrectOptionId(row);
+        if (!id || !correctOptionId) return null;
+        return {
+          id,
+          correctOptionId,
+          explanation: String(row.explanation ?? row.rationale ?? ""),
+        };
+      })
+      .filter((entry): entry is McqAnswerKeyEntry => entry !== null);
+  }
+
+  return Object.entries(normalizeAnswerKey(answerKeyRaw)).map(([id, correctOptionId]) => ({
+    id,
+    correctOptionId,
+    explanation: "",
+  }));
+}
+
+export function normalizeLearnerAnswers(answers: Record<string, unknown>): Record<string, McqOptionId> {
+  const normalized: Record<string, McqOptionId> = {};
+  for (const [questionId, value] of Object.entries(answers ?? {})) {
+    const key = questionId.trim();
+    if (!key) continue;
+
+    if (typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 3) {
+      normalized[key] = (["A", "B", "C", "D"] as const)[value];
+      continue;
+    }
+
+    const optionId = normalizeOptionId(value);
+    if (optionId) normalized[key] = optionId;
+  }
+  return normalized;
+}
+
 export function scoreMcqSubmission(
   answerKeyRaw: unknown,
-  answers: Record<string, string>,
+  answers: Record<string, unknown>,
 ): {
   correctCount: number;
   totalQuestions: number;
   percentage: number;
   passed: boolean;
 } {
-  const entries: McqAnswerKeyEntry[] = Array.isArray(answerKeyRaw)
-    ? answerKeyRaw as McqAnswerKeyEntry[]
-    : Object.entries(normalizeAnswerKey(answerKeyRaw)).map(([id, correctOptionId]) => ({
-      id,
-      correctOptionId,
-      explanation: "",
-    }));
+  const entries = parseAnswerKeyEntries(answerKeyRaw);
+  const normalizedAnswers = normalizeLearnerAnswers(answers);
 
   const totalQuestions = entries.length;
-  const correctCount = entries.filter((item) => answers?.[item.id] === item.correctOptionId).length;
+  const correctCount = entries.filter(
+    (item) => normalizedAnswers[item.id] === item.correctOptionId,
+  ).length;
   const percentage = totalQuestions > 0
     ? Math.round((correctCount / totalQuestions) * 100)
     : 0;
-  const passed = percentage >= 70;
+  const passed = totalQuestions > 0
+    ? correctCount / totalQuestions >= MCQ_PASS_THRESHOLD
+    : false;
+
+  console.log("[mcq-score] selected answers:", JSON.stringify(normalizedAnswers));
+  console.log("[mcq-score] correct answers:", JSON.stringify(
+    Object.fromEntries(entries.map((e) => [e.id, e.correctOptionId])),
+  ));
+  console.log("[mcq-score] calculated:", { correctCount, totalQuestions, percentage, passed });
 
   return { correctCount, totalQuestions, percentage, passed };
 }
@@ -188,7 +255,20 @@ function normalizeQuestion(raw: Record<string, unknown>, index: number): McqQues
     options.push({ id, text: `Option ${id}` });
   }
 
-  const correctOptionId = normalizeOptionId(raw.correctOptionId) ?? "A";
+  const correctOptionId = normalizeOptionId(
+    raw.correctOptionId
+      ?? raw.correct_option_id
+      ?? raw.correctAnswer
+      ?? raw.correct_answer
+      ?? raw.correctOption
+      ?? raw.answer
+      ?? (typeof raw.correct_index === "number"
+        ? (["A", "B", "C", "D"] as const)[raw.correct_index as number]
+        : raw.correct_index)
+      ?? (typeof raw.correctIndex === "number"
+        ? (["A", "B", "C", "D"] as const)[raw.correctIndex as number]
+        : raw.correctIndex),
+  ) ?? "A";
   const question = String(raw.question ?? "").trim();
   if (!question) return null;
 

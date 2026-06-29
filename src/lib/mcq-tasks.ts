@@ -43,6 +43,8 @@ export type McqSessionEnvelope = {
   progress?: McqProgress;
   resultPercentage?: number;
   resultMessage?: string;
+  resultLabel?: string;
+  passed?: boolean;
 };
 
 export function createInitialMcqProgress(): McqProgress {
@@ -71,6 +73,8 @@ export function parseMcqSession(submission: string): McqSessionEnvelope | null {
       progress: parsed.progress as McqProgress | undefined,
       resultPercentage: parsed.resultPercentage as number | undefined,
       resultMessage: parsed.resultMessage as string | undefined,
+      resultLabel: parsed.resultLabel as string | undefined,
+      passed: parsed.passed as boolean | undefined,
     };
   } catch {
     return null;
@@ -176,16 +180,34 @@ export async function generateSecureMcqTask(
   return parsed;
 }
 
+export const MCQ_PASS_PERCENT = 70;
+
 export async function evaluateSecureMcqAttempt(
   attemptId: string,
   answers: McqAnswerMap,
   invoke: (body: Record<string, unknown>) => Promise<{ data: Record<string, unknown> | null; error: Error | null }>,
-): Promise<{ submitted: boolean; percentage: number; message: string }> {
+): Promise<{
+  submitted: boolean;
+  percentage: number;
+  correctCount: number;
+  totalQuestions: number;
+  passed: boolean;
+  resultLabel: string;
+  attestationSent: boolean;
+  message: string;
+}> {
+  const payload = Object.fromEntries(
+    Object.entries(answers).filter(([, value]) => value != null && value !== ""),
+  );
+
+  console.log("[mcq-submit] attemptId:", attemptId);
+  console.log("[mcq-submit] selected answers:", payload);
+
   const { data, error } = await invoke({
     action: "evaluate",
     taskType: "mcq",
     attemptId,
-    answers,
+    answers: payload,
   });
 
   if (error) {
@@ -195,11 +217,37 @@ export async function evaluateSecureMcqAttempt(
     throw new Error(String(data.details ?? data.error ?? "MCQ evaluation failed"));
   }
 
+  const percentage = Number(data.percentage ?? 0);
+  const passed = data.passed === true;
+  const resultLabel = String(data.resultLabel ?? (passed ? "Passed" : "Needs Improvement"));
+
+  console.log("[mcq-submit] server result:", {
+    percentage,
+    correctCount: data.correctCount,
+    totalQuestions: data.totalQuestions,
+    passed,
+    resultLabel,
+  });
+
   return {
     submitted: data.submitted === true,
-    percentage: Number(data.percentage ?? 0),
+    percentage,
+    correctCount: Number(data.correctCount ?? 0),
+    totalQuestions: Number(data.totalQuestions ?? 0),
+    passed,
+    resultLabel,
+    attestationSent: data.attestationSent === true,
     message: String(data.message ?? "Test submitted successfully."),
   };
+}
+
+export function buildMcqSubmissionAnswers(task: McqTask, answers: McqAnswerMap): McqAnswerMap {
+  const payload: McqAnswerMap = {};
+  for (const question of task.questions) {
+    const selected = answers[question.id];
+    if (selected) payload[question.id] = selected;
+  }
+  return payload;
 }
 
 export function formatMcqSubmissionSummary(

@@ -13,6 +13,7 @@ import ReviewInvite from "./pages/review/ReviewInvite";
 import ContextReviewRequest from "./pages/review/ContextReviewRequest";
 import InstitutionLogin from "./pages/login/InstitutionLogin";
 import LearnerLogin from "./pages/login/LearnerLogin";
+import LearnerSignup from "./pages/signup/LearnerSignup";
 import ActivateAccount from "./pages/student/ActivateAccount";
 import CompleteProfile from "./pages/learner/CompleteProfile";
 import LearnerProfile from "./pages/learner/Profile";
@@ -73,6 +74,7 @@ const App = () => (
 
           <Route path="/login/institution" element={<InstitutionLogin />} />
           <Route path="/login/learner" element={<LearnerLogin />} />
+          <Route path="/signup/learner" element={<LearnerSignup />} />
           <Route path="/student/activate" element={<ActivateAccount />} />
 
           <Route path="/review/invite/:token" element={<ReviewInvite />} />

@@ -65,10 +65,16 @@ export default function LearnerLogin() {
               "Please activate your account using the activation link provided by your institution.",
             variant: "destructive",
           });
+        } else if (access.reason === "no_profile") {
+          toast({
+            title: "Profile setup required",
+            description: "Please complete learner sign up to create your SIJIL profile.",
+            variant: "destructive",
+          });
         } else {
           toast({
-            title: "Account not provisioned",
-            description: "Students must be created by their institution.",
+            title: "Sign-in failed",
+            description: "This account cannot access the learner portal.",
             variant: "destructive",
           });
         }
@@ -102,18 +108,18 @@ export default function LearnerLogin() {
             <img src={sijilLogo} alt="SIJIL" className="h-16 w-16 object-contain" />
             <div className="mt-3 text-xl font-semibold tracking-tight">SIJIL</div>
           </Link>
-          <div className="mt-1 text-sm text-muted-foreground">Existing activated students only</div>
+          <div className="mt-1 text-sm text-muted-foreground">Sign in to your learner account</div>
         </div>
 
         <div className="rounded-2xl border border-border/70 bg-card/95 p-6 shadow-lg sm:p-8">
           <h1 className="text-2xl font-semibold tracking-tight">Learner Sign In</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Sign in with your university email and password.
+            Sign in with your email and password.
           </p>
 
           <form onSubmit={submit} className="mt-6 space-y-4">
             <div>
-              <Label htmlFor="email">University email</Label>
+              <Label htmlFor="email">Email address</Label>
               <div className="relative mt-1.5">
                 <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                 <Input
@@ -122,7 +128,7 @@ export default function LearnerLogin() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="pl-9"
-                  placeholder="student@university.edu"
+                  placeholder="you@example.com"
                   autoComplete="email"
                 />
               </div>
@@ -148,8 +154,15 @@ export default function LearnerLogin() {
             </Button>
           </form>
 
-          <p className="mt-4 rounded-lg border border-border/60 bg-muted/30 p-3 text-xs text-muted-foreground">
-            New students: use the activation link from your institution first. There is no public learner registration.
+          <p className="mt-4 text-center text-sm text-muted-foreground">
+            Don&apos;t have an account?{" "}
+            <Link to="/signup/learner" className="font-medium text-primary hover:underline">
+              Create your SIJIL identity
+            </Link>
+          </p>
+
+          <p className="mt-3 rounded-lg border border-border/60 bg-muted/30 p-3 text-xs text-muted-foreground">
+            Institution-provisioned students: use your activation link first, then sign in here.
           </p>
         </div>
       </div>
