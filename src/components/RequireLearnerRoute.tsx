@@ -66,6 +66,7 @@ export function RequireLearnerRoute({
   requireCompleteProfile?: boolean;
 }) {
   const { user, loading, rolesReady } = useAuth();
+  const userId = user?.id;
   const loc = useLocation();
   const [access, setAccess] = useState<
     "pending" | "allowed" | "wrong_role" | "no_profile" | "not_activated" | "incomplete_profile"
@@ -73,13 +74,13 @@ export function RequireLearnerRoute({
 
   useEffect(() => {
     if (loading || !rolesReady) return;
-    if (!user) {
+    if (!userId) {
       setAccess("pending");
       return;
     }
 
     let cancelled = false;
-    verifyLearnerAccess(user.id).then((result) => {
+    verifyLearnerAccess(userId).then((result) => {
       if (cancelled) return;
       if (!result.ok) {
         setAccess(result.reason);
@@ -95,9 +96,9 @@ export function RequireLearnerRoute({
     return () => {
       cancelled = true;
     };
-  }, [user, loading, rolesReady, requireCompleteProfile]);
+  }, [userId, loading, rolesReady, requireCompleteProfile]);
 
-  if (loading || (user && (!rolesReady || access === "pending"))) {
+  if (loading || (user && access === "pending")) {
     return <AuthLoading />;
   }
 

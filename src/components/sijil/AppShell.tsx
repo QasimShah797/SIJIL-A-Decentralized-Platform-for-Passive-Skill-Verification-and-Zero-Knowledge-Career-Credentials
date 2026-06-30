@@ -1,23 +1,95 @@
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
-  LayoutDashboard, User, UserCircle, Plug, ClipboardCheck, ShieldCheck,
-  Wallet, Search, Building2, Sparkles, Bell, BadgeCheck, MessageSquare, LogOut, GraduationCap,
+  LayoutDashboard,
+  User,
+  UserCircle,
+  Plug,
+  ClipboardCheck,
+  ShieldCheck,
+  Wallet,
+  Search,
+  Building2,
+  Bell,
+  BadgeCheck,
+  MessageSquare,
+  LogOut,
+  GraduationCap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Role, getDecayingSkills } from "@/lib/sijil-data";
 import { useAuth } from "@/hooks/useAuth";
 import { useLearnerProfile, useDeclaredSkills } from "@/hooks/useLearnerData";
+import { ThemeToggle } from "@/components/sijil/ThemeToggle";
 import sijilLogo from "@/assets/sijil-logo.png";
 
-const recruiterNav = [
+type NavItem = { to: string; icon: React.ComponentType<{ className?: string }>; label: string };
+type NavGroup = { label: string; items: NavItem[] };
+
+const recruiterNav: NavItem[] = [
   { to: "/recruiter/search", icon: Search, label: "Search Candidates" },
   { to: "/recruiter/compare", icon: BadgeCheck, label: "Compare" },
 ];
-const institutionNav = [
+
+const institutionNav: NavItem[] = [
   { to: "/institution/dashboard", icon: LayoutDashboard, label: "Dashboard" },
   { to: "/institution/students", icon: GraduationCap, label: "Student Management" },
   { to: "/institution/queue", icon: ClipboardCheck, label: "Attestation Queue" },
 ];
+
+function NavGroupSection({ group, pathname }: { group: NavGroup; pathname: string }) {
+  return (
+    <div className="mb-5">
+      <p className="mb-2 px-3 text-[11px] font-medium uppercase tracking-wider text-sidebar-foreground/50">
+        {group.label}
+      </p>
+      <nav className="space-y-0.5">
+        {group.items.map((item) => {
+          const active = pathname.startsWith(item.to.split("/").slice(0, 3).join("/"));
+          return (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              className={cn(
+                "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors",
+                active
+                  ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium shadow-sm"
+                  : "text-sidebar-foreground/80 hover:bg-sidebar-accent/70 hover:text-sidebar-accent-foreground",
+              )}
+            >
+              <item.icon className="h-4 w-4 shrink-0 opacity-80" />
+              {item.label}
+            </NavLink>
+          );
+        })}
+      </nav>
+    </div>
+  );
+}
+
+function FlatNav({ items, pathname }: { items: NavItem[]; pathname: string }) {
+  return (
+    <nav className="space-y-0.5">
+      {items.map((item) => {
+        const active = pathname.startsWith(item.to.split("/").slice(0, 3).join("/"));
+        return (
+          <NavLink
+            key={item.to}
+            to={item.to}
+            className={cn(
+              "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors",
+              active
+                ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium shadow-sm"
+                : "text-sidebar-foreground/80 hover:bg-sidebar-accent/70 hover:text-sidebar-accent-foreground",
+            )}
+          >
+            <item.icon className="h-4 w-4 shrink-0 opacity-80" />
+            {item.label}
+          </NavLink>
+        );
+      })}
+    </nav>
+  );
+}
 
 export function AppShell({ role, children }: { role: Role; children: React.ReactNode }) {
   const { pathname } = useLocation();
@@ -27,68 +99,79 @@ export function AppShell({ role, children }: { role: Role; children: React.React
   const { skills } = useDeclaredSkills();
   const roleLabel = role === "learner" ? "Learner" : role === "recruiter" ? "Recruiter" : "Institution";
 
-  const learnerNav = [
-    { to: "/learner/profile", icon: User, label: "Profile & Skills" },
-    { to: "/learner/my-profile", icon: UserCircle, label: "My Profile" },
-    { to: "/learner/integrations", icon: Plug, label: "Integrations" },
-    { to: "/learner/task", icon: ClipboardCheck, label: "Practical Task" },
-    ...(skills.length ? [{ to: "/learner/validation", icon: ShieldCheck, label: "Validation Trail" }] : []),
-    { to: "/learner/wallet", icon: Wallet, label: "Wallet" },
-    { to: "/learner/peer-reviews", icon: MessageSquare, label: "Peer Reviews" },
+  const learnerGroups: NavGroup[] = [
+    {
+      label: "Profile",
+      items: [
+        { to: "/learner/profile", icon: User, label: "Competencies" },
+        { to: "/learner/my-profile", icon: UserCircle, label: "My Profile" },
+      ],
+    },
+    {
+      label: "Evidence",
+      items: [{ to: "/learner/integrations", icon: Plug, label: "Integrations" }],
+    },
+    {
+      label: "Assessment",
+      items: [
+        { to: "/learner/task", icon: ClipboardCheck, label: "Practical Task" },
+        ...(skills.length
+          ? [{ to: "/learner/validation", icon: ShieldCheck, label: "Validation Trail" }]
+          : []),
+      ],
+    },
+    {
+      label: "Identity",
+      items: [
+        { to: "/learner/wallet", icon: Wallet, label: "Wallet" },
+        { to: "/learner/peer-reviews", icon: MessageSquare, label: "Peer Reviews" },
+      ],
+    },
   ];
-  const nav = role === "learner" ? learnerNav : role === "recruiter" ? recruiterNav : institutionNav;
 
   const decayCount = role === "learner" ? getDecayingSkills(skills).length : 0;
-  const avatar = role === "learner"
-    ? (profile?.avatar ?? "?")
-    : role === "recruiter"
-      ? (user?.email?.slice(0, 2).toUpperCase() ?? "RC")
-      : "IN";
+  const avatar =
+    role === "learner"
+      ? (profile?.avatar ?? "?")
+      : role === "recruiter"
+        ? (user?.email?.slice(0, 2).toUpperCase() ?? "RC")
+        : "IN";
   const didShort = profile?.did ? `${profile.did.slice(0, 12)}…${profile.did.slice(-4)}` : "";
 
   return (
-    <div className="min-h-screen flex w-full bg-gradient-to-b from-background to-muted/30">
-      <aside className="w-64 shrink-0 bg-sidebar text-sidebar-foreground flex flex-col border-r border-sidebar-border sticky top-0 h-screen overflow-y-auto z-30">
-        <div className="px-5 py-5 border-b border-sidebar-border sticky top-0 bg-sidebar z-10">
-          <div className="flex items-center gap-2">
-            <div className="h-9 w-9 rounded-md bg-white/95 flex items-center justify-center p-0.5 shadow-sm">
+    <div className="flex min-h-screen w-full bg-background">
+      <aside className="sticky top-0 z-30 flex h-screen w-64 shrink-0 flex-col overflow-y-auto border-r border-sidebar-border bg-sidebar text-sidebar-foreground">
+        <div className="sticky top-0 z-10 border-b border-sidebar-border bg-sidebar px-5 py-5">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-sidebar-border bg-card p-1 shadow-sm">
               <img src={sijilLogo} alt="SIJIL logo" className="h-full w-full object-contain" />
             </div>
             <div>
-              <div className="text-sidebar-accent-foreground font-semibold leading-tight">SIJIL</div>
-              <div className="text-[11px] text-sidebar-foreground/70">Decentralized Credentials</div>
+              <div className="font-semibold leading-tight text-sidebar-accent-foreground">SIJIL</div>
+              <div className="text-[11px] text-sidebar-foreground/60">{roleLabel} workspace</div>
             </div>
           </div>
         </div>
 
-        <div className="px-3 py-3">
-          <div className="flex items-center justify-between px-2 pb-2">
-            <span className="text-[11px] uppercase tracking-wider text-sidebar-foreground/60">{roleLabel}</span>
-            <Sparkles className="h-3.5 w-3.5 text-sidebar-primary" />
-          </div>
-          <nav className="space-y-0.5">
-            {nav.map((item) => {
-              const active = pathname.startsWith(item.to.split("/").slice(0, 3).join("/"));
-              return (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  className={cn(
-                    "flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors",
-                    active
-                      ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                      : "text-sidebar-foreground/85 hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground",
-                  )}
-                >
-                  <item.icon className="h-4 w-4" />
-                  {item.label}
-                </NavLink>
-              );
-            })}
-          </nav>
+        <div className="flex-1 px-3 py-4">
+          {role === "learner"
+            ? learnerGroups.map((group) => (
+                <NavGroupSection key={group.label} group={group} pathname={pathname} />
+              ))
+            : (
+              <div className="mb-5">
+                <p className="mb-2 px-3 text-[11px] font-medium uppercase tracking-wider text-sidebar-foreground/50">
+                  {roleLabel}
+                </p>
+                <FlatNav
+                  items={role === "recruiter" ? recruiterNav : institutionNav}
+                  pathname={pathname}
+                />
+              </div>
+            )}
         </div>
 
-        <div className="mt-auto p-3 border-t border-sidebar-border text-xs text-sidebar-foreground/60 px-3 space-y-2">
+        <div className="space-y-2 border-t border-sidebar-border p-3 text-xs text-sidebar-foreground/60">
           {(role === "institution" || role === "learner") && (
             <button
               type="button"
@@ -97,48 +180,50 @@ export function AppShell({ role, children }: { role: Role; children: React.React
                   navigate(role === "institution" ? "/login/institution" : "/"),
                 )
               }
-              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-sidebar-accent/60 transition-colors"
+              className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left transition-colors hover:bg-sidebar-accent/70"
             >
               <LogOut className="h-3.5 w-3.5" />
               Sign out
             </button>
           )}
           {role !== "institution" && role !== "learner" && (
-            <span>Authentication module is being rebuilt.</span>
+            <span className="block px-3">Authentication module is being rebuilt.</span>
           )}
         </div>
       </aside>
 
-      <main className="flex-1 min-w-0 flex flex-col min-h-screen">
-        <header className="h-14 border-b border-border bg-card/80 backdrop-blur-md sticky top-0 z-20 flex items-center justify-between px-6 shadow-sm">
+      <main className="flex min-h-screen min-w-0 flex-1 flex-col">
+        <header className="sticky top-0 z-20 flex h-14 items-center justify-between border-b border-border/60 bg-card/90 px-6 backdrop-blur-md">
           <div className="text-sm text-muted-foreground">
-            <span className="font-medium text-foreground">{roleLabel} workspace</span>
+            <span className="font-medium text-foreground">{roleLabel}</span>
+            <span className="hidden sm:inline"> · Verified skills workspace</span>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <ThemeToggle />
             {role === "learner" && (
               <button
                 onClick={() => navigate("/learner/profile#notifications")}
-                className="relative h-8 w-8 rounded-md hover:bg-muted/60 flex items-center justify-center transition-colors"
+                className="relative flex h-9 w-9 items-center justify-center rounded-full transition-colors hover:bg-muted/60"
                 aria-label="Notifications"
                 title="Notifications"
               >
                 <Bell className="h-4 w-4" />
                 {decayCount > 0 && (
-                  <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-amber-500 text-[10px] font-semibold text-white flex items-center justify-center">
+                  <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-semibold text-white">
                     {decayCount}
                   </span>
                 )}
               </button>
             )}
             {didShort && (
-              <span className="hidden md:inline text-xs text-muted-foreground mono">{didShort}</span>
+              <span className="mono hidden text-xs text-muted-foreground md:inline">{didShort}</span>
             )}
-            <div className="h-8 w-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-semibold">
+            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
               {avatar}
             </div>
           </div>
         </header>
-        <div className="flex-1 p-6 lg:p-8 max-w-7xl w-full mx-auto animate-fade-in">{children}</div>
+        <div className="mx-auto w-full max-w-7xl flex-1 animate-fade-in p-6 lg:p-8">{children}</div>
       </main>
     </div>
   );

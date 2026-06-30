@@ -1,8 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import { avatarInitials, holderDidFromUserId } from "@/lib/did";
 import {
-  LEARNER_PROFILE_BASE_SELECT,
-  LEARNER_PROFILE_FULL_SELECT,
   isMissingColumnError,
   parseCityCountry,
   stripSelfSignupWriteColumns,
@@ -125,13 +123,22 @@ function hasRequiredLearnerFields(row: LearnerProfileRow | null): boolean {
 
 let selfSignupColumnsAvailable = true;
 
+let selfSignupProbeDone = false;
+
+async function probeSelfSignupColumns(): Promise<boolean> {
+  if (selfSignupProbeDone) return selfSignupColumnsAvailable;
+  const { error } = await supabase.from("learner_profiles").select("date_of_birth").limit(0);
+  selfSignupColumnsAvailable = !error || !isMissingColumnError(error);
+  selfSignupProbeDone = true;
+  return selfSignupColumnsAvailable;
+}
+
 async function queryLearnerProfileRow(
   userId: string,
-  select: string,
 ): Promise<{ data: LearnerProfileRow | null; error: unknown | null }> {
   const { data, error } = await supabase
     .from("learner_profiles")
-    .select(select)
+    .select("*")
     .eq("user_id", userId)
     .maybeSingle();
   return { data: data as LearnerProfileRow | null, error };
@@ -140,13 +147,12 @@ async function queryLearnerProfileRow(
 async function updateLearnerProfileRow(
   userId: string,
   payload: Record<string, unknown>,
-  select = LEARNER_PROFILE_BASE_SELECT,
 ): Promise<{ data: LearnerProfileRow | null; error: unknown | null }> {
   const { data, error } = await supabase
     .from("learner_profiles")
     .update(payload)
     .eq("user_id", userId)
-    .select(select)
+    .select("*")
     .single();
   return { data: data as LearnerProfileRow | null, error };
 }
@@ -157,18 +163,9 @@ export async function isInstitutionProvisionedLearner(userId: string): Promise<b
 }
 
 export async function fetchLearnerProfileRow(userId: string): Promise<LearnerProfileRow | null> {
-  let { data, error } = await queryLearnerProfileRow(userId, LEARNER_PROFILE_FULL_SELECT);
-
-  if (error) {
-    if (isMissingColumnError(error)) {
-      selfSignupColumnsAvailable = false;
-      ({ data, error } = await queryLearnerProfileRow(userId, LEARNER_PROFILE_BASE_SELECT));
-    }
-    if (error) throw error;
-  } else {
-    selfSignupColumnsAvailable = true;
-  }
-
+  const { data, error } = await queryLearnerProfileRow(userId);
+  if (error) throw error;
+  await probeSelfSignupColumns();
   return data;
 }
 
@@ -440,18 +437,13 @@ export async function saveSelfSignupOnboarding(
 
   if (data.avatarUrl) payload.avatar_url = data.avatarUrl;
 
-  let { data: updated, error } = await updateLearnerProfileRow(
-    userId,
-    payload,
-    selfSignupColumnsAvailable ? LEARNER_PROFILE_FULL_SELECT : LEARNER_PROFILE_BASE_SELECT,
-  );
+  let { data: updated, error } = await updateLearnerProfileRow(userId, payload);
 
   if (error && isMissingColumnError(error)) {
     selfSignupColumnsAvailable = false;
     ({ data: updated, error } = await updateLearnerProfileRow(
       userId,
       stripSelfSignupWriteColumns(payload),
-      LEARNER_PROFILE_BASE_SELECT,
     ));
   }
 
@@ -533,7 +525,7 @@ export async function saveLearnerOnboarding(userId: string, data: LearnerOnboard
     .from("learner_profiles")
     .update(payload)
     .eq("user_id", userId)
-    .select(LEARNER_PROFILE_BASE_SELECT)
+    .select("*")
     .single();
   if (error) throw error;
   if (!updated) throw new Error("Profile update did not return a row.");

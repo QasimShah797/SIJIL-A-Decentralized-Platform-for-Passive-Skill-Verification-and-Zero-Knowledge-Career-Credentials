@@ -11,7 +11,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "supabase:deploy-github": "supabase functions deploy github-oauth-callback && supabase functions deploy github-sync && supabase functions deploy github-oauth-start --no-verify-jwt"
+    "supabase:deploy-github": "supabase functions deploy github-oauth-callback && supabase functions deploy github-sync && supabase functions deploy github-oauth-start --no-verify-jwt",
+    "supabase:deploy-moodle": "supabase functions deploy moodle-sync"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

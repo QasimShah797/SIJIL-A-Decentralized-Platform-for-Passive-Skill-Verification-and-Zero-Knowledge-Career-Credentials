@@ -64,15 +64,15 @@
     --shadow-lg: 0 12px 32px -8px hsl(222 47% 11% / 0.12);
     --shadow-credential: 0 20px 48px -16px hsl(222 47% 17% / 0.35);
 
-    /* Sidebar */
-    --sidebar-background: 222 47% 13%;
-    --sidebar-foreground: 215 20% 80%;
-    --sidebar-primary: 152 65% 45%;
-    --sidebar-primary-foreground: 222 47% 11%;
-    --sidebar-accent: 222 40% 20%;
-    --sidebar-accent-foreground: 0 0% 100%;
-    --sidebar-border: 222 40% 22%;
-    --sidebar-ring: 152 65% 45%;
+    /* Sidebar — light, clean workspace (dark mode overrides below) */
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 222 47% 11%;
+    --sidebar-primary: 152 65% 36%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 215 25% 96%;
+    --sidebar-accent-foreground: 222 47% 11%;
+    --sidebar-border: 215 20% 92%;
+    --sidebar-ring: 152 65% 36%;
   }
 
   .dark {
@@ -93,6 +93,14 @@
     --border: 217 32% 17%;
     --input: 217 32% 17%;
     --ring: 212 27% 84%;
+    --sidebar-background: 222 47% 10%;
+    --sidebar-foreground: 215 20% 85%;
+    --sidebar-primary: 152 65% 45%;
+    --sidebar-primary-foreground: 222 47% 11%;
+    --sidebar-accent: 222 40% 16%;
+    --sidebar-accent-foreground: 210 40% 98%;
+    --sidebar-border: 222 40% 18%;
+    --sidebar-ring: 152 65% 45%;
   }
 }
 
@@ -120,5 +128,17 @@
   }
   .surface-subtle {
     background: var(--gradient-subtle);
+  }
+  .sijil-section {
+    @apply py-20 sm:py-24;
+  }
+  .sijil-section-alt {
+    @apply bg-muted/40;
+  }
+  .sijil-card {
+    @apply rounded-2xl border border-border/60 bg-card p-6 shadow-sm transition-shadow hover:shadow-md;
+  }
+  .sijil-container {
+    @apply mx-auto max-w-6xl px-4 sm:px-6 lg:px-8;
   }
 }

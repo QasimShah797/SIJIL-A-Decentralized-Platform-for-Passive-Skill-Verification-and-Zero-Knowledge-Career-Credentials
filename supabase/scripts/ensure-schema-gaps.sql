@@ -1,0 +1,5 @@
+-- Apply schema fixes on remote Supabase:
+--   supabase db push
+-- Or paste contents of:
+--   supabase/migrations/20260703120000_fix_supabase_schema_gaps.sql
+-- into the Supabase SQL Editor and run.

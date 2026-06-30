@@ -56,6 +56,7 @@ function InstitutionAccessDenied({
 
 export function RequireInstitutionRoute({ children }: { children: ReactNode }) {
   const { user, loading, rolesReady } = useAuth();
+  const userId = user?.id;
   const loc = useLocation();
   const [access, setAccess] = useState<"pending" | "allowed" | "wrong_role" | "inactive" | "no_profile">(
     "pending",
@@ -63,13 +64,13 @@ export function RequireInstitutionRoute({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (loading || !rolesReady) return;
-    if (!user) {
+    if (!userId) {
       setAccess("pending");
       return;
     }
 
     let cancelled = false;
-    verifyInstitutionAccess(user.id).then((result) => {
+    verifyInstitutionAccess(userId).then((result) => {
       if (cancelled) return;
       if (result.ok) {
         setAccess("allowed");
@@ -81,9 +82,9 @@ export function RequireInstitutionRoute({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [user, loading, rolesReady]);
+  }, [userId, loading, rolesReady]);
 
-  if (loading || (user && (!rolesReady || access === "pending"))) {
+  if (loading || (user && access === "pending")) {
     return <AuthLoading />;
   }
 

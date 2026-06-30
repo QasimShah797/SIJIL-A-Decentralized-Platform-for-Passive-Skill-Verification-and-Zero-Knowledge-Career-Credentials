@@ -7,6 +7,7 @@ import { AuthRebuildNotice } from "@/components/AuthRebuildNotice";
 import { RequireInstitutionRoute } from "@/components/RequireInstitutionRoute";
 import { RequireLearnerRoute } from "@/components/RequireLearnerRoute";
 import { AuthProvider } from "@/hooks/useAuth";
+import { ThemeProvider } from "@/components/ThemeProvider";
 import Landing from "./pages/Landing";
 import NotFound from "./pages/NotFound";
 import ReviewInvite from "./pages/review/ReviewInvite";
@@ -64,6 +65,7 @@ const LRIncomplete = ({ children }: { children: React.ReactNode }) => (
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
+    <ThemeProvider>
     <AuthProvider>
     <TooltipProvider>
       <Toaster />
@@ -115,6 +117,7 @@ const App = () => (
       </BrowserRouter>
     </TooltipProvider>
     </AuthProvider>
+    </ThemeProvider>
   </QueryClientProvider>
 );
 
