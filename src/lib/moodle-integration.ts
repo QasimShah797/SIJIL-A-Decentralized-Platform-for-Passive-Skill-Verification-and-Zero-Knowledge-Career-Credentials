@@ -4,7 +4,7 @@ import { isMissingColumnError, isMissingRelationError } from "@/lib/supabase-err
 export const MOODLE_SITE_URL = "https://sijil.moodlecloud.com";
 
 /** Expected edge function version — mismatch means remote deploy is stale. */
-export const MOODLE_SYNC_FUNCTION_VERSION = "2.7.0";
+export const MOODLE_SYNC_FUNCTION_VERSION = "2.8.2";
 
 export type MoodleSyncErrorCode =
   | "INVALID_MOODLE_TOKEN"
@@ -140,7 +140,6 @@ function rowToMoodleConnection(row: Record<string, unknown>): MoodleConnection {
 /** Detect Moodle link from columns that exist on the row (no provider filter). */
 function isMoodleConnectionRow(row: Record<string, unknown>): boolean {
   if (row.moodle_user_id != null) return true;
-  // Moodle sync sets last_synced_at; Odoo connections set odoo_url / has_api_key
   const hasOdoo = Boolean(String(row.odoo_url ?? "").trim()) || row.has_api_key === true;
   return Boolean(row.last_synced_at) && !hasOdoo;
 }
@@ -383,7 +382,7 @@ export async function fetchMoodleCourseActivities(): Promise<MoodleCourseActivit
       gradeReleased: Boolean(row.grade_released),
       competencyTags,
       importedAt: (row.synced_at as string) ?? new Date().toISOString(),
-      source: "Moodle LMS",
+      source: "LMS",
     });
     assignByCourse.set(courseId, list);
   }
@@ -418,9 +417,19 @@ export function activityStatusBadge(status: string): "verified" | "info" | "warn
   return "neutral";
 }
 
-export function formatMoodleFeedbackDisplay(feedback: string | null | undefined): string {
-  if (feedback?.trim()) return feedback.trim();
-  return "No teacher feedback provided.";
+/** Short source label for evidence cards (LMS, GitHub, etc.). */
+export function formatEvidenceSourceLabel(source: string | null | undefined): string {
+  const normalized = (source ?? "").trim().toLowerCase();
+  if (!normalized) return "—";
+  if (normalized === "github") return "GitHub";
+  if (normalized === "lms" || normalized.includes("moodle")) return "LMS";
+  return source!.trim();
+}
+
+/** Returns trimmed LMS feedback text, or null when none (UI stays silent). */
+export function formatMoodleFeedbackDisplay(feedback: string | null | undefined): string | null {
+  const trimmed = feedback?.trim();
+  return trimmed || null;
 }
 
 export function formatGradeDisplay(a: MoodleAssignmentActivity): string {

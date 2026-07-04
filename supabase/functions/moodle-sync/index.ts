@@ -9,7 +9,7 @@ import {
 } from "./moodle-sync-core.ts";
 
 /** Bump when deploying — exposed in test/sync responses so frontend can detect stale deploys. */
-const FUNCTION_VERSION = "2.7.0";
+const FUNCTION_VERSION = "2.8.2";
 
 const SUPPORTED_ACTIONS = [
   "test",
@@ -139,9 +139,7 @@ Deno.serve(async (req) => {
       return json({ success: true, grades });
     }
 
-    /** Full learner sync: courses, assignments, grades, teacher feedback → Supabase upsert.
-     *  Teacher feedback: mod_assign_get_grades grade.plugins (when present), then
-     *  mod_assign_get_submission_status.feedback.plugins (Feedback comments). */
+    /** Full learner sync: courses, assignments, grades, teacher feedback → Supabase upsert. */
     if (action === "sync_activities") {
       const resolved = await resolveUser(req);
       if ("error" in resolved && resolved.error) return resolved.error;

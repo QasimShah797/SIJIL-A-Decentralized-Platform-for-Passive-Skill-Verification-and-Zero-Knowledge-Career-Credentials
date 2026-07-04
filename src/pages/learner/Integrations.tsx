@@ -24,6 +24,7 @@ import {
   fetchMoodleConnection,
   fetchMoodleCourseActivities,
   formatGradeDisplay,
+  formatEvidenceSourceLabel,
   formatMoodleFeedbackDisplay,
   hasMoodleAccessControlWarning,
   syncMoodleActivities,
@@ -620,7 +621,7 @@ export default function Integrations() {
             <EmptyState
               icon={BookOpen}
               title="Connect Moodle to import recent activity"
-              hint="Assignments, grades, and teacher feedback from your enrolled Moodle courses will appear here."
+              hint="Sync enrolled courses to import assignments and grades."
               action={
                 <Button size="sm" onClick={connectMoodle} disabled={lmsSyncing}>
                   <Link2 className="h-4 w-4 mr-1.5" />
@@ -648,7 +649,7 @@ export default function Integrations() {
             <EmptyState
               icon={BookOpen}
               title="No Moodle assignments imported yet."
-              hint="Sync your enrolled courses to import assignments, grades, and feedback."
+              hint="Sync your enrolled courses to import assignments and grades."
               action={
                 <Button size="sm" variant="outline" onClick={syncMoodle} disabled={lmsSyncing}>
                   <RefreshCw className={"h-3.5 w-3.5 mr-1.5 " + (lmsSyncing ? "animate-spin" : "")} />
@@ -670,13 +671,15 @@ export default function Integrations() {
                     <p className="px-4 py-3 text-xs text-muted-foreground">No assignments in this course.</p>
                   ) : (
                     <div className="divide-y divide-border/50">
-                      {course.assignments.map((a) => (
+                      {course.assignments.map((a) => {
+                        const feedbackText = formatMoodleFeedbackDisplay(a.feedback);
+                        return (
                         <div key={a.id} className="px-4 py-4 space-y-2">
                           <div className="flex flex-wrap items-start justify-between gap-2">
                             <div>
                               <p className="text-sm font-medium">Assignment: {a.name}</p>
                               <p className="text-xs text-muted-foreground mt-0.5">
-                                Type: {a.activityType} · Source: {a.source}
+                                Type: {a.activityType} · Source: {formatEvidenceSourceLabel(a.source)}
                               </p>
                             </div>
                             <div className="flex flex-wrap gap-1.5">
@@ -694,10 +697,13 @@ export default function Integrations() {
                             <p>
                               <span className="text-foreground/80">Status:</span> {a.submissionStatus}
                             </p>
-                            <p className="sm:col-span-2">
-                              <span className="text-foreground/80">Feedback:</span>{" "}
-                              {formatMoodleFeedbackDisplay(a.feedback)}
-                            </p>
+                            {feedbackText && (
+                              <p className="sm:col-span-2">
+                                <span className="text-foreground/80">Feedback</span>{" "}
+                                <span className="text-[10px] text-muted-foreground">LMS</span>
+                                <span className="block mt-0.5">{feedbackText}</span>
+                              </p>
+                            )}
                             {a.competencyTags.length > 0 && (
                               <p className="sm:col-span-2">
                                 <span className="text-foreground/80">Competencies:</span>{" "}
@@ -710,7 +716,8 @@ export default function Integrations() {
                             </p>
                           </div>
                         </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </div>
@@ -720,7 +727,10 @@ export default function Integrations() {
             <div className="divide-y">
               {lmsRecords.map((r) => (
                 <div key={r.id} className="grid grid-cols-12 gap-4 px-6 py-3.5 items-center">
-                  <div className="col-span-6 text-sm font-medium">{r.course_name}</div>
+                  <div className="col-span-6">
+                    <div className="text-sm font-medium">{r.course_name}</div>
+                    <div className="text-[10px] text-muted-foreground">Source: LMS</div>
+                  </div>
                   <div className="col-span-2 text-xs text-muted-foreground">{r.grade}</div>
                   <div className="col-span-2 text-xs text-muted-foreground">{r.completion_status}</div>
                   <div className="col-span-2 text-xs text-muted-foreground">{new Date(r.fetched_at).toLocaleDateString()}</div>
@@ -790,7 +800,7 @@ function IntegrationCard({
           ) : (
             <Button size="sm" className="flex-1" onClick={onConnect} disabled={connecting}>
               <Link2 className="h-3.5 w-3.5 mr-1.5" />
-              {connecting ? "Redirecting…" : connectLabel}
+              {connecting ? "Connecting…" : connectLabel}
             </Button>
           )}
         </div>
@@ -903,6 +913,9 @@ function ProjectEvidenceCard({
             <ExternalLink className="h-3 w-3 opacity-60 shrink-0" />
           </a>
           <div className="text-[11px] text-muted-foreground truncate">{project.repoFullName}</div>
+          <div className="text-[10px] text-muted-foreground mt-0.5">
+            Source: {formatEvidenceSourceLabel("GitHub")}
+          </div>
         </div>
         <StatusBadge variant={linked ? "verified" : "neutral"}>
           {linked ? "Project Evidence" : "Unlinked"}

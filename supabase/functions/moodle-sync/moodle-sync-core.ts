@@ -14,6 +14,60 @@ export const corsHeaders = {
 const MOODLE_URL = Deno.env.get("MOODLE_URL");
 const MOODLE_TOKEN = Deno.env.get("MOODLE_TOKEN");
 
+function getMoodleBaseUrl(): string {
+  const raw = MOODLE_URL?.trim().replace(/\/+$/, "") ?? "";
+  if (!raw) {
+    throw new MoodleSyncError("INVALID_MOODLE_TOKEN", "Moodle is not configured (missing MOODLE_URL).");
+  }
+  return raw;
+}
+
+async function parseMoodleJsonResponse(
+  res: Response,
+  context: string,
+): Promise<Record<string, unknown>> {
+  const contentType = res.headers.get("content-type") ?? "";
+  const bodyText = await res.text();
+
+  if (!bodyText.trim()) {
+    throw new MoodleSyncError("MOODLE_API_UNAVAILABLE", `${context}: empty response from Moodle.`, {
+      httpStatus: res.status,
+    });
+  }
+
+  const looksHtml = bodyText.trimStart().startsWith("<") ||
+    contentType.includes("text/html");
+  if (looksHtml) {
+    logSyncStage("moodle_html_response", {
+      context,
+      httpStatus: res.status,
+      contentType,
+      preview: bodyText.slice(0, 200),
+    });
+    throw new MoodleSyncError(
+      "MOODLE_API_UNAVAILABLE",
+      "Moodle server returned HTML instead of JSON. Check MOODLE_URL in Supabase secrets (e.g. https://sijil.moodlecloud.com).",
+      { context, httpStatus: res.status },
+    );
+  }
+
+  try {
+    return JSON.parse(bodyText) as Record<string, unknown>;
+  } catch {
+    logSyncStage("moodle_json_parse_failed", {
+      context,
+      httpStatus: res.status,
+      contentType,
+      preview: bodyText.slice(0, 200),
+    });
+    throw new MoodleSyncError(
+      "MOODLE_API_UNAVAILABLE",
+      `${context}: invalid JSON from Moodle.`,
+      { httpStatus: res.status },
+    );
+  }
+}
+
 export type MoodleSyncErrorCode =
   | "INVALID_MOODLE_TOKEN"
   | "MOODLE_API_UNAVAILABLE"
@@ -267,7 +321,7 @@ export async function callMoodle(
 
   let res: Response;
   try {
-    res = await fetch(`${MOODLE_URL}/webservice/rest/server.php`, {
+    res = await fetch(`${getMoodleBaseUrl()}/webservice/rest/server.php`, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: params,
@@ -276,7 +330,7 @@ export async function callMoodle(
     throw new MoodleSyncError("MOODLE_API_UNAVAILABLE", "Could not reach the Moodle server.");
   }
 
-  const data = await res.json();
+  const data = await parseMoodleJsonResponse(res, wsfunction);
 
   logSyncStage("moodle_api_response", {
     wsfunction,
