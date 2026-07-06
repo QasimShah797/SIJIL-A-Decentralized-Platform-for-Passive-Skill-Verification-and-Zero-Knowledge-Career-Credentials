@@ -31,11 +31,10 @@ import {
   type ContextReviewRequestDisplay,
 } from "@/lib/db/peer-review-page";
 import {
-  createReviewRequestApi,
   importExternalReviewsApi,
-  getEligibleReviewersApi,
 } from "@/services/api/reviews.api";
 import {
+  createPeerReviewInviteApi,
   getPeerReviewStatsApi,
   getPeerReviewContributorsApi,
   type PeerReviewStatsApi,
@@ -272,10 +271,10 @@ export default function PeerReviewsPage() {
       toast({ title: "Email required", description: "We need a contact email to send the review invitation." });
       return;
     }
-    if (!isApiEnabled() || !selectedProject.evidenceRecordId) {
+    if (!isApiEnabled()) {
       toast({
         title: "Backend required",
-        description: "Sync GitHub from Integrations and ensure VITE_API_BASE_URL is configured.",
+        description: "Start the backend (npm run dev in backend/) and ensure VITE_API_BASE_URL is configured.",
         variant: "destructive",
       });
       return;
@@ -283,41 +282,46 @@ export default function PeerReviewsPage() {
 
     const skillLink = selectedProject.skillLinks.find((s) => s.skillName === inviteSkill)
       ?? selectedProject.skillLinks[0];
-    if (!skillLink) {
-      toast({ title: "Link a skill first", description: "Link this repository to a declared skill on Integrations." });
+    const declaredSkill = declaredSkills.find((s) => s.name === inviteSkill)
+      ?? declaredSkills.find((s) => s.name === skillForProject);
+    const skillId = skillLink?.skillId ?? declaredSkill?.id;
+    if (!skillId) {
+      toast({
+        title: "Skill required",
+        description: "Select a declared skill or link this repository to a skill on Integrations.",
+      });
       return;
     }
 
-    const eligible = await getEligibleReviewersApi(selectedProject.evidenceRecordId);
-    const reviewerContext = eligible?.find(
-      (r) => r.name === inviteContrib.handle
-        || r.name === inviteContrib.name
-        || r.login === inviteContrib.handle,
-    );
-    if (!reviewerContext) {
+    let apiError = "";
+    const result = await createPeerReviewInviteApi({
+      projectId: selectedProject.id,
+      contributorId: inviteContrib.id,
+      skillId,
+      contributorEmail: inviteEmail.trim(),
+    }, (msg) => { apiError = msg; });
+
+    if (!result) {
       toast({
-        title: "Reviewer not eligible",
-        description: "This person is not a verified context-linked contributor for this evidence.",
+        title: "Request failed",
+        description: apiError || "Could not send review invitation. Check that the backend is running.",
         variant: "destructive",
       });
       return;
     }
 
-    const result = await createReviewRequestApi({
-      evidenceId: selectedProject.evidenceRecordId,
-      skillId: skillLink.skillId,
-      reviewerContextId: reviewerContext.id,
-      reviewerEmail: inviteEmail.trim(),
-    });
-    if (!result) {
-      toast({ title: "Request failed", description: "Could not send review request.", variant: "destructive" });
+    if (result.alreadyReviewed) {
+      toast({
+        title: "Review already exists",
+        description: `${inviteContrib.name} has already submitted a review for this project.`,
+      });
       return;
     }
 
     setGeneratedLink(result.reviewLink);
     await reload();
     toast({
-      title: "Context review request sent",
+      title: result.status === "already_invited" ? "Invitation already pending" : "Review invitation sent",
       description: `Awaiting feedback from ${inviteContrib.name} for ${inviteSkill} on ${selectedProject.name}.`,
     });
   };
