@@ -1,6 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
-import { createSkillApi, getRelatedEvidenceApi, type RelatedEvidenceApiView } from "@/services/api/skills.api";
-import { submitEvidenceApi } from "@/services/api/evidence.api";
+import type { RelatedEvidenceApiView } from "@/services/api/skills.api";
 import { syncGitHubAfterSkillDeclare } from "@/lib/github-integration";
 import type { DeclaredSkill } from "@/lib/sijil-data";
 
@@ -57,9 +56,6 @@ export async function insertDeclaredSkill(
   skill: Pick<DeclaredSkill, "name" | "domain" | "description">,
   allDeclaredSkills?: DeclaredSkill[],
 ): Promise<DeclaredSkill> {
-  const viaApi = await createSkillApi(skill);
-  if (viaApi) return viaApi.skill;
-
   const normalizedName = skill.name.trim().toLowerCase();
   const normalizedDomain = (skill.domain || "General").trim().toLowerCase();
   const { data: existing, error: existingError } = await supabase
@@ -104,9 +100,6 @@ export async function fetchSkillRelatedEvidence(
   userId: string,
   skillId: string,
 ): Promise<RelatedEvidenceApiView[]> {
-  const viaApi = await getRelatedEvidenceApi(skillId);
-  if (viaApi) return viaApi.relatedEvidence;
-
   const { data: repos, error } = await supabase
     .from("github_repos")
     .select("*")
@@ -141,6 +134,27 @@ export async function deleteDeclaredSkill(userId: string, skillId: string): Prom
     .eq("user_id", userId)
     .eq("id", skillId);
   if (error) throw error;
+}
+
+/** Update competency name, domain, and description (E1-US3 edit). */
+export async function updateDeclaredSkill(
+  userId: string,
+  skillId: string,
+  skill: Pick<DeclaredSkill, "name" | "domain" | "description">,
+): Promise<DeclaredSkill> {
+  const { data, error } = await supabase
+    .from("declared_skills")
+    .update({
+      name: skill.name.trim(),
+      domain: skill.domain.trim() || "General",
+      description: skill.description?.trim() ?? "",
+    })
+    .eq("user_id", userId)
+    .eq("id", skillId)
+    .select("*")
+    .single();
+  if (error) throw error;
+  return rowToSkill(data);
 }
 
 export async function updateSkillPipelineStage(
@@ -192,21 +206,13 @@ export async function insertSkillSupportingRecord(
   if (error) throw error;
 }
 
-/** Submit evidence via backend API when available, otherwise direct Supabase. */
+/** Submit evidence via Supabase (backend API disabled for localhost). */
 export async function submitSkillEvidenceAfterUpload(
   userId: string,
   skillId: string,
   fileName: string,
   fileUrl: string,
 ): Promise<void> {
-  const viaApi = await submitEvidenceApi({
-    skillId,
-    title: fileName,
-    url: fileUrl,
-    source: "Upload",
-  });
-  if (viaApi) return;
-
   await insertSkillSupportingRecord(userId, skillId, fileName, fileUrl);
   const { error } = await supabase.from("declared_skills")
     .update({

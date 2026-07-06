@@ -1,51 +1,80 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { fetchLearnerProfile, type LearnerProfileView } from "@/lib/db/learner-profile";
-import { fetchDeclaredSkills, insertDeclaredSkill, deleteDeclaredSkill } from "@/lib/db/skills";
+import { fetchDeclaredSkills, insertDeclaredSkill, deleteDeclaredSkill, updateDeclaredSkill } from "@/lib/db/skills";
 import { fetchCredentials, type CredentialView } from "@/lib/db/credentials";
 import { fetchPeerReviews } from "@/lib/db/peer-reviews";
 import type { DeclaredSkill, PeerReview } from "@/lib/sijil-data";
 
-export function useLearnerProfile() {
+function useStableUserIds() {
   const { user } = useAuth();
+  return { userId: user?.id, userEmail: user?.email };
+}
+
+export function useLearnerProfile() {
+  const { userId, userEmail } = useStableUserIds();
   const [profile, setProfile] = useState<LearnerProfileView | null>(null);
   const [loading, setLoading] = useState(true);
+  const hasLoadedRef = useRef(false);
 
   const refresh = useCallback(async () => {
-    if (!user) { setProfile(null); setLoading(false); return; }
-    setLoading(true);
+    if (!userId) {
+      setProfile(null);
+      setLoading(false);
+      hasLoadedRef.current = false;
+      return;
+    }
+    if (!hasLoadedRef.current) {
+      setLoading(true);
+    }
     try {
-      setProfile(await fetchLearnerProfile(user.id, user.email));
+      setProfile(await fetchLearnerProfile(userId, userEmail));
+      hasLoadedRef.current = true;
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, [userId, userEmail]);
 
-  useEffect(() => { refresh(); }, [refresh]);
+  useEffect(() => {
+    hasLoadedRef.current = false;
+    refresh();
+  }, [refresh]);
 
   return { profile, loading, refresh };
 }
 
 export function useDeclaredSkills() {
-  const { user } = useAuth();
+  const { userId } = useStableUserIds();
   const [skills, setSkills] = useState<DeclaredSkill[]>([]);
   const [loading, setLoading] = useState(true);
+  const hasLoadedRef = useRef(false);
 
   const refresh = useCallback(async () => {
-    if (!user) { setSkills([]); setLoading(false); return; }
-    setLoading(true);
+    if (!userId) {
+      setSkills([]);
+      setLoading(false);
+      hasLoadedRef.current = false;
+      return;
+    }
+    if (!hasLoadedRef.current) {
+      setLoading(true);
+    }
     try {
-      setSkills(await fetchDeclaredSkills(user.id));
+      setSkills(await fetchDeclaredSkills(userId));
+      hasLoadedRef.current = true;
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, [userId]);
 
-  useEffect(() => { refresh(); }, [refresh]);
+  useEffect(() => {
+    hasLoadedRef.current = false;
+    refresh();
+  }, [refresh]);
 
   const addSkill = async (skill: Pick<DeclaredSkill, "name" | "domain" | "description">) => {
-    if (!user) return;
-    const created = await insertDeclaredSkill(user.id, skill, skills);
+    if (!userId) return;
+    const created = await insertDeclaredSkill(userId, skill, skills);
     setSkills((s) => {
       const idx = s.findIndex((x) => x.id === created.id);
       if (idx >= 0) {
@@ -59,50 +88,84 @@ export function useDeclaredSkills() {
   };
 
   const removeSkill = async (skillId: string) => {
-    if (!user) return;
-    await deleteDeclaredSkill(user.id, skillId);
+    if (!userId) return;
+    await deleteDeclaredSkill(userId, skillId);
     setSkills((s) => s.filter((x) => x.id !== skillId));
   };
 
-  return { skills, loading, refresh, addSkill, removeSkill };
+  const updateSkill = async (
+    skillId: string,
+    skill: Pick<DeclaredSkill, "name" | "domain" | "description">,
+  ) => {
+    if (!userId) return;
+    const updated = await updateDeclaredSkill(userId, skillId, skill);
+    setSkills((s) => s.map((x) => (x.id === skillId ? updated : x)));
+    return updated;
+  };
+
+  return { skills, loading, refresh, addSkill, removeSkill, updateSkill };
 }
 
 export function useCredentials() {
-  const { user } = useAuth();
+  const { userId } = useStableUserIds();
   const [credentials, setCredentials] = useState<CredentialView[]>([]);
   const [loading, setLoading] = useState(true);
+  const hasLoadedRef = useRef(false);
 
   const refresh = useCallback(async () => {
-    if (!user) { setCredentials([]); setLoading(false); return; }
-    setLoading(true);
+    if (!userId) {
+      setCredentials([]);
+      setLoading(false);
+      hasLoadedRef.current = false;
+      return;
+    }
+    if (!hasLoadedRef.current) {
+      setLoading(true);
+    }
     try {
-      setCredentials(await fetchCredentials(user.id));
+      setCredentials(await fetchCredentials(userId));
+      hasLoadedRef.current = true;
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, [userId]);
 
-  useEffect(() => { refresh(); }, [refresh]);
+  useEffect(() => {
+    hasLoadedRef.current = false;
+    refresh();
+  }, [refresh]);
 
   return { credentials, loading, refresh };
 }
 
 export function usePeerReviews() {
-  const { user } = useAuth();
+  const { userId } = useStableUserIds();
   const [reviews, setReviews] = useState<PeerReview[]>([]);
   const [loading, setLoading] = useState(true);
+  const hasLoadedRef = useRef(false);
 
   const refresh = useCallback(async () => {
-    if (!user) { setReviews([]); setLoading(false); return; }
-    setLoading(true);
+    if (!userId) {
+      setReviews([]);
+      setLoading(false);
+      hasLoadedRef.current = false;
+      return;
+    }
+    if (!hasLoadedRef.current) {
+      setLoading(true);
+    }
     try {
-      setReviews(await fetchPeerReviews(user.id));
+      setReviews(await fetchPeerReviews(userId));
+      hasLoadedRef.current = true;
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, [userId]);
 
-  useEffect(() => { refresh(); }, [refresh]);
+  useEffect(() => {
+    hasLoadedRef.current = false;
+    refresh();
+  }, [refresh]);
 
   return { reviews, loading, refresh };
 }

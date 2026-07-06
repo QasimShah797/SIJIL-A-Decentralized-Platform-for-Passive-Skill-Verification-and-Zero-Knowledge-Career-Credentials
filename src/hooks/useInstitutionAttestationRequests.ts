@@ -11,6 +11,7 @@ import { institutionMatches, normalizeInstitutionName } from "@/lib/institution-
 
 export function useInstitutionAttestationRequests() {
   const { user } = useAuth();
+  const userId = user?.id;
   const [requests, setRequests] = useState<InstitutionAttestationRequest[]>([]);
   const [institutionName, setInstitutionName] = useState<string>("");
   const [loading, setLoading] = useState(true);
@@ -20,7 +21,7 @@ export function useInstitutionAttestationRequests() {
     try {
       const [all, profile] = await Promise.all([
         fetchInstitutionAttestationRequests(),
-        user ? fetchInstitutionProfile(user.id) : Promise.resolve(null),
+        userId ? fetchInstitutionProfile(userId) : Promise.resolve(null),
       ]);
       const viewerInstitution = normalizeInstitutionName(profile?.institutionName);
       setInstitutionName(viewerInstitution);
@@ -33,7 +34,7 @@ export function useInstitutionAttestationRequests() {
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, [userId]);
 
   useEffect(() => { refresh(); }, [refresh]);
 

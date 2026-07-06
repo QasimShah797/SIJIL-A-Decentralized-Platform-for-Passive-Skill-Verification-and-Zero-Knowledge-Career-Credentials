@@ -18,6 +18,20 @@ import {
   fetchLmsEvidence, toCardEvidence, type CustEvidence,
 } from "@/lib/cust-lms";
 import {
+  MOODLE_SITE_URL,
+  activityStatusBadge,
+  disconnectMoodle as disconnectMoodleDb,
+  fetchMoodleConnection,
+  fetchMoodleCourseActivities,
+  formatGradeDisplay,
+  formatEvidenceSourceLabel,
+  formatMoodleFeedbackDisplay,
+  hasMoodleAccessControlWarning,
+  syncMoodleActivities,
+  testMoodleConnection,
+  type MoodleCourseActivity,
+} from "@/lib/moodle-integration";
+import {
   ensureGitHubContextForUser,
   startGitHubOAuth, syncGitHubPortfolio, disconnectGitHub, linkRepoToSkill,
   buildSkillsForGitHubSync,
@@ -75,15 +89,6 @@ type GhConn = {
   last_synced_at: string | null;
 };
 
-const MOODLE_SITE_URL = "https://sijil.moodlecloud.com";
-const MOODLE_STORAGE_KEY = "sijil_moodle";
-
-type MoodleCourse = {
-  id: number;
-  fullname?: string;
-  shortname?: string;
-};
-
 export default function Integrations() {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -101,9 +106,11 @@ export default function Integrations() {
   const [lmsConnected, setLmsConnected] = useState(false);
   const [lmsLastSync, setLmsLastSync] = useState<string | null>(null);
   const [lmsImportedCount, setLmsImportedCount] = useState(0);
-  const [moodleCourses, setMoodleCourses] = useState<MoodleCourse[]>([]);
+  const [moodleActivities, setMoodleActivities] = useState<MoodleCourseActivity[]>([]);
   const [lmsRecords, setLmsRecords] = useState<CustEvidence[]>([]);
   const [lmsSyncing, setLmsSyncing] = useState(false);
+  const [moodleLoading, setMoodleLoading] = useState(false);
+  const [moodleError, setMoodleError] = useState<string | null>(null);
 
   const [repoSearch, setRepoSearch] = useState("");
   const [languageFilter, setLanguageFilter] = useState<LanguageFilter>("all");
@@ -144,73 +151,44 @@ export default function Integrations() {
     setShowAllRepos(false);
   }, [repoSearch, languageFilter]);
 
-  const loadMoodleState = () => {
+  const loadMoodleFromDb = async () => {
+    setMoodleLoading(true);
+    setMoodleError(null);
     try {
-      const raw = localStorage.getItem(MOODLE_STORAGE_KEY);
-      if (!raw) return;
-      const saved = JSON.parse(raw) as {
-        connected?: boolean;
-        lastSync?: string | null;
-        courseCount?: number;
-        courses?: MoodleCourse[];
-      };
-      setLmsConnected(!!saved.connected);
-      setLmsLastSync(saved.lastSync ?? null);
-      setMoodleCourses(saved.courses ?? []);
-      setLmsImportedCount(saved.courseCount ?? saved.courses?.length ?? 0);
-    } catch {
-      setLmsConnected(false);
-      setLmsImportedCount(0);
-      setLmsLastSync(null);
-      setMoodleCourses([]);
+      const conn = await fetchMoodleConnection();
+      setLmsConnected(!!conn);
+      setLmsLastSync(
+        conn?.last_synced_at ? new Date(conn.last_synced_at).toLocaleString() : null,
+      );
+
+      if (conn) {
+        const activities = await fetchMoodleCourseActivities();
+        setMoodleActivities(activities);
+        const assignmentCount = activities.reduce((n, c) => n + c.assignments.length, 0);
+        setLmsImportedCount(assignmentCount || activities.length);
+      } else {
+        setMoodleActivities([]);
+        setLmsImportedCount(0);
+      }
+    } catch (e) {
+      if (e instanceof Error && e.message === "Sign in required.") {
+        setLmsConnected(false);
+        setMoodleActivities([]);
+        setLmsImportedCount(0);
+        return;
+      }
+      setMoodleError(e instanceof Error ? e.message : "Could not load Moodle activity.");
+      setMoodleActivities([]);
+    } finally {
+      setMoodleLoading(false);
     }
-  };
-
-  const saveMoodleState = (
-    connected: boolean,
-    courses: MoodleCourse[],
-    lastSync: string | null,
-  ) => {
-    localStorage.setItem(
-      MOODLE_STORAGE_KEY,
-      JSON.stringify({
-        connected,
-        courseCount: courses.length,
-        courses,
-        lastSync,
-      }),
-    );
-  };
-
-  const fetchAndStoreMoodleCourses = async () => {
-    const { data, error } = await supabase.functions.invoke("moodle-sync", {
-      body: { action: "get_courses" },
-    });
-
-    console.log("Moodle courses response:", data);
-    console.log("Moodle courses error:", error);
-
-    if (error || data?.error) {
-      throw new Error(data?.error || error?.message || "Moodle sync failed");
-    }
-
-    const courses = (Array.isArray(data?.courses) ? data.courses : []) as MoodleCourse[];
-    const lastSync = new Date().toLocaleString();
-
-    setMoodleCourses(courses);
-    setLmsConnected(true);
-    setLmsImportedCount(courses.length);
-    setLmsLastSync(lastSync);
-    saveMoodleState(true, courses, lastSync);
-
-    return courses;
   };
 
   const loadLms = async () => {
-    loadMoodleState();
+    await loadMoodleFromDb();
     try {
       const evidence = await fetchLmsEvidence();
-      setLmsRecords(evidence.map(toCardEvidence));
+      setLmsRecords(evidence.filter((e) => e.source !== "Moodle LMS").map(toCardEvidence));
     } catch {
       setLmsRecords([]);
     }
@@ -339,27 +317,39 @@ export default function Integrations() {
 
   const connectMoodle = async () => {
     setLmsSyncing(true);
+    setMoodleError(null);
     try {
-      const { data, error } = await supabase.functions.invoke("moodle-sync", {
-        body: { action: "test" },
-      });
-
-      console.log("Moodle test data:", data);
-      console.log("Moodle test error:", error);
-
-      if (error || data?.error) {
-        throw new Error(data?.error || error?.message || "Moodle connection failed");
+      const test = await testMoodleConnection();
+      if (!test.ok) throw new Error(test.error ?? "Moodle connection failed");
+      if (test.staleDeploy) {
+        toast({
+          title: "Moodle function update required",
+          description: "Remote moodle-sync is outdated. Run: npm run supabase:deploy-moodle",
+          variant: "destructive",
+        });
       }
 
-      const courses = await fetchAndStoreMoodleCourses();
+      const result = await syncMoodleActivities();
+      await loadMoodleFromDb();
       toast({
         title: "Moodle connected successfully",
-        description: `${courses.length} courses imported.`,
+        description: `${result.courses} courses · ${result.assignments} assignments imported.`,
       });
+      if (result.warnings.length) {
+        toast({
+          title: hasMoodleAccessControlWarning(result.warnings)
+            ? "Moodle permission issue"
+            : "Sync notes",
+          description: result.warnings.slice(0, 2).join(" "),
+          variant: hasMoodleAccessControlWarning(result.warnings) ? "destructive" : "default",
+        });
+      }
     } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setMoodleError(msg);
       toast({
         title: "Moodle connection failed",
-        description: e instanceof Error ? e.message : String(e),
+        description: msg,
         variant: "destructive",
       });
     } finally {
@@ -368,25 +358,30 @@ export default function Integrations() {
   };
 
   const syncMoodle = async () => {
-    if (!lmsConnected) {
-      toast({
-        title: "Moodle not connected",
-        description: "Connect Moodle first.",
-        variant: "destructive",
-      });
-      return;
-    }
     setLmsSyncing(true);
+    setMoodleError(null);
     try {
-      const courses = await fetchAndStoreMoodleCourses();
+      const result = await syncMoodleActivities();
+      await loadMoodleFromDb();
       toast({
-        title: "Moodle sync completed",
-        description: `${courses.length} courses imported.`,
+        title: "Moodle activities synced",
+        description: `${result.assignments} assignments across ${result.courses} courses.`,
       });
+      if (result.warnings.length) {
+        toast({
+          title: hasMoodleAccessControlWarning(result.warnings)
+            ? "Moodle permission issue"
+            : "Sync notes",
+          description: result.warnings.slice(0, 2).join(" "),
+          variant: hasMoodleAccessControlWarning(result.warnings) ? "destructive" : "default",
+        });
+      }
     } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setMoodleError(msg);
       toast({
         title: "Moodle sync failed",
-        description: e instanceof Error ? e.message : String(e),
+        description: msg,
         variant: "destructive",
       });
     } finally {
@@ -395,14 +390,28 @@ export default function Integrations() {
   };
 
   const disconnectMoodle = async () => {
-    if (!confirm("Disconnect Moodle?")) return;
-    localStorage.removeItem(MOODLE_STORAGE_KEY);
-    setLmsConnected(false);
-    setLmsImportedCount(0);
-    setLmsLastSync(null);
-    setMoodleCourses([]);
-    toast({ title: "Moodle disconnected" });
+    if (!confirm("Disconnect Moodle? Imported activity will remain in your evidence history.")) return;
+    try {
+      await disconnectMoodleDb();
+      setLmsConnected(false);
+      setLmsImportedCount(0);
+      setLmsLastSync(null);
+      setMoodleActivities([]);
+      setMoodleError(null);
+      toast({ title: "Moodle disconnected" });
+    } catch (e) {
+      toast({
+        title: "Could not disconnect Moodle",
+        description: e instanceof Error ? e.message : String(e),
+        variant: "destructive",
+      });
+    }
   };
+
+  const totalMoodleAssignments = useMemo(
+    () => moodleActivities.reduce((n, c) => n + c.assignments.length, 0),
+    [moodleActivities],
+  );
 
   const syncPortfolio = async () => {
     if (ghConn) await syncGithub();
@@ -438,7 +447,7 @@ export default function Integrations() {
           onDisconnect={disconnectMoodle}
           syncing={lmsSyncing}
           connectLabel="Connect Moodle"
-          syncLabel="Sync Moodle"
+          syncLabel="Sync Moodle Activities"
         />
 
         {/* GitHub card */}
@@ -596,44 +605,121 @@ export default function Integrations() {
 
       {/* Recent LMS Activity */}
       <Card className="mb-6">
-        <CardHeader className="flex flex-row items-center justify-between">
+        <CardHeader className="flex flex-row items-center justify-between gap-3">
           <CardTitle className="text-base flex items-center gap-2">
             <BookOpen className="h-4 w-4" /> Recent LMS Activity
           </CardTitle>
+          {lmsConnected && (
+            <Button size="sm" variant="outline" onClick={syncMoodle} disabled={lmsSyncing}>
+              <RefreshCw className={"h-3.5 w-3.5 mr-1.5 " + (lmsSyncing ? "animate-spin" : "")} />
+              Sync Moodle Activities
+            </Button>
+          )}
         </CardHeader>
         <CardContent className="p-0">
           {!lmsConnected ? (
             <EmptyState
               icon={BookOpen}
               title="Connect Moodle to import recent activity"
-              hint="Assignments, quizzes, and module completions will appear here."
-              action={<Button size="sm" onClick={connectMoodle}><Link2 className="h-4 w-4 mr-1.5" />Connect Moodle</Button>}
-            />
-          ) : moodleCourses.length === 0 && lmsRecords.length === 0 ? (
-            <EmptyState
-              icon={BookOpen}
-              title="No LMS activity synced yet"
-              hint="Run a sync to import your latest Moodle courses."
+              hint="Sync enrolled courses to import assignments and grades."
               action={
-                <Button size="sm" variant="outline" onClick={syncMoodle} disabled={lmsSyncing}>
-                  <RefreshCw className={"h-3.5 w-3.5 mr-1.5 " + (lmsSyncing ? "animate-spin" : "")} />
-                  Sync Moodle
+                <Button size="sm" onClick={connectMoodle} disabled={lmsSyncing}>
+                  <Link2 className="h-4 w-4 mr-1.5" />
+                  Connect Moodle
                 </Button>
               }
             />
-          ) : moodleCourses.length > 0 ? (
-            <div className="px-6">
-              {moodleCourses.map((course) => (
-                <div key={course.id} className="flex items-center justify-between border-b py-3">
-                  <div>
-                    <p className="font-medium">{course.fullname || course.shortname}</p>
-                    <p className="text-sm text-muted-foreground">
-                      Moodle LMS · Course ID: {course.id}
-                    </p>
+          ) : moodleLoading ? (
+            <div className="px-6 py-10 text-sm text-muted-foreground text-center">Loading Moodle activity…</div>
+          ) : moodleError ? (
+            <div className="px-6 py-8">
+              <EmptyState
+                icon={BookOpen}
+                title="Could not load Moodle activity"
+                hint={moodleError}
+                action={
+                  <Button size="sm" variant="outline" onClick={syncMoodle} disabled={lmsSyncing}>
+                    <RefreshCw className={"h-3.5 w-3.5 mr-1.5 " + (lmsSyncing ? "animate-spin" : "")} />
+                    Retry sync
+                  </Button>
+                }
+              />
+            </div>
+          ) : totalMoodleAssignments === 0 && lmsRecords.length === 0 ? (
+            <EmptyState
+              icon={BookOpen}
+              title="No Moodle assignments imported yet."
+              hint="Sync your enrolled courses to import assignments and grades."
+              action={
+                <Button size="sm" variant="outline" onClick={syncMoodle} disabled={lmsSyncing}>
+                  <RefreshCw className={"h-3.5 w-3.5 mr-1.5 " + (lmsSyncing ? "animate-spin" : "")} />
+                  Sync Moodle Activities
+                </Button>
+              }
+            />
+          ) : totalMoodleAssignments > 0 ? (
+            <div className="px-6 pb-4 space-y-5">
+              {moodleActivities.map((course) => (
+                <div key={course.courseId} className="rounded-xl border border-border/60 bg-card/50 overflow-hidden">
+                  <div className="border-b border-border/60 bg-muted/30 px-4 py-3">
+                    <p className="font-medium text-sm">Course: {course.courseName}</p>
+                    {course.shortname && (
+                      <p className="text-xs text-muted-foreground mt-0.5">{course.shortname}</p>
+                    )}
                   </div>
-                  <span className="text-xs rounded-full border px-2 py-1">
-                    Imported
-                  </span>
+                  {course.assignments.length === 0 ? (
+                    <p className="px-4 py-3 text-xs text-muted-foreground">No assignments in this course.</p>
+                  ) : (
+                    <div className="divide-y divide-border/50">
+                      {course.assignments.map((a) => {
+                        const feedbackText = formatMoodleFeedbackDisplay(a.feedback);
+                        return (
+                        <div key={a.id} className="px-4 py-4 space-y-2">
+                          <div className="flex flex-wrap items-start justify-between gap-2">
+                            <div>
+                              <p className="text-sm font-medium">Assignment: {a.name}</p>
+                              <p className="text-xs text-muted-foreground mt-0.5">
+                                Type: {a.activityType} · Source: {formatEvidenceSourceLabel(a.source)}
+                              </p>
+                            </div>
+                            <div className="flex flex-wrap gap-1.5">
+                              <StatusBadge variant="neutral">Imported</StatusBadge>
+                              <StatusBadge variant={activityStatusBadge(a.submissionStatus)}>
+                                {a.submissionStatus}
+                              </StatusBadge>
+                            </div>
+                          </div>
+                          <div className="grid sm:grid-cols-2 gap-x-6 gap-y-1 text-xs text-muted-foreground">
+                            <p>
+                              <span className="text-foreground/80">Grade:</span>{" "}
+                              {formatGradeDisplay(a)}
+                            </p>
+                            <p>
+                              <span className="text-foreground/80">Status:</span> {a.submissionStatus}
+                            </p>
+                            {feedbackText && (
+                              <p className="sm:col-span-2">
+                                <span className="text-foreground/80">Feedback</span>{" "}
+                                <span className="text-[10px] text-muted-foreground">LMS</span>
+                                <span className="block mt-0.5">{feedbackText}</span>
+                              </p>
+                            )}
+                            {a.competencyTags.length > 0 && (
+                              <p className="sm:col-span-2">
+                                <span className="text-foreground/80">Competencies:</span>{" "}
+                                {a.competencyTags.join(", ")}
+                              </p>
+                            )}
+                            <p>
+                              <span className="text-foreground/80">Imported:</span>{" "}
+                              {new Date(a.importedAt).toLocaleString()}
+                            </p>
+                          </div>
+                        </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -641,7 +727,10 @@ export default function Integrations() {
             <div className="divide-y">
               {lmsRecords.map((r) => (
                 <div key={r.id} className="grid grid-cols-12 gap-4 px-6 py-3.5 items-center">
-                  <div className="col-span-6 text-sm font-medium">{r.course_name}</div>
+                  <div className="col-span-6">
+                    <div className="text-sm font-medium">{r.course_name}</div>
+                    <div className="text-[10px] text-muted-foreground">Source: LMS</div>
+                  </div>
                   <div className="col-span-2 text-xs text-muted-foreground">{r.grade}</div>
                   <div className="col-span-2 text-xs text-muted-foreground">{r.completion_status}</div>
                   <div className="col-span-2 text-xs text-muted-foreground">{new Date(r.fetched_at).toLocaleDateString()}</div>
@@ -711,7 +800,7 @@ function IntegrationCard({
           ) : (
             <Button size="sm" className="flex-1" onClick={onConnect} disabled={connecting}>
               <Link2 className="h-3.5 w-3.5 mr-1.5" />
-              {connecting ? "Redirecting…" : connectLabel}
+              {connecting ? "Connecting…" : connectLabel}
             </Button>
           )}
         </div>
@@ -824,6 +913,9 @@ function ProjectEvidenceCard({
             <ExternalLink className="h-3 w-3 opacity-60 shrink-0" />
           </a>
           <div className="text-[11px] text-muted-foreground truncate">{project.repoFullName}</div>
+          <div className="text-[10px] text-muted-foreground mt-0.5">
+            Source: {formatEvidenceSourceLabel("GitHub")}
+          </div>
         </div>
         <StatusBadge variant={linked ? "verified" : "neutral"}>
           {linked ? "Project Evidence" : "Unlinked"}

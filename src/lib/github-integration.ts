@@ -7,7 +7,6 @@ import {
   saveGitHubOAuthContext,
   type GitHubOAuthContext,
 } from "@/lib/github-env";
-import { syncGitHubViaBackend } from "@/lib/db/github-evidence";
 
 export type GitHubConnection = {
   github_username: string;
@@ -201,19 +200,10 @@ export async function syncGitHubAfterSkillDeclare(
   }
 }
 
-/** Pull repos, commits, PRs via backend API when available; edge function fallback. */
+/** Pull repos, commits, PRs via Supabase Edge Function. */
 export async function syncGitHubPortfolio(
   declaredSkills: Array<{ id: string; name: string }> = [],
 ): Promise<GitHubSyncStats> {
-  const backend = await syncGitHubViaBackend(declaredSkills);
-  if (backend.usedBackend && backend.result) {
-    return {
-      synced: backend.result.activitiesSynced,
-      repos: backend.result.reposFetched,
-      contributors: 0,
-    };
-  }
-
   const data = await invokeEdge<GitHubSyncStats & { upserted?: number }>("github-sync", {
     declared_skills: declaredSkills,
   });

@@ -23,6 +23,6 @@ export async function fetchInstitutionProfile(userId: string): Promise<Instituti
     institutionName: data.institution_name,
     officialEmail: data.official_email,
     department: data.department ?? "",
-    status: data.status ?? "active",
+    status: data.status ?? "",
   };
 }

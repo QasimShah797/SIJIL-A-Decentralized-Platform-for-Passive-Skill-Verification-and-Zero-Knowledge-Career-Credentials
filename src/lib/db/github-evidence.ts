@@ -3,7 +3,6 @@
  */
 import { supabase } from "@/integrations/supabase/client";
 import {
-  syncGitHubApi,
   getUnmappedEvidenceApi,
   getLinkedProjectEvidenceApi,
   linkEvidenceToSkillApi,
@@ -16,6 +15,7 @@ import {
 } from "@/services/api/github.api";
 
 import { buildMatchReasonForSkill } from "@/lib/evidence-matching";
+import { isMissingColumnError, isMissingRelationError } from "@/lib/supabase-errors";
 
 export type { GitHubEvidenceView, ProjectEvidenceApiView, SkillLinkApiView };
 
@@ -46,42 +46,36 @@ async function loadBreakdownFromEvidence(
   const map = new Map<number, Record<string, number>>();
   if (!repoIdNums.length) return map;
 
-  const { data: evidenceRows } = await supabase
+  const { data: evidenceRows, error } = await supabase
     .from("evidence_records")
-    .select("github_repo_id, language_breakdown, metadata")
+    .select("github_repo_id, metadata")
     .eq("user_id", userId)
     .in("github_repo_id", repoIdNums);
 
+  if (error) {
+    if (!isMissingRelationError(error) && !isMissingColumnError(error)) {
+      console.warn("evidence_records breakdown query failed:", error);
+    }
+    return map;
+  }
+
   for (const row of evidenceRows ?? []) {
-    const fromCol = parseBreakdown(row.language_breakdown);
     const fromMeta = parseBreakdown(
       (row.metadata as Record<string, unknown> | null)?.language_breakdown,
     );
-    const breakdown = Object.keys(fromCol).length ? fromCol : fromMeta;
-    if (Object.keys(breakdown).length) {
-      map.set(Number(row.github_repo_id), breakdown);
+    if (Object.keys(fromMeta).length) {
+      map.set(Number(row.github_repo_id), fromMeta);
     }
   }
   return map;
 }
 
 export async function syncGitHubViaBackend(
-  declaredSkills: { id: string; name: string; domain?: string }[],
+  _declaredSkills: { id: string; name: string; domain?: string }[],
 ): Promise<{
   usedBackend: boolean;
   result?: { reposFetched: number; evidenceCreated: number; activitiesSynced: number };
 }> {
-  const viaApi = await syncGitHubApi(declaredSkills);
-  if (viaApi) {
-    return {
-      usedBackend: true,
-      result: {
-        reposFetched: viaApi.reposFetched,
-        evidenceCreated: viaApi.evidenceCreated,
-        activitiesSynced: viaApi.activitiesSynced,
-      },
-    };
-  }
   return { usedBackend: false };
 }
 
@@ -98,20 +92,40 @@ export async function fetchLinkedProjectEvidence(
   const viaApi = await getLinkedProjectEvidenceApi();
   if (viaApi?.length) return viaApi;
 
-  const { data: links } = await supabase
+  const { data: links, error: linksError } = await supabase
     .from("github_repo_skill_links")
     .select("github_repo_id, skill_id, match_reason, linked_at, declared_skills(name)")
     .eq("user_id", userId);
 
-  if (!links?.length) {
-    const { data: legacyRepos } = await supabase
+  if (linksError && !isMissingRelationError(linksError)) {
+    console.warn("github_repo_skill_links query failed:", linksError);
+  }
+
+  if (!linksError && links?.length) {
+    const repoIds = [...new Set(links.map((l) => l.github_repo_id as string))];
+    const { data: repos } = await supabase
       .from("github_repos")
       .select("*")
       .eq("user_id", userId)
-      .not("linked_skill_id", "is", null)
+      .in("id", repoIds)
       .order("last_updated", { ascending: false, nullsFirst: false });
 
-    const projects = (legacyRepos ?? []).map((repo) => ({
+    const linksByRepo = new Map<string, SkillLinkApiView[]>();
+    for (const link of links) {
+      const repoUuid = link.github_repo_id as string;
+      const skillData = link.declared_skills as { name?: string } | null;
+      const entry: SkillLinkApiView = {
+        skillId: link.skill_id as string,
+        skillName: skillData?.name ?? "",
+        matchReason: (link.match_reason as string | null) ?? null,
+        linkedAt: link.linked_at as string,
+      };
+      const list = linksByRepo.get(repoUuid) ?? [];
+      list.push(entry);
+      linksByRepo.set(repoUuid, list);
+    }
+
+    const projects = (repos ?? []).map((repo) => ({
       repoId: repo.id as string,
       githubRepoId: repo.repo_id as number,
       repositoryName: repo.repo_name as string,
@@ -119,17 +133,19 @@ export async function fetchLinkedProjectEvidence(
       repositoryUrl: repo.github_url as string,
       description: repo.description as string | null,
       primaryLanguage: repo.primary_language as string | null,
-      languageBreakdown: parseBreakdown(repo.language_breakdown),
-      topics: Array.isArray(repo.topics) ? (repo.topics as string[]) : [],
+      languageBreakdown: parseBreakdown(
+        (repo as Record<string, unknown>).language_breakdown
+          ?? (repo as Record<string, unknown>).metadata
+            ? ((repo as Record<string, unknown>).metadata as Record<string, unknown>)?.language_breakdown
+            : undefined,
+      ),
+      topics: Array.isArray((repo as Record<string, unknown>).topics)
+        ? ((repo as Record<string, unknown>).topics as string[])
+        : [],
       lastUpdated: repo.last_updated as string | null,
       commitCount: repo.commit_count as number | null,
       evidenceRecordId: "",
-      skillLinks: [{
-        skillId: repo.linked_skill_id as string,
-        skillName: repo.linked_skill_name as string,
-        matchReason: null,
-        linkedAt: repo.linked_at as string,
-      }],
+      skillLinks: linksByRepo.get(repo.id as string) ?? [],
     }));
 
     const breakdownMap = await loadBreakdownFromEvidence(
@@ -139,30 +155,14 @@ export async function fetchLinkedProjectEvidence(
     return enrichProjectsWithBreakdown(projects, breakdownMap);
   }
 
-  const repoIds = [...new Set(links.map((l) => l.github_repo_id as string))];
-  const { data: repos } = await supabase
+  const { data: legacyRepos } = await supabase
     .from("github_repos")
     .select("*")
     .eq("user_id", userId)
-    .in("id", repoIds)
+    .not("linked_skill_id", "is", null)
     .order("last_updated", { ascending: false, nullsFirst: false });
 
-  const linksByRepo = new Map<string, SkillLinkApiView[]>();
-  for (const link of links) {
-    const repoUuid = link.github_repo_id as string;
-    const skillData = link.declared_skills as { name?: string } | null;
-    const entry: SkillLinkApiView = {
-      skillId: link.skill_id as string,
-      skillName: skillData?.name ?? "",
-      matchReason: (link.match_reason as string | null) ?? null,
-      linkedAt: link.linked_at as string,
-    };
-    const list = linksByRepo.get(repoUuid) ?? [];
-    list.push(entry);
-    linksByRepo.set(repoUuid, list);
-  }
-
-  const projects = (repos ?? []).map((repo) => ({
+  const projects = (legacyRepos ?? []).map((repo) => ({
     repoId: repo.id as string,
     githubRepoId: repo.repo_id as number,
     repositoryName: repo.repo_name as string,
@@ -170,12 +170,24 @@ export async function fetchLinkedProjectEvidence(
     repositoryUrl: repo.github_url as string,
     description: repo.description as string | null,
     primaryLanguage: repo.primary_language as string | null,
-    languageBreakdown: parseBreakdown(repo.language_breakdown),
-    topics: Array.isArray(repo.topics) ? (repo.topics as string[]) : [],
+    languageBreakdown: parseBreakdown(
+      (repo as Record<string, unknown>).language_breakdown
+        ?? (repo as Record<string, unknown>).metadata
+          ? ((repo as Record<string, unknown>).metadata as Record<string, unknown>)?.language_breakdown
+          : undefined,
+    ),
+    topics: Array.isArray((repo as Record<string, unknown>).topics)
+      ? ((repo as Record<string, unknown>).topics as string[])
+      : [],
     lastUpdated: repo.last_updated as string | null,
     commitCount: repo.commit_count as number | null,
     evidenceRecordId: "",
-    skillLinks: linksByRepo.get(repo.id as string) ?? [],
+    skillLinks: [{
+      skillId: repo.linked_skill_id as string,
+      skillName: repo.linked_skill_name as string,
+      matchReason: null,
+      linkedAt: repo.linked_at as string,
+    }],
   }));
 
   const breakdownMap = await loadBreakdownFromEvidence(
@@ -200,6 +212,10 @@ export async function fetchUnmappedGitHubEvidence(
 
   if (!error && data?.length) {
     return data.map(rowToViewFromDb);
+  }
+
+  if (error && !isMissingRelationError(error) && !isMissingColumnError(error)) {
+    console.warn("evidence_records unmapped query failed:", error);
   }
 
   const { data: repos } = await supabase

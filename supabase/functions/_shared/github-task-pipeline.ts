@@ -47,6 +47,13 @@ export type GeneratedTask = {
   acceptance_criteria: string[];
   hidden_test_ideas: string[];
   evaluation_rubric: Array<{ criterion: string; weight: number; description: string }>;
+  questions?: Array<{
+    id?: string;
+    question: string;
+    options: string[];
+    correct_index?: number;
+    correctIndex?: number;
+  }>;
 };
 
 export type EvaluationResult = {
@@ -246,6 +253,17 @@ const CLASSIFICATION_SCHEMA = {
   ],
 };
 
+const MCQ_QUESTION_SCHEMA = {
+  type: "object",
+  properties: {
+    id: { type: "string" },
+    question: { type: "string" },
+    options: { type: "array", items: { type: "string" } },
+    correct_index: { type: "number" },
+  },
+  required: ["question", "options", "correct_index"],
+};
+
 const TASK_SCHEMA = {
   type: "object",
   properties: {
@@ -256,6 +274,11 @@ const TASK_SCHEMA = {
     scenario: { type: "string" },
     instructions: { type: "string" },
     starter_context: { type: "string" },
+    questions: {
+      type: "array",
+      items: MCQ_QUESTION_SCHEMA,
+      minItems: 5,
+    },
     acceptance_criteria: { type: "array", items: { type: "string" } },
     hidden_test_ideas: { type: "array", items: { type: "string" } },
     evaluation_rubric: {
@@ -279,6 +302,7 @@ const TASK_SCHEMA = {
     "scenario",
     "instructions",
     "starter_context",
+    "questions",
     "acceptance_criteria",
     "hidden_test_ideas",
     "evaluation_rubric",
@@ -319,6 +343,7 @@ export async function geminiJson<T>(
   model: string,
   prompt: string,
   schema: Record<string, unknown>,
+  temperature = 0.2,
 ): Promise<T> {
   const apiKey = Deno.env.get("GEMINI_API_KEY");
 
@@ -340,7 +365,7 @@ export async function geminiJson<T>(
           },
         ],
         generationConfig: {
-          temperature: 0.2,
+          temperature,
           responseMimeType: "application/json",
           responseSchema: schema,
         },
@@ -392,6 +417,23 @@ type AiPurpose = "classify" | "task" | "eval";
 
 const DEFAULT_GROQ_MODEL = "llama-3.3-70b-versatile";
 
+/** Strip dashboard copy/paste noise like "(optional)" from model IDs. */
+export function sanitizeModelId(raw: string | undefined | null, fallback: string): string {
+  if (!raw?.trim()) return fallback;
+  const cleaned = raw
+    .trim()
+    .replace(/\s*\(optional\)\s*/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return cleaned || fallback;
+}
+
+export function resolveGroqModel(purpose: AiPurpose): string {
+  const purposeModel = Deno.env.get(`GROQ_${purpose.toUpperCase()}_MODEL`);
+  const configured = purposeModel ?? Deno.env.get("GROQ_MODEL");
+  return sanitizeModelId(configured, DEFAULT_GROQ_MODEL);
+}
+
 function parseJsonText<T>(text: string): T {
   const trimmed = text.trim();
   const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
@@ -436,8 +478,7 @@ function resolveProviderModel(
       ?? "gemini-2.5-flash";
   }
 
-  const purposeModel = Deno.env.get(`GROQ_${purpose.toUpperCase()}_MODEL`);
-  return purposeModel ?? Deno.env.get("GROQ_MODEL") ?? DEFAULT_GROQ_MODEL;
+  return resolveGroqModel(purpose);
 }
 
 function providerConfigured(provider: AiProvider): boolean {
@@ -445,24 +486,35 @@ function providerConfigured(provider: AiProvider): boolean {
   return Boolean(Deno.env.get("GROQ_API_KEY"));
 }
 
+export function isRecoverableAIError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+
+  return (
+    message.includes("429")
+    || message.includes("503")
+    || message.includes("502")
+    || message.includes("504")
+    || message.includes("RESOURCE_EXHAUSTED")
+    || message.includes("UNAVAILABLE")
+    || message.includes("model_not_found")
+    || message.toLowerCase().includes("quota")
+    || message.toLowerCase().includes("high demand")
+    || message.toLowerCase().includes("does not exist")
+    || message.toLowerCase().includes("do not have access")
+    || message.toLowerCase().includes("rate limit")
+    || message.toLowerCase().includes("overloaded")
+    || message.toLowerCase().includes("temporarily unavailable")
+    || message.toLowerCase().includes("all ai providers failed")
+  );
+}
+
 export function isRetryableProviderError(err: unknown): boolean {
-  if (isQuotaError(err)) return true;
+  if (isRecoverableAIError(err)) return true;
   const message = err instanceof Error ? err.message : String(err);
   const lower = message.toLowerCase();
   return (
     lower.includes("missing gemini_api_key")
     || lower.includes("missing groq_api_key")
-    || lower.includes("rate limit")
-    || lower.includes("model_not_found")
-    || message.includes("503")
-    || message.includes("502")
-    || message.includes("504")
-    || message.includes("429")
-    || lower.includes("unavailable")
-    || lower.includes("high demand")
-    || lower.includes("overloaded")
-    || lower.includes("temporarily unavailable")
-    || lower.includes("resource_exhausted")
   );
 }
 
@@ -470,6 +522,7 @@ async function groqJson<T>(
   model: string,
   prompt: string,
   schema: Record<string, unknown>,
+  temperature = 0.2,
 ): Promise<T> {
   const apiKey = Deno.env.get("GROQ_API_KEY");
   if (!apiKey) {
@@ -496,7 +549,7 @@ ${JSON.stringify(schema)}`;
         },
         { role: "user", content: schemaPrompt },
       ],
-      temperature: 0.2,
+      temperature,
       response_format: { type: "json_object" },
     }),
   });
@@ -540,9 +593,11 @@ export async function llmJson<T>(params: {
   prompt: string;
   schema: Record<string, unknown>;
   geminiModel?: string;
+  temperature?: number;
 }): Promise<T> {
   const providers = getAiProviderChain();
   const errors: string[] = [];
+  const temperature = params.temperature ?? 0.2;
 
   for (const provider of providers) {
     if (!providerConfigured(provider)) {
@@ -555,9 +610,9 @@ export async function llmJson<T>(params: {
     try {
       console.log(`llmJson using ${provider} (${model}) for ${params.purpose}`);
       if (provider === "gemini") {
-        return await geminiJson<T>(model, params.prompt, params.schema);
+        return await geminiJson<T>(model, params.prompt, params.schema, temperature);
       }
-      return await groqJson<T>(model, params.prompt, params.schema);
+      return await groqJson<T>(model, params.prompt, params.schema, temperature);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       errors.push(`${provider}: ${message}`);
@@ -575,7 +630,7 @@ export async function llmJson<T>(params: {
   );
 }
 
-function formatEvidenceForPrompt(files: EvidenceFile[], languages: Record<string, number>): string {
+export function formatEvidenceForPrompt(files: EvidenceFile[], languages: Record<string, number>): string {
   if (files.length === 0) {
     return "No source files collected from the repository.";
   }
@@ -631,44 +686,56 @@ export async function generateTask(
   classification: ClassificationResult,
   apiKey: string,
   model: string,
+  variationSeed?: string,
 ): Promise<GeneratedTask> {
-  const prompt = `You are creating a practical 20-minute coding assessment grounded in real learner evidence.
+  const seed = variationSeed ?? crypto.randomUUID();
+  const prompt = `You are creating a unique multiple-choice quiz (MCQs only) for a skills verification platform.
 
 Declared skill: "${skill.name}" (domain: "${skill.domain ?? "General"}")
+Unique generation ID: ${seed}
 Evidence classification:
 ${JSON.stringify(classification, null, 2)}
 
-Generate ONE specific, concrete problem — not a generic "demonstrate your skills" prompt.
-The task must align with the declared skill and reflect patterns from the classification when confidence >= 0.4.
+Generate exactly 5 NEW multiple-choice questions that test practical knowledge of "${skill.name}".
+This generation ID must produce a fresh question set — do not reuse generic textbook or interview questions verbatim.
+Cover different subtopics within ${skill.name} (concepts, usage, best practices, common pitfalls).
 
 Return strict JSON with exactly these keys:
 {
-  "title": "short problem title",
+  "title": "short quiz title",
   "skill": "${skill.name}",
   "difficulty": "beginner|intermediate|advanced",
-  "task_type": "Coding|Debugging|Design|Hands-on|MCQ + Short Answer",
-  "scenario": "2-3 sentence real-world context",
-  "instructions": "clear step-by-step instructions with input/output examples",
-  "starter_context": "starter code, function signature, or scaffold the learner should extend",
-  "acceptance_criteria": ["measurable requirement 1", "requirement 2"],
-  "hidden_test_ideas": ["test case idea not shown to learner"],
+  "task_type": "MCQ",
+  "scenario": "1-2 sentence context for this unique quiz attempt",
+  "instructions": "Answer all multiple-choice questions about ${skill.name}.",
+  "starter_context": "",
+  "questions": [
+    {
+      "id": "q1",
+      "question": "clear question text",
+      "options": ["option A", "option B", "option C", "option D"],
+      "correct_index": 0
+    }
+  ],
+  "acceptance_criteria": ["All 5 questions answered"],
+  "hidden_test_ideas": [],
   "evaluation_rubric": [
-    { "criterion": "correctness", "weight": 40, "description": "..." },
-    { "criterion": "skill alignment", "weight": 30, "description": "..." },
-    { "criterion": "code quality", "weight": 30, "description": "..." }
+    { "criterion": "correct answers", "weight": 100, "description": "Percentage of correct MCQ selections" }
   ]
 }
 
 Rules:
-- Must be solvable in ~20 minutes
-- weights in evaluation_rubric must sum to 100
-- hidden_test_ideas are for evaluators only`;
+- Exactly 5 questions, each with exactly 4 distinct options
+- correct_index is 0-based (0-3)
+- Questions must be specific to ${skill.name}, not generic placeholders
+- Weights in evaluation_rubric must sum to 100`;
 
   return await llmJson<GeneratedTask>({
     purpose: "task",
     prompt,
     schema: TASK_SCHEMA,
     geminiModel: model,
+    temperature: 0.85,
   });
 }
 
@@ -952,7 +1019,7 @@ export function getLocalFallbackTask(skillName: string): LocalFallbackTask {
   }
 
   return {
-    title: `Build a ${skillName} Utility Function`,
+    title: `${skillName} Practical Utility Task`,
     type: "Coding",
     durationMinutes: 20,
     prompt:
@@ -991,9 +1058,105 @@ export function getLocalFallbackTask(skillName: string): LocalFallbackTask {
   };
 }
 
+export function buildLocalFallbackGeneratePayload(skillName: string, skillDomain: string) {
+  const fallbackQuestions = getLocalFallbackMcqQuestions(skillName);
+  return {
+    title: `${skillName} Knowledge Check`,
+    type: "MCQ",
+    durationMinutes: 15,
+    prompt: `Answer ${fallbackQuestions.length} multiple-choice questions about ${skillName}.`,
+    scenario: `Knowledge check for declared skill: ${skillName}.`,
+    instructions: `Select the best answer for each question about ${skillName}.`,
+    starterCode: "",
+    expectedDeliverable: "Selected answers for all questions.",
+    acceptance_criteria: ["All questions answered"],
+    evaluation_rubric: [
+      { criterion: "correct answers", points: 100, pass_condition: "Score based on correct MCQ selections" },
+    ],
+    hidden_test_ideas: [],
+    questions: fallbackQuestions,
+    skill: skillName,
+    domain: skillDomain,
+    fallback: true,
+    fallbackReason:
+      "AI providers were unavailable, so SIJIL generated a local skill-specific MCQ quiz.",
+  };
+}
+
+function getLocalFallbackMcqQuestions(skillName: string) {
+  const skill = skillName.toLowerCase();
+  const bank: Record<string, Array<{ question: string; options: string[]; correctIndex: number }>> = {
+    react: [
+      {
+        question: "Which hook manages local component state in React?",
+        options: ["useEffect", "useState", "useContext", "useMemo"],
+        correctIndex: 1,
+      },
+      {
+        question: "What makes an input controlled in React?",
+        options: ["defaultValue only", "value + onChange", "ref only", "autoFocus"],
+        correctIndex: 1,
+      },
+    ],
+    node: [
+      {
+        question: "Which built-in module creates HTTP servers in Node.js?",
+        options: ["express", "http", "axios", "socket"],
+        correctIndex: 1,
+      },
+      {
+        question: "What does npm manage in a Node project?",
+        options: ["CPU threads", "Package dependencies", "CSS styles", "Browser tabs"],
+        correctIndex: 1,
+      },
+    ],
+  };
+
+  let templates = bank.react;
+  if (skill.includes("node") || skill.includes("express")) templates = bank.node;
+  else if (skill.includes("react")) templates = bank.react;
+  else {
+    templates = [
+      {
+        question: `Which best describes ${skillName}?`,
+        options: [
+          "Unrelated to the learner's declared competency",
+          "A declared skill being validated in this pipeline",
+          "A skill that cannot be assessed",
+          "A skill that skips institution review",
+        ],
+        correctIndex: 1,
+      },
+      {
+        question: `Applying ${skillName} correctly means:`,
+        options: [
+          "Ignoring problem context",
+          "Using appropriate concepts and practices for the skill",
+          "Avoiding all validation",
+          "Never documenting decisions",
+        ],
+        correctIndex: 1,
+      },
+    ];
+  }
+
+  while (templates.length < 5) {
+    templates = [...templates, ...templates];
+  }
+
+  return templates.slice(0, 5).map((q, i) => ({
+    id: `q-${i + 1}`,
+    question: q.question,
+    options: q.options,
+    correctIndex: q.correctIndex,
+  }));
+}
+
 export function parseGenerateRequest(body: Record<string, unknown>): {
   skill: { name: string; domain: string };
   repos: RepoRef[];
+  variationSeed?: string;
+  mode?: string;
 } {
   const skillRaw = body.skill;
   const skillName =
@@ -1019,24 +1182,66 @@ export function parseGenerateRequest(body: Record<string, unknown>): {
     []
   ) as RepoRef[];
 
+  const variationSeed =
+    (typeof body.variationSeed === "string" ? body.variationSeed : undefined)
+    ?? (typeof body.seed === "string" ? body.seed : undefined)
+    ?? crypto.randomUUID();
+
+  const mode = typeof body.mode === "string" ? body.mode : undefined;
+
   return {
     skill: { name: skillName, domain: skillDomain },
     repos: Array.isArray(repos) ? repos : [],
+    variationSeed,
+    mode,
   };
 }
 
-export async function runTaskGenerationPipeline(params: {
+export async function runMcqGenerationPipeline(params: {
+  skill: { name: string; domain?: string };
+  taskModel: string;
+  variationSeed: string;
+}): Promise<GeneratedTask> {
+  const classification = buildFallbackClassification(params.skill.name);
+  let generated: GeneratedTask;
+
+  try {
+    generated = await generateTask(
+      params.skill,
+      classification,
+      "",
+      params.taskModel,
+      params.variationSeed,
+    );
+  } catch (genErr) {
+    console.error("MCQ generateTask failed, retrying once:", genErr);
+    generated = await generateTask(
+      params.skill,
+      classification,
+      "",
+      params.taskModel,
+      `${params.variationSeed}-retry`,
+    );
+  }
+
+  if (!generated?.questions || generated.questions.length < 5) {
+    throw new Error("AI returned incomplete MCQ question set");
+  }
+
+  return generated;
+}
+
+export async function collectSkillEvidence(params: {
   skill: { name: string; domain?: string };
   repos: RepoRef[];
   githubToken?: string;
   classifyModel: string;
-  taskModel: string;
 }): Promise<{
-  generated: GeneratedTask;
   classification: ClassificationResult;
+  evidence: { files: EvidenceFile[]; languages: Record<string, number> };
   evidenceMeta: { repo: string | null; fileCount: number };
 }> {
-  const { skill, repos, githubToken, classifyModel, taskModel } = params;
+  const { skill, repos, githubToken, classifyModel } = params;
 
   let evidence: { files: EvidenceFile[]; languages: Record<string, number> } = {
     files: [],
@@ -1060,19 +1265,54 @@ export async function runTaskGenerationPipeline(params: {
   try {
     classification = await classifyEvidence(skill, evidence, "", classifyModel);
   } catch (classifyErr) {
-    if (isQuotaError(classifyErr)) throw classifyErr;
     console.error("Classification failed, using fallback:", classifyErr);
     classification = buildFallbackClassification(skill.name);
   }
 
+  return {
+    classification,
+    evidence,
+    evidenceMeta: { repo: repoLabel, fileCount: evidence.files.length },
+  };
+}
+
+export async function runTaskGenerationPipeline(params: {
+  skill: { name: string; domain?: string };
+  repos: RepoRef[];
+  githubToken?: string;
+  classifyModel: string;
+  taskModel: string;
+  variationSeed?: string;
+}): Promise<{
+  generated: GeneratedTask;
+  classification: ClassificationResult;
+  evidenceMeta: { repo: string | null; fileCount: number };
+}> {
+  const { skill, taskModel, variationSeed } = params;
+  const { classification, evidenceMeta } = await collectSkillEvidence(params);
+
   let generated: GeneratedTask;
   try {
-    generated = await generateTask(skill, classification, "", taskModel);
+    generated = await generateTask(skill, classification, "", taskModel, params.variationSeed);
   } catch (genErr) {
-    if (isQuotaError(genErr)) throw genErr;
     console.error("generateTask failed, retrying with fallback classification:", genErr);
     classification = buildFallbackClassification(skill.name);
-    generated = await generateTask(skill, classification, "", taskModel);
+    try {
+      generated = await generateTask(
+        skill,
+        classification,
+        "",
+        taskModel,
+        params.variationSeed ? `${params.variationSeed}-retry` : undefined,
+      );
+    } catch (retryErr) {
+      console.error("generateTask retry failed:", retryErr);
+      throw retryErr;
+    }
+  }
+
+  if (!generated?.questions || generated.questions.length < 5) {
+    throw new Error("AI returned incomplete MCQ question set");
   }
 
   if (!generated?.title || (!generated.scenario && !generated.instructions)) {
@@ -1082,7 +1322,7 @@ export async function runTaskGenerationPipeline(params: {
   return {
     generated,
     classification,
-    evidenceMeta: { repo: repoLabel, fileCount: evidence.files.length },
+    evidenceMeta,
   };
 }
 
@@ -1110,7 +1350,7 @@ export function toGenerateApiResponse(
   return {
     title: generated.title,
     type: legacy.type,
-    durationMinutes: legacy.durationMinutes,
+    durationMinutes: (generated.questions?.length ?? legacy.durationMinutes) || 5,
     prompt,
     scenario: generated.scenario || prompt,
     instructions: generated.instructions || prompt,
@@ -1118,10 +1358,16 @@ export function toGenerateApiResponse(
     expectedDeliverable:
       generated.acceptance_criteria?.length
         ? generated.acceptance_criteria.join("\n")
-        : "Submit your implementation in the editor.",
+        : "Selected answers for all questions.",
     acceptance_criteria: generated.acceptance_criteria ?? [],
     evaluation_rubric: generated.evaluation_rubric ?? [],
     hidden_test_ideas: generated.hidden_test_ideas ?? [],
+    questions: (generated.questions ?? []).map((q, i) => ({
+      id: q.id ?? `q-${i + 1}`,
+      question: q.question,
+      options: q.options,
+      correctIndex: q.correctIndex ?? q.correct_index ?? 0,
+    })),
     skill: skillName,
     domain: skillDomain,
     rawTask: generated,
@@ -1141,6 +1387,7 @@ export function toLegacyTaskResponse(
     design: "Design",
     "hands-on": "Hands-on",
     "mcq + short answer": "MCQ + Short Answer",
+    mcq: "MCQ",
   };
   const normalizedType = typeMap[generated.task_type.toLowerCase()] ?? "Coding";
 

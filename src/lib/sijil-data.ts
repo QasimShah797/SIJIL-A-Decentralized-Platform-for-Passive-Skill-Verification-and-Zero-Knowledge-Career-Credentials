@@ -55,7 +55,7 @@ export const importedActivity: { id: string; source: string; title: string; date
 export type SkillTask = {
   skillId: string;
   title: string;
-  type: "Coding" | "Debugging" | "MCQ + Short Answer" | "Design" | "Hands-on";
+  type: "Coding" | "Debugging" | "MCQ + Short Answer" | "MCQ" | "Design" | "Hands-on";
   durationMinutes: number;
   prompt: string;
   starterCode?: string;

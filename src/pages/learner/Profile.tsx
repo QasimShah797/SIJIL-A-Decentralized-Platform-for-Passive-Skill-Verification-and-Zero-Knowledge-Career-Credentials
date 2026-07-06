@@ -1,83 +1,156 @@
-import { useMemo, useState, useRef } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { AppShell } from "@/components/sijil/AppShell";
 import { PageHeader } from "@/components/sijil/PageHeader";
 import { StatusBadge } from "@/components/sijil/StatusBadge";
-import { InfoHint } from "@/components/sijil/InfoHint";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
-import { Plus, Pencil, Trash2, ChevronRight, ShieldCheck, AlertTriangle, Bell, MessageSquare, UploadCloud, X, FileText } from "lucide-react";
+import {
+  Plus,
+  Trash2,
+  ChevronRight,
+  ShieldCheck,
+  AlertTriangle,
+  Bell,
+  MessageSquare,
+  UserCircle,
+  Pencil,
+  GitBranch,
+} from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
-import { uploadSkillEvidenceFile, submitSkillEvidenceAfterUpload } from "@/lib/db/skills";
-import { isSkillDecaying, daysSince, SKILL_DECAY_DAYS, computeTrustSignals } from "@/lib/sijil-data";
+import { daysSince, SKILL_DECAY_DAYS, computeTrustSignals, isSkillDecaying, type DeclaredSkill } from "@/lib/sijil-data";
 import { useLearnerProfile, useDeclaredSkills, usePeerReviews } from "@/hooks/useLearnerData";
+import {
+  COMPETENCY_DOMAINS,
+  COMPETENCY_DOMAIN_OTHER,
+  resolveCompetencyDomain,
+  splitCompetencyDomain,
+} from "@/lib/competency-domains";
 import { toast } from "@/hooks/use-toast";
+
+function displayStatus(status: string): string {
+  if (status === "Skill Claimed") return "Competency Claimed";
+  return status;
+}
+
+function statusVariant(status: string): "verified" | "info" | "neutral" | "warning" {
+  if (status === "Credential Issued") return "verified";
+  if (status === "Evidence Linked") return "info";
+  if (status === "Review Available" || status === "Attestation Pending") return "warning";
+  return "neutral";
+}
 
 export default function LearnerProfile() {
   const navigate = useNavigate();
   const location = useLocation();
   const { profile, loading: profileLoading } = useLearnerProfile();
-  const { skills, loading: skillsLoading, addSkill, removeSkill } = useDeclaredSkills();
+  const { skills, loading: skillsLoading, addSkill, removeSkill, updateSkill } = useDeclaredSkills();
   const { reviews } = usePeerReviews();
   const [open, setOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [name, setName] = useState("");
-  const [domain, setDomain] = useState("");
+  const [domainSelect, setDomainSelect] = useState("");
+  const [customDomain, setCustomDomain] = useState("");
   const [desc, setDesc] = useState("");
   const { user } = useAuth();
-  const [file, setFile] = useState<File | null>(null);
-  const [uploading, setUploading] = useState(false);
-  const fileRef = useRef<HTMLInputElement>(null);
-  const ACCEPTED = ".pdf,.doc,.docx,.png,.jpg,.jpeg,.zip";
-  const MAX_MB = 10;
-  const handleFilePick = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const picked = e.target.files?.[0] ?? null;
-    if (!picked) return;
-    if (picked.size > MAX_MB * 1024 * 1024) {
-      toast({ title: "File too large", description: `Max ${MAX_MB} MB.`, variant: "destructive" });
-      return;
-    }
-    setFile(picked);
-  };
-  const clearFile = () => { setFile(null); if (fileRef.current) fileRef.current.value = ""; };
+  const [saving, setSaving] = useState(false);
+
+  const resolvedDomain = resolveCompetencyDomain(domainSelect, customDomain);
+  const canSubmit =
+    Boolean(name.trim())
+    && Boolean(domainSelect)
+    && (domainSelect !== COMPETENCY_DOMAIN_OTHER || Boolean(customDomain.trim()));
 
   const decaying = useMemo(() => skills.filter((s) => isSkillDecaying(s)), [skills]);
   const trust = useMemo(() => computeTrustSignals(reviews), [reviews]);
   const notifPanelOpen = location.hash === "#notifications";
+  const isEditing = editingId !== null;
 
-  const handleAddSkill = async () => {
-    if (!name || !user) return;
-    setUploading(true);
+  const resetForm = () => {
+    setEditingId(null);
+    setName("");
+    setDomainSelect("");
+    setCustomDomain("");
+    setDesc("");
+  };
+
+  const handleDialogOpenChange = (next: boolean) => {
+    setOpen(next);
+    if (!next) resetForm();
+  };
+
+  const openAddDialog = () => {
+    resetForm();
+    setOpen(true);
+  };
+
+  const openEditDialog = (skill: DeclaredSkill) => {
+    const { select, custom } = splitCompetencyDomain(skill.domain);
+    setEditingId(skill.id);
+    setName(skill.name);
+    setDomainSelect(select);
+    setCustomDomain(custom);
+    setDesc(skill.description ?? "");
+    setOpen(true);
+  };
+
+  const handleSaveCompetency = async () => {
+    if (!canSubmit || !user) return;
+    setSaving(true);
     try {
-      const created = await addSkill({ name, domain: domain || "General", description: desc });
-      if (file && created) {
-        const url = await uploadSkillEvidenceFile(user.id, created.id, file);
-        await submitSkillEvidenceAfterUpload(user.id, created.id, file.name, url);
+      const payload = {
+        name: name.trim(),
+        domain: resolvedDomain,
+        description: desc.trim(),
+      };
+      if (isEditing && editingId) {
+        await updateSkill(editingId, payload);
+        toast({ title: "Competency updated", description: `${payload.name} saved.` });
+      } else {
+        const created = await addSkill(payload);
+        toast({
+          title: "Competency claimed",
+          description: created?.status === "Evidence Linked"
+            ? `${payload.name} added and linked to matching GitHub evidence.`
+            : `${payload.name} added.`,
+        });
       }
-      toast({
-        title: "Skill claimed",
-        description: created?.status === "Evidence Linked"
-          ? `${name} added and linked to matching GitHub evidence.`
-          : file ? `${name} added with file.` : `${name} added.`,
-      });
-      setName(""); setDomain(""); setDesc(""); clearFile(); setOpen(false);
+      resetForm();
+      setOpen(false);
     } catch (e) {
-      toast({ title: "Error", description: e instanceof Error ? e.message : String(e), variant: "destructive" });
-    } finally { setUploading(false); }
+      toast({
+        title: isEditing ? "Could not update competency" : "Could not add competency",
+        description: e instanceof Error ? e.message : String(e),
+        variant: "destructive",
+      });
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleRemove = async (id: string) => {
     try {
       await removeSkill(id);
+      toast({ title: "Competency removed" });
     } catch (e) {
-      toast({ title: "Could not remove skill", description: e instanceof Error ? e.message : String(e), variant: "destructive" });
+      toast({
+        title: "Could not remove competency",
+        description: e instanceof Error ? e.message : String(e),
+        variant: "destructive",
+      });
     }
   };
-
-  const variant = (s: string) => s === "Credential Issued" ? "verified" : s === "Evidence Linked" ? "info" : "neutral";
 
   if (profileLoading || skillsLoading) {
     return (
@@ -90,58 +163,72 @@ export default function LearnerProfile() {
   return (
     <AppShell role="learner">
       <PageHeader
-        title="Profile & Declared Skills"
-        description="Skills here are claims you declare. SIJIL aggregates supporting records and reviews — it does not assign expertise levels."
+        title="Profile & Declared Competencies"
+        description="Competencies here are claims you declare. SIJIL aggregates supporting records and reviews — it does not assign expertise levels."
         actions={
-          <Dialog open={open} onOpenChange={setOpen}>
+          <Dialog open={open} onOpenChange={handleDialogOpenChange}>
             <DialogTrigger asChild>
-              <Button><Plus className="h-4 w-4 mr-1.5" />Declare skill</Button>
+              <Button onClick={openAddDialog}>
+                <Plus className="h-4 w-4 mr-1.5" />
+                Declare competency
+              </Button>
             </DialogTrigger>
             <DialogContent>
-              <DialogHeader><DialogTitle>Declare a new skill</DialogTitle></DialogHeader>
+              <DialogHeader>
+                <DialogTitle>{isEditing ? "Edit competency" : "Declare a new competency"}</DialogTitle>
+              </DialogHeader>
               <div className="space-y-4">
                 <div>
-                  <Label>Skill name</Label>
-                  <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. TypeScript" className="mt-1.5" />
+                  <Label>Competency name</Label>
+                  <Input
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="e.g. TypeScript"
+                    className="mt-1.5"
+                  />
                 </div>
                 <div>
                   <Label>Category / Domain</Label>
-                  <Input value={domain} onChange={(e) => setDomain(e.target.value)} placeholder="e.g. Frontend Development" className="mt-1.5" />
+                  <Select value={domainSelect || undefined} onValueChange={setDomainSelect}>
+                    <SelectTrigger className="mt-1.5">
+                      <SelectValue placeholder="Select a domain" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {COMPETENCY_DOMAINS.map((d) => (
+                        <SelectItem key={d} value={d}>
+                          {d}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
+                {domainSelect === COMPETENCY_DOMAIN_OTHER && (
+                  <div>
+                    <Label>Enter custom domain</Label>
+                    <Input
+                      value={customDomain}
+                      onChange={(e) => setCustomDomain(e.target.value)}
+                      placeholder="e.g. Game Development"
+                      className="mt-1.5"
+                    />
+                  </div>
+                )}
                 <div>
                   <Label>Description (optional)</Label>
-                  <Textarea value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="Short description of the skill claim" className="mt-1.5" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-1.5 mb-1.5">
-                    <Label>Supporting file</Label>
-                    <span className="text-muted-foreground text-xs">(optional)</span>
-                    <InfoHint text="Upload a project file, certificate, or any document supporting this skill. Max 10 MB." />
-                  </div>
-                  {file ? (
-                    <div className="flex items-center gap-2 rounded-md border bg-muted/40 px-3 py-2 text-sm">
-                      <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
-                      <span className="flex-1 truncate">{file.name}</span>
-                      <span className="text-xs text-muted-foreground shrink-0">{(file.size / 1024).toFixed(0)} KB</span>
-                      <button onClick={clearFile} className="text-muted-foreground hover:text-destructive transition-colors">
-                        <X className="h-4 w-4" />
-                      </button>
-                    </div>
-                  ) : (
-                    <button type="button" onClick={() => fileRef.current?.click()}
-                      className="w-full rounded-md border-2 border-dashed border-border hover:border-primary/50 hover:bg-muted/30 transition-colors px-4 py-5 flex flex-col items-center gap-1.5 text-sm text-muted-foreground">
-                      <UploadCloud className="h-6 w-6" />
-                      <span>Click to upload or drag & drop</span>
-                      <span className="text-xs">PDF, DOC, PNG, JPG, ZIP · max 10 MB</span>
-                    </button>
-                  )}
-                  <input ref={fileRef} type="file" accept={ACCEPTED} onChange={handleFilePick} className="hidden" />
+                  <Textarea
+                    value={desc}
+                    onChange={(e) => setDesc(e.target.value)}
+                    placeholder="Short description of the competency claim"
+                    className="mt-1.5"
+                  />
                 </div>
               </div>
               <DialogFooter>
-                <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-                <Button onClick={handleAddSkill} disabled={!name || uploading}>
-                  {uploading ? "Adding…" : "Add skill"}
+                <Button variant="outline" onClick={() => handleDialogOpenChange(false)}>
+                  Cancel
+                </Button>
+                <Button onClick={handleSaveCompetency} disabled={!canSubmit || saving}>
+                  {saving ? "Saving…" : isEditing ? "Save changes" : "Add competency"}
                 </Button>
               </DialogFooter>
             </DialogContent>
@@ -156,50 +243,81 @@ export default function LearnerProfile() {
               <Bell className="h-4 w-4" /> Notifications
               {decaying.length > 0 && <StatusBadge variant="warning">{decaying.length} active</StatusBadge>}
             </CardTitle>
-            <Button variant="ghost" size="sm" onClick={() => navigate(location.pathname, { replace: true })}>Close</Button>
+            <Button variant="ghost" size="sm" onClick={() => navigate(location.pathname, { replace: true })}>
+              Close
+            </Button>
           </CardHeader>
           <CardContent className="space-y-2">
             {decaying.length === 0 ? (
-              <div className="text-sm text-muted-foreground">All your skills are fresh. No decay alerts.</div>
-            ) : decaying.map((s) => {
-              const d = daysSince(s.lastRelatedActivityAt);
-              return (
-                <div key={s.id} className="flex items-start gap-3 rounded-md border bg-amber-50/40 dark:bg-amber-500/5 p-3">
-                  <AlertTriangle className="h-4 w-4 text-amber-600 mt-0.5" />
-                  <div className="flex-1 text-sm">
-                    <div className="font-medium">Skill velocity alert · {s.name}</div>
-                    <div className="text-xs text-muted-foreground mt-0.5">
-                      No related LMS/GitHub activity in the last {d === null ? "—" : `${d} days`} (threshold {SKILL_DECAY_DAYS}d). Sync new evidence or run a fresh practical task to restore velocity.
+              <div className="text-sm text-muted-foreground">All your competencies are fresh. No decay alerts.</div>
+            ) : (
+              decaying.map((s) => {
+                const d = daysSince(s.lastRelatedActivityAt);
+                return (
+                  <div
+                    key={s.id}
+                    className="flex items-start gap-3 rounded-md border bg-amber-50/40 dark:bg-amber-500/5 p-3"
+                  >
+                    <AlertTriangle className="h-4 w-4 text-amber-600 mt-0.5" />
+                    <div className="flex-1 text-sm">
+                      <div className="font-medium">Competency velocity alert · {s.name}</div>
+                      <div className="text-xs text-muted-foreground mt-0.5">
+                        No related LMS/GitHub activity in the last {d === null ? "—" : `${d} days`} (threshold{" "}
+                        {SKILL_DECAY_DAYS}d). Sync new evidence or run a fresh practical task to restore velocity.
+                      </div>
                     </div>
+                    <Button size="sm" variant="outline" onClick={() => navigate("/learner/integrations")}>
+                      Sync now
+                    </Button>
+                    <Button size="sm" onClick={() => navigate("/learner/task")}>
+                      Run task
+                    </Button>
                   </div>
-                  <Button size="sm" variant="outline" onClick={() => navigate("/learner/integrations")}>Sync now</Button>
-                  <Button size="sm" onClick={() => navigate("/learner/task")}>Run task</Button>
-                </div>
-              );
-            })}
+                );
+              })
+            )}
           </CardContent>
         </Card>
       )}
 
       {profile && (
         <Card className="mb-6">
-          <CardContent className="p-6 flex flex-col md:flex-row md:items-center gap-6">
-            <div className="h-16 w-16 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xl font-semibold">
-              {profile.avatar}
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2">
-                <h2 className="text-xl font-semibold">{profile.name}</h2>
-                <StatusBadge variant="verified" icon={<ShieldCheck className="h-3 w-3" />}>DID active</StatusBadge>
+          <CardContent className="flex flex-col gap-4 p-6 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-4 min-w-0">
+              {profile.avatarUrl ? (
+                <img
+                  src={profile.avatarUrl}
+                  alt={profile.name}
+                  className="h-16 w-16 shrink-0 rounded-full border object-cover"
+                />
+              ) : (
+                <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-primary text-xl font-semibold text-primary-foreground">
+                  {profile.avatar}
+                </div>
+              )}
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="text-lg font-semibold truncate">{profile.name}</h2>
+                  {profile.isVerifiedStudent && (
+                    <StatusBadge variant="verified" icon={<ShieldCheck className="h-3 w-3" />}>
+                      Verified Student
+                    </StatusBadge>
+                  )}
+                </div>
+                <p className="text-sm text-muted-foreground truncate">{profile.institution}</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {profile.studentId && profile.studentId !== "—" && <span>Reg. {profile.studentId}</span>}
+                  {profile.studentId && profile.studentId !== "—" && profile.program && profile.program !== "—" && (
+                    <span> · </span>
+                  )}
+                  {profile.program && profile.program !== "—" && <span>{profile.program}</span>}
+                </p>
               </div>
-              <div className="text-sm text-muted-foreground">{profile.program} · {profile.batch} · {profile.institution}</div>
-              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs">
-                <span className="text-muted-foreground">Holder DID</span>
-                <span className="mono break-all">{profile.did}</span>
-                <InfoHint text="Decentralized Identifier under learner's control. Used to bind issued credentials to the holder." />
-              </div>
             </div>
-            <Button variant="outline"><Pencil className="h-4 w-4 mr-1.5" />Edit profile</Button>
+            <Button variant="outline" className="shrink-0" onClick={() => navigate("/learner/my-profile")}>
+              <UserCircle className="mr-2 h-4 w-4" />
+              View / Edit Profile
+            </Button>
           </CardContent>
         </Card>
       )}
@@ -230,51 +348,60 @@ export default function LearnerProfile() {
             ))}
           </div>
           <p className="text-xs text-muted-foreground mt-3">
-            Trust signals indicate context-verified peer feedback. They are not skill scores or expertise levels.
+            Trust signals indicate context-verified peer feedback. They are not competency scores or expertise levels.
           </p>
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader className="flex-row items-center justify-between">
-          <CardTitle className="text-base">Declared skills <span className="text-muted-foreground font-normal">({skills.length})</span></CardTitle>
+          <CardTitle className="text-base">
+            Declared Competencies{" "}
+            <span className="text-muted-foreground font-normal">({skills.length})</span>
+          </CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           {skills.length === 0 ? (
             <div className="px-6 py-10 text-sm text-muted-foreground text-center">
-              No skills declared yet. Click &quot;Declare skill&quot; to add your first skill claim.
+              No competencies declared yet. Declare your first competency to begin verification.
             </div>
           ) : (
             <div className="divide-y">
               {skills.map((s) => {
-                const decay = isSkillDecaying(s);
                 const d = daysSince(s.lastRelatedActivityAt);
                 return (
-                  <div key={s.id} className="flex items-center gap-4 px-6 py-4 hover:bg-muted/40 transition-colors group">
-                    <button
-                      onClick={() => navigate(`/learner/validation/${s.id}`)}
-                      className="flex-1 text-left"
-                    >
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="font-medium">{s.name}</span>
-                        <StatusBadge variant={variant(s.status) as "verified" | "info" | "neutral"}>{s.status}</StatusBadge>
-                        {decay && (
-                          <StatusBadge variant="warning" icon={<AlertTriangle className="h-3 w-3" />}>Decaying</StatusBadge>
-                        )}
+                  <div key={s.id} className="px-6 py-4 hover:bg-muted/40 transition-colors">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-medium">{s.name}</span>
+                          <StatusBadge variant={statusVariant(s.status)}>
+                            {displayStatus(s.status)}
+                          </StatusBadge>
+                        </div>
+                        <div className="text-xs text-muted-foreground mt-1">{s.domain}</div>
+                        {s.description ? (
+                          <p className="text-sm text-muted-foreground mt-1">{s.description}</p>
+                        ) : null}
+                        <div className="text-[11px] text-muted-foreground mt-1">
+                          Last related sync: {d === null ? "never" : `${d}d ago`}
+                        </div>
                       </div>
-                      <div className="text-xs text-muted-foreground mt-1">
-                        {s.domain}{s.description ? ` · ${s.description}` : ""}
+                      <div className="flex flex-wrap gap-2 shrink-0">
+                        <Button variant="outline" size="sm" onClick={() => openEditDialog(s)}>
+                          <Pencil className="h-3.5 w-3.5 mr-1.5" />
+                          Edit
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={() => handleRemove(s.id)}>
+                          <Trash2 className="h-3.5 w-3.5 mr-1.5" />
+                          Delete
+                        </Button>
+                        <Button size="sm" onClick={() => navigate(`/learner/validation/${s.id}`)}>
+                          <GitBranch className="h-3.5 w-3.5 mr-1.5" />
+                          View Pipeline
+                        </Button>
                       </div>
-                      <div className="text-[11px] text-muted-foreground mt-0.5">
-                        Last related sync: {d === null ? "never" : `${d}d ago`}
-                      </div>
-                    </button>
-                    <Button variant="ghost" size="icon" onClick={() => handleRemove(s.id)}>
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                    <Button variant="ghost" size="icon" onClick={() => navigate(`/learner/validation/${s.id}`)}>
-                      <ChevronRight className="h-4 w-4" />
-                    </Button>
+                    </div>
                   </div>
                 );
               })}

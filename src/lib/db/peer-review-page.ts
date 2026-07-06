@@ -11,6 +11,7 @@ import {
   getPeerReviewProjectsApi,
   getPeerReviewsApi,
 } from "@/services/api/peer-review.api";
+import { isMissingColumnError, isMissingRelationError } from "@/lib/supabase-errors";
 import type {
   PeerReview,
   Project,
@@ -196,17 +197,27 @@ async function fetchContributors(
 async function fetchEvidenceRecordProjects(userId: string): Promise<ProjectEvidenceApiView[]> {
   const { data, error } = await supabase
     .from("evidence_records")
-    .select("id, repository_name, repository_url, repo_full_name, github_repo_id, metadata")
+    .select("id, repository_name, repository_url, github_repo_id, metadata")
     .eq("user_id", userId)
     .eq("source", "GitHub")
     .order("last_updated", { ascending: false, nullsFirst: false });
 
-  if (error || !data?.length) return [];
+  if (error) {
+    if (!isMissingRelationError(error) && !isMissingColumnError(error)) {
+      console.warn("evidence_records project query failed:", error);
+    }
+    return [];
+  }
+  if (!data?.length) return [];
 
-  const { data: links } = await supabase
+  const { data: links, error: linksError } = await supabase
     .from("skill_evidence_links")
-    .select("evidence_record_id, skill_id, match_reason, linked_at, declared_skills(name)")
+    .select("evidence_record_id, skill_id, linked_at, declared_skills(name)")
     .eq("user_id", userId);
+
+  if (linksError && !isMissingRelationError(linksError)) {
+    console.warn("skill_evidence_links query failed:", linksError);
+  }
 
   const linksByEvidence = new Map<string, { skillId: string; skillName: string; matchReason: string | null; linkedAt: string }[]>();
   for (const link of links ?? []) {
@@ -215,7 +226,7 @@ async function fetchEvidenceRecordProjects(userId: string): Promise<ProjectEvide
     const entry = {
       skillId: link.skill_id as string,
       skillName: skillData?.name ?? "",
-      matchReason: (link.match_reason as string | null) ?? null,
+      matchReason: null,
       linkedAt: link.linked_at as string,
     };
     const list = linksByEvidence.get(evidenceId) ?? [];
@@ -225,8 +236,8 @@ async function fetchEvidenceRecordProjects(userId: string): Promise<ProjectEvide
 
   return data.map((row) => {
     const metadata = row.metadata as Record<string, unknown> | null;
-    const repoFullName = (row.repo_full_name as string | null)
-      ?? (metadata?.full_name as string | undefined)
+    const repoFullName = (metadata?.full_name as string | undefined)
+      ?? (metadata?.repo_full_name as string | undefined)
       ?? (row.repository_name as string);
     const githubRepoId = Number(row.github_repo_id ?? 0);
     return {

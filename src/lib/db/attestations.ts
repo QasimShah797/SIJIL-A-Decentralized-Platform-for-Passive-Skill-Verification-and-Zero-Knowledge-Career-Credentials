@@ -6,6 +6,7 @@ import {
 } from "@/services/api/attestation.api";
 import type { LearnerProfileView } from "@/lib/db/learner-profile";
 import { updateSkillPipelineStage } from "@/lib/db/skills";
+import { issueCredentialForSkill } from "@/lib/db/credentials";
 import type { AttestationRecord, AttestationStatus } from "@/lib/sijil-data";
 import type { SkillTask } from "@/lib/sijil-data";
 
@@ -111,6 +112,14 @@ export async function updateAttestationDb(id: string, patch: Partial<Attestation
         "wallet_ready",
         "Wallet Ready",
       );
+      try {
+        await issueCredentialForSkill(
+          existing.learner_user_id as string,
+          existing.skill_id as string,
+        );
+      } catch (issueErr) {
+        console.error("Auto credential issuance failed:", issueErr);
+      }
     } else if (patch.status === "Attestation Rejected") {
       await updateSkillPipelineStage(
         existing.learner_user_id as string,

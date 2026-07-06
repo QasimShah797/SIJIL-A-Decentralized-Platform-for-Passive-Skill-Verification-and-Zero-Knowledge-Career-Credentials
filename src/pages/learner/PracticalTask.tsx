@@ -1,138 +1,72 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppShell } from "@/components/sijil/AppShell";
 import { PageHeader } from "@/components/sijil/PageHeader";
 import { StatusBadge } from "@/components/sijil/StatusBadge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
-import { Play, Timer, Lock, Send, CheckCircle2, AlertTriangle, RefreshCcw } from "lucide-react";
-import { isSkillDecaying, daysSince, type DeclaredSkill, type AttemptRecord, type SkillTask } from "@/lib/sijil-data";
+import {
+  Play, Timer, Lock, Send, AlertTriangle, RefreshCcw, ChevronRight, ChevronLeft,
+} from "lucide-react";
+import { isSkillDecaying, daysSince, type DeclaredSkill, type AttemptRecord } from "@/lib/sijil-data";
 import { useDeclaredSkills } from "@/hooks/useLearnerData";
 import { useAuth } from "@/hooks/useAuth";
+import { useGitHub } from "@/hooks/useGitHub";
 import {
   loadAttempts,
   saveAttemptDb,
-  markAttemptPassed,
   isAttemptLocked,
 } from "@/lib/db/practical-attempts";
-import { updateSkillPipelineStage } from "@/lib/db/skills";
-import { createInstitutionAttestationRequest, hasPendingAttestationRequest } from "@/lib/db/institution-attestation-requests";
-import { fetchLearnerProfile } from "@/lib/db/learner-profile";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { useGitHub } from "@/hooks/useGitHub";
+import {
+  createInitialMcqProgress,
+  evaluateSecureMcqAttempt,
+  generateSecureMcqTask,
+  buildMcqSubmissionAnswers,
+  MCQ_PASS_PERCENT,
+  MCQ_SECONDS_PER_QUESTION,
+  parseMcqAnswers,
+  parseMcqProgress,
+  parseMcqSession,
+  restoreMcqTaskFromSubmission,
+  serializeMcqSession,
+  type McqAnswerMap,
+  type McqOptionId,
+  type McqTask,
+} from "@/lib/mcq-tasks";
 
-type TaskWithInstructions = SkillTask & {
-  scenario?: string;
-  instructions?: string;
-  acceptance_criteria?: string[];
-  evaluation_rubric?: Record<string, unknown>;
-  hidden_test_ideas?: string[];
+const NO_COPY_PROPS = {
+  className: "select-none",
+  style: { WebkitUserSelect: "none" as const, userSelect: "none" as const },
+  onCopy: (e: React.ClipboardEvent) => e.preventDefault(),
+  onCut: (e: React.ClipboardEvent) => e.preventDefault(),
+  onContextMenu: (e: React.MouseEvent) => e.preventDefault(),
 };
 
-function isGenericTask(task: Partial<TaskWithInstructions> | null | undefined): boolean {
-  if (!task) return true;
-  return (
-    task.prompt?.includes("Complete a practical demonstration") === true ||
-    task.title?.startsWith("Demonstrate ") === true ||
-    task.expectedDeliverable === "Written response or code in the editor."
-  );
-}
-
-async function generateTaskFromRapidTask(
-  skill: { id?: string; name: string; domain: string },
-  githubRepos: { name: string; language: string | null; full_name: string }[],
-  skillId: string,
-): Promise<{ task: TaskWithInstructions; fallback?: boolean }> {
-  const { data, error } = await supabase.functions.invoke("rapid-task", {
-    body: {
-      action: "generate",
-      skill: { name: skill.name, domain: skill.domain },
-      repos: githubRepos,
-    },
-  });
-
-  console.log("Generated task from rapid-task:", data);
-  console.log("Generate task error:", error);
-
-  if (error || data?.error) {
-    throw new Error(
-      data?.details || data?.error || error?.message || "Task generation failed. Please try again.",
-    );
-  }
-
-  if (!data?.prompt && !data?.scenario && !data?.instructions) {
-    throw new Error("No task details were returned from rapid-task.");
-  }
-
-  const generatedTask: TaskWithInstructions = {
-    skillId,
-    title: data.title,
-    type: data.type ?? "Coding",
-    durationMinutes: data.durationMinutes ?? 20,
-    prompt: data.prompt,
-    scenario: data.scenario,
-    instructions: data.instructions,
-    starterCode: data.starterCode || undefined,
-    expectedDeliverable: data.expectedDeliverable,
-    acceptance_criteria: data.acceptance_criteria || [],
-    evaluation_rubric: data.evaluation_rubric || [],
-    hidden_test_ideas: data.hidden_test_ideas || [],
-  };
-
-  console.log("Stored currentTask:", generatedTask);
-
-  if (!data?.fallback && isGenericTask(generatedTask)) {
-    throw new Error("Task generation failed: generic fallback task returned.");
-  }
-
-  return { task: generatedTask, fallback: data?.fallback === true };
-}
-
-type EvalData = {
-  passed?: boolean;
-  feedback?: string;
-  score?: number;
-  criteria_results?: Record<string, unknown>[];
-  error?: string;
-  details?: string;
-  evaluationUnavailable?: boolean;
-  evaluation?: { evaluationUnavailable?: boolean; criteria_results?: Record<string, unknown>[] };
+type StoredPracticalTaskState = {
+  task: McqTask | null;
+  attempt: AttemptRecord | null;
+  answers: McqAnswerMap;
+  currentQuestionIndex: number;
+  questionEndsAt: string | null;
+  resultPercentage: number | null;
+  resultMessage: string | null;
+  resultLabel: string | null;
+  passed: boolean | null;
+  submitted: boolean;
 };
 
-async function evaluateSubmissionWithAI(
-  task: SkillTask | null,
-  submission: string,
-  skill: { name: string; domain?: string | null },
-): Promise<EvalData | null> {
-  if (!task || !submission.trim()) {
-    return null;
-  }
+function practicalTaskStorageKey(userId: string, skillId: string) {
+  return `sijil-practical-task-${userId}-${skillId}`;
+}
 
-  const { data, error } = await supabase.functions.invoke("rapid-task", {
-    body: {
-      action: "evaluate",
-      skill: { name: skill.name, domain: skill.domain ?? "General" },
-      task,
-      submission,
-    },
-  });
-
-  console.log("Evaluation data:", data);
-  console.log("Evaluation error:", error);
-
-  if (error || data?.error) {
-    console.log("Evaluation invoke error:", data?.details || data?.error || error?.message);
-    return {
-      evaluationUnavailable: true,
-      feedback: data?.details || data?.error || error?.message || "Please try again.",
-    };
-  }
-
-  return data as EvalData;
+function practicalTaskModalKey(userId: string) {
+  return `sijil-practical-task-modal-${userId}`;
 }
 
 function genAttemptId() {
@@ -146,307 +80,459 @@ function fmt(ms: number) {
   return `${String(m).padStart(2, "0")}:${String(r).padStart(2, "0")}`;
 }
 
+async function invokeRapidTask(body: Record<string, unknown>) {
+  const { data, error } = await supabase.functions.invoke("rapid-task", { body });
+  return {
+    data: (data as Record<string, unknown> | null) ?? null,
+    error: error ?? null,
+  };
+}
+
+function restoreFromAttemptRecord(existing: AttemptRecord) {
+  const restoredTask = restoreMcqTaskFromSubmission(existing.submission ?? "");
+  const session = parseMcqSession(existing.submission ?? "");
+  const progress = parseMcqProgress(existing.submission ?? "");
+  const submitted = existing.status === "submitted" || existing.status === "auto_submitted";
+
+  return {
+    task: restoredTask,
+    attempt: existing,
+    answers: progress?.answers ?? parseMcqAnswers(existing.submission ?? ""),
+    currentQuestionIndex: progress?.currentIndex ?? 0,
+    questionEndsAt: progress?.questionEndsAt ?? null,
+    resultPercentage: session?.resultPercentage ?? existing.score ?? null,
+    resultMessage: session?.resultMessage ?? existing.feedback ?? null,
+    resultLabel: session?.resultLabel
+      ?? (existing.passed ? "Passed" : existing.score != null ? "Needs Improvement" : null),
+    passed: session?.passed ?? existing.passed ?? (existing.status === "passed" ? true : existing.score != null ? existing.score >= MCQ_PASS_PERCENT : null),
+    submitted,
+  };
+}
+
 export default function PracticalTask() {
   const { user } = useAuth();
+  const userId = user?.id;
   const { skills, loading: skillsLoading } = useDeclaredSkills();
   const { repos } = useGitHub();
   const [attemptsMap, setAttemptsMap] = useState<Record<string, AttemptRecord>>({});
   const [, force] = useState(0);
   const refresh = () => force((n) => n + 1);
+  const modalRestoredRef = useRef(false);
+  const attemptsLoadedRef = useRef(false);
+  const attemptsSkillKeyRef = useRef("");
 
   useEffect(() => {
-    if (!user) return;
-    loadAttempts(user.id, skills.map((s) => s.id)).then(setAttemptsMap);
-  }, [user, skills]);
-
-  const getAttempt = (skillId: string) => attemptsMap[skillId] ?? null;
-  const saveAttempt = async (rec: AttemptRecord) => {
-    if (!user) return;
-    await saveAttemptDb(user.id, rec);
-    setAttemptsMap((m) => ({ ...m, [rec.skillId]: rec }));
-  };
-
-  const [activeSkill, setActiveSkill] = useState<DeclaredSkill | null>(null);
-  const [task, setTask] = useState<TaskWithInstructions | null>(null);
-  const [taskLoading, setTaskLoading] = useState(false);
-  const [attempt, setAttempt] = useState<AttemptRecord | null>(null);
-  const [submission, setSubmission] = useState("");
-  const [evaluating, setEvaluating] = useState(false);
-  const [now, setNow] = useState(Date.now());
-  const tickRef = useRef<number | null>(null);
-
-  const runEvaluation = (
-    currentAttempt: AttemptRecord,
-    currentSkill: DeclaredSkill,
-    currentTask: SkillTask | null,
-    currentSubmission: string,
-  ) => {
-    setEvaluating(true);
-    return evaluateSubmissionWithAI(currentTask, currentSubmission, {
-      name: currentSkill.name,
-      domain: currentSkill.domain,
-    }).then((data) => {
-      if (!data) {
-        toast({
-          title: "Evaluation unavailable",
-          description: "Your submission was saved. Click “Retry evaluation” — Groq is used if Gemini is busy.",
-          variant: "destructive",
-        });
-        return false;
-      }
-
-      if (data.evaluationUnavailable || data.evaluation?.evaluationUnavailable) {
-        toast({
-          title: "Evaluation unavailable",
-          description:
-            data.feedback
-            || "Your submission was saved. Click “Retry evaluation” — Groq is used if Gemini is busy.",
-          variant: "destructive",
-        });
-        return false;
-      }
-
-      if (data.passed === false) {
-        toast({
-          title: "Task not passed",
-          description: data.feedback || "Task not passed. Review feedback and try again.",
-          variant: "destructive",
-        });
-        return false;
-      }
-
-      if (!data.passed || !user) return false;
-
-      const score = data.score ?? 0;
-      const feedback = data.feedback || "";
-      const criteriaResults = data.criteria_results
-        ?? data.evaluation?.criteria_results
-        ?? [];
-      const passedAttempt: AttemptRecord = {
-        ...currentAttempt,
-        status: "passed",
-        submission: currentSubmission,
-        passed: true,
-        score,
-        feedback,
-      };
-
-      markAttemptPassed(user.id, passedAttempt, score, feedback)
-        .then(async () => {
-          setAttempt(passedAttempt);
-          await updateSkillPipelineStage(
-            user.id,
-            currentSkill.id,
-            "institution_attestation_pending",
-            "pending_institution_attestation",
-          );
-          const profile = await fetchLearnerProfile(user.id, user.email);
-
-          const pending = await hasPendingAttestationRequest(user.id, currentSkill.id);
-          if (!pending) {
-            const { data: skillRow } = await supabase
-              .from("declared_skills")
-              .select("created_at")
-              .eq("id", currentSkill.id)
-              .eq("user_id", user.id)
-              .maybeSingle();
-
-            await createInstitutionAttestationRequest({
-              userId: user.id,
-              userEmail: user.email ?? "",
-              profile,
-              skill: {
-                ...currentSkill,
-                createdAt: skillRow?.created_at as string | undefined,
-              },
-              task: currentTask,
-              attempt: passedAttempt,
-              submission: currentSubmission,
-              evaluation: {
-                passed: true,
-                score,
-                feedback,
-                criteriaResults,
-              },
-            });
-          }
-          toast({
-            title: "Task passed",
-            description: "Task passed. Your competency has been sent to your institution for attestation.",
-          });
-          refresh();
-          return true;
-        })
-        .catch((err) => {
-          toast({
-            title: "Could not update competency status",
-            description: err instanceof Error ? err.message : String(err),
-            variant: "destructive",
-          });
-          return false;
-        });
-    }).finally(() => setEvaluating(false));
-  };
-
-  const retryEvaluation = () => {
-    if (!attempt || !activeSkill || !submission.trim()) {
-      toast({
-        title: "Nothing to evaluate",
-        description: "Open your submitted attempt and try again.",
-        variant: "destructive",
-      });
+    if (!userId) {
+      attemptsLoadedRef.current = false;
+      attemptsSkillKeyRef.current = "";
       return;
     }
-    void runEvaluation(attempt, activeSkill, task, submission);
-  };
 
-  // Tick while an attempt is in progress
+    const skillKey = skills.map((s) => s.id).join(",");
+    if (attemptsLoadedRef.current && attemptsSkillKeyRef.current === skillKey) {
+      return;
+    }
+
+    attemptsSkillKeyRef.current = skillKey;
+    loadAttempts(userId, skills.map((s) => s.id)).then((map) => {
+      setAttemptsMap(map);
+      attemptsLoadedRef.current = true;
+    });
+  }, [userId, skills]);
+
+  const getAttempt = useCallback((skillId: string) => attemptsMap[skillId] ?? null, [attemptsMap]);
+  const saveAttempt = useCallback(async (rec: AttemptRecord) => {
+    if (!userId) return;
+    await saveAttemptDb(userId, rec);
+    setAttemptsMap((m) => ({ ...m, [rec.skillId]: rec }));
+  }, [userId]);
+
+  const [activeSkill, setActiveSkill] = useState<DeclaredSkill | null>(null);
+  const [task, setTask] = useState<McqTask | null>(null);
+  const [taskLoading, setTaskLoading] = useState(false);
+  const [generatingMcqs, setGeneratingMcqs] = useState(false);
+  const [generateError, setGenerateError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState<AttemptRecord | null>(null);
+  const [answers, setAnswers] = useState<McqAnswerMap>({});
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  const [questionEndsAt, setQuestionEndsAt] = useState<string | null>(null);
+  const [evaluating, setEvaluating] = useState(false);
+  const [resultPercentage, setResultPercentage] = useState<number | null>(null);
+  const [resultMessage, setResultMessage] = useState<string | null>(null);
+  const [resultLabel, setResultLabel] = useState<string | null>(null);
+  const [passed, setPassed] = useState<boolean | null>(null);
+  const [now, setNow] = useState(Date.now());
+  const tickRef = useRef<number | null>(null);
+  const advancingRef = useRef(false);
+
+  const storageKey = userId && activeSkill?.id
+    ? practicalTaskStorageKey(userId, activeSkill.id)
+    : null;
+
+  const isSubmitted = attempt && (
+    attempt.status === "submitted"
+    || attempt.status === "auto_submitted"
+  );
+
+  const applyStoredState = useCallback((stored: StoredPracticalTaskState) => {
+    if (stored.task) setTask(stored.task);
+    if (stored.attempt) setAttempt(stored.attempt);
+    if (stored.answers) setAnswers(stored.answers);
+    if (typeof stored.currentQuestionIndex === "number") {
+      setCurrentQuestionIndex(stored.currentQuestionIndex);
+    }
+    if (stored.questionEndsAt) setQuestionEndsAt(stored.questionEndsAt);
+    if (typeof stored.resultPercentage === "number") setResultPercentage(stored.resultPercentage);
+    if (stored.resultMessage) setResultMessage(stored.resultMessage);
+    if (stored.resultLabel) setResultLabel(stored.resultLabel);
+    if (typeof stored.passed === "boolean") setPassed(stored.passed);
+  }, []);
+
+  const hydratePracticalTaskState = useCallback((skillId: string): boolean => {
+    if (!userId) return false;
+    const saved = localStorage.getItem(practicalTaskStorageKey(userId, skillId));
+    if (!saved) return false;
+
+    try {
+      const parsed = JSON.parse(saved) as StoredPracticalTaskState;
+      applyStoredState(parsed);
+      return Boolean(parsed.task || parsed.attempt);
+    } catch (error) {
+      console.warn("Could not restore practical task state:", error);
+      return false;
+    }
+  }, [applyStoredState, userId]);
+
+  const resetPracticalTaskState = useCallback((skillId?: string) => {
+    setTask(null);
+    setAttempt(null);
+    setAnswers({});
+    setCurrentQuestionIndex(0);
+    setQuestionEndsAt(null);
+    setResultPercentage(null);
+    setResultMessage(null);
+    setResultLabel(null);
+    setPassed(null);
+    setGenerateError(null);
+
+    if (userId) {
+      const key = skillId
+        ? practicalTaskStorageKey(userId, skillId)
+        : storageKey;
+      if (key) localStorage.removeItem(key);
+    }
+  }, [storageKey, userId]);
+
+  useEffect(() => {
+    if (!storageKey) return;
+
+    const payload: StoredPracticalTaskState = {
+      task,
+      attempt,
+      answers,
+      currentQuestionIndex,
+      questionEndsAt,
+      resultPercentage,
+      resultMessage,
+      resultLabel,
+      passed,
+      submitted: Boolean(isSubmitted),
+    };
+
+    localStorage.setItem(storageKey, JSON.stringify(payload));
+  }, [
+    storageKey,
+    task,
+    attempt,
+    answers,
+    currentQuestionIndex,
+    questionEndsAt,
+    resultPercentage,
+    resultMessage,
+    resultLabel,
+    passed,
+    isSubmitted,
+  ]);
+
+  useEffect(() => {
+    if (!userId) return;
+    if (activeSkill?.id) {
+      localStorage.setItem(practicalTaskModalKey(userId), activeSkill.id);
+    }
+  }, [userId, activeSkill?.id]);
+
+  const currentQuestion = task?.questions[currentQuestionIndex] ?? null;
+  const isLastQuestion = task ? currentQuestionIndex >= task.questions.length - 1 : false;
+  const isFirstQuestion = currentQuestionIndex === 0;
+  const currentAnswerSelected = currentQuestion ? answers[currentQuestion.id] != null : false;
+
+  const questionRemainingMs = useMemo(() => {
+    if (!questionEndsAt || attempt?.status !== "in_progress") return 0;
+    return new Date(questionEndsAt).getTime() - now;
+  }, [questionEndsAt, now, attempt?.status]);
+
+  const persistProgress = useCallback(async (
+    rec: AttemptRecord,
+    currentTask: McqTask,
+    nextAnswers: McqAnswerMap,
+    nextIndex: number,
+    nextQuestionEndsAt: string,
+  ) => {
+    const { attemptId, ...taskBody } = currentTask;
+    const updated: AttemptRecord = {
+      ...rec,
+      submission: serializeMcqSession({
+        _mcqSession: true,
+        attemptId,
+        task: taskBody,
+        progress: {
+          answers: nextAnswers,
+          currentIndex: nextIndex,
+          questionEndsAt: nextQuestionEndsAt,
+        },
+      }),
+    };
+    await saveAttempt(updated);
+    setAttempt(updated);
+    setAnswers(nextAnswers);
+    setCurrentQuestionIndex(nextIndex);
+    setQuestionEndsAt(nextQuestionEndsAt);
+  }, [saveAttempt]);
+
+  const submitMcqAttempt = useCallback(async (answersOverride?: McqAnswerMap) => {
+    if (!task || !attempt || !activeSkill || !userId) return;
+
+    setEvaluating(true);
+    try {
+      const submissionAnswers = buildMcqSubmissionAnswers(task, answersOverride ?? answers);
+      const result = await evaluateSecureMcqAttempt(task.attemptId, submissionAnswers, invokeRapidTask);
+      setResultPercentage(result.percentage);
+      setResultMessage(result.message);
+      setResultLabel(result.resultLabel);
+      setPassed(result.passed);
+
+      const { attemptId, ...taskBody } = task;
+      const evaluatedAttempt: AttemptRecord = {
+        ...attempt,
+        status: result.passed ? "passed" : "submitted",
+        passed: result.passed,
+        score: result.percentage,
+        feedback: result.message,
+        submission: serializeMcqSession({
+          _mcqSession: true,
+          attemptId,
+          task: taskBody,
+          progress: {
+            answers: submissionAnswers,
+            currentIndex: currentQuestionIndex,
+            questionEndsAt: questionEndsAt ?? new Date().toISOString(),
+          },
+          resultPercentage: result.percentage,
+          resultMessage: result.message,
+          resultLabel: result.resultLabel,
+          passed: result.passed,
+        }),
+      };
+
+      await saveAttempt(evaluatedAttempt);
+      setAttempt(evaluatedAttempt);
+
+      toast({
+        title: result.resultLabel,
+        description: result.message,
+      });
+
+      refresh();
+    } catch (err) {
+      toast({
+        title: "Could not submit MCQ",
+        description: err instanceof Error ? err.message : String(err),
+        variant: "destructive",
+      });
+    } finally {
+      setEvaluating(false);
+    }
+  }, [task, attempt, activeSkill, userId, answers, currentQuestionIndex, questionEndsAt, saveAttempt]);
+
+  const advanceQuestion = useCallback(async (timedOut = false) => {
+    if (advancingRef.current || !task || !attempt || !activeSkill || attempt.status !== "in_progress") {
+      return;
+    }
+    advancingRef.current = true;
+
+    try {
+      if (isLastQuestion) {
+        await submitMcqAttempt(answers);
+        return;
+      }
+
+      const nextIndex = currentQuestionIndex + 1;
+      const nextEndsAt = new Date(Date.now() + MCQ_SECONDS_PER_QUESTION * 1000).toISOString();
+      await persistProgress(attempt, task, answers, nextIndex, nextEndsAt);
+      setNow(Date.now());
+
+      if (timedOut) {
+        toast({
+          title: "Time up",
+          description: `Question ${currentQuestionIndex + 1} closed. Showing question ${nextIndex + 1}.`,
+        });
+      }
+    } finally {
+      advancingRef.current = false;
+    }
+  }, [task, attempt, activeSkill, currentQuestionIndex, answers, isLastQuestion, persistProgress, submitMcqAttempt]);
+
   useEffect(() => {
     if (!attempt || attempt.status !== "in_progress") return;
     tickRef.current = window.setInterval(() => setNow(Date.now()), 1000);
     return () => { if (tickRef.current) window.clearInterval(tickRef.current); };
   }, [attempt?.attemptId, attempt?.status]);
 
-  const remainingMs = useMemo(() => {
-    if (!attempt) return 0;
-    return new Date(attempt.endsAt).getTime() - now;
-  }, [attempt, now]);
-
-  // Auto-submit when time runs out
   useEffect(() => {
-    if (!attempt || attempt.status !== "in_progress") return;
-    if (remainingMs > 0) return;
-    const finalStatus: AttemptRecord["status"] = submission.trim()
-      ? "auto_submitted"
-      : "expired_no_submission";
-    const updated: AttemptRecord = { ...attempt, status: finalStatus, submission };
-    saveAttempt(updated).then(async () => {
-      setAttempt(updated);
-      toast({
-        title: finalStatus === "auto_submitted" ? "Time up — auto-submitted" : "Time up — no submission recorded",
-        description: finalStatus === "auto_submitted"
-          ? "Your work was captured and locked against this skill."
-          : "Attempt closed with no artifact. New attempt available only after next credential sync.",
-        variant: finalStatus === "auto_submitted" ? "default" : "destructive",
-      });
-      if (finalStatus === "auto_submitted" && activeSkill && user) {
-        await updateSkillPipelineStage(user.id, activeSkill.id, "practical_task");
-        runEvaluation(updated, activeSkill, task, submission);
-      }
-      refresh();
-    }).catch((err) => {
-      toast({
-        title: "Could not save attempt",
-        description: err instanceof Error ? err.message : String(err),
-        variant: "destructive",
-      });
-    });
-  }, [remainingMs, attempt?.status, submission]);
+    if (!attempt || attempt.status !== "in_progress" || !task || !questionEndsAt) return;
+    if (questionRemainingMs > 0) return;
+    void advanceQuestion(true);
+  }, [questionRemainingMs, attempt?.status, task, questionEndsAt, advanceQuestion]);
 
-  const openSkill = async (skill: DeclaredSkill) => {
+  const openSkill = useCallback(async (skill: DeclaredSkill) => {
     setActiveSkill(skill);
-    setSubmission("");
-    setAttempt(null);
-    setTask(null);
+    setGenerateError(null);
     setTaskLoading(true);
+
     try {
-      const matchedRepos = repos.filter(r =>
-        r.language?.toLowerCase().includes(skill.name.toLowerCase()) ||
-        skill.name.toLowerCase().includes((r.language ?? "").toLowerCase())
-      );
-      const { task: generatedTask, fallback } = await generateTaskFromRapidTask(
-        { name: skill.name, domain: skill.domain ?? "General" },
-        matchedRepos,
-        skill.id,
-      );
-      setTask(generatedTask);
+      const restoredFromStorage = hydratePracticalTaskState(skill.id);
+      if (restoredFromStorage) return;
 
-      if (fallback) {
-        toast({
-          title: "AI quota reached",
-          description: "A local skill-specific task was generated for this attempt.",
-        });
+      const existing = attemptsMap[skill.id] ?? null;
+      if (existing) {
+        applyStoredState(restoreFromAttemptRecord(existing));
+        return;
       }
 
-      const existing = getAttempt(skill.id);
-      if (existing && !isGenericTask(generatedTask)) {
-        setAttempt(existing);
-        setSubmission(existing.submission ?? "");
-      } else {
-        setAttempt(null);
-      }
-    } catch (err) {
       setTask(null);
-      toast({
-        title: "Task generation failed",
-        description: err instanceof Error ? err.message : String(err),
-        variant: "destructive",
-      });
+      setAttempt(null);
+      setAnswers({});
+      setCurrentQuestionIndex(0);
+      setQuestionEndsAt(null);
+      setResultPercentage(null);
+      setResultMessage(null);
+      setResultLabel(null);
+      setPassed(null);
     } finally {
       setTaskLoading(false);
     }
-  };
+  }, [applyStoredState, attemptsMap, hydratePracticalTaskState]);
 
-  const startAttempt = () => {
-    if (!activeSkill || !task) return;
-    const start = new Date();
-    const end = new Date(start.getTime() + task.durationMinutes * 60 * 1000);
-    const rec: AttemptRecord = {
-      skillId: activeSkill.id,
-      attemptId: genAttemptId(),
-      startedAt: start.toISOString(),
-      endsAt: end.toISOString(),
-      durationMinutes: task.durationMinutes,
-      status: "in_progress",
-      submission: "",
-      credentialSyncSnapshot: activeSkill.lastCredentialSyncAt ?? null,
-    };
-    saveAttempt(rec).then(() => {
+  useEffect(() => {
+    if (!userId || skillsLoading || modalRestoredRef.current) return;
+
+    const savedSkillId = localStorage.getItem(practicalTaskModalKey(userId));
+    if (!savedSkillId) return;
+
+    const skill = skills.find((s) => s.id === savedSkillId);
+    if (!skill) return;
+
+    modalRestoredRef.current = true;
+    void openSkill(skill);
+  }, [userId, skillsLoading, skills, openSkill]);
+
+  const startMcqAttempt = async () => {
+    if (!activeSkill) return;
+
+    resetPracticalTaskState(activeSkill.id);
+    setGeneratingMcqs(true);
+
+    try {
+      const generatedTask = await generateSecureMcqTask(activeSkill, repos, invokeRapidTask);
+      setTask(generatedTask);
+
+      const start = new Date();
+      const totalMs = generatedTask.questions.length * MCQ_SECONDS_PER_QUESTION * 1000;
+      const end = new Date(start.getTime() + totalMs);
+      const progress = createInitialMcqProgress();
+      const { attemptId, ...taskBody } = generatedTask;
+
+      const rec: AttemptRecord = {
+        skillId: activeSkill.id,
+        attemptId: genAttemptId(),
+        startedAt: start.toISOString(),
+        endsAt: end.toISOString(),
+        durationMinutes: generatedTask.durationMinutes,
+        status: "in_progress",
+        submission: serializeMcqSession({
+          _mcqSession: true,
+          attemptId,
+          task: taskBody,
+          progress,
+        }),
+        credentialSyncSnapshot: activeSkill.lastCredentialSyncAt ?? null,
+      };
+
+      await saveAttempt(rec);
       setAttempt(rec);
-      setSubmission("");
+      setAnswers({});
+      setCurrentQuestionIndex(0);
+      setQuestionEndsAt(progress.questionEndsAt);
       setNow(Date.now());
-      toast({ title: "Attempt started", description: `Timer running · ${task.durationMinutes} min window.` });
-    });
+      toast({
+        title: "MCQ ready",
+        description: `${generatedTask.questions.length} AI-generated questions · ${MCQ_SECONDS_PER_QUESTION}s each.`,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setGenerateError(message);
+      toast({ title: "Could not generate MCQ", description: message, variant: "destructive" });
+    } finally {
+      setGeneratingMcqs(false);
+    }
   };
 
-  const submitNow = () => {
-    if (!attempt || !activeSkill || !user) return;
-    const updated: AttemptRecord = { ...attempt, status: "submitted", submission };
-    saveAttempt(updated).then(async () => {
-      setAttempt(updated);
-      await updateSkillPipelineStage(user.id, activeSkill.id, "practical_task");
-      toast({ title: "Submitted", description: "Submission locked against this skill." });
-      runEvaluation(updated, activeSkill, task, submission);
-    }).catch((err) => {
+  const selectAnswer = (questionId: string, optionId: McqOptionId) => {
+    if (!attempt || attempt.status !== "in_progress" || !questionEndsAt || !task) return;
+    const nextAnswers = { ...answers, [questionId]: optionId };
+    setAnswers(nextAnswers);
+    void persistProgress(attempt, task, nextAnswers, currentQuestionIndex, questionEndsAt);
+  };
+
+  const goToPreviousQuestion = () => {
+    if (!task || !attempt || isFirstQuestion) return;
+    const nextIndex = currentQuestionIndex - 1;
+    const nextEndsAt = new Date(Date.now() + MCQ_SECONDS_PER_QUESTION * 1000).toISOString();
+    void persistProgress(attempt, task, answers, nextIndex, nextEndsAt);
+    setNow(Date.now());
+  };
+
+  const goToNextQuestion = () => {
+    if (!currentAnswerSelected) {
       toast({
-        title: "Could not save submission",
-        description: err instanceof Error ? err.message : String(err),
+        title: "Select an answer",
+        description: "Choose an option before continuing.",
         variant: "destructive",
       });
-    });
+      return;
+    }
+    void advanceQuestion(false);
   };
 
   const closePanel = () => {
-    setActiveSkill(null); setTask(null); setAttempt(null); setSubmission("");
+    setActiveSkill(null);
     refresh();
   };
 
   const statusBadge = (skill: DeclaredSkill) => {
     const a = getAttempt(skill.id);
-    const locked = isAttemptLocked(skill, getAttempt(skill.id));
+    const locked = isAttemptLocked(skill, a);
     if (!a) return <StatusBadge variant="neutral">No Attempt</StatusBadge>;
     if (a.status === "in_progress") return <StatusBadge variant="info">In Progress</StatusBadge>;
-    if (a.status === "passed") return <StatusBadge variant="verified" icon={<CheckCircle2 className="h-3 w-3" />}>Passed</StatusBadge>;
-    if (a.status === "submitted") return <StatusBadge variant="info">Submitted</StatusBadge>;
-    if (a.status === "auto_submitted") return <StatusBadge variant="info">Auto-Submitted</StatusBadge>;
+    if (a.status === "submitted" || a.status === "auto_submitted") {
+      if (a.score != null) {
+        return <StatusBadge variant="info">Submitted · {a.score}%</StatusBadge>;
+      }
+      return <StatusBadge variant="info">Submitted</StatusBadge>;
+    }
     if (a.status === "expired_no_submission") return <StatusBadge variant="warning">No Submission</StatusBadge>;
     return locked ? <StatusBadge variant="neutral">Locked</StatusBadge> : <StatusBadge variant="neutral">Available</StatusBadge>;
   };
-
-  const learnerQuestion = useMemo(() => {
-    if (!task) return null;
-    return task.scenario || task.instructions || task.prompt || null;
-  }, [task]);
 
   if (skillsLoading) {
     return <AppShell role="learner"><div className="text-sm text-muted-foreground">Loading skills…</div></AppShell>;
@@ -456,12 +542,12 @@ export default function PracticalTask() {
     <AppShell role="learner">
       <PageHeader
         title="Practical Tasks"
-        description="Tasks are generated from your synced skills. One attempt per skill until the next credential sync. Timer is bound to task type and starts the moment you open the task."
+        description="AI-generated MCQ tests based on your declared competency and linked evidence. Answers are evaluated securely on the server."
       />
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Skill-bound tasks</CardTitle>
+          <CardTitle className="text-base">Skill-bound practical checks</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           <div className="divide-y">
@@ -481,25 +567,23 @@ export default function PracticalTask() {
                         <StatusBadge variant="warning" icon={<AlertTriangle className="h-3 w-3" />}>Skill decaying</StatusBadge>
                       )}
                     </div>
-                    <div className="text-xs text-muted-foreground mt-1">
-                      Practical task · generated when you start · {s.domain}
-                    </div>
+                    <div className="text-xs text-muted-foreground mt-1">MCQ practical task · {s.domain}</div>
                     <div className="text-[11px] text-muted-foreground mt-0.5">
                       Last related sync: {lastDays === null ? "never" : `${lastDays}d ago`}
                       {locked && <> · Locked until next credential sync</>}
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    {a && (a.status === "submitted" || a.status === "passed" || a.status === "auto_submitted" || a.status === "expired_no_submission") ? (
-                      <Button variant="outline" onClick={() => openSkill(s)}>
+                    {a && (a.status === "submitted" || a.status === "auto_submitted") ? (
+                      <Button variant="outline" onClick={() => void openSkill(s)}>
                         <Lock className="h-4 w-4 mr-1.5" />View attempt
                       </Button>
                     ) : a && a.status === "in_progress" ? (
-                      <Button onClick={() => openSkill(s)}>
-                        <Timer className="h-4 w-4 mr-1.5" />Resume task
+                      <Button onClick={() => void openSkill(s)}>
+                        <Timer className="h-4 w-4 mr-1.5" />Resume MCQ
                       </Button>
                     ) : (
-                      <Button onClick={() => openSkill(s)} disabled={locked && !a}>
+                      <Button onClick={() => void openSkill(s)} disabled={locked && !a}>
                         <Play className="h-4 w-4 mr-1.5" />Start task
                       </Button>
                     )}
@@ -513,18 +597,51 @@ export default function PracticalTask() {
 
       <p className="text-xs text-muted-foreground mt-4 flex items-center gap-1.5">
         <RefreshCcw className="h-3.5 w-3.5" />
-        A skill becomes available for a new attempt only when fresh credentials sync from your institution.
+        MCQ content cannot be copied. Percentage results are shown after submission; answer keys are never shown to learners.
       </p>
 
-      {/* Task / attempt dialog */}
       <Dialog open={!!activeSkill} onOpenChange={(o) => { if (!o) closePanel(); }}>
-        <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col overflow-hidden gap-4">
+        <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col overflow-hidden gap-4" {...NO_COPY_PROPS}>
           {activeSkill && (
             taskLoading ? (
               <div className="flex flex-1 flex-col items-center justify-center py-16 gap-3 min-h-0">
                 <RefreshCcw className="h-6 w-6 animate-spin text-muted-foreground" />
-                <span className="text-sm text-muted-foreground">Generating your task…</span>
+                <span className="text-sm text-muted-foreground">Loading attempt…</span>
               </div>
+            ) : !attempt ? (
+              <>
+                <DialogHeader className="shrink-0 pr-8">
+                  <DialogTitle>{activeSkill.name} Practical Task</DialogTitle>
+                  <DialogDescription>
+                    MCQ tests are generated from your competency and linked GitHub/Moodle evidence.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="rounded-lg border-2 border-dashed border-border p-6 text-center bg-muted/30">
+                  <Lock className="h-6 w-6 mx-auto text-muted-foreground mb-2" />
+                  <div className="text-sm font-medium">Generate AI MCQ Task</div>
+                  <div className="text-xs text-muted-foreground mt-1">
+                    10 questions · 4 easy, 4 medium, 2 hard · {MCQ_SECONDS_PER_QUESTION}s per question
+                  </div>
+                  {generateError && <p className="text-xs text-destructive mt-3">{generateError}</p>}
+                  <Button
+                    className="mt-4"
+                    onClick={() => void startMcqAttempt()}
+                    disabled={generatingMcqs}
+                  >
+                    {generatingMcqs ? (
+                      <>
+                        <RefreshCcw className="h-4 w-4 mr-1.5 animate-spin" />
+                        Generating MCQ Task…
+                      </>
+                    ) : (
+                      <>
+                        <Play className="h-4 w-4 mr-1.5" />
+                        {generateError ? "Retry Generate MCQ Task" : "Generate MCQ Task"}
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </>
             ) : task ? (
               <>
                 <DialogHeader className="shrink-0 pr-8">
@@ -533,95 +650,89 @@ export default function PracticalTask() {
                     <span className="text-xs text-muted-foreground font-normal">· {activeSkill.name}</span>
                   </DialogTitle>
                   <DialogDescription>
-                    {task.type} · {task.durationMinutes}-minute window. Timer starts when you click Start.
+                    {task.questions.length} MCQs · {MCQ_SECONDS_PER_QUESTION}s per question · one at a time
                   </DialogDescription>
                 </DialogHeader>
 
-                <div className="flex-1 min-h-0 overflow-y-auto pr-2 -mr-2">
-                  {!attempt ? (
-                    <div className="rounded-lg border-2 border-dashed border-border p-6 text-center bg-muted/30">
-                      <Lock className="h-6 w-6 mx-auto text-muted-foreground mb-2" />
-                      <div className="text-sm font-medium">Task is hidden until you start the attempt.</div>
-                      <div className="text-xs text-muted-foreground mt-1">One attempt per skill until next credential sync.</div>
-                      <Button className="mt-4" onClick={startAttempt} disabled={taskLoading || !learnerQuestion}>
-                        <Play className="h-4 w-4 mr-1.5" />Start task
-                      </Button>
+                <div className="flex-1 min-h-0 overflow-y-auto pr-2 -mr-2" {...NO_COPY_PROPS}>
+                  {isSubmitted ? (
+                    <div className="space-y-4">
+                      <div className="rounded-md border bg-muted/30 p-4 text-sm space-y-2">
+                        <p>Test submitted successfully.</p>
+                        <p className="font-medium">
+                          Result: {resultPercentage ?? attempt.score ?? "—"}%
+                          {resultLabel && (
+                            <span className={passed ? " text-success" : " text-destructive"}>
+                              {" "}· {resultLabel}
+                            </span>
+                          )}
+                        </p>
+                        <p className="text-muted-foreground">
+                          Sent to institution attestation.
+                          {!passed && resultLabel === "Needs Improvement" && (
+                            <> Your institution will review this attempt alongside your score.</>
+                          )}
+                        </p>
+                        {resultMessage && (
+                          <p className="text-muted-foreground text-xs">{resultMessage}</p>
+                        )}
+                      </div>
                     </div>
-                  ) : (
+                  ) : currentQuestion ? (
                     <div className="space-y-4">
                       <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/40 px-3 py-2 text-sm">
                         <div className="flex items-center gap-3">
-                          <span className="text-muted-foreground">Attempt</span>
-                          <span className="mono text-xs">{attempt.attemptId}</span>
+                          <span className="text-muted-foreground">Question</span>
+                          <span className="font-medium">{currentQuestionIndex + 1} / {task.questions.length}</span>
+                          <span className="text-xs capitalize text-muted-foreground">{currentQuestion.difficulty}</span>
                         </div>
                         <div className="flex items-center gap-1.5">
                           <Timer className="h-3.5 w-3.5 text-muted-foreground" />
-                          <span className="mono">
-                            {attempt.status === "in_progress" ? fmt(remainingMs) : "00:00"}
+                          <span className={`mono ${questionRemainingMs <= 10000 ? "text-destructive font-semibold" : ""}`}>
+                            {fmt(questionRemainingMs)}
                           </span>
-                          <span className="ml-2">{
-                            attempt.status === "in_progress" ? <StatusBadge variant="info">In Progress</StatusBadge> :
-                            attempt.status === "passed" ? <StatusBadge variant="verified">Passed</StatusBadge> :
-                            attempt.status === "submitted" ? <StatusBadge variant="info">Submitted</StatusBadge> :
-                            attempt.status === "auto_submitted" ? <StatusBadge variant="info">Auto-Submitted</StatusBadge> :
-                            <StatusBadge variant="warning">No Submission</StatusBadge>
-                          }</span>
+                          <StatusBadge variant="info">In Progress</StatusBadge>
                         </div>
                       </div>
 
-                      <div className="space-y-4">
-                        <div>
-                          <div className="text-sm font-medium mb-1">Scenario</div>
-                          {learnerQuestion ? (
-                            <p className="text-sm text-muted-foreground leading-relaxed select-text">{learnerQuestion}</p>
-                          ) : (
-                            <p className="text-red-500 text-sm">
-                              Task details are missing. Please generate a new task.
-                            </p>
-                          )}
-                        </div>
-
-                        {task.starterCode && (
-                          <div>
-                            <div className="text-sm font-medium mb-1">Starter</div>
-                            <pre className="text-xs bg-muted/60 border rounded-md p-3 overflow-x-auto overflow-y-auto max-h-48 mono whitespace-pre select-text">
-                              {task.starterCode}
-                            </pre>
-                          </div>
-                        )}
-
-                        <p className="text-xs text-muted-foreground mt-2">
-                          You can select and copy the scenario and starter code into your answer below.
-                        </p>
-                      </div>
-
-                      <div>
-                        <div className="text-sm font-medium mb-1">Your work</div>
-                        <Textarea
-                          value={submission}
-                          onChange={(e) => setSubmission(e.target.value)}
-                          placeholder="Write or paste your code/answer here…"
-                          rows={10}
-                          className="mono text-xs min-h-[10rem] max-h-64 resize-y overflow-y-auto"
-                          disabled={attempt.status !== "in_progress"}
-                        />
+                      <div className="rounded-md border p-5 space-y-4" {...NO_COPY_PROPS}>
+                        <div className="text-sm font-medium leading-relaxed">{currentQuestion.question}</div>
+                        <RadioGroup
+                          value={answers[currentQuestion.id] ?? ""}
+                          onValueChange={(value) => selectAnswer(currentQuestion.id, value as McqOptionId)}
+                        >
+                          {currentQuestion.options.map((option) => (
+                            <div key={option.id} className="flex items-center space-x-2">
+                              <RadioGroupItem value={option.id} id={`${currentQuestion.id}-${option.id}`} />
+                              <Label htmlFor={`${currentQuestion.id}-${option.id}`} className="text-sm font-normal cursor-pointer">
+                                <span className="font-medium mr-2">{option.id}.</span>
+                                {option.text}
+                              </Label>
+                            </div>
+                          ))}
+                        </RadioGroup>
                       </div>
                     </div>
-                  )}
+                  ) : null}
                 </div>
 
-                <DialogFooter className="shrink-0">
-                  {attempt && attempt.status === "in_progress" ? (
-                    <Button onClick={submitNow} disabled={evaluating}>
-                      <Send className="h-4 w-4 mr-1.5" />Submit attempt
-                    </Button>
-                  ) : attempt && (attempt.status === "submitted" || attempt.status === "auto_submitted") ? (
+                <DialogFooter className="shrink-0 flex-wrap gap-2">
+                  {attempt.status === "in_progress" && currentQuestion ? (
                     <>
-                      <Button variant="outline" onClick={closePanel}>Close</Button>
-                      <Button onClick={retryEvaluation} disabled={evaluating || !submission.trim()}>
-                        <RefreshCcw className={`h-4 w-4 mr-1.5 ${evaluating ? "animate-spin" : ""}`} />
-                        {evaluating ? "Evaluating…" : "Retry evaluation"}
+                      <Button variant="outline" onClick={goToPreviousQuestion} disabled={isFirstQuestion || evaluating}>
+                        <ChevronLeft className="h-4 w-4 mr-1" />Previous
                       </Button>
+                      {isLastQuestion ? (
+                        <Button onClick={goToNextQuestion} disabled={evaluating || !currentAnswerSelected}>
+                          <Send className="h-4 w-4 mr-1.5" />
+                          {evaluating ? "Submitting…" : "Submit MCQ"}
+                        </Button>
+                      ) : (
+                        <Button onClick={goToNextQuestion} disabled={evaluating || !currentAnswerSelected}>
+                          Next
+                          <ChevronRight className="h-4 w-4 ml-1" />
+                        </Button>
+                      )}
                     </>
                   ) : (
                     <Button variant="outline" onClick={closePanel}>Close</Button>
@@ -630,11 +741,9 @@ export default function PracticalTask() {
               </>
             ) : (
               <div className="flex flex-1 flex-col items-center justify-center py-16 gap-3 min-h-0">
-                <p className="text-red-500 text-sm text-center px-4">
-                  Task details are missing. Please generate a new task.
-                </p>
-                <Button onClick={() => openSkill(activeSkill)}>
-                  <RefreshCcw className="h-4 w-4 mr-1.5" />Generate new task
+                <p className="text-sm text-center px-4 text-muted-foreground">Attempt data could not be loaded.</p>
+                <Button onClick={() => void openSkill(activeSkill)}>
+                  <RefreshCcw className="h-4 w-4 mr-1.5" />Reload
                 </Button>
               </div>
             )
