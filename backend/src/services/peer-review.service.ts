@@ -57,6 +57,47 @@ function generateToken(): string {
   return randomBytes(32).toString("hex");
 }
 
+function normalizeText(value: string | null | undefined): string {
+  return (value ?? "").trim().toLowerCase();
+}
+
+function contributorIdentityMatches(
+  contributor: Pick<PeerReviewContributorView, "id" | "name" | "handle" | "email">,
+  contributorId: string,
+  contributorEmail?: string,
+): boolean {
+  const requestedId = normalizeText(contributorId);
+  const requestedEmail = normalizeText(contributorEmail);
+  const contributorHandle = normalizeText(contributor.handle);
+  const contributorName = normalizeText(contributor.name);
+  const contributorIdValue = normalizeText(contributor.id);
+  const contributorEmailValue = normalizeText(contributor.email);
+
+  if (requestedId && (
+    contributorIdValue === requestedId
+    || contributorHandle === requestedId.replace(/^@/, "")
+    || `@${contributorHandle}` === requestedId
+    || contributorName === requestedId
+  )) {
+    return true;
+  }
+
+  return Boolean(
+    requestedEmail
+    && contributorEmailValue
+    && contributorEmailValue === requestedEmail,
+  );
+}
+
+function isEmailInviteContributorId(value: string): boolean {
+  return normalizeText(value).startsWith("email-");
+}
+
+function reviewerNameFromEmail(email: string): string {
+  const localPart = email.split("@")[0] ?? email;
+  return localPart.replace(/[._-]+/g, " ").replace(/\b\w/g, (char) => char.toUpperCase()) || email;
+}
+
 function parseProjectId(projectId: string): { kind: "gh" | "ev" | "lms"; id: string } | null {
   if (projectId.startsWith("gh-")) return { kind: "gh", id: projectId.slice(3) };
   if (projectId.startsWith("ev-")) return { kind: "ev", id: projectId.slice(3) };
@@ -270,10 +311,22 @@ async function ensureContributorVerified(
   userId: string,
   project: ResolvedProject,
   contributorId: string,
+  contributorEmail?: string,
 ): Promise<PeerReviewContributorView> {
   const contributors = await fetchContributorsForProject(userId, project);
-  const contributor = contributors.find((c) => c.id === contributorId);
+  const contributor = contributors.find((c) => contributorIdentityMatches(c, contributorId, contributorEmail));
   if (!contributor) {
+    if (isEmailInviteContributorId(contributorId) && contributorEmail?.trim()) {
+      return {
+        id: contributorId,
+        name: reviewerNameFromEmail(contributorEmail),
+        email: contributorEmail.trim().toLowerCase(),
+        role: project.source === "LMS" ? "Instructor" : "Project Collaborator",
+        relationship: RELATIONSHIP.CONTRIBUTOR,
+        verified: true,
+        reviewStatus: "Review Pending",
+      };
+    }
     throw new AppError("Only verified contributors of the same project can submit reviews", 403);
   }
   return contributor;
@@ -375,6 +428,118 @@ async function triggerGitHubImport(userId: string, project: ResolvedProject): Pr
   } catch {
     // Best-effort import when loading contributors or sending invites.
   }
+}
+
+async function fetchSupplementalGitHubReviews(userId: string): Promise<PeerReviewRecordView[]> {
+  const { data, error } = await supabaseService.client
+    .from("github_discussion_reviews")
+    .select("*")
+    .eq("learner_user_id", userId)
+    .order("comment_created_at", { ascending: false, nullsFirst: false });
+
+  if (error) return [];
+
+  return (data ?? []).map((row) => ({
+    id: `gh-discussion-${row.id as string}`,
+    reviewerName: (row.comment_author as string) ?? "GitHub reviewer",
+    reviewerRole: "Project Collaborator",
+    source: "GitHub",
+    origin: "GitHub Discussion",
+    skill: (row.competency_name as string) ?? (row.repo_name as string) ?? "Declared competency",
+    projectId: row.repo_name ? `gh-discussion:${row.repo_name as string}` : undefined,
+    projectName: (row.repo_name as string) ?? undefined,
+    evidenceLabel: (row.discussion_title as string) ?? (row.repo_name as string) ?? "GitHub discussion review",
+    evidenceUrl: (row.comment_url as string) ?? (row.discussion_url as string) ?? undefined,
+    rating: 3,
+    comment: (row.comment_body as string) ?? "",
+    recommendation: undefined,
+    date: (row.comment_created_at as string) ?? (row.created_at as string),
+    contextStatus: (row.is_peer_review ? CONTEXT_STATUS.VERIFIED : CONTEXT_STATUS.PENDING) as string,
+    contributorVerification: row.is_peer_review ? CONTRIBUTOR_VERIFICATION.VERIFIED : undefined,
+    trustWeight: row.is_peer_review ? "High Trust" : "Medium Trust",
+    trustWeightScore: row.is_peer_review ? 0.9 : 0.6,
+    relationship: RELATIONSHIP.CONTRIBUTOR,
+    imported: true,
+  })).filter((review) => review.comment.trim().length > 0);
+}
+
+async function fetchSupplementalLmsReviews(userId: string): Promise<PeerReviewRecordView[]> {
+  const [feedbackRes, assignmentsRes, importedEvidenceRes, lmsEvidenceRes, skillsRes] = await Promise.all([
+    supabaseService.client
+      .from("moodle_feedback")
+      .select("moodle_assignment_id, feedback_text, synced_at, created_at")
+      .eq("user_id", userId),
+    supabaseService.client
+      .from("moodle_assignments")
+      .select("moodle_assignment_id, moodle_course_id, name, submission_status, graded_at, submitted_at, synced_at")
+      .eq("user_id", userId),
+    supabaseService.client
+      .from("imported_lms_evidence")
+      .select("moodle_assignment_id, moodle_course_id, course_name, activity_name, lms_evidence_id, imported_at")
+      .eq("user_id", userId),
+    supabaseService.client
+      .from("lms_evidence")
+      .select("id, linked_skill_id, course_name")
+      .eq("user_id", userId),
+    supabaseService.client
+      .from("declared_skills")
+      .select("id, name")
+      .eq("user_id", userId),
+  ]);
+
+  if (feedbackRes.error) return [];
+
+  const assignmentsById = new Map(
+    (assignmentsRes.data ?? []).map((row) => [Number(row.moodle_assignment_id), row as Record<string, unknown>]),
+  );
+  const importedByAssignmentId = new Map(
+    (importedEvidenceRes.data ?? []).map((row) => [Number(row.moodle_assignment_id), row as Record<string, unknown>]),
+  );
+  const lmsEvidenceById = new Map(
+    (lmsEvidenceRes.data ?? []).map((row) => [row.id as string, row as Record<string, unknown>]),
+  );
+  const skillNameById = new Map(
+    (skillsRes.data ?? []).map((row) => [row.id as string, row.name as string]),
+  );
+
+  return (feedbackRes.data ?? [])
+    .map((row) => {
+      const assignmentId = Number(row.moodle_assignment_id);
+      const assignment = assignmentsById.get(assignmentId);
+      const imported = importedByAssignmentId.get(assignmentId);
+      const lmsEvidence = imported?.lms_evidence_id
+        ? lmsEvidenceById.get(imported.lms_evidence_id as string)
+        : null;
+      const skillName = lmsEvidence?.linked_skill_id
+        ? skillNameById.get(lmsEvidence.linked_skill_id as string)
+        : null;
+      const comment = (row.feedback_text as string | null)?.trim() ?? "";
+      if (!comment) return null;
+
+      return {
+        id: `lms-feedback-${assignmentId}`,
+        reviewerName: "LMS Instructor",
+        reviewerRole: "Teacher Feedback",
+        source: "LMS",
+        origin: "Moodle Feedback",
+        skill: skillName ?? (lmsEvidence?.course_name as string) ?? (imported?.course_name as string) ?? "LMS coursework",
+        projectId: `lms-${assignmentId}`,
+        projectName: (imported?.course_name as string) ?? (lmsEvidence?.course_name as string) ?? "Moodle assignment",
+        evidenceLabel: (assignment?.name as string) ?? (imported?.activity_name as string) ?? "Moodle assignment feedback",
+        evidenceUrl: undefined,
+        rating: 4,
+        comment,
+        recommendation: undefined,
+        date: (row.synced_at as string) ?? (row.created_at as string) ?? (assignment?.graded_at as string) ?? new Date().toISOString(),
+        contextStatus: CONTEXT_STATUS.VERIFIED,
+        contributorVerification: CONTRIBUTOR_VERIFICATION.VERIFIED,
+        trustWeight: "High Trust",
+        trustWeightScore: 0.95,
+        relationship: RELATIONSHIP.INSTRUCTOR,
+        imported: true,
+      } satisfies PeerReviewRecordView;
+    })
+    .filter((review): review is PeerReviewRecordView => review !== null);
 }
 
 export class PeerReviewService {

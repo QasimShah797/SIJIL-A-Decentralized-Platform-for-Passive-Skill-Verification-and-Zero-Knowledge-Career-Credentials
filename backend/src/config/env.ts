@@ -21,6 +21,7 @@ const envSchema = z.object({
   SUPABASE_ANON_KEY: z.string().min(1),
   CORS_ORIGIN: z.string().default("http://localhost:8080"),
   FRONTEND_URL: z.string().default("http://localhost:8080"),
+  PRESENTATION_SIGNING_SECRET: z.string().min(16).optional(),
 });
 
 const parsed = envSchema.safeParse(process.env);

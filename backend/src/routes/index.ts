@@ -13,6 +13,8 @@ import reviewsRoutes from "./reviews.routes";
 import peerReviewRoutes from "./peer-review.routes";
 import institutionStudentsRoutes from "./institution-students.routes";
 import studentActivationRoutes from "./student-activation.routes";
+import walletRoutes from "./wallet.routes";
+import publicPresentationsRoutes from "./public-presentations.routes";
 
 const router = Router();
 
@@ -28,5 +30,7 @@ router.use("/reviews", reviewsRoutes);
 router.use("/peer-review", peerReviewRoutes);
 router.use("/institution", institutionStudentsRoutes);
 router.use("/student-activation", studentActivationRoutes);
+router.use("/wallet", walletRoutes);
+router.use("/public/presentations", publicPresentationsRoutes);
 
 export default router;

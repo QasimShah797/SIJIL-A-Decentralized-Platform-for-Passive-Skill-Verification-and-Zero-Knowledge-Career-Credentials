@@ -19,6 +19,7 @@ import { useGitHub } from "@/hooks/useGitHub";
 import {
   loadAttempts,
   saveAttemptDb,
+  fetchLatestMcqAttemptResult,
   isAttemptLocked,
 } from "@/lib/db/practical-attempts";
 import { toast } from "@/hooks/use-toast";
@@ -55,6 +56,8 @@ type StoredPracticalTaskState = {
   currentQuestionIndex: number;
   questionEndsAt: string | null;
   resultPercentage: number | null;
+  resultCorrectCount: number | null;
+  resultTotalQuestions: number | null;
   resultMessage: string | null;
   resultLabel: string | null;
   passed: boolean | null;
@@ -101,6 +104,8 @@ function restoreFromAttemptRecord(existing: AttemptRecord) {
     currentQuestionIndex: progress?.currentIndex ?? 0,
     questionEndsAt: progress?.questionEndsAt ?? null,
     resultPercentage: session?.resultPercentage ?? existing.score ?? null,
+    resultCorrectCount: session?.resultCorrectCount ?? null,
+    resultTotalQuestions: session?.resultTotalQuestions ?? null,
     resultMessage: session?.resultMessage ?? existing.feedback ?? null,
     resultLabel: session?.resultLabel
       ?? (existing.passed ? "Passed" : existing.score != null ? "Needs Improvement" : null),
@@ -158,6 +163,8 @@ export default function PracticalTask() {
   const [questionEndsAt, setQuestionEndsAt] = useState<string | null>(null);
   const [evaluating, setEvaluating] = useState(false);
   const [resultPercentage, setResultPercentage] = useState<number | null>(null);
+  const [resultCorrectCount, setResultCorrectCount] = useState<number | null>(null);
+  const [resultTotalQuestions, setResultTotalQuestions] = useState<number | null>(null);
   const [resultMessage, setResultMessage] = useState<string | null>(null);
   const [resultLabel, setResultLabel] = useState<string | null>(null);
   const [passed, setPassed] = useState<boolean | null>(null);
@@ -183,6 +190,8 @@ export default function PracticalTask() {
     }
     if (stored.questionEndsAt) setQuestionEndsAt(stored.questionEndsAt);
     if (typeof stored.resultPercentage === "number") setResultPercentage(stored.resultPercentage);
+    if (typeof stored.resultCorrectCount === "number") setResultCorrectCount(stored.resultCorrectCount);
+    if (typeof stored.resultTotalQuestions === "number") setResultTotalQuestions(stored.resultTotalQuestions);
     if (stored.resultMessage) setResultMessage(stored.resultMessage);
     if (stored.resultLabel) setResultLabel(stored.resultLabel);
     if (typeof stored.passed === "boolean") setPassed(stored.passed);
@@ -210,6 +219,8 @@ export default function PracticalTask() {
     setCurrentQuestionIndex(0);
     setQuestionEndsAt(null);
     setResultPercentage(null);
+    setResultCorrectCount(null);
+    setResultTotalQuestions(null);
     setResultMessage(null);
     setResultLabel(null);
     setPassed(null);
@@ -223,6 +234,70 @@ export default function PracticalTask() {
     }
   }, [storageKey, userId]);
 
+  const syncAttemptResultFromServer = useCallback(async (
+    skillId: string,
+    existing: AttemptRecord,
+  ) => {
+    if (!userId) return;
+
+    const remote = await fetchLatestMcqAttemptResult(userId, skillId);
+    if (!remote) return;
+
+    const nextPercentage = typeof remote.percentage === "number" ? remote.percentage : existing.score ?? null;
+    const nextCorrectCount = typeof remote.correct_count === "number" ? remote.correct_count : null;
+    const nextTotalQuestions = typeof remote.total_questions === "number" ? remote.total_questions : null;
+    const nextPassed = typeof remote.passed === "boolean" ? remote.passed : existing.passed ?? null;
+    const nextLabel = nextPassed === true
+      ? "Passed"
+      : nextPercentage != null
+        ? "Needs Improvement"
+        : null;
+
+    setResultPercentage(nextPercentage);
+    setResultCorrectCount(nextCorrectCount);
+    setResultTotalQuestions(nextTotalQuestions);
+    setResultLabel(nextLabel);
+    setPassed(nextPassed);
+
+    const session = parseMcqSession(existing.submission ?? "");
+    const nextSubmission = session
+      ? serializeMcqSession({
+          ...session,
+          resultPercentage: nextPercentage ?? undefined,
+          resultCorrectCount: nextCorrectCount ?? undefined,
+          resultTotalQuestions: nextTotalQuestions ?? undefined,
+          resultLabel: nextLabel ?? undefined,
+          passed: nextPassed ?? undefined,
+        })
+      : existing.submission;
+
+    const nextStatus: AttemptRecord["status"] = nextPassed === true
+      ? "passed"
+      : existing.status === "in_progress"
+        ? existing.status
+        : "submitted";
+
+    if (
+      nextPercentage === (existing.score ?? null)
+      && nextPassed === (existing.passed ?? null)
+      && nextSubmission === existing.submission
+      && nextStatus === existing.status
+    ) {
+      return;
+    }
+
+    const syncedAttempt: AttemptRecord = {
+      ...existing,
+      status: nextStatus,
+      passed: nextPassed ?? existing.passed,
+      score: nextPercentage ?? existing.score,
+      submission: nextSubmission ?? existing.submission,
+    };
+
+    await saveAttempt(syncedAttempt);
+    setAttempt(syncedAttempt);
+  }, [saveAttempt, userId]);
+
   useEffect(() => {
     if (!storageKey) return;
 
@@ -233,6 +308,8 @@ export default function PracticalTask() {
       currentQuestionIndex,
       questionEndsAt,
       resultPercentage,
+      resultCorrectCount,
+      resultTotalQuestions,
       resultMessage,
       resultLabel,
       passed,
@@ -248,6 +325,8 @@ export default function PracticalTask() {
     currentQuestionIndex,
     questionEndsAt,
     resultPercentage,
+    resultCorrectCount,
+    resultTotalQuestions,
     resultMessage,
     resultLabel,
     passed,
@@ -306,8 +385,13 @@ export default function PracticalTask() {
     try {
       const submissionAnswers = buildMcqSubmissionAnswers(task, answersOverride ?? answers);
       const result = await evaluateSecureMcqAttempt(task.attemptId, submissionAnswers, invokeRapidTask);
+      const walletMessage = result.passed
+        ? "Wallet record updated. This competency now includes the submitted task result in its evidence package."
+        : "Wallet record updated. This attempt remains part of the competency evidence history.";
       setResultPercentage(result.percentage);
-      setResultMessage(result.message);
+      setResultCorrectCount(result.correctCount);
+      setResultTotalQuestions(result.totalQuestions);
+      setResultMessage(walletMessage);
       setResultLabel(result.resultLabel);
       setPassed(result.passed);
 
@@ -317,7 +401,7 @@ export default function PracticalTask() {
         status: result.passed ? "passed" : "submitted",
         passed: result.passed,
         score: result.percentage,
-        feedback: result.message,
+        feedback: walletMessage,
         submission: serializeMcqSession({
           _mcqSession: true,
           attemptId,
@@ -328,7 +412,9 @@ export default function PracticalTask() {
             questionEndsAt: questionEndsAt ?? new Date().toISOString(),
           },
           resultPercentage: result.percentage,
-          resultMessage: result.message,
+          resultCorrectCount: result.correctCount,
+          resultTotalQuestions: result.totalQuestions,
+          resultMessage: walletMessage,
           resultLabel: result.resultLabel,
           passed: result.passed,
         }),
@@ -339,7 +425,7 @@ export default function PracticalTask() {
 
       toast({
         title: result.resultLabel,
-        description: result.message,
+        description: walletMessage,
       });
 
       refresh();
@@ -401,11 +487,18 @@ export default function PracticalTask() {
 
     try {
       const restoredFromStorage = hydratePracticalTaskState(skill.id);
-      if (restoredFromStorage) return;
+      if (restoredFromStorage) {
+        const existing = attemptsMap[skill.id] ?? null;
+        if (existing) {
+          void syncAttemptResultFromServer(skill.id, existing);
+        }
+        return;
+      }
 
       const existing = attemptsMap[skill.id] ?? null;
       if (existing) {
         applyStoredState(restoreFromAttemptRecord(existing));
+        void syncAttemptResultFromServer(skill.id, existing);
         return;
       }
 
@@ -415,13 +508,15 @@ export default function PracticalTask() {
       setCurrentQuestionIndex(0);
       setQuestionEndsAt(null);
       setResultPercentage(null);
+      setResultCorrectCount(null);
+      setResultTotalQuestions(null);
       setResultMessage(null);
       setResultLabel(null);
       setPassed(null);
     } finally {
       setTaskLoading(false);
     }
-  }, [applyStoredState, attemptsMap, hydratePracticalTaskState]);
+  }, [applyStoredState, attemptsMap, hydratePracticalTaskState, syncAttemptResultFromServer]);
 
   useEffect(() => {
     if (!userId || skillsLoading || modalRestoredRef.current) return;
@@ -667,10 +762,15 @@ export default function PracticalTask() {
                             </span>
                           )}
                         </p>
+                        {resultCorrectCount != null && resultTotalQuestions != null && (
+                          <p className="text-muted-foreground">
+                            Correct answers: {resultCorrectCount} / {resultTotalQuestions}
+                          </p>
+                        )}
                         <p className="text-muted-foreground">
-                          Sent to institution attestation.
+                          Competency wallet record updated.
                           {!passed && resultLabel === "Needs Improvement" && (
-                            <> Your institution will review this attempt alongside your score.</>
+                            <> The failed attempt remains visible in your evidence history.</>
                           )}
                         </p>
                         {resultMessage && (

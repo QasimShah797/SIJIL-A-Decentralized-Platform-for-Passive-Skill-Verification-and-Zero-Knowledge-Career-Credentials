@@ -1,31 +1,30 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import {
-  ShieldCheck,
-  GraduationCap,
-  Building2,
-  Search,
-  Github,
-  BookOpen,
-  FolderGit2,
-  FileText,
-  Users,
-  ClipboardCheck,
-  Award,
-  Wallet,
-  Layers,
-  Sparkles,
-  Menu,
-  X,
   ArrowRight,
+  Award,
+  BookOpen,
   CheckCircle2,
-  Link2,
-  Share2,
+  ClipboardCheck,
+  FileText,
   Fingerprint,
-  Route,
+  FolderGit2,
+  Github,
+  GraduationCap,
+  Layers,
+  Link2,
+  Lock,
+  Menu,
   MessageSquare,
   Plug,
-  Lock,
+  Route,
+  Search,
+  Share2,
+  ShieldCheck,
+  Sparkles,
+  Users,
+  Wallet,
+  X,
 } from "lucide-react";
 import { ThemeToggle } from "@/components/sijil/ThemeToggle";
 import { Button } from "@/components/ui/button";
@@ -34,7 +33,6 @@ import sijilLogo from "@/assets/sijil-logo.png";
 const navLinks = [
   { label: "Home", href: "#home" },
   { label: "Learner", href: "#learners" },
-  { label: "Institution", href: "#institutions" },
   { label: "Verification", href: "#verification" },
   { label: "Features", href: "#features" },
   { label: "Roadmap", href: "#roadmap" },
@@ -100,7 +98,6 @@ export default function Landing() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      {/* Navigation */}
       <header className="sticky top-0 z-50 border-b border-border/60 bg-background/85 backdrop-blur-md">
         <div className="sijil-container flex h-16 items-center justify-between gap-4">
           <Logo />
@@ -125,14 +122,9 @@ export default function Landing() {
                 Learner Sign In
               </Button>
             </Link>
-            <Link to="/login/institution">
-              <Button variant="outline" size="sm" className="rounded-full">
-                Institution
-              </Button>
-            </Link>
             <Link to="/signup/learner">
               <Button size="sm" className="rounded-full">
-                Sign Up
+                Learner Sign Up
               </Button>
             </Link>
           </div>
@@ -143,7 +135,7 @@ export default function Landing() {
               variant="ghost"
               size="icon"
               className="rounded-full"
-              onClick={() => setMobileOpen((o) => !o)}
+              onClick={() => setMobileOpen((open) => !open)}
               aria-label="Toggle menu"
             >
               {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
@@ -172,30 +164,25 @@ export default function Landing() {
               <Link to="/login/learner" onClick={() => setMobileOpen(false)}>
                 <Button variant="outline" className="w-full rounded-full">Learner Sign In</Button>
               </Link>
-              <Link to="/login/institution" onClick={() => setMobileOpen(false)}>
-                <Button variant="ghost" className="w-full rounded-full">Institution Sign In</Button>
-              </Link>
             </div>
           </div>
         )}
       </header>
 
-      {/* Hero */}
       <section id="home" className="sijil-section scroll-mt-16">
         <div className="sijil-container">
           <div className="mx-auto max-w-3xl text-center">
             <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-border/70 bg-muted/50 px-4 py-1.5 text-xs font-medium text-muted-foreground">
               <ShieldCheck className="h-3.5 w-3.5 text-success" />
-              Decentralized skill verification for learners
+              Decentralized competency records for learners
             </div>
             <h1 className="text-4xl font-semibold leading-tight tracking-tight sm:text-5xl lg:text-6xl">
               Own your skills.{" "}
               <span className="text-primary">Prove them with evidence.</span>
             </h1>
             <p className="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-muted-foreground">
-              SIJIL gives learners a self-sovereign identity for building verified competency portfolios —
-              combining project evidence, peer review, practical assessment, and institutional trust
-              into portable, learner-owned credentials.
+              SIJIL helps learners build competency portfolios by combining GitHub evidence, Moodle
+              records, practical assessment, and reviews into learner-owned wallet records.
             </p>
             <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
               <Link to="/signup/learner">
@@ -209,84 +196,27 @@ export default function Landing() {
                   Learner Sign In
                 </Button>
               </Link>
-              <Link to="/login/institution">
-                <Button size="lg" variant="ghost" className="rounded-full px-8">
-                  Institution Sign In
-                </Button>
-              </Link>
             </div>
           </div>
         </div>
       </section>
 
-      {/* How SIJIL Works */}
-      <section id="how-it-works" className="sijil-section sijil-section-alt scroll-mt-16">
-        <div className="sijil-container">
-          <SectionHeading
-            eyebrow="Process"
-            title="How SIJIL works"
-            description="From evidence collection to verifiable credentials — a transparent path built for trust."
-          />
-          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-            {[
-              { icon: Link2, step: "01", title: "Connect evidence", text: "Link GitHub, LMS, projects, and supporting records to declared competencies." },
-              { icon: Users, step: "02", title: "Gather context", text: "Peer reviewers and contributors validate real working relationships and project context." },
-              { icon: ClipboardCheck, step: "03", title: "Demonstrate skill", text: "Complete practical MCQ tasks and build a validation trail institutions can review." },
-              { icon: Share2, step: "04", title: "Share credentials", text: "Store credentials in your wallet and disclose selectively to recruiters." },
-            ].map((item) => (
-              <div key={item.step} className="sijil-card relative">
-                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{item.step}</span>
-                <div className="mt-4 mb-3 inline-flex h-10 w-10 items-center justify-center rounded-xl bg-info/10 text-info">
-                  <item.icon className="h-5 w-5" />
-                </div>
-                <h3 className="font-semibold">{item.title}</h3>
-                <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{item.text}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Evidence Sources */}
-      <section id="evidence-sources" className="sijil-section scroll-mt-16">
-        <div className="sijil-container">
-          <SectionHeading
-            eyebrow="Evidence"
-            title="Evidence sources"
-            description="SIJIL aggregates trust signals from multiple real-world sources — not self-reported claims alone."
-          />
-          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-            <FeatureCard icon={Github} title="GitHub activity">
-              Repository contributions, languages, and project context synced as verifiable development evidence.
-            </FeatureCard>
-            <FeatureCard icon={BookOpen} title="LMS / Moodle">
-              Course records and learning management data linked to declared skills and competencies.
-            </FeatureCard>
-            <FeatureCard icon={FolderGit2} title="Project work">
-              Manual project evidence with contributor context and supporting documentation.
-            </FeatureCard>
-            <FeatureCard icon={FileText} title="Documents & artifacts">
-              Portfolios, reports, and supplementary files attached to competency claims.
-            </FeatureCard>
-          </div>
-        </div>
-      </section>
-
-      {/* 5-Tier Verification */}
       <section id="verification" className="sijil-section sijil-section-alt scroll-mt-16">
         <div className="sijil-container">
           <SectionHeading
-            eyebrow="Trust model"
-            title="5-tier verification"
-            description="Each layer adds independent trust — institutions review the full trail, not a single score."
+            eyebrow="Flow"
+            title="Final learner flow"
+            description="The learner journey is competency-centered from profile setup to wallet storage."
           />
           <div className="mx-auto max-w-3xl space-y-4">
             {[
-              { tier: 1, title: "Self-declaration", text: "Learner declares competencies and builds their SIJIL identity." },
-              { tier: 2, title: "Evidence linking", text: "GitHub, LMS, and project records connected to skill claims." },
-              { tier: 3, title: "Peer review", text: "Context-based reviews from verified collaborators and contributors." },
-              { tier: 4, title: "Practical assessment", text: "AI-generated MCQ tasks scored server-side against competency evidence." },
-              { tier: 5, title: "Institutional attestation", text: "Institutions review the package and issue trusted credentials." },
+              { tier: 1, title: "Learner Sign Up", text: "Create a learner account and start your SIJIL workspace." },
+              { tier: 2, title: "Complete Profile", text: "Finish your profile and establish your learner DID." },
+              { tier: 3, title: "Declare Competency", text: "Define the competency you want to support with evidence." },
+              { tier: 4, title: "Connect GitHub / Moodle", text: "Sync source evidence that maps to the competency." },
+              { tier: 5, title: "Collect evidence and perform task", text: "Submit a practical task attempt and continue building the evidence package." },
+              { tier: 6, title: "Collect reviews", text: "Add peer and teacher context when available." },
+              { tier: 7, title: "Store wallet record", text: "Keep one wallet record per competency with evidence, task history, and review context." },
             ].map((item) => (
               <div key={item.tier} className="flex gap-4 rounded-2xl border border-border/60 bg-card p-5 shadow-sm">
                 <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-bold text-primary-foreground">
@@ -302,56 +232,109 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* Identity Wallet */}
+      <section id="how-it-works" className="sijil-section scroll-mt-16">
+        <div className="sijil-container">
+          <SectionHeading
+            eyebrow="Process"
+            title="How SIJIL works"
+            description="A transparent path from declaration to evidence package and wallet record."
+          />
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+            {[
+              { icon: GraduationCap, step: "01", title: "Complete your profile", text: "Set up your learner identity and finish onboarding before declaring competencies." },
+              { icon: Link2, step: "02", title: "Declare competency", text: "Claim the competency you want to support with evidence and practical task history." },
+              { icon: Plug, step: "03", title: "Connect evidence", text: "Link GitHub, Moodle, projects, and supporting records to the declared competency." },
+              { icon: Share2, step: "04", title: "Store wallet record", text: "Submit the task, collect reviews, and keep one evidence package per competency in your wallet." },
+            ].map((item) => (
+              <div key={item.step} className="sijil-card relative">
+                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{item.step}</span>
+                <div className="mb-3 mt-4 inline-flex h-10 w-10 items-center justify-center rounded-xl bg-info/10 text-info">
+                  <item.icon className="h-5 w-5" />
+                </div>
+                <h3 className="font-semibold">{item.title}</h3>
+                <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{item.text}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section id="evidence-sources" className="sijil-section sijil-section-alt scroll-mt-16">
+        <div className="sijil-container">
+          <SectionHeading
+            eyebrow="Evidence"
+            title="Evidence sources"
+            description="SIJIL aggregates trust signals from real work and learning activity, not self-reported claims alone."
+          />
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+            <FeatureCard icon={Github} title="GitHub activity">
+              Repository work, commits, pull requests, and linked review context become competency evidence.
+            </FeatureCard>
+            <FeatureCard icon={BookOpen} title="LMS / Moodle">
+              Course records, assignments, grades, and teacher feedback can be grouped under the same competency.
+            </FeatureCard>
+            <FeatureCard icon={FolderGit2} title="Project work">
+              Manual project evidence and supporting records add context around real-world practice.
+            </FeatureCard>
+            <FeatureCard icon={FileText} title="Evidence packages">
+              Every competency record keeps its source material, timestamps, and latest practical task result together.
+            </FeatureCard>
+          </div>
+        </div>
+      </section>
+
       <section id="wallet" className="sijil-section scroll-mt-16">
         <div className="sijil-container">
           <div className="grid items-center gap-12 lg:grid-cols-2">
             <div>
               <p className="mb-3 text-sm font-medium uppercase tracking-widest text-primary">Identity</p>
-              <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl">Identity wallet</h2>
-              <p className="mt-4 text-muted-foreground leading-relaxed">
-                Every learner receives a decentralized identifier (DID) and a credential wallet.
-                Store attestations, control disclosure, and share proof with recruiters —
-                without surrendering ownership of your career data.
+              <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl">Competency wallet</h2>
+              <p className="mt-4 leading-relaxed text-muted-foreground">
+                Every learner receives a decentralized identifier and a wallet that groups evidence by
+                competency. Store task attempts, reviews, and supporting evidence without giving up
+                control of your career data.
               </p>
               <ul className="mt-6 space-y-3">
-                {["Holder DID bound to your SIJIL identity", "Verifiable credential storage", "Selective disclosure for recruiters"].map((t) => (
-                  <li key={t} className="flex items-start gap-2 text-sm">
+                {[
+                  "Holder DID bound to your SIJIL identity",
+                  "One wallet record per competency",
+                  "Evidence packages grouped by source and status",
+                ].map((item) => (
+                  <li key={item} className="flex items-start gap-2 text-sm">
                     <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success" />
-                    {t}
+                    {item}
                   </li>
                 ))}
               </ul>
             </div>
-            <div className="sijil-card credential-card rounded-3xl p-8 text-primary-foreground">
+            <div className="credential-card sijil-card rounded-3xl p-8 text-primary-foreground">
               <Fingerprint className="h-10 w-10 opacity-90" />
               <p className="mt-6 text-sm uppercase tracking-wider opacity-80">Learner wallet</p>
-              <p className="mt-2 text-2xl font-semibold">Your credentials. Your control.</p>
+              <p className="mt-2 text-2xl font-semibold">Your competencies. Your evidence.</p>
               <p className="mt-4 text-sm leading-relaxed opacity-85">
-                SIJIL wallets are designed for SSI principles — portable, verifiable, and learner-owned.
+                SIJIL wallets are portable, evidence-backed, and designed around learner ownership.
               </p>
             </div>
           </div>
         </div>
       </section>
 
-      {/* For Learners */}
       <section id="learners" className="sijil-section sijil-section-alt scroll-mt-16">
         <div className="sijil-container">
           <SectionHeading
             eyebrow="Community"
             title="For learners"
-            description="Create your identity, complete your profile, and build a portfolio institutions and recruiters can trust."
+            description="Create your identity, complete your profile, and build a competency portfolio recruiters can understand."
           />
           <div className="grid gap-6 lg:grid-cols-3">
             <FeatureCard icon={GraduationCap} title="Learner-owned account">
               Sign up directly, complete your professional profile, and control what you share.
             </FeatureCard>
             <FeatureCard icon={Layers} title="Competency portfolio">
-              Declare skills, link evidence, and track your validation trail in one workspace.
+              Declare skills, link evidence, and track validation progress in one workspace.
             </FeatureCard>
-            <FeatureCard icon={Award} title="Portable credentials">
-              Receive institutional attestations stored in your wallet for future sharing.
+            <FeatureCard icon={Award} title="Competency wallet">
+              Keep one wallet record per competency with evidence, practical task results, and reviews.
             </FeatureCard>
           </div>
           <div className="mt-10 flex flex-wrap justify-center gap-3">
@@ -365,54 +348,28 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* For Institutions */}
-      <section id="institutions" className="sijil-section scroll-mt-16">
-        <div className="sijil-container">
-          <SectionHeading
-            eyebrow="Partners"
-            title="For institutions"
-            description="Review learner evidence packages, attest competencies, and issue trusted credentials — without replacing your systems."
-          />
-          <div className="grid gap-6 lg:grid-cols-2">
-            <FeatureCard icon={Building2} title="Attestation queue">
-              Review MCQ results, evidence trails, and peer review context before issuing credentials.
-            </FeatureCard>
-            <FeatureCard icon={ShieldCheck} title="Verified student records">
-              Provision institution-linked learners with verified university details and activation flows.
-            </FeatureCard>
-          </div>
-          <div className="mt-10 text-center">
-            <Link to="/login/institution">
-              <Button variant="outline" className="rounded-full">Institution Sign In</Button>
-            </Link>
-          </div>
-        </div>
-      </section>
-
-      {/* For Recruiters */}
-      <section id="recruiters" className="sijil-section sijil-section-alt scroll-mt-16">
+      <section id="recruiters" className="sijil-section scroll-mt-16">
         <div className="sijil-container">
           <SectionHeading
             eyebrow="Hiring"
             title="For recruiters"
-            description="Evaluate candidates through verified evidence and credentials — not keyword-matched résumés."
+            description="Evaluate candidates through evidence packages and competency records instead of keyword-matched resumes."
           />
           <div className="grid gap-6 lg:grid-cols-3">
             <FeatureCard icon={Search} title="Evidence-first search">
-              Discover candidates with linked GitHub, LMS, and project evidence.
+              Discover candidates with linked GitHub, LMS, project work, and task outcomes.
             </FeatureCard>
             <FeatureCard icon={Users} title="Reviewer context">
-              See who validated skills and under what working relationship.
+              See who validated the competency and under what working relationship.
             </FeatureCard>
-            <FeatureCard icon={Wallet} title="Verifiable credentials">
-              Confirm institutional attestations and credential proofs before hiring.
+            <FeatureCard icon={Wallet} title="Competency records">
+              Inspect source badges, practical task results, review context, and supporting evidence in one package.
             </FeatureCard>
           </div>
         </div>
       </section>
 
-      {/* Features */}
-      <section id="features" className="sijil-section scroll-mt-16">
+      <section id="features" className="sijil-section sijil-section-alt scroll-mt-16">
         <div className="sijil-container">
           <SectionHeading
             eyebrow="Platform"
@@ -423,32 +380,31 @@ export default function Landing() {
             {[
               { icon: Sparkles, title: "AI practical tasks", text: "Evidence-informed MCQ generation and secure server-side scoring." },
               { icon: MessageSquare, title: "Peer reviews", text: "Context-based reviews from verified project contributors." },
-              { icon: ShieldCheck, title: "Validation trail", text: "Full audit path from evidence to institutional attestation." },
+              { icon: ShieldCheck, title: "Evidence packages", text: "Full audit path from source evidence to competency wallet records." },
               { icon: Plug, title: "Integrations", text: "GitHub and Moodle connections with sync and evidence mapping." },
-              { icon: Fingerprint, title: "Decentralized identity", text: "DID-backed wallet for credential ownership." },
-              { icon: Lock, title: "Privacy by design", text: "Selective disclosure — share only what recruiters need." },
-            ].map((f) => (
-              <FeatureCard key={f.title} icon={f.icon} title={f.title}>
-                {f.text}
+              { icon: Fingerprint, title: "Decentralized identity", text: "DID-backed wallet for learner-owned competency records." },
+              { icon: Lock, title: "Privacy by design", text: "Selective disclosure keeps the learner in control of shared evidence." },
+            ].map((feature) => (
+              <FeatureCard key={feature.title} icon={feature.icon} title={feature.title}>
+                {feature.text}
               </FeatureCard>
             ))}
           </div>
         </div>
       </section>
 
-      {/* Roadmap */}
-      <section id="roadmap" className="sijil-section sijil-section-alt scroll-mt-16">
+      <section id="roadmap" className="sijil-section scroll-mt-16">
         <div className="sijil-container">
           <SectionHeading
             eyebrow="What's next"
             title="Roadmap"
-            description="SIJIL is actively evolving toward richer verification, broader integrations, and recruiter tooling."
+            description="SIJIL is evolving toward richer evidence aggregation, stronger recruiter tooling, and broader ecosystem support."
           />
           <div className="mx-auto max-w-2xl space-y-4">
             {[
-              { phase: "Now", title: "Learner identity & verification core", status: "Live", items: ["Self-signup & profile completion", "GitHub & Moodle integrations", "MCQ practical tasks & peer review", "Institution attestation queue"] },
-              { phase: "Next", title: "Recruiter & credential tooling", status: "In progress", items: ["Recruiter search & compare", "Enhanced selective disclosure", "Credential proof sharing"] },
-              { phase: "Future", title: "Ecosystem expansion", status: "Planned", items: ["Additional evidence providers", "Cross-institution credential networks", "Advanced competency analytics"] },
+              { phase: "Now", title: "Learner identity & competency core", status: "Live", items: ["Self-signup & profile completion", "GitHub & Moodle integrations", "MCQ practical tasks & peer review", "Competency wallet records"] },
+              { phase: "Next", title: "Recruiter & disclosure tooling", status: "In progress", items: ["Recruiter search & compare", "Enhanced selective disclosure", "Evidence package views"] },
+              { phase: "Future", title: "Ecosystem expansion", status: "Planned", items: ["Additional evidence providers", "Cross-platform competency analytics", "Trusted verification rules for later credential issuance"] },
             ].map((phase) => (
               <div key={phase.phase} className="sijil-card">
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -462,7 +418,7 @@ export default function Landing() {
                 <ul className="mt-4 space-y-2">
                   {phase.items.map((item) => (
                     <li key={item} className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <CheckCircle2 className="h-3.5 w-3.5 text-success shrink-0" />
+                      <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-success" />
                       {item}
                     </li>
                   ))}
@@ -473,37 +429,34 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* CTA */}
       <section className="sijil-section">
         <div className="sijil-container">
           <div className="rounded-3xl border border-border/60 bg-gradient-to-br from-primary/5 via-background to-success/5 p-10 text-center shadow-sm sm:p-14">
             <h2 className="text-2xl font-semibold sm:text-3xl">Start building your verified portfolio</h2>
             <p className="mx-auto mt-3 max-w-lg text-muted-foreground">
-              Join SIJIL as a learner, partner as an institution, or explore the platform today.
+              Join SIJIL as a learner and start building competency-centered wallet records today.
             </p>
             <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
               <Link to="/signup/learner">
                 <Button size="lg" className="rounded-full px-8">Learner Sign Up</Button>
               </Link>
-              <Link to="/login/institution">
-                <Button size="lg" variant="outline" className="rounded-full px-8">Institution Sign In</Button>
+              <Link to="/login/learner">
+                <Button size="lg" variant="outline" className="rounded-full px-8">Learner Sign In</Button>
               </Link>
             </div>
           </div>
         </div>
       </section>
 
-      {/* Footer */}
       <footer className="border-t border-border/60 bg-background">
         <div className="sijil-container flex flex-col items-center justify-between gap-6 py-10 sm:flex-row">
           <div className="text-center sm:text-left">
             <Logo />
-            <p className="mt-2 text-sm text-muted-foreground">Verified skills. Trusted credentials.</p>
+            <p className="mt-2 text-sm text-muted-foreground">Evidence-backed competencies.</p>
           </div>
           <div className="flex flex-wrap items-center justify-center gap-4 text-sm">
             <Link to="/signup/learner" className="font-medium text-primary hover:underline">Sign Up</Link>
             <Link to="/login/learner" className="text-muted-foreground hover:text-foreground">Learner Sign In</Link>
-            <Link to="/login/institution" className="text-muted-foreground hover:text-foreground">Institution</Link>
           </div>
         </div>
         <div className="border-t border-border/40 py-4 text-center text-xs text-muted-foreground">

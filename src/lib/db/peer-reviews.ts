@@ -1,5 +1,10 @@
 import { supabase } from "@/integrations/supabase/client";
 import type { PeerReview, ReviewInvitation } from "@/lib/sijil-data";
+import {
+  countWalletEvidence,
+  deriveWalletSourceBadges,
+  type WalletEvidenceSummary,
+} from "@/lib/wallet-competency-shared";
 
 export type SecureReviewInvitation = {
   id: string;
@@ -32,6 +37,202 @@ function contributorGithubLogin(contributorId: string | null | undefined): strin
     return null;
   }
   return contributorId.replace("@", "").trim() || null;
+}
+
+function walletClient() {
+  return supabase as unknown as {
+    from: (table: string) => any;
+  };
+}
+
+function rawTable(table: string) {
+  return (supabase as unknown as {
+    from: (name: string) => any;
+  }).from(table);
+}
+
+function asObject(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function asList(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is Record<string, unknown> => !!item && typeof item === "object")
+    : [];
+}
+
+function toWalletReview(review: PeerReview): Record<string, unknown> {
+  return {
+    id: review.id,
+    reviewerName: review.reviewerName,
+    reviewerRole: review.reviewerRole,
+    source: review.source,
+    origin: review.origin,
+    skill: review.skill,
+    projectId: review.projectId,
+    projectName: review.projectName,
+    evidenceLabel: review.evidenceLabel,
+    evidenceUrl: review.evidenceUrl,
+    rating: review.rating,
+    comment: review.comment,
+    recommendation: review.recommendation,
+    date: review.date,
+    contextStatus: review.contextStatus,
+    contributorVerification: review.contributorVerification,
+    trustWeight: review.trustWeight,
+    imported: review.imported,
+  };
+}
+
+function rebuildWalletSummary(summary: WalletEvidenceSummary): WalletEvidenceSummary {
+  const sourceBadges = deriveWalletSourceBadges({
+    github: [
+      ...summary.github.repos,
+      ...summary.github.activities,
+      ...summary.github.evidenceRecords,
+      ...summary.github.reviews,
+    ],
+    lms: [
+      ...summary.lms.evidence,
+      ...summary.lms.courses,
+      ...summary.lms.assignments,
+      ...summary.lms.grades,
+      ...summary.lms.importedEvidence,
+    ],
+    practicalTasks: summary.practicalTask.attemptHistory,
+    reviews: [...summary.peerReviews, ...summary.teacherFeedback],
+  });
+
+  return {
+    ...summary,
+    sourceBadges,
+    evidenceCount: countWalletEvidence({
+      github: summary.github,
+      lms: summary.lms,
+      practicalTasks: summary.practicalTask.attemptHistory,
+      peerReviews: summary.peerReviews,
+      teacherFeedback: summary.teacherFeedback,
+    }),
+  };
+}
+
+async function syncWalletReviewState(params: {
+  learnerUserId: string;
+  skillId?: string | null;
+  competencyName?: string | null;
+  review: PeerReview;
+}): Promise<void> {
+  const client = walletClient();
+  let walletRow: Record<string, unknown> | null = null;
+
+  if (params.skillId) {
+    const { data, error } = await client
+      .from("wallet_competency_records")
+      .select("*")
+      .eq("learner_id", params.learnerUserId)
+      .eq("competency_id", params.skillId)
+      .maybeSingle();
+
+    if (!error && data) {
+      walletRow = data as Record<string, unknown>;
+    }
+  }
+
+  if (!walletRow && params.competencyName) {
+    const { data, error } = await client
+      .from("wallet_competency_records")
+      .select("*")
+      .eq("learner_id", params.learnerUserId);
+
+    if (!error) {
+      walletRow = ((data ?? []) as Record<string, unknown>[]).find((row) => {
+        const summary = asObject(row.evidence_summary);
+        const competency = asObject(summary?.competency);
+        return String(row.competency_name ?? "").trim().toLowerCase() === params.competencyName?.trim().toLowerCase()
+          || String(competency?.name ?? "").trim().toLowerCase() === params.competencyName?.trim().toLowerCase();
+      }) ?? null;
+    }
+  }
+
+  if (!walletRow) return;
+
+  const rawSummary = asObject(walletRow.evidence_summary);
+  if (!rawSummary) return;
+
+  const github = asObject(rawSummary.github);
+  const lms = asObject(rawSummary.lms);
+  const practicalTask = asObject(rawSummary.practicalTask);
+  const learner = asObject(rawSummary.learner);
+  const competency = asObject(rawSummary.competency);
+  const institutionReview = asObject(rawSummary.institutionReview);
+  const evidenceTimestamps = asObject(rawSummary.evidenceTimestamps);
+  const nextReview = toWalletReview(params.review);
+
+  const peerReviews = [
+    nextReview,
+    ...asList(rawSummary.peerReviews).filter((item) => String(item.id ?? "") !== params.review.id),
+  ];
+
+  const nextSummary = rebuildWalletSummary({
+    competency: {
+      id: String(competency?.id ?? walletRow.competency_id ?? ""),
+      name: String(competency?.name ?? walletRow.competency_name ?? ""),
+      domain: String(competency?.domain ?? "General"),
+      description: String(competency?.description ?? ""),
+    },
+    learner: {
+      id: String(learner?.id ?? walletRow.learner_id ?? ""),
+      did: typeof learner?.did === "string" ? learner.did : null,
+    },
+    github: {
+      repos: asList(github?.repos),
+      activities: asList(github?.activities),
+      evidenceRecords: asList(github?.evidenceRecords),
+      reviews: asList(github?.reviews),
+    },
+    lms: {
+      evidence: asList(lms?.evidence),
+      courses: asList(lms?.courses),
+      assignments: asList(lms?.assignments),
+      grades: asList(lms?.grades),
+      importedEvidence: asList(lms?.importedEvidence),
+    },
+    practicalTask: {
+      latestAttempt: asObject(practicalTask?.latestAttempt) as WalletEvidenceSummary["practicalTask"]["latestAttempt"],
+      attemptHistory: Array.isArray(practicalTask?.attemptHistory)
+        ? practicalTask.attemptHistory as WalletEvidenceSummary["practicalTask"]["attemptHistory"]
+        : [],
+    },
+    peerReviews,
+    teacherFeedback: asList(rawSummary.teacherFeedback),
+    institutionReview: {
+      status: typeof institutionReview?.status === "string" ? institutionReview.status : null,
+      feedback: typeof institutionReview?.feedback === "string" ? institutionReview.feedback : null,
+      reviewedAt: typeof institutionReview?.reviewedAt === "string" ? institutionReview.reviewedAt : null,
+    },
+    evidenceTimestamps: {
+      github: Array.isArray(evidenceTimestamps?.github) ? evidenceTimestamps.github as string[] : [],
+      lms: Array.isArray(evidenceTimestamps?.lms) ? evidenceTimestamps.lms as string[] : [],
+      practicalTask: Array.isArray(evidenceTimestamps?.practicalTask) ? evidenceTimestamps.practicalTask as string[] : [],
+      peerReviews: [
+        params.review.date,
+        ...(Array.isArray(evidenceTimestamps?.peerReviews) ? evidenceTimestamps.peerReviews as string[] : []),
+      ].filter(Boolean),
+      teacherFeedback: Array.isArray(evidenceTimestamps?.teacherFeedback) ? evidenceTimestamps.teacherFeedback as string[] : [],
+    },
+    sourceBadges: [],
+    evidenceCount: 0,
+  });
+
+  await client
+    .from("wallet_competency_records")
+    .update({
+      status: "Review Available",
+      evidence_summary: nextSummary,
+    })
+    .eq("id", walletRow.id);
 }
 
 function mapInvitationStatus(raw: string): ReviewInvitation["status"] {
@@ -166,7 +367,7 @@ function rowToReview(row: Record<string, unknown>): PeerReview {
     contextStatus: (row.context_status as PeerReview["contextStatus"])
       ?? ((row.verification_status as string) === "verified"
         ? "Context Verified"
-        : imported ? "Imported Context Review" : "Context Verified Review"),
+        : imported ? "Context Pending" : "Context Not Verified"),
     contributorVerification:
       (row.verification_status as string) === "verified" || row.contributor_verification
         ? "Contributor Verified"
@@ -246,8 +447,7 @@ export async function fetchPeerReviewsForUsers(userIds: string[]): Promise<Recor
 }
 
 export async function addPeerReviewDb(userId: string, review: Omit<PeerReview, "id">): Promise<PeerReview> {
-  const { data, error } = await supabase
-    .from("peer_reviews")
+  const { data, error } = await rawTable("peer_reviews")
     .insert({
       user_id: userId,
       learner_user_id: userId,
@@ -272,7 +472,13 @@ export async function addPeerReviewDb(userId: string, review: Omit<PeerReview, "
     .select("*")
     .single();
   if (error) throw error;
-  return rowToReview(data);
+  const inserted = rowToReview(data);
+  await syncWalletReviewState({
+    learnerUserId: userId,
+    competencyName: inserted.skill,
+    review: inserted,
+  });
+  return inserted;
 }
 
 function rowToInvitation(row: Record<string, unknown>): ReviewInvitation {
@@ -304,7 +510,7 @@ function normalizeInvitationSource(raw: string): ReviewInvitation["source"] {
   if (s === "github") return "GitHub";
   if (s === "lms") return "LMS";
   if (s === "spark") return "Spark";
-  if (s === "manual team") return "Manual Team";
+  if (s === "manual team" || s === "manual project") return "Manual Project";
   return (raw as ReviewInvitation["source"]) || "GitHub";
 }
 
@@ -389,8 +595,7 @@ export type ReviewInvitationInsertPayload = {
 export async function createSecureReviewInvitation(
   payload: ReviewInvitationInsertPayload,
 ): Promise<SecureReviewInvitation> {
-  const { data, error } = await supabase
-    .from("review_invitations")
+  const { data, error } = await rawTable("review_invitations")
     .insert({
       ...payload,
       source: normalizeInvitationSourceForDb(payload.source),
@@ -539,8 +744,7 @@ export async function submitSecurePeerReview(
   console.log("Invitation used for review:", invitation);
   console.log("Peer review payload:", peerReviewPayload);
 
-  const { data: insertedReview, error: reviewError } = await supabase
-    .from("peer_reviews")
+  const { data: insertedReview, error: reviewError } = await rawTable("peer_reviews")
     .insert(pickSecurePeerReviewInsertPayload(peerReviewPayload))
     .select("*")
     .single();
@@ -552,7 +756,14 @@ export async function submitSecurePeerReview(
     throw new Error(reviewError.message || "Could not submit review");
   }
 
-  return rowToReview(insertedReview as Record<string, unknown>);
+  const inserted = rowToReview(insertedReview as Record<string, unknown>);
+  await syncWalletReviewState({
+    learnerUserId,
+    skillId: invitation.skill_id,
+    competencyName: invitation.competency_name,
+    review: inserted,
+  });
+  return inserted;
 }
 
 export async function fetchInvitations(userId: string): Promise<ReviewInvitation[]> {
@@ -603,6 +814,6 @@ export async function updateInvitationDb(id: string, patch: Partial<ReviewInvita
   if (patch.status !== undefined) dbPatch.status = patch.status;
   if (patch.sentAt !== undefined) dbPatch.sent_at = patch.sentAt;
   if (patch.completedReviewId !== undefined) dbPatch.completed_review_id = patch.completedReviewId;
-  const { error } = await supabase.from("review_invitations").update(dbPatch).eq("id", id);
+  const { error } = await rawTable("review_invitations").update(dbPatch).eq("id", id);
   if (error) throw error;
 }

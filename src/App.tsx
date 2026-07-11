@@ -35,6 +35,7 @@ import InstitutionValidationTrail from "./pages/institution/ValidationTrail";
 import StudentManagement from "./pages/institution/StudentManagement";
 import GitHubPrepare from "./pages/auth/GitHubPrepare";
 import GitHubCallback from "./pages/auth/GitHubCallback";
+import CompetencyPresentationView from "./pages/public/CompetencyPresentationView";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -101,7 +102,7 @@ const App = () => (
           <Route path="/recruiter/search" element={G} />
           <Route path="/recruiter/candidate/:id" element={G} />
           <Route path="/recruiter/compare" element={G} />
-          <Route path="/recruiter/verify/:token" element={G} />
+          <Route path="/recruiter/verify/:token" element={<CompetencyPresentationView />} />
 
           <Route path="/institution" element={<IR><Navigate to="/institution/dashboard" replace /></IR>} />
           <Route path="/institution/dashboard" element={<IR><InstitutionDashboard /></IR>} />

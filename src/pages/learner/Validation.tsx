@@ -141,7 +141,7 @@ export default function Validation() {
           <>
             {walletReady && (
               <Button variant="outline" onClick={() => navigate("/learner/wallet")}>
-                View credential <ArrowRight className="h-4 w-4 ml-1.5" />
+                Open wallet record <ArrowRight className="h-4 w-4 ml-1.5" />
               </Button>
             )}
             {walletReady && (
@@ -149,7 +149,7 @@ export default function Validation() {
                 if (user && skillId) await issueCredentialForSkill(user.id, skillId);
                 navigate("/learner/wallet");
               }}>
-                <ShieldCheck className="h-4 w-4 mr-1.5" />Add to wallet
+                <ShieldCheck className="h-4 w-4 mr-1.5" />Issue Verified Credential
               </Button>
             )}
           </>

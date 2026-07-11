@@ -42,6 +42,8 @@ export type McqSessionEnvelope = {
   task: Omit<McqTask, "attemptId">;
   progress?: McqProgress;
   resultPercentage?: number;
+  resultCorrectCount?: number;
+  resultTotalQuestions?: number;
   resultMessage?: string;
   resultLabel?: string;
   passed?: boolean;
@@ -72,6 +74,8 @@ export function parseMcqSession(submission: string): McqSessionEnvelope | null {
       task,
       progress: parsed.progress as McqProgress | undefined,
       resultPercentage: parsed.resultPercentage as number | undefined,
+      resultCorrectCount: parsed.resultCorrectCount as number | undefined,
+      resultTotalQuestions: parsed.resultTotalQuestions as number | undefined,
       resultMessage: parsed.resultMessage as string | undefined,
       resultLabel: parsed.resultLabel as string | undefined,
       passed: parsed.passed as boolean | undefined,
@@ -197,7 +201,7 @@ export async function evaluateSecureMcqAttempt(
   message: string;
 }> {
   const payload = Object.fromEntries(
-    Object.entries(answers).filter(([, value]) => value != null && value !== ""),
+    Object.entries(answers).filter(([, value]) => value != null),
   );
 
   console.log("[mcq-submit] attemptId:", attemptId);

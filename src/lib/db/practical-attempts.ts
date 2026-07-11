@@ -5,6 +5,28 @@ import {
   type AttemptRecord,
   type DeclaredSkill,
 } from "@/lib/sijil-data";
+import { isMissingColumnError, isMissingRelationError } from "@/lib/supabase-errors";
+
+export type McqAttemptResultRow = {
+  id: string;
+  skill_id: string | null;
+  competency_name: string | null;
+  competency_domain: string | null;
+  title: string | null;
+  status: string | null;
+  percentage: number | null;
+  correct_count: number | null;
+  total_questions: number | null;
+  passed: boolean | null;
+  submitted_at: string | null;
+  created_at: string | null;
+};
+
+function rawTable(table: string) {
+  return (supabase as unknown as {
+    from: (name: string) => any;
+  }).from(table);
+}
 
 function rowToAttempt(row: Record<string, unknown>): AttemptRecord {
   return {
@@ -63,6 +85,46 @@ export async function fetchAttempt(userId: string, skillId: string): Promise<Att
     .maybeSingle();
   if (error) throw error;
   return data ? rowToAttempt(data) : null;
+}
+
+export async function fetchLatestMcqAttemptResult(
+  userId: string,
+  skillId: string,
+): Promise<McqAttemptResultRow | null> {
+  try {
+    const { data, error } = await rawTable("mcq_task_attempts")
+      .select("id, skill_id, competency_name, competency_domain, title, status, percentage, correct_count, total_questions, passed, submitted_at, created_at")
+      .eq("learner_user_id", userId)
+      .eq("skill_id", skillId)
+      .order("submitted_at", { ascending: false })
+      .order("created_at", { ascending: false })
+      .limit(1);
+
+    if (error) throw error;
+    return ((data ?? [])[0] as McqAttemptResultRow | undefined) ?? null;
+  } catch (error) {
+    if (!isMissingColumnError(error) && !isMissingRelationError(error)) {
+      console.warn("mcq_task_attempts result query failed:", error);
+    }
+  }
+
+  try {
+    const { data, error } = await rawTable("mcq_task_attempts")
+      .select("id, skill_id, competency_name, competency_domain, title, status, passed, submitted_at, created_at")
+      .eq("learner_user_id", userId)
+      .eq("skill_id", skillId)
+      .order("submitted_at", { ascending: false })
+      .order("created_at", { ascending: false })
+      .limit(1);
+
+    if (error) throw error;
+    return ((data ?? [])[0] as McqAttemptResultRow | undefined) ?? null;
+  } catch (error) {
+    if (!isMissingRelationError(error)) {
+      console.warn("mcq_task_attempts basic result query failed:", error);
+    }
+    return null;
+  }
 }
 
 /** Prefer Supabase; fall back to legacy localStorage and sync upward when possible. */

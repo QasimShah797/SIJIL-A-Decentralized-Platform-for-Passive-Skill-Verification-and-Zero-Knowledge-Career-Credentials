@@ -92,10 +92,64 @@ export async function fetchLinkedProjectEvidence(
   const viaApi = await getLinkedProjectEvidenceApi();
   if (viaApi?.length) return viaApi;
 
-  const { data: links, error: linksError } = await supabase
-    .from("github_repo_skill_links")
-    .select("github_repo_id, skill_id, match_reason, linked_at, declared_skills(name)")
-    .eq("user_id", userId);
+  const { data: legacyRepos } = await supabase
+    .from("github_repos")
+    .select("*")
+    .eq("user_id", userId)
+    .not("linked_skill_id", "is", null)
+    .order("last_updated", { ascending: false, nullsFirst: false });
+
+  if (legacyRepos?.length) {
+    const projects = (legacyRepos ?? []).map((repo) => ({
+      repoId: repo.id as string,
+      githubRepoId: repo.repo_id as number,
+      repositoryName: repo.repo_name as string,
+      repoFullName: repo.full_name as string,
+      repositoryUrl: repo.github_url as string,
+      description: repo.description as string | null,
+      primaryLanguage: repo.primary_language as string | null,
+      languageBreakdown: parseBreakdown(
+        (repo as Record<string, unknown>).language_breakdown
+          ?? (repo as Record<string, unknown>).metadata
+            ? ((repo as Record<string, unknown>).metadata as Record<string, unknown>)?.language_breakdown
+            : undefined,
+      ),
+      topics: Array.isArray((repo as Record<string, unknown>).topics)
+        ? ((repo as Record<string, unknown>).topics as string[])
+        : [],
+      lastUpdated: repo.last_updated as string | null,
+      commitCount: repo.commit_count as number | null,
+      evidenceRecordId: "",
+      skillLinks: [{
+        skillId: repo.linked_skill_id as string,
+        skillName: repo.linked_skill_name as string,
+        matchReason: null,
+        linkedAt: repo.linked_at as string,
+      }],
+    }));
+
+    const breakdownMap = await loadBreakdownFromEvidence(
+      userId,
+      projects.map((p) => p.githubRepoId),
+    );
+    return enrichProjectsWithBreakdown(projects, breakdownMap);
+  }
+
+  let links: Record<string, unknown>[] | null = null;
+  let linksError: unknown = null;
+  try {
+    const result = await (supabase as unknown as {
+      from: (table: string) => any;
+    })
+      .from("github_repo_skill_links")
+      .select("github_repo_id, skill_id, match_reason, linked_at, declared_skills(name)")
+      .eq("user_id", userId);
+
+    links = (result.data ?? null) as Record<string, unknown>[] | null;
+    linksError = result.error ?? null;
+  } catch (error) {
+    linksError = error;
+  }
 
   if (linksError && !isMissingRelationError(linksError)) {
     console.warn("github_repo_skill_links query failed:", linksError);
@@ -154,15 +208,7 @@ export async function fetchLinkedProjectEvidence(
     );
     return enrichProjectsWithBreakdown(projects, breakdownMap);
   }
-
-  const { data: legacyRepos } = await supabase
-    .from("github_repos")
-    .select("*")
-    .eq("user_id", userId)
-    .not("linked_skill_id", "is", null)
-    .order("last_updated", { ascending: false, nullsFirst: false });
-
-  const projects = (legacyRepos ?? []).map((repo) => ({
+  const projects = ((legacyRepos ?? []) as typeof legacyRepos).map((repo) => ({
     repoId: repo.id as string,
     githubRepoId: repo.repo_id as number,
     repositoryName: repo.repo_name as string,
