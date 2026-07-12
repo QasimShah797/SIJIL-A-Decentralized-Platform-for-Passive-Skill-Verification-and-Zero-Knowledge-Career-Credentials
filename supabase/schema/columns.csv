@@ -1,0 +1,535 @@
+table_name,column_name,data_type
+attestations,id,uuid
+attestations,learner_user_id,uuid
+attestations,skill_id,uuid
+attestations,skill_name,text
+attestations,status,text
+attestations,created_at,timestamp with time zone
+attestations,updated_at,timestamp with time zone
+audit_logs,id,uuid
+audit_logs,profile_id,uuid
+audit_logs,actor_user_id,uuid
+audit_logs,action,text
+audit_logs,entity_type,text
+audit_logs,entity_id,uuid
+audit_logs,metadata,jsonb
+audit_logs,created_at,timestamp with time zone
+credential_shares,id,uuid
+credential_shares,profile_id,uuid
+credential_shares,credential_id,uuid
+credential_shares,share_token_hash,text
+credential_shares,share_token_hint,text
+credential_shares,status,text
+credential_shares,expires_at,timestamp with time zone
+credential_shares,revoked_at,timestamp with time zone
+credential_shares,created_at,timestamp with time zone
+credential_shares,updated_at,timestamp with time zone
+credentials,id,uuid
+credentials,user_id,uuid
+credentials,credential_uri,text
+credentials,name,text
+credentials,credential_types,ARRAY
+credentials,issuer_name,text
+credentials,issuer_did,text
+credentials,holder_did,text
+credentials,valid_from,timestamp with time zone
+credentials,verification_status,text
+credentials,attestation_status,text
+credentials,supporting_records,integer
+credentials,skill_name,text
+credentials,proof,jsonb
+credentials,created_at,timestamp with time zone
+credentials,updated_at,timestamp with time zone
+credentials,skill_id,uuid
+credentials,decentralized_identity_id,uuid
+credentials,evidence_record_id,uuid
+decentralized_identities,id,uuid
+decentralized_identities,learner_user_id,uuid
+decentralized_identities,did,text
+decentralized_identities,controller,text
+decentralized_identities,did_document,jsonb
+decentralized_identities,status,text
+decentralized_identities,created_at,timestamp with time zone
+decentralized_identities,updated_at,timestamp with time zone
+declared_skills,id,uuid
+declared_skills,user_id,uuid
+declared_skills,name,text
+declared_skills,domain,text
+declared_skills,description,text
+declared_skills,status,text
+declared_skills,last_related_activity_at,timestamp with time zone
+declared_skills,last_credential_sync_at,timestamp with time zone
+declared_skills,created_at,timestamp with time zone
+declared_skills,pipeline_stage,text
+disclosed_attributes,id,uuid
+disclosed_attributes,credential_share_id,uuid
+disclosed_attributes,attribute_key,text
+disclosed_attributes,attribute_value,jsonb
+disclosed_attributes,disclosed,boolean
+disclosed_attributes,created_at,timestamp with time zone
+evidence_records,id,uuid
+evidence_records,user_id,uuid
+evidence_records,source,text
+evidence_records,external_id,text
+evidence_records,status,text
+evidence_records,repository_name,text
+evidence_records,repository_url,text
+evidence_records,description,text
+evidence_records,language,text
+evidence_records,stars,integer
+evidence_records,forks,integer
+evidence_records,last_updated,timestamp with time zone
+evidence_records,commit_count,integer
+evidence_records,pr_summary,jsonb
+evidence_records,sync_date,timestamp with time zone
+evidence_records,suggested_skill_id,uuid
+evidence_records,suggested_skill_name,text
+evidence_records,mapped_skill_id,uuid
+evidence_records,github_repo_id,bigint
+evidence_records,metadata,jsonb
+evidence_records,created_at,timestamp with time zone
+evidence_records,updated_at,timestamp with time zone
+evidence_records,sync_log_id,uuid
+evidence_records,github_repo_uuid,uuid
+evidence_records,lms_evidence_id,uuid
+github_activities,id,uuid
+github_activities,user_id,uuid
+github_activities,github_username,text
+github_activities,repo_name,text
+github_activities,activity_type,text
+github_activities,activity_title,text
+github_activities,activity_url,text
+github_activities,commit_hash,text
+github_activities,occurred_at,timestamp with time zone
+github_activities,synced_at,timestamp with time zone
+github_activities,linked_skill_id,uuid
+github_activities,external_id,text
+github_activities,github_repo_uuid,uuid
+github_connections,user_id,uuid
+github_connections,github_user_id,bigint
+github_connections,github_username,text
+github_connections,github_avatar_url,text
+github_connections,scopes,text
+github_connections,access_token,text
+github_connections,token_type,text
+github_connections,connected_at,timestamp with time zone
+github_connections,last_synced_at,timestamp with time zone
+github_connections_public,user_id,uuid
+github_connections_public,github_user_id,bigint
+github_connections_public,github_username,text
+github_connections_public,github_avatar_url,text
+github_connections_public,scopes,text
+github_connections_public,connected_at,timestamp with time zone
+github_connections_public,last_synced_at,timestamp with time zone
+github_repo_contributors,id,uuid
+github_repo_contributors,user_id,uuid
+github_repo_contributors,repo_id,bigint
+github_repo_contributors,full_name,text
+github_repo_contributors,github_url,text
+github_repo_contributors,contributor_login,text
+github_repo_contributors,contributor_avatar_url,text
+github_repo_contributors,contributor_html_url,text
+github_repo_contributors,contributions,integer
+github_repo_contributors,synced_at,timestamp with time zone
+github_repo_contributors,contributor_email,text
+github_repo_contributors,github_repo_uuid,uuid
+github_repo_skill_links,id,uuid
+github_repo_skill_links,user_id,uuid
+github_repo_skill_links,github_repo_id,uuid
+github_repo_skill_links,skill_id,uuid
+github_repo_skill_links,evidence_record_id,uuid
+github_repo_skill_links,match_reason,text
+github_repo_skill_links,linked_at,timestamp with time zone
+github_repos,id,uuid
+github_repos,user_id,uuid
+github_repos,github_username,text
+github_repos,repo_id,bigint
+github_repos,repo_name,text
+github_repos,full_name,text
+github_repos,github_url,text
+github_repos,description,text
+github_repos,primary_language,text
+github_repos,last_updated,timestamp with time zone
+github_repos,commit_count,integer
+github_repos,linked_skill_id,uuid
+github_repos,linked_skill_name,text
+github_repos,linked_at,timestamp with time zone
+github_repos,synced_at,timestamp with time zone
+github_repos,created_at,timestamp with time zone
+github_repos,updated_at,timestamp with time zone
+github_repos,github_connection_user_id,uuid
+github_sync_logs,id,uuid
+github_sync_logs,user_id,uuid
+github_sync_logs,status,text
+github_sync_logs,started_at,timestamp with time zone
+github_sync_logs,completed_at,timestamp with time zone
+github_sync_logs,repos_fetched,integer
+github_sync_logs,evidence_created,integer
+github_sync_logs,error_message,text
+github_sync_logs,created_at,timestamp with time zone
+github_sync_logs,github_connection_user_id,uuid
+institution_profiles,user_id,uuid
+institution_profiles,institution_name,text
+institution_profiles,website,text
+institution_profiles,contact_email,text
+institution_profiles,created_at,timestamp with time zone
+institution_profiles,updated_at,timestamp with time zone
+learner_profiles,user_id,uuid
+learner_profiles,first_name,text
+learner_profiles,last_name,text
+learner_profiles,contact_number,text
+learner_profiles,institution_name,text
+learner_profiles,program,text
+learner_profiles,student_id,text
+learner_profiles,github_url,text
+learner_profiles,linkedin_url,text
+learner_profiles,created_at,timestamp with time zone
+learner_profiles,updated_at,timestamp with time zone
+learner_profiles,status,USER-DEFINED
+learner_profiles,username,text
+learner_profiles,bio,text
+learner_profiles,portfolio_url,text
+learner_profiles,profile_completed,boolean
+learner_profiles,batch,text
+learner_profiles,holder_did,text
+learner_profiles,institution_id,uuid
+learner_profiles,department,text
+learner_profiles,university_email,text
+learner_profiles,city_country,text
+learner_profiles,career_goal,text
+learner_profiles,skills_summary,text
+learner_profiles,avatar_url,text
+learner_profiles,account_activated_at,timestamp with time zone
+lms_connections,id,uuid
+lms_connections,user_id,uuid
+lms_connections,odoo_url,text
+lms_connections,odoo_db,text
+lms_connections,odoo_login,text
+lms_connections,has_api_key,boolean
+lms_connections,last_synced_at,timestamp with time zone
+lms_connections,created_at,timestamp with time zone
+lms_connections,updated_at,timestamp with time zone
+lms_connections,institution_email,text
+lms_connections,moodle_user_id,bigint
+lms_connections,moodle_email,text
+lms_connections,moodle_site_url,text
+lms_evidence,id,uuid
+lms_evidence,user_id,uuid
+lms_evidence,source,text
+lms_evidence,course_name,text
+lms_evidence,course_code,text
+lms_evidence,grade,text
+lms_evidence,completion_status,text
+lms_evidence,certificate_url,text
+lms_evidence,evidence_hash,text
+lms_evidence,raw,jsonb
+lms_evidence,linked_skill_id,uuid
+lms_evidence,text_preview,text
+lms_evidence,fetched_at,timestamp with time zone
+lms_evidence,created_at,timestamp with time zone
+lms_evidence,moodle_assignment_id_uuid,uuid
+lms_evidence,evidence_record_id,uuid
+mcq_task_attempts,id,uuid
+mcq_task_attempts,user_id,uuid
+mcq_task_attempts,learner_user_id,uuid
+mcq_task_attempts,skill_id,uuid
+mcq_task_attempts,competency_name,text
+mcq_task_attempts,competency_domain,text
+mcq_task_attempts,title,text
+mcq_task_attempts,type,text
+mcq_task_attempts,duration_minutes,integer
+mcq_task_attempts,questions,jsonb
+mcq_task_attempts,answer_key,jsonb
+mcq_task_attempts,learner_answers,jsonb
+mcq_task_attempts,status,text
+mcq_task_attempts,passed,boolean
+mcq_task_attempts,feedback,text
+mcq_task_attempts,evidence_package,jsonb
+mcq_task_attempts,classification,jsonb
+mcq_task_attempts,created_at,timestamp without time zone
+mcq_task_attempts,submitted_at,timestamp without time zone
+mcq_task_attempts,updated_at,timestamp without time zone
+mcq_task_attempts,github_connection_user_id,uuid
+moodle_assignments,id,uuid
+moodle_assignments,user_id,uuid
+moodle_assignments,moodle_course_id,bigint
+moodle_assignments,moodle_assignment_id,bigint
+moodle_assignments,name,text
+moodle_assignments,module_type,text
+moodle_assignments,submission_status,text
+moodle_assignments,grade,numeric
+moodle_assignments,grade_max,numeric
+moodle_assignments,grade_formatted,text
+moodle_assignments,graded_at,timestamp with time zone
+moodle_assignments,submitted_at,timestamp with time zone
+moodle_assignments,grade_released,boolean
+moodle_assignments,competency_tags,ARRAY
+moodle_assignments,raw,jsonb
+moodle_assignments,synced_at,timestamp with time zone
+moodle_assignments,updated_at,timestamp with time zone
+moodle_assignments,moodle_cmid,bigint
+moodle_assignments,submission_text,text
+moodle_assignments,submission_files,jsonb
+moodle_assignments,course_id,uuid
+moodle_courses,id,uuid
+moodle_courses,user_id,uuid
+moodle_courses,moodle_course_id,bigint
+moodle_courses,fullname,text
+moodle_courses,shortname,text
+moodle_courses,synced_at,timestamp with time zone
+moodle_courses,raw,jsonb
+moodle_courses,summary,text
+moodle_courses,updated_at,timestamp with time zone
+moodle_courses,lms_connection_id,uuid
+moodle_feedback,id,uuid
+moodle_feedback,user_id,uuid
+moodle_feedback,moodle_assignment_id,bigint
+moodle_feedback,feedback_text,text
+moodle_feedback,raw,jsonb
+moodle_feedback,synced_at,timestamp with time zone
+moodle_feedback,updated_at,timestamp with time zone
+moodle_feedback,grader_id,bigint
+moodle_feedback,grade_id,bigint
+moodle_feedback,feedback_format,text
+moodle_feedback,assignment_id,uuid
+notifications,id,uuid
+notifications,recipient_user_id,uuid
+notifications,reviewer_context_id,uuid
+notifications,review_request_id,uuid
+notifications,peer_review_invite_id,uuid
+notifications,title,text
+notifications,body,text
+notifications,channel,text
+notifications,status,text
+notifications,metadata,jsonb
+notifications,created_at,timestamp with time zone
+notifications,read_at,timestamp with time zone
+peer_review_invites,id,uuid
+peer_review_invites,learner_user_id,uuid
+peer_review_invites,evidence_record_id,uuid
+peer_review_invites,project_id,text
+peer_review_invites,project_name,text
+peer_review_invites,source,text
+peer_review_invites,contributor_id,text
+peer_review_invites,contributor_name,text
+peer_review_invites,contributor_email,text
+peer_review_invites,contributor_role,text
+peer_review_invites,relationship,text
+peer_review_invites,skill_id,uuid
+peer_review_invites,skill,text
+peer_review_invites,reviewer_context_id,uuid
+peer_review_invites,token,text
+peer_review_invites,status,text
+peer_review_invites,expires_at,timestamp with time zone
+peer_review_invites,completed_review_id,uuid
+peer_review_invites,created_at,timestamp with time zone
+peer_review_invites,updated_at,timestamp with time zone
+peer_reviews,id,uuid
+peer_reviews,user_id,uuid
+peer_reviews,reviewer_name,text
+peer_reviews,reviewer_role,text
+peer_reviews,source,text
+peer_reviews,origin,text
+peer_reviews,skill,text
+peer_reviews,project_id,text
+peer_reviews,project_name,text
+peer_reviews,evidence_label,text
+peer_reviews,evidence_url,text
+peer_reviews,rating,text
+peer_reviews,comment,text
+peer_reviews,recommendation,text
+peer_reviews,review_date,date
+peer_reviews,context_status,text
+peer_reviews,trust_weight,text
+peer_reviews,created_at,timestamp with time zone
+peer_reviews,reviewer_user_id,uuid
+peer_reviews,skill_id,uuid
+peer_reviews,competency_name,text
+peer_reviews,competency_domain,text
+peer_reviews,status,text
+peer_reviews,evidence_package,jsonb
+peer_reviews,github_evidence,jsonb
+peer_reviews,moodle_evidence,jsonb
+peer_reviews,practical_task_result,jsonb
+peer_reviews,review_text,text
+peer_reviews,decision,text
+peer_reviews,reviewer_confidence,text
+peer_reviews,requested_at,timestamp with time zone
+peer_reviews,reviewed_at,timestamp with time zone
+peer_reviews,updated_at,timestamp with time zone
+peer_reviews,learner_user_id,uuid
+peer_reviews,contributor_verification,jsonb
+peer_reviews,reviewer_email,text
+peer_reviews,reviewer_github_username,text
+peer_reviews,invitation_id,uuid
+peer_reviews,verification_status,text
+peer_reviews,evidence_record_id,uuid
+peer_reviews,review_type,text
+peer_reviews,external_reference,text
+peer_reviews,review_request_id,uuid
+peer_reviews,trust_weight_score,numeric
+peer_reviews,relationship,text
+peer_reviews,imported,boolean
+peer_reviews,review_source,text
+peer_reviews,context_verified,boolean
+peer_reviews,mcq_task_attempt_id,uuid
+practical_attempts,id,uuid
+practical_attempts,user_id,uuid
+practical_attempts,skill_id,uuid
+practical_attempts,attempt_id,text
+practical_attempts,started_at,timestamp with time zone
+practical_attempts,ends_at,timestamp with time zone
+practical_attempts,duration_minutes,integer
+practical_attempts,status,text
+practical_attempts,submission,text
+practical_attempts,credential_sync_snapshot,text
+practical_attempts,updated_at,timestamp with time zone
+practical_attempts,created_at,timestamp with time zone
+practical_attempts,passed,boolean
+practical_attempts,score,numeric
+practical_attempts,feedback,text
+practical_attempts,github_connection_user_id,uuid
+presentations,token,text
+presentations,user_id,uuid
+presentations,credential_id,uuid
+presentations,candidate_user_id,uuid
+presentations,recipient,text
+presentations,recipient_did,text
+presentations,created_at,timestamp with time zone
+presentations,expires_at,timestamp with time zone
+presentations,revoked,boolean
+presentations,disclosed_fields,jsonb
+presentations,hidden_fields,ARRAY
+presentations,proof,jsonb
+profiles,id,uuid
+profiles,display_name,text
+profiles,avatar_url,text
+profiles,created_at,timestamp with time zone
+profiles,updated_at,timestamp with time zone
+recruiter_profiles,user_id,uuid
+recruiter_profiles,full_name,text
+recruiter_profiles,work_email,text
+recruiter_profiles,company_name,text
+recruiter_profiles,job_title,text
+recruiter_profiles,company_website,text
+recruiter_profiles,linkedin_url,text
+recruiter_profiles,contact_number,text
+recruiter_profiles,reason,text
+recruiter_profiles,verification_status,USER-DEFINED
+recruiter_profiles,verified_at,timestamp with time zone
+recruiter_profiles,verified_by,uuid
+recruiter_profiles,created_at,timestamp with time zone
+recruiter_profiles,updated_at,timestamp with time zone
+review_invitations,id,uuid
+review_invitations,learner_user_id,uuid
+review_invitations,project_id,text
+review_invitations,project_name,text
+review_invitations,source,text
+review_invitations,contributor_id,text
+review_invitations,contributor_name,text
+review_invitations,contributor_email,text
+review_invitations,contributor_role,text
+review_invitations,learner_name,text
+review_invitations,skill,text
+review_invitations,status,text
+review_invitations,sent_at,timestamp with time zone
+review_invitations,completed_review_id,uuid
+review_invitations,created_at,timestamp with time zone
+review_invitations,skill_id,uuid
+review_invitations,competency_name,text
+review_invitations,competency_domain,text
+review_invitations,token,text
+review_invitations,review_link,text
+review_invitations,expires_at,timestamp without time zone
+review_invitations,used_at,timestamp without time zone
+review_invitations,email_status,text
+review_invitations,error_message,text
+review_requests,id,uuid
+review_requests,learner_user_id,uuid
+review_requests,evidence_record_id,uuid
+review_requests,skill_id,uuid
+review_requests,reviewer_context_id,uuid
+review_requests,reviewer_name,text
+review_requests,reviewer_email,text
+review_requests,reviewer_context_role,text
+review_requests,context_source,text
+review_requests,token,text
+review_requests,status,text
+review_requests,expires_at,timestamp with time zone
+review_requests,completed_review_id,uuid
+review_requests,created_at,timestamp with time zone
+review_requests,updated_at,timestamp with time zone
+reviewer_contexts,id,uuid
+reviewer_contexts,evidence_record_id,uuid
+reviewer_contexts,user_id,uuid
+reviewer_contexts,reviewer_name,text
+reviewer_contexts,reviewer_email,text
+reviewer_contexts,reviewer_login,text
+reviewer_contexts,context_role,text
+reviewer_contexts,source,text
+reviewer_contexts,external_ref,text
+reviewer_contexts,synced_at,timestamp with time zone
+selective_disclosure_presentations,id,uuid
+selective_disclosure_presentations,learner_id,uuid
+selective_disclosure_presentations,competency_id,uuid
+selective_disclosure_presentations,selected_fields,jsonb
+selective_disclosure_presentations,selection_mode,text
+selective_disclosure_presentations,disclosed_payload,jsonb
+selective_disclosure_presentations,payload_hash,text
+selective_disclosure_presentations,proof_type,text
+selective_disclosure_presentations,proof_value,text
+selective_disclosure_presentations,verification_method,text
+selective_disclosure_presentations,share_token_hash,text
+selective_disclosure_presentations,share_token_hint,text
+selective_disclosure_presentations,expires_at,timestamp with time zone
+selective_disclosure_presentations,revoked_at,timestamp with time zone
+selective_disclosure_presentations,created_at,timestamp with time zone
+selective_disclosure_presentations,updated_at,timestamp with time zone
+selective_disclosure_presentations,credential_share_id,uuid
+skill_evidence_links,id,uuid
+skill_evidence_links,user_id,uuid
+skill_evidence_links,skill_id,uuid
+skill_evidence_links,evidence_record_id,uuid
+skill_evidence_links,mcq_task_attempt_id,uuid
+skill_evidence_links,practical_attempt_id,uuid
+skill_evidence_links,review_request_id,uuid
+skill_evidence_links,link_role,text
+skill_evidence_links,linked_at,timestamp with time zone
+student_activation_tokens,id,uuid
+student_activation_tokens,user_id,uuid
+student_activation_tokens,institution_id,uuid
+student_activation_tokens,token_hash,text
+student_activation_tokens,expires_at,timestamp with time zone
+student_activation_tokens,used_at,timestamp with time zone
+student_activation_tokens,created_at,timestamp with time zone
+user_roles,id,uuid
+user_roles,user_id,uuid
+user_roles,role,USER-DEFINED
+user_roles,created_at,timestamp with time zone
+verification_requests,id,uuid
+verification_requests,recruiter_user_id,uuid
+verification_requests,credential_share_id,uuid
+verification_requests,learner_user_id,uuid
+verification_requests,purpose,text
+verification_requests,status,text
+verification_requests,requested_at,timestamp with time zone
+verification_requests,completed_at,timestamp with time zone
+verification_requests,created_at,timestamp with time zone
+verification_requests,updated_at,timestamp with time zone
+verification_results,id,uuid
+verification_results,verification_request_id,uuid
+verification_results,result_status,text
+verification_results,proof_valid,boolean
+verification_results,notes,text
+verification_results,raw,jsonb
+verification_results,verified_at,timestamp with time zone
+verification_results,created_at,timestamp with time zone
+wallet_competency_records,id,uuid
+wallet_competency_records,learner_id,uuid
+wallet_competency_records,competency_id,uuid
+wallet_competency_records,competency_name,text
+wallet_competency_records,status,text
+wallet_competency_records,practical_task_status,text
+wallet_competency_records,evidence_summary,jsonb
+wallet_competency_records,created_at,timestamp with time zone
+wallet_competency_records,updated_at,timestamp with time zone
