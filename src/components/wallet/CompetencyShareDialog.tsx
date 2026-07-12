@@ -121,7 +121,7 @@ function buildPreview(record: WalletCompetencyRecordView, selectedFields: Wallet
     previews.push({ label: "Verification", value: record.verificationStatus ?? "Unverified" });
   }
   if (selectedFields.includes("practical_task_result")) {
-    previews.push({ label: "Task result", value: record.taskResult ?? "Task Submitted" });
+    previews.push({ label: "Task result", value: record.taskResult ?? "Submitted" });
   }
   if (selectedFields.includes("github_evidence")) {
     const count =

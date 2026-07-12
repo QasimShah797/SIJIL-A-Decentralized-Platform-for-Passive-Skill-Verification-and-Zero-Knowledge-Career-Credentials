@@ -88,7 +88,10 @@ export function evidenceLabelForAttempt(stage: string, attempt: AttemptContext):
     return evidenceLabelForStage(stage);
   }
   if (attempt.status === "passed" || attempt.passed) return "Practical task passed";
-  if (attempt.status === "submitted" || attempt.status === "auto_submitted") {
+  if (attempt.status === "auto_submitted" || attempt.status === "expired_no_submission") {
+    return "Practical task timed out";
+  }
+  if (attempt.status === "submitted") {
     return "Practical task submitted";
   }
   if (attempt.status === "in_progress") return "Practical task in progress";
@@ -104,8 +107,11 @@ export function nextStepForAttempt(
     if (attempt.status === "passed" || attempt.passed) {
       return nextStepForStage("institution_attestation_pending", institution);
     }
-    if (attempt.status === "submitted" || attempt.status === "auto_submitted") {
+    if (attempt.status === "submitted") {
       return "Awaiting practical task evaluation";
+    }
+    if (attempt.status === "expired_no_submission") {
+      return "Retry the practical task";
     }
     if (attempt.status === "in_progress") {
       return "Complete and submit your practical task";

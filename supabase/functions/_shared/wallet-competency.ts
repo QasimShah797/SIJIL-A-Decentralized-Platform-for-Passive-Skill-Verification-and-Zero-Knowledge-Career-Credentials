@@ -9,18 +9,20 @@ export type WalletSourceBadge = (typeof WALLET_SOURCE_BADGES)[number];
 
 export const WALLET_RECORD_STATUSES = [
   "Evidence Collected",
-  "Task Submitted",
+  "Submitted",
   "Passed",
   "Needs Improvement",
+  "Timed Out",
   "Review Available",
 ] as const;
 
 export type WalletRecordStatus = (typeof WALLET_RECORD_STATUSES)[number];
 
 export type WalletPracticalTaskStatus =
-  | "Task Submitted"
+  | "Submitted"
   | "Passed"
-  | "Needs Improvement";
+  | "Needs Improvement"
+  | "Timed Out";
 
 export type WalletAttemptHistoryItem = {
   attemptId: string;
@@ -92,10 +94,12 @@ function uniqueTimestamps(list: Array<string | null | undefined>): string[] {
 export function deriveWalletPracticalTaskStatus(params: {
   passed?: boolean | null;
   scorePercent?: number | null;
+  status?: string | null;
 }): WalletPracticalTaskStatus {
+  if (params.status === "timed_out" || params.status === "auto_submitted") return "Timed Out";
   if (params.passed) return "Passed";
   if (params.scorePercent != null) return "Needs Improvement";
-  return "Task Submitted";
+  return "Submitted";
 }
 
 export function deriveWalletRecordStatus(params: {
@@ -107,7 +111,8 @@ export function deriveWalletRecordStatus(params: {
   if (params.peerReviewCount > 0) return "Review Available";
   if (params.practicalTaskStatus === "Passed") return "Passed";
   if (params.practicalTaskStatus === "Needs Improvement") return "Needs Improvement";
-  if (params.practicalTaskStatus === "Task Submitted") return "Task Submitted";
+  if (params.practicalTaskStatus === "Timed Out") return "Timed Out";
+  if (params.practicalTaskStatus === "Submitted") return "Submitted";
   return params.githubCount > 0 || params.lmsCount > 0
     ? "Evidence Collected"
     : "Evidence Collected";

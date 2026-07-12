@@ -164,10 +164,11 @@ function sortRowsByLatestDate<T extends QueryRow>(rows: T[], fields: string[]): 
 function mapAttemptHistoryItem(row: QueryRow): WalletAttemptHistoryItem {
   const scorePercent = numericValue(row.percentage);
   const passed = row.passed === true;
+  const status = textValue(row.status) || null;
   return {
     attemptId: textValue(row.id),
     title: textValue(row.title) || "Practical task",
-    status: deriveWalletPracticalTaskStatus({ passed, scorePercent }),
+    status: deriveWalletPracticalTaskStatus({ passed, scorePercent, status }),
     submittedAt: textValue(row.submitted_at) || textValue(row.created_at) || null,
     scorePercent,
     correctCount: numericValue(row.correct_count),
@@ -634,13 +635,11 @@ Deno.serve(async (req) => {
 
         const attemptId = String(body.attemptId ?? "");
         const answers = (body.answers ?? {}) as Record<string, unknown>;
+        const timedOut = body.timedOut === true;
 
         if (!attemptId) {
           return json({ error: "Missing attemptId" }, 400);
         }
-
-        console.log("[mcq-evaluate] attemptId:", attemptId);
-        console.log("[mcq-evaluate] raw selected answers:", JSON.stringify(answers));
 
         const { data: attempt, error: fetchErr } = await admin
           .from("mcq_task_attempts")
@@ -672,7 +671,8 @@ Deno.serve(async (req) => {
           answers,
         );
         const submittedAt = new Date().toISOString();
-        const resultLabel = passed ? "Passed" : "Needs Improvement";
+        const attemptStatus = timedOut ? "timed_out" : passed ? "passed" : "needs_improvement";
+        const resultLabel = timedOut ? "Timed Out" : passed ? "Passed" : "Needs Improvement";
 
         const { error: updateErr } = await admin
           .from("mcq_task_attempts")
@@ -682,8 +682,10 @@ Deno.serve(async (req) => {
             total_questions: totalQuestions,
             percentage,
             passed,
-            status: "completed",
-            feedback: passed
+            status: attemptStatus,
+            feedback: timedOut
+              ? `MCQ timed out with ${percentage}%.`
+              : passed
               ? `MCQ passed with ${percentage}%.`
               : `MCQ score ${percentage}% — needs improvement (pass threshold is 70%).`,
             submitted_at: submittedAt,
@@ -708,6 +710,7 @@ Deno.serve(async (req) => {
           practicalTask: {
             type: "MCQ",
             attemptId,
+            resultStatus: attemptStatus,
             percentage,
             correctCount,
             totalQuestions,
@@ -768,6 +771,7 @@ Deno.serve(async (req) => {
                 type: "MCQ",
                 title: attempt.title ?? `${attempt.competency_name} MCQ`,
                 attemptId,
+                resultStatus: attemptStatus,
                 percentage,
                 scorePercent: percentage,
                 correctCount,
@@ -777,6 +781,7 @@ Deno.serve(async (req) => {
               },
               mcq_result: {
                 attemptId,
+                resultStatus: attemptStatus,
                 percentage,
                 correctCount,
                 totalQuestions,
@@ -837,7 +842,9 @@ Deno.serve(async (req) => {
           attestationSent: attestationRequestId != null,
           message: passed
             ? `Test submitted successfully. Your result is ${percentage}% — Passed. Sent to your institution for attestation.`
-            : `Test submitted successfully. Your result is ${percentage}% — Needs Improvement. Sent to your institution for attestation.`,
+            : timedOut
+              ? `Test submitted successfully. Your result is ${percentage}% — Timed Out. Sent to your institution for attestation.`
+              : `Test submitted successfully. Your result is ${percentage}% — Needs Improvement. Sent to your institution for attestation.`,
         });
       }
 

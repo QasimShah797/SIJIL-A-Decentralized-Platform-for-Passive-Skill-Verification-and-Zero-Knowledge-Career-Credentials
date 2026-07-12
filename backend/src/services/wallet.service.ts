@@ -169,10 +169,12 @@ function hasItems(list: DbRow[]): boolean {
 function deriveWalletPracticalTaskStatus(params: {
   passed?: boolean | null;
   scorePercent?: number | null;
+  status?: string | null;
 }): WalletPracticalTaskStatus {
+  if (params.status === "timed_out" || params.status === "auto_submitted") return "Timed Out";
   if (params.passed) return "Passed";
   if (params.scorePercent != null) return "Needs Improvement";
-  return "Task Submitted";
+  return "Submitted";
 }
 
 function deriveWalletRecordStatus(params: {
@@ -184,7 +186,8 @@ function deriveWalletRecordStatus(params: {
   if (params.reviewCount > 0) return "Review Available";
   if (params.practicalTaskStatus === "Passed") return "Passed";
   if (params.practicalTaskStatus === "Needs Improvement") return "Needs Improvement";
-  if (params.practicalTaskStatus === "Task Submitted") return "Task Submitted";
+  if (params.practicalTaskStatus === "Timed Out") return "Timed Out";
+  if (params.practicalTaskStatus === "Submitted") return "Submitted";
   if (params.githubCount > 0 || params.lmsCount > 0) return "Evidence Collected";
   return "Evidence Collected";
 }
@@ -351,7 +354,7 @@ function buildAttemptHistoryItem(row: DbRow): WalletAttemptHistoryItem | null {
   return {
     attemptId,
     title,
-    status: deriveWalletPracticalTaskStatus({ passed, scorePercent }),
+    status: deriveWalletPracticalTaskStatus({ passed, scorePercent, status: asNullableText(row.status) }),
     submittedAt,
     scorePercent,
     correctCount,
@@ -1069,7 +1072,7 @@ async function loadAggregatedWallet(userId: string): Promise<WalletCompetencyRec
   });
 
   return records
-    .filter((record) => record.evidenceCount > 0 || record.taskResult || record.verificationStatus !== "Unverified")
+    .filter((record) => record.evidencePackage.practicalTask.attemptHistory.length > 0)
     .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
 }
 

@@ -52,8 +52,8 @@ function statusVariant(
   status: WalletRecordStatus | string,
 ): "verified" | "info" | "warning" | "neutral" {
   if (status === "Passed" || status === "Review Available") return "verified";
-  if (status === "Task Submitted") return "info";
-  if (status === "Needs Improvement") return "warning";
+  if (status === "Submitted") return "info";
+  if (status === "Needs Improvement" || status === "Timed Out") return "warning";
   return "neutral";
 }
 
@@ -550,6 +550,14 @@ export default function WalletPage() {
                       <div>
                         <div className="text-[11px] text-muted-foreground">Task result</div>
                         <div className="mt-1 font-medium">{record.taskResult ?? "Evidence Collected"}</div>
+                      </div>
+                      <div>
+                        <div className="text-[11px] text-muted-foreground">Task score</div>
+                        <div className="mt-1 font-medium">
+                          {latestAttempt(record.evidencePackage)?.scorePercent != null
+                            ? `${latestAttempt(record.evidencePackage)?.scorePercent}%`
+                            : "—"}
+                        </div>
                       </div>
                       <div>
                         <div className="text-[11px] text-muted-foreground">Evidence count</div>

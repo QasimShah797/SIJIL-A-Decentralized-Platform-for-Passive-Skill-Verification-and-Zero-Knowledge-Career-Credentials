@@ -119,7 +119,7 @@ function asAttemptHistory(value: unknown): WalletAttemptHistoryItem[] {
       return {
         attemptId: asText(row.attemptId),
         title: asText(row.title) || "Practical task",
-        status: (asText(row.status) || "Task Submitted") as WalletPracticalTaskStatus,
+        status: (asText(row.status) || "Submitted") as WalletPracticalTaskStatus,
         submittedAt: asNullableText(row.submittedAt),
         scorePercent: typeof row.scorePercent === "number" ? row.scorePercent : null,
         correctCount: typeof row.correctCount === "number" ? row.correctCount : null,
@@ -285,7 +285,11 @@ function buildAttemptHistoryItem(row: Record<string, unknown>): WalletAttemptHis
   return {
     attemptId: attemptId || submittedAt || crypto.randomUUID(),
     title,
-    status: deriveWalletPracticalTaskStatus({ passed, scorePercent }),
+    status: deriveWalletPracticalTaskStatus({
+      passed,
+      scorePercent,
+      status: asNullableText(row.status),
+    }),
     submittedAt,
     scorePercent,
     correctCount,
@@ -478,7 +482,7 @@ async function fetchDerivedWalletCompetencyRecords(
       },
     });
 
-    if (summary.evidenceCount === 0) {
+    if (summary.practicalTask.attemptHistory.length === 0) {
       return null;
     }
 
@@ -532,5 +536,23 @@ async function fetchDerivedWalletCompetencyRecords(
 export async function fetchWalletCompetencyRecords(
   userId: string,
 ): Promise<WalletCompetencyRecordView[]> {
+  try {
+    const { data, error } = await supabase
+      .from("wallet_competency_records")
+      .select("id, learner_id, competency_id, competency_name, status, practical_task_status, evidence_summary, created_at, updated_at")
+      .eq("learner_id", userId)
+      .order("updated_at", { ascending: false });
+
+    if (error) throw error;
+
+    if (Array.isArray(data) && data.length > 0) {
+      return data
+        .map((row) => rowToWalletRecord(row as WalletCompetencyRecordRow))
+        .filter((record) => record.evidencePackage.practicalTask.attemptHistory.length > 0);
+    }
+  } catch {
+    // Fall back to derived view when table is unavailable in local/dev environments.
+  }
+
   return fetchDerivedWalletCompetencyRecords(userId);
 }

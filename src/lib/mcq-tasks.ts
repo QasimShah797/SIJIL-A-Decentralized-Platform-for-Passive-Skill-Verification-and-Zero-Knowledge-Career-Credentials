@@ -189,6 +189,7 @@ export const MCQ_PASS_PERCENT = 70;
 export async function evaluateSecureMcqAttempt(
   attemptId: string,
   answers: McqAnswerMap,
+  opts: { timedOut?: boolean } | undefined,
   invoke: (body: Record<string, unknown>) => Promise<{ data: Record<string, unknown> | null; error: Error | null }>,
 ): Promise<{
   submitted: boolean;
@@ -204,14 +205,12 @@ export async function evaluateSecureMcqAttempt(
     Object.entries(answers).filter(([, value]) => value != null),
   );
 
-  console.log("[mcq-submit] attemptId:", attemptId);
-  console.log("[mcq-submit] selected answers:", payload);
-
   const { data, error } = await invoke({
     action: "evaluate",
     taskType: "mcq",
     attemptId,
     answers: payload,
+    timedOut: opts?.timedOut === true,
   });
 
   if (error) {
@@ -224,14 +223,6 @@ export async function evaluateSecureMcqAttempt(
   const percentage = Number(data.percentage ?? 0);
   const passed = data.passed === true;
   const resultLabel = String(data.resultLabel ?? (passed ? "Passed" : "Needs Improvement"));
-
-  console.log("[mcq-submit] server result:", {
-    percentage,
-    correctCount: data.correctCount,
-    totalQuestions: data.totalQuestions,
-    passed,
-    resultLabel,
-  });
 
   return {
     submitted: data.submitted === true,

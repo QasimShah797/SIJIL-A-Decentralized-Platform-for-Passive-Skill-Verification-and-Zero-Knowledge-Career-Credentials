@@ -95,7 +95,7 @@ function restoreFromAttemptRecord(existing: AttemptRecord) {
   const restoredTask = restoreMcqTaskFromSubmission(existing.submission ?? "");
   const session = parseMcqSession(existing.submission ?? "");
   const progress = parseMcqProgress(existing.submission ?? "");
-  const submitted = existing.status === "submitted" || existing.status === "auto_submitted";
+  const submitted = existing.status === "submitted" || existing.status === "auto_submitted" || existing.status === "passed";
 
   return {
     task: restoredTask,
@@ -108,7 +108,13 @@ function restoreFromAttemptRecord(existing: AttemptRecord) {
     resultTotalQuestions: session?.resultTotalQuestions ?? null,
     resultMessage: session?.resultMessage ?? existing.feedback ?? null,
     resultLabel: session?.resultLabel
-      ?? (existing.passed ? "Passed" : existing.score != null ? "Needs Improvement" : null),
+      ?? (existing.status === "auto_submitted"
+        ? "Timed Out"
+        : existing.passed
+          ? "Passed"
+          : existing.score != null
+            ? "Needs Improvement"
+            : "Submitted"),
     passed: session?.passed ?? existing.passed ?? (existing.status === "passed" ? true : existing.score != null ? existing.score >= MCQ_PASS_PERCENT : null),
     submitted,
   };
@@ -179,6 +185,7 @@ export default function PracticalTask() {
   const isSubmitted = attempt && (
     attempt.status === "submitted"
     || attempt.status === "auto_submitted"
+    || attempt.status === "passed"
   );
 
   const applyStoredState = useCallback((stored: StoredPracticalTaskState) => {
@@ -247,11 +254,14 @@ export default function PracticalTask() {
     const nextCorrectCount = typeof remote.correct_count === "number" ? remote.correct_count : null;
     const nextTotalQuestions = typeof remote.total_questions === "number" ? remote.total_questions : null;
     const nextPassed = typeof remote.passed === "boolean" ? remote.passed : existing.passed ?? null;
+    const normalizedStatus = String(remote.status ?? "").toLowerCase();
     const nextLabel = nextPassed === true
       ? "Passed"
-      : nextPercentage != null
-        ? "Needs Improvement"
-        : null;
+      : normalizedStatus === "timed_out" || normalizedStatus === "auto_submitted"
+        ? "Timed Out"
+        : nextPercentage != null
+          ? "Needs Improvement"
+          : "Submitted";
 
     setResultPercentage(nextPercentage);
     setResultCorrectCount(nextCorrectCount);
@@ -273,9 +283,11 @@ export default function PracticalTask() {
 
     const nextStatus: AttemptRecord["status"] = nextPassed === true
       ? "passed"
-      : existing.status === "in_progress"
-        ? existing.status
-        : "submitted";
+      : normalizedStatus === "timed_out" || normalizedStatus === "auto_submitted"
+        ? "auto_submitted"
+        : existing.status === "in_progress"
+          ? existing.status
+          : "submitted";
 
     if (
       nextPercentage === (existing.score ?? null)
@@ -378,16 +390,23 @@ export default function PracticalTask() {
     setQuestionEndsAt(nextQuestionEndsAt);
   }, [saveAttempt]);
 
-  const submitMcqAttempt = useCallback(async (answersOverride?: McqAnswerMap) => {
+  const submitMcqAttempt = useCallback(async (answersOverride?: McqAnswerMap, timedOut?: boolean) => {
     if (!task || !attempt || !activeSkill || !userId) return;
 
     setEvaluating(true);
     try {
       const submissionAnswers = buildMcqSubmissionAnswers(task, answersOverride ?? answers);
-      const result = await evaluateSecureMcqAttempt(task.attemptId, submissionAnswers, invokeRapidTask);
-      const walletMessage = result.passed
-        ? "Wallet record updated. This competency now includes the submitted task result in its evidence package."
-        : "Wallet record updated. This attempt remains part of the competency evidence history.";
+      const result = await evaluateSecureMcqAttempt(
+        task.attemptId,
+        submissionAnswers,
+        { timedOut: timedOut === true },
+        invokeRapidTask,
+      );
+      const walletMessage = timedOut
+        ? "Wallet record updated. The timed-out attempt remains part of the competency evidence history."
+        : result.passed
+          ? "Wallet record updated. This competency now includes the submitted task result in its evidence package."
+          : "Wallet record updated. This attempt remains part of the competency evidence history.";
       setResultPercentage(result.percentage);
       setResultCorrectCount(result.correctCount);
       setResultTotalQuestions(result.totalQuestions);
@@ -398,7 +417,7 @@ export default function PracticalTask() {
       const { attemptId, ...taskBody } = task;
       const evaluatedAttempt: AttemptRecord = {
         ...attempt,
-        status: result.passed ? "passed" : "submitted",
+        status: result.passed ? "passed" : timedOut ? "auto_submitted" : "submitted",
         passed: result.passed,
         score: result.percentage,
         feedback: walletMessage,
@@ -448,7 +467,7 @@ export default function PracticalTask() {
 
     try {
       if (isLastQuestion) {
-        await submitMcqAttempt(answers);
+        await submitMcqAttempt(answers, timedOut);
         return;
       }
 
@@ -618,8 +637,14 @@ export default function PracticalTask() {
     const a = getAttempt(skill.id);
     const locked = isAttemptLocked(skill, a);
     if (!a) return <StatusBadge variant="neutral">No Attempt</StatusBadge>;
+    if (a.status === "passed" || a.passed === true) {
+      return <StatusBadge variant="verified">Passed · {a.score ?? "—"}%</StatusBadge>;
+    }
     if (a.status === "in_progress") return <StatusBadge variant="info">In Progress</StatusBadge>;
-    if (a.status === "submitted" || a.status === "auto_submitted") {
+    if (a.status === "auto_submitted") {
+      return <StatusBadge variant="warning">Timed Out · {a.score ?? "—"}%</StatusBadge>;
+    }
+    if (a.status === "submitted") {
       if (a.score != null) {
         return <StatusBadge variant="info">Submitted · {a.score}%</StatusBadge>;
       }
@@ -669,7 +694,7 @@ export default function PracticalTask() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    {a && (a.status === "submitted" || a.status === "auto_submitted") ? (
+                    {a && (a.status === "submitted" || a.status === "auto_submitted" || a.status === "passed") ? (
                       <Button variant="outline" onClick={() => void openSkill(s)}>
                         <Lock className="h-4 w-4 mr-1.5" />View attempt
                       </Button>
