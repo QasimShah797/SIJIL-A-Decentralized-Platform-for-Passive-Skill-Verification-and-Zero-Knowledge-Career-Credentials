@@ -1,10 +1,17 @@
 import { supabase } from "@/integrations/supabase/client";
 import { avatarInitials, holderDidFromUserId } from "@/lib/did";
 import {
-  isMissingColumnError,
+  buildInstitutionDbPayload,
+  buildSelfSignupDbPayload,
+  LEARNER_PROFILE_SELECT,
   parseCityCountry,
-  stripSelfSignupWriteColumns,
-} from "@/lib/db/learner-profile-columns";
+  stripNonDbColumns,
+  type LearnerProfileDbRow,
+} from "@/lib/db/learner-profile-schema";
+import { meetsOAuthCompletionRequirements } from "@/lib/profile-oauth-verification";
+import { loadProfileUiFields, saveProfileUiFields } from "@/lib/profile-ui-fields";
+
+export type { LearnerProfileDbRow as LearnerProfileRow } from "@/lib/db/learner-profile-schema";
 
 export type LearnerProfileView = {
   userId: string;
@@ -30,47 +37,19 @@ export type LearnerProfileView = {
   skillsSummary: string | null;
   contactNumber: string | null;
   cityCountry: string | null;
+  /** Derived from city_country — UI display only. */
   city: string | null;
+  /** Derived from city_country — UI display only. */
   country: string | null;
+  /** UI-only — stored in localStorage, not in learner_profiles. */
   dateOfBirth: string | null;
+  /** UI-only — stored in localStorage, not in learner_profiles. */
   gender: string | null;
+  /** UI-only — stored in localStorage, not in learner_profiles. */
   graduationYear: number | null;
 };
 
-export type LearnerProfileRow = {
-  first_name?: string | null;
-  last_name?: string | null;
-  institution_name?: string | null;
-  program?: string | null;
-  department?: string | null;
-  student_id?: string | null;
-  contact_number?: string | null;
-  city_country?: string | null;
-  country?: string | null;
-  city?: string | null;
-  date_of_birth?: string | null;
-  gender?: string | null;
-  graduation_year?: number | null;
-  github_url?: string | null;
-  linkedin_url?: string | null;
-  portfolio_url?: string | null;
-  bio?: string | null;
-  career_goal?: string | null;
-  skills_summary?: string | null;
-  avatar_url?: string | null;
-  university_email?: string | null;
-  batch?: string | null;
-  status?: string | null;
-  institution_id?: string | null;
-  profile_completed?: boolean | null;
-  holder_did?: string | null;
-};
-
-export function isInstitutionProvisionedProfile(row: LearnerProfileRow | null): boolean {
-  return !!row?.institution_id;
-}
-
-function hasRequiredInstitutionLearnerFields(row: LearnerProfileRow | null): boolean {
+function hasRequiredInstitutionLearnerFields(row: LearnerProfileDbRow | null): boolean {
   if (!row || !row.institution_id) return false;
   return (
     !!row.first_name?.trim() &&
@@ -78,8 +57,6 @@ function hasRequiredInstitutionLearnerFields(row: LearnerProfileRow | null): boo
     !!row.contact_number?.trim() &&
     !!row.city_country?.trim() &&
     !!row.bio?.trim() &&
-    !!row.github_url?.trim() &&
-    !!row.linkedin_url?.trim() &&
     !!row.skills_summary?.trim() &&
     !!row.career_goal?.trim() &&
     !!row.institution_name?.trim() &&
@@ -88,73 +65,69 @@ function hasRequiredInstitutionLearnerFields(row: LearnerProfileRow | null): boo
   );
 }
 
-function hasRequiredSelfSignupLearnerFields(
-  row: LearnerProfileRow | null,
-  extendedColumnsAvailable = true,
-): boolean {
+function hasRequiredSelfSignupLearnerFields(row: LearnerProfileDbRow | null): boolean {
   if (!row || row.institution_id) return false;
-
-  const base =
-    !!row.contact_number?.trim() &&
-    !!row.bio?.trim() &&
-    !!row.github_url?.trim() &&
-    !!row.linkedin_url?.trim() &&
-    !!row.skills_summary?.trim() &&
-    !!row.career_goal?.trim();
-
-  if (!extendedColumnsAvailable) {
-    return base && !!row.city_country?.trim();
-  }
-
+  const location = parseCityCountry(row.city_country);
   return (
-    base &&
-    !!row.date_of_birth &&
-    !!row.gender?.trim() &&
-    !!row.country?.trim() &&
-    !!row.city?.trim()
+    !!row.contact_number?.trim() &&
+    !!location.city.trim() &&
+    !!location.country.trim() &&
+    !!row.bio?.trim() &&
+    !!row.skills_summary?.trim() &&
+    !!row.career_goal?.trim()
   );
 }
 
-function hasRequiredLearnerFields(row: LearnerProfileRow | null): boolean {
+function hasRequiredLearnerFields(row: LearnerProfileDbRow | null): boolean {
   if (!row) return false;
   if (row.institution_id) return hasRequiredInstitutionLearnerFields(row);
-  return hasRequiredSelfSignupLearnerFields(row, selfSignupColumnsAvailable);
+  return hasRequiredSelfSignupLearnerFields(row);
 }
 
-let selfSignupColumnsAvailable = true;
+export function isInstitutionProvisionedProfile(row: LearnerProfileDbRow | null): boolean {
+  return !!row?.institution_id;
+}
 
-let selfSignupProbeDone = false;
-
-async function probeSelfSignupColumns(): Promise<boolean> {
-  if (selfSignupProbeDone) return selfSignupColumnsAvailable;
-  const { error } = await supabase.from("learner_profiles").select("date_of_birth").limit(0);
-  selfSignupColumnsAvailable = !error || !isMissingColumnError(error);
-  selfSignupProbeDone = true;
-  return selfSignupColumnsAvailable;
+function persistUiOnlyFields(
+  userId: string,
+  data: {
+    dateOfBirth?: string;
+    gender?: string;
+    graduationYear?: number | null;
+  },
+): void {
+  const patch: Parameters<typeof saveProfileUiFields>[1] = {};
+  if (data.dateOfBirth !== undefined) patch.dateOfBirth = data.dateOfBirth;
+  if (data.gender !== undefined) patch.gender = data.gender;
+  if (data.graduationYear !== undefined) {
+    patch.graduationYear = data.graduationYear != null ? String(data.graduationYear) : "";
+  }
+  if (Object.keys(patch).length > 0) saveProfileUiFields(userId, patch);
 }
 
 async function queryLearnerProfileRow(
   userId: string,
-): Promise<{ data: LearnerProfileRow | null; error: unknown | null }> {
+): Promise<{ data: LearnerProfileDbRow | null; error: unknown | null }> {
   const { data, error } = await supabase
     .from("learner_profiles")
-    .select("*")
+    .select(LEARNER_PROFILE_SELECT)
     .eq("user_id", userId)
     .maybeSingle();
-  return { data: data as LearnerProfileRow | null, error };
+  return { data: data as LearnerProfileDbRow | null, error };
 }
 
 async function updateLearnerProfileRow(
   userId: string,
   payload: Record<string, unknown>,
-): Promise<{ data: LearnerProfileRow | null; error: unknown | null }> {
+): Promise<{ data: LearnerProfileDbRow | null; error: unknown | null }> {
+  const dbPayload = stripNonDbColumns(payload);
   const { data, error } = await supabase
     .from("learner_profiles")
-    .update(payload)
+    .update(dbPayload)
     .eq("user_id", userId)
-    .select("*")
+    .select(LEARNER_PROFILE_SELECT)
     .single();
-  return { data: data as LearnerProfileRow | null, error };
+  return { data: data as LearnerProfileDbRow | null, error };
 }
 
 export async function isInstitutionProvisionedLearner(userId: string): Promise<boolean> {
@@ -162,24 +135,22 @@ export async function isInstitutionProvisionedLearner(userId: string): Promise<b
   return !!row?.institution_id;
 }
 
-export async function fetchLearnerProfileRow(userId: string): Promise<LearnerProfileRow | null> {
+export async function fetchLearnerProfileRow(userId: string): Promise<LearnerProfileDbRow | null> {
   const { data, error } = await queryLearnerProfileRow(userId);
   if (error) throw error;
-  await probeSelfSignupColumns();
   return data;
-}
-
-export function areSelfSignupProfileColumnsAvailable(): boolean {
-  return selfSignupColumnsAvailable;
 }
 
 export async function fetchLearnerProfile(userId: string, email?: string | null): Promise<LearnerProfileView> {
   const data = await fetchLearnerProfileRow(userId);
+  const ui = loadProfileUiFields(userId);
 
   const first = data?.first_name ?? "";
   const last = data?.last_name ?? "";
   const name = [first, last].filter(Boolean).join(" ") || email?.split("@")[0] || "Learner";
   const institutionLinked = !!data?.institution_id;
+  const location = parseCityCountry(data?.city_country);
+  const gradYearRaw = ui.graduationYear?.trim();
 
   return {
     userId,
@@ -205,16 +176,16 @@ export async function fetchLearnerProfile(userId: string, email?: string | null)
     skillsSummary: data?.skills_summary ?? null,
     contactNumber: data?.contact_number ?? null,
     cityCountry: data?.city_country ?? null,
-    city: (data?.city ?? parseCityCountry(data?.city_country).city) || null,
-    country: (data?.country ?? parseCityCountry(data?.city_country).country) || null,
-    dateOfBirth: data?.date_of_birth ?? null,
-    gender: data?.gender ?? null,
-    graduationYear: data?.graduation_year ?? null,
+    city: location.city || null,
+    country: location.country || null,
+    dateOfBirth: ui.dateOfBirth?.trim() || null,
+    gender: ui.gender?.trim() || null,
+    graduationYear: gradYearRaw ? Number.parseInt(gradYearRaw, 10) : null,
   };
 }
 
 function rowToOnboardingForm(
-  row: LearnerProfileRow,
+  row: LearnerProfileDbRow,
   email?: string | null,
 ): {
   firstName: string;
@@ -227,9 +198,6 @@ function rowToOnboardingForm(
   contactNumber: string;
   cityCountry: string;
   batch: string;
-  githubUrl: string;
-  linkedinUrl: string;
-  portfolioUrl: string;
   bio: string;
   skillsSummary: string;
   careerGoal: string;
@@ -245,9 +213,6 @@ function rowToOnboardingForm(
     contactNumber: row.contact_number?.trim() ?? "",
     cityCountry: row.city_country?.trim() ?? "",
     batch: row.batch?.trim() ?? "",
-    githubUrl: row.github_url?.trim() ?? "",
-    linkedinUrl: row.linkedin_url?.trim() ?? "",
-    portfolioUrl: row.portfolio_url?.trim() ?? "",
     bio: row.bio?.trim() ?? "",
     skillsSummary: row.skills_summary?.trim() ?? "",
     careerGoal: row.career_goal?.trim() ?? "",
@@ -256,7 +221,9 @@ function rowToOnboardingForm(
 
 export async function isLearnerProfileComplete(userId: string): Promise<boolean> {
   const data = await fetchLearnerProfileRow(userId);
-  return hasRequiredLearnerFields(data);
+  if (!hasRequiredLearnerFields(data)) return false;
+  const oauth = await meetsOAuthCompletionRequirements(userId);
+  return oauth.ok;
 }
 
 export async function isUsernameAvailable(username: string): Promise<boolean> {
@@ -271,16 +238,16 @@ export async function isUsernameAvailable(username: string): Promise<boolean> {
 
 export type LearnerSelfSignupOnboardingData = {
   contactNumber: string;
-  dateOfBirth: string;
-  gender: string;
+  /** UI-only — persisted to localStorage, not learner_profiles. */
+  dateOfBirth?: string;
+  /** UI-only — persisted to localStorage, not learner_profiles. */
+  gender?: string;
   country: string;
   city: string;
   institutionName?: string;
   program?: string;
+  /** UI-only — persisted to localStorage, not learner_profiles. */
   graduationYear?: number;
-  githubUrl: string;
-  linkedinUrl: string;
-  portfolioUrl?: string;
   bio: string;
   skillsSummary: string;
   careerGoal: string;
@@ -296,44 +263,46 @@ export type SelfSignupProfileForm = {
   institutionName: string;
   program: string;
   graduationYear: string;
-  githubUrl: string;
-  linkedinUrl: string;
-  portfolioUrl: string;
   bio: string;
   skillsSummary: string;
   careerGoal: string;
 };
 
-export function rowToSelfSignupForm(row: LearnerProfileRow): SelfSignupProfileForm {
+export function rowToSelfSignupForm(row: LearnerProfileDbRow, userId?: string): SelfSignupProfileForm {
+  const ui = userId ? loadProfileUiFields(userId) : {};
   const parsed = parseCityCountry(row.city_country);
   return {
     contactNumber: row.contact_number?.trim() ?? "",
-    dateOfBirth: row.date_of_birth ?? "",
-    gender: row.gender?.trim() ?? "",
-    country: row.country?.trim() || parsed.country,
-    city: row.city?.trim() || parsed.city,
+    dateOfBirth: ui.dateOfBirth ?? "",
+    gender: ui.gender ?? "",
+    country: parsed.country,
+    city: parsed.city,
     institutionName: row.institution_name?.trim() ?? "",
     program: row.program?.trim() ?? "",
-    graduationYear: row.graduation_year != null ? String(row.graduation_year) : "",
-    githubUrl: row.github_url?.trim() ?? "",
-    linkedinUrl: row.linkedin_url?.trim() ?? "",
-    portfolioUrl: row.portfolio_url?.trim() ?? "",
+    graduationYear: ui.graduationYear ?? "",
     bio: row.bio?.trim() ?? "",
     skillsSummary: row.skills_summary?.trim() ?? "",
     careerGoal: row.career_goal?.trim() ?? "",
   };
 }
 
-export function selfSignupProfileProgress(form: SelfSignupProfileForm): number {
+export type SelfSignupProfileProgressOptions = {
+  githubVerified?: boolean;
+  linkedinVerified?: boolean;
+  linkedinRequired?: boolean;
+};
+
+export function selfSignupProfileProgress(
+  form: SelfSignupProfileForm,
+  opts?: SelfSignupProfileProgressOptions,
+): number {
   const checks = [
     form.contactNumber.trim(),
-    form.dateOfBirth,
-    form.gender.trim(),
     form.country.trim(),
     form.city.trim(),
     form.bio.trim(),
-    form.githubUrl.trim(),
-    form.linkedinUrl.trim(),
+    opts?.githubVerified ? "github" : "",
+    opts?.linkedinRequired ? (opts.linkedinVerified ? "linkedin" : "") : "linkedin-skip",
     form.skillsSummary.trim(),
     form.careerGoal.trim(),
   ];
@@ -350,103 +319,73 @@ export async function saveSelfSignupProfileProgress(
     throw new Error("Only self-registered learners can save this profile.");
   }
 
-  const payload: Record<string, unknown> = {};
+  persistUiOnlyFields(userId, data);
 
-  if (data.contactNumber !== undefined) payload.contact_number = data.contactNumber.trim();
-  if (data.dateOfBirth !== undefined) payload.date_of_birth = data.dateOfBirth || null;
-  if (data.gender !== undefined) payload.gender = data.gender.trim() || null;
-  if (data.country !== undefined) payload.country = data.country.trim();
-  if (data.city !== undefined) payload.city = data.city.trim();
-  if (data.institutionName !== undefined) payload.institution_name = data.institutionName.trim() || null;
-  if (data.program !== undefined) payload.program = data.program.trim() || null;
-  if (data.graduationYear !== undefined) payload.graduation_year = data.graduationYear ?? null;
-  if (data.githubUrl !== undefined) payload.github_url = data.githubUrl.trim();
-  if (data.linkedinUrl !== undefined) payload.linkedin_url = data.linkedinUrl.trim();
-  if (data.portfolioUrl !== undefined) payload.portfolio_url = data.portfolioUrl.trim() || null;
-  if (data.bio !== undefined) payload.bio = data.bio.trim();
-  if (data.skillsSummary !== undefined) payload.skills_summary = data.skillsSummary.trim();
-  if (data.careerGoal !== undefined) payload.career_goal = data.careerGoal.trim();
-  if (data.avatarUrl) payload.avatar_url = data.avatarUrl;
+  const payload = buildSelfSignupDbPayload({
+    contactNumber: data.contactNumber,
+    city: data.city,
+    country: data.country,
+    institutionName: data.institutionName,
+    program: data.program,
+    bio: data.bio,
+    skillsSummary: data.skillsSummary,
+    careerGoal: data.careerGoal,
+    avatarUrl: data.avatarUrl,
+  });
 
-  if (data.country !== undefined || data.city !== undefined) {
-    const country = (data.country ?? existing.country ?? "").trim();
-    const city = (data.city ?? existing.city ?? "").trim();
-    payload.city_country = [city, country].filter(Boolean).join(", ") || null;
-  }
-
-  const merged: LearnerProfileRow = {
+  const merged: LearnerProfileDbRow = {
     ...existing,
     contact_number: (payload.contact_number as string | undefined) ?? existing.contact_number,
-    date_of_birth: (payload.date_of_birth as string | undefined) ?? existing.date_of_birth,
-    gender: (payload.gender as string | undefined) ?? existing.gender,
-    country: (payload.country as string | undefined) ?? existing.country,
-    city: (payload.city as string | undefined) ?? existing.city,
     city_country: (payload.city_country as string | null | undefined) ?? existing.city_country,
     institution_name: (payload.institution_name as string | null | undefined) ?? existing.institution_name,
     program: (payload.program as string | null | undefined) ?? existing.program,
-    graduation_year: (payload.graduation_year as number | null | undefined) ?? existing.graduation_year,
-    github_url: (payload.github_url as string | undefined) ?? existing.github_url,
-    linkedin_url: (payload.linkedin_url as string | undefined) ?? existing.linkedin_url,
-    portfolio_url: (payload.portfolio_url as string | null | undefined) ?? existing.portfolio_url,
     bio: (payload.bio as string | undefined) ?? existing.bio,
     skills_summary: (payload.skills_summary as string | undefined) ?? existing.skills_summary,
     career_goal: (payload.career_goal as string | undefined) ?? existing.career_goal,
   };
-  payload.profile_completed = hasRequiredSelfSignupLearnerFields(merged, selfSignupColumnsAvailable);
+  const oauth = await meetsOAuthCompletionRequirements(userId);
+  payload.profile_completed = hasRequiredSelfSignupLearnerFields(merged) && oauth.ok;
 
-  let { error } = await supabase.from("learner_profiles").update(payload).eq("user_id", userId);
-  if (error && isMissingColumnError(error)) {
-    selfSignupColumnsAvailable = false;
-    ({ error } = await supabase
-      .from("learner_profiles")
-      .update(stripSelfSignupWriteColumns(payload))
-      .eq("user_id", userId));
-  }
+  const { error } = await supabase
+    .from("learner_profiles")
+    .update(stripNonDbColumns(payload))
+    .eq("user_id", userId);
   if (error) throw error;
 }
 
 export async function saveSelfSignupOnboarding(
   userId: string,
   data: LearnerSelfSignupOnboardingData,
-): Promise<LearnerProfileRow> {
+): Promise<LearnerProfileDbRow> {
   const existing = await fetchLearnerProfileRow(userId);
   if (!existing || existing.institution_id) {
     throw new Error("Only self-registered learners can complete this profile.");
   }
 
-  const country = data.country.trim();
-  const city = data.city.trim();
-  const payload: Record<string, unknown> = {
-    contact_number: data.contactNumber.trim(),
-    date_of_birth: data.dateOfBirth,
-    gender: data.gender.trim(),
-    country,
-    city,
-    city_country: [city, country].filter(Boolean).join(", "),
-    institution_name: data.institutionName?.trim() || null,
-    program: data.program?.trim() || null,
-    graduation_year: data.graduationYear ?? null,
-    github_url: data.githubUrl.trim(),
-    linkedin_url: data.linkedinUrl.trim(),
-    portfolio_url: data.portfolioUrl?.trim() || null,
-    bio: data.bio.trim(),
-    skills_summary: data.skillsSummary.trim(),
-    career_goal: data.careerGoal.trim(),
-    profile_completed: true,
-  };
+  persistUiOnlyFields(userId, data);
 
-  if (data.avatarUrl) payload.avatar_url = data.avatarUrl;
+  const payload = buildSelfSignupDbPayload({
+    contactNumber: data.contactNumber,
+    city: data.city,
+    country: data.country,
+    institutionName: data.institutionName,
+    program: data.program,
+    bio: data.bio,
+    skillsSummary: data.skillsSummary,
+    careerGoal: data.careerGoal,
+    avatarUrl: data.avatarUrl,
+    profileCompleted: true,
+  });
 
-  let { data: updated, error } = await updateLearnerProfileRow(userId, payload);
-
-  if (error && isMissingColumnError(error)) {
-    selfSignupColumnsAvailable = false;
-    ({ data: updated, error } = await updateLearnerProfileRow(
-      userId,
-      stripSelfSignupWriteColumns(payload),
-    ));
+  const oauth = await meetsOAuthCompletionRequirements(userId);
+  if (!oauth.github) {
+    throw new Error("Connect and verify your GitHub account before completing your profile.");
+  }
+  if (!oauth.linkedin) {
+    throw new Error("Connect and verify your LinkedIn account before completing your profile.");
   }
 
+  const { data: updated, error } = await updateLearnerProfileRow(userId, payload);
   if (error) throw error;
   if (!updated) throw new Error("Profile update did not return a row.");
   return updated;
@@ -462,9 +401,6 @@ export type LearnerOnboardingData = {
   contactNumber: string;
   cityCountry: string;
   batch?: string;
-  githubUrl: string;
-  linkedinUrl: string;
-  portfolioUrl?: string;
   bio: string;
   skillsSummary: string;
   careerGoal: string;
@@ -472,18 +408,18 @@ export type LearnerOnboardingData = {
 };
 
 export async function createLearnerProfileStub(userId: string, username: string): Promise<void> {
-  const stub = {
+  const stub = stripNonDbColumns({
     user_id: userId,
     username: username.trim(),
     first_name: "",
     last_name: "",
     profile_completed: false,
-  };
+  });
 
   const { error } = await supabase.from("learner_profiles").upsert(stub, { onConflict: "user_id" });
   if (error) {
     const { error: legacyError } = await supabase.from("learner_profiles").upsert(
-      { user_id: userId, first_name: "Pending", last_name: "User" },
+      stripNonDbColumns({ user_id: userId, first_name: "Pending", last_name: "User" }),
       { onConflict: "user_id" },
     );
     if (legacyError) throw legacyError;
@@ -499,34 +435,33 @@ export async function uploadLearnerAvatar(userId: string, file: File): Promise<s
   return data.publicUrl;
 }
 
-export async function saveLearnerOnboarding(userId: string, data: LearnerOnboardingData): Promise<LearnerProfileRow> {
+export async function saveLearnerOnboarding(userId: string, data: LearnerOnboardingData): Promise<LearnerProfileDbRow> {
   const existing = await fetchLearnerProfileRow(userId);
   if (!existing?.institution_id) {
     throw new Error("Only institution-provisioned learners can complete this profile.");
   }
 
-  const payload: Record<string, unknown> = {
-    first_name: data.firstName.trim(),
-    last_name: data.lastName.trim(),
-    contact_number: data.contactNumber.trim(),
-    city_country: data.cityCountry.trim(),
-    github_url: data.githubUrl.trim(),
-    linkedin_url: data.linkedinUrl.trim(),
-    bio: data.bio.trim(),
-    skills_summary: data.skillsSummary.trim(),
-    career_goal: data.careerGoal.trim(),
-    portfolio_url: data.portfolioUrl?.trim() || null,
-    profile_completed: true,
-  };
+  const payload = buildInstitutionDbPayload({
+    firstName: data.firstName,
+    lastName: data.lastName,
+    contactNumber: data.contactNumber,
+    cityCountry: data.cityCountry,
+    bio: data.bio,
+    skillsSummary: data.skillsSummary,
+    careerGoal: data.careerGoal,
+    avatarUrl: data.avatarUrl,
+    profileCompleted: true,
+  });
 
-  if (data.avatarUrl) payload.avatar_url = data.avatarUrl;
+  const oauth = await meetsOAuthCompletionRequirements(userId);
+  if (!oauth.github) {
+    throw new Error("Connect and verify your GitHub account before completing your profile.");
+  }
+  if (!oauth.linkedin) {
+    throw new Error("Connect and verify your LinkedIn account before completing your profile.");
+  }
 
-  const { data: updated, error } = await supabase
-    .from("learner_profiles")
-    .update(payload)
-    .eq("user_id", userId)
-    .select("*")
-    .single();
+  const { data: updated, error } = await updateLearnerProfileRow(userId, payload);
   if (error) throw error;
   if (!updated) throw new Error("Profile update did not return a row.");
   return updated;
@@ -542,37 +477,34 @@ export async function saveLearnerProfileProgress(
     throw new Error("Only institution-provisioned learners can save profile progress.");
   }
 
-  const payload: Record<string, unknown> = {
-    first_name: data.firstName.trim(),
-    last_name: data.lastName.trim(),
-  };
+  const payload = buildInstitutionDbPayload({
+    firstName: data.firstName,
+    lastName: data.lastName,
+    contactNumber: data.contactNumber,
+    cityCountry: data.cityCountry,
+    bio: data.bio,
+    skillsSummary: data.skillsSummary,
+    careerGoal: data.careerGoal,
+    avatarUrl: data.avatarUrl,
+  });
 
-  if (data.contactNumber !== undefined) payload.contact_number = data.contactNumber.trim();
-  if (data.cityCountry !== undefined) payload.city_country = data.cityCountry.trim();
-  if (data.githubUrl !== undefined) payload.github_url = data.githubUrl.trim();
-  if (data.linkedinUrl !== undefined) payload.linkedin_url = data.linkedinUrl.trim();
-  if (data.portfolioUrl !== undefined) payload.portfolio_url = data.portfolioUrl.trim() || null;
-  if (data.bio !== undefined) payload.bio = data.bio.trim();
-  if (data.skillsSummary !== undefined) payload.skills_summary = data.skillsSummary.trim();
-  if (data.careerGoal !== undefined) payload.career_goal = data.careerGoal.trim();
-  if (data.avatarUrl) payload.avatar_url = data.avatarUrl;
-
-  const merged: LearnerProfileRow = {
+  const merged: LearnerProfileDbRow = {
     ...existing,
-    first_name: payload.first_name as string,
-    last_name: payload.last_name as string,
+    first_name: (payload.first_name as string | undefined) ?? existing.first_name,
+    last_name: (payload.last_name as string | undefined) ?? existing.last_name,
     contact_number: (payload.contact_number as string | undefined) ?? existing.contact_number,
     city_country: (payload.city_country as string | undefined) ?? existing.city_country,
-    github_url: (payload.github_url as string | undefined) ?? existing.github_url,
-    linkedin_url: (payload.linkedin_url as string | undefined) ?? existing.linkedin_url,
-    portfolio_url: (payload.portfolio_url as string | null | undefined) ?? existing.portfolio_url,
     bio: (payload.bio as string | undefined) ?? existing.bio,
     skills_summary: (payload.skills_summary as string | undefined) ?? existing.skills_summary,
     career_goal: (payload.career_goal as string | undefined) ?? existing.career_goal,
   };
-  payload.profile_completed = hasRequiredLearnerFields(merged);
+  const oauth = await meetsOAuthCompletionRequirements(userId);
+  payload.profile_completed = hasRequiredInstitutionLearnerFields(merged) && oauth.ok;
 
-  const { error } = await supabase.from("learner_profiles").update(payload).eq("user_id", userId);
+  const { error } = await supabase
+    .from("learner_profiles")
+    .update(stripNonDbColumns(payload))
+    .eq("user_id", userId);
   if (error) throw error;
 }
 
@@ -581,65 +513,23 @@ export { rowToOnboardingForm };
 export type LearnerEditableProfile = {
   contactNumber: string;
   cityCountry?: string;
+  /** UI-only; combined into city_country on save. */
   city?: string;
+  /** UI-only; combined into city_country on save. */
   country?: string;
   bio: string;
-  githubUrl: string;
-  linkedinUrl: string;
-  portfolioUrl?: string;
   skillsSummary: string;
   careerGoal: string;
   avatarUrl?: string;
+  /** UI-only — saved to localStorage, not learner_profiles. */
   dateOfBirth?: string;
+  /** UI-only — saved to localStorage, not learner_profiles. */
   gender?: string;
+  /** UI-only — saved to localStorage, not learner_profiles. */
   graduationYear?: number | null;
   institutionName?: string;
   program?: string;
 };
-
-function buildEditableProfilePayload(
-  existing: LearnerProfileRow,
-  data: LearnerEditableProfile,
-): Record<string, unknown> {
-  const payload: Record<string, unknown> = {
-    contact_number: data.contactNumber.trim(),
-    bio: data.bio.trim(),
-    github_url: data.githubUrl.trim(),
-    linkedin_url: data.linkedinUrl.trim(),
-    skills_summary: data.skillsSummary.trim(),
-    career_goal: data.careerGoal.trim(),
-    portfolio_url: data.portfolioUrl?.trim() || null,
-  };
-
-  if (data.city !== undefined || data.country !== undefined) {
-    const city = (data.city ?? existing.city ?? "").trim();
-    const country = (data.country ?? existing.country ?? "").trim();
-    payload.city = city || null;
-    payload.country = country || null;
-    payload.city_country = [city, country].filter(Boolean).join(", ") || null;
-  } else if (data.cityCountry !== undefined) {
-    const cityCountry = data.cityCountry.trim();
-    payload.city_country = cityCountry;
-    const parsed = parseCityCountry(cityCountry);
-    payload.city = parsed.city || null;
-    payload.country = parsed.country || null;
-  }
-
-  if (data.dateOfBirth !== undefined) payload.date_of_birth = data.dateOfBirth || null;
-  if (data.gender !== undefined) payload.gender = data.gender.trim() || null;
-  if (data.graduationYear !== undefined) payload.graduation_year = data.graduationYear;
-
-  if (!existing.institution_id) {
-    if (data.institutionName !== undefined) {
-      payload.institution_name = data.institutionName.trim() || null;
-    }
-    if (data.program !== undefined) payload.program = data.program.trim() || null;
-  }
-
-  if (data.avatarUrl) payload.avatar_url = data.avatarUrl;
-
-  return payload;
-}
 
 /** Update learner-editable fields only; institution-verified fields are never changed. */
 export async function updateLearnerEditableProfile(
@@ -651,67 +541,77 @@ export async function updateLearnerEditableProfile(
     throw new Error("Learner profile not found.");
   }
 
-  const payload = buildEditableProfilePayload(existing, data);
+  persistUiOnlyFields(userId, data);
+
+  const payload = buildSelfSignupDbPayload({
+    contactNumber: data.contactNumber,
+    city: data.city,
+    country: data.country,
+    cityCountry: data.cityCountry,
+    bio: data.bio,
+    skillsSummary: data.skillsSummary,
+    careerGoal: data.careerGoal,
+    avatarUrl: data.avatarUrl,
+    institutionName: !existing.institution_id ? data.institutionName : undefined,
+    program: !existing.institution_id ? data.program : undefined,
+  });
 
   if (!existing.institution_id) {
-    const merged: LearnerProfileRow = {
+    const merged: LearnerProfileDbRow = {
       ...existing,
       contact_number: payload.contact_number as string,
       city_country: (payload.city_country as string | null | undefined) ?? existing.city_country,
-      city: (payload.city as string | null | undefined) ?? existing.city,
-      country: (payload.country as string | null | undefined) ?? existing.country,
-      date_of_birth: (payload.date_of_birth as string | null | undefined) ?? existing.date_of_birth,
-      gender: (payload.gender as string | null | undefined) ?? existing.gender,
-      graduation_year: (payload.graduation_year as number | null | undefined) ?? existing.graduation_year,
       institution_name: (payload.institution_name as string | null | undefined) ?? existing.institution_name,
       program: (payload.program as string | null | undefined) ?? existing.program,
       bio: payload.bio as string,
-      github_url: payload.github_url as string,
-      linkedin_url: payload.linkedin_url as string,
       skills_summary: payload.skills_summary as string,
       career_goal: payload.career_goal as string,
-      portfolio_url: (payload.portfolio_url as string | null | undefined) ?? existing.portfolio_url,
     };
-    payload.profile_completed = hasRequiredSelfSignupLearnerFields(merged, selfSignupColumnsAvailable);
+    const oauth = await meetsOAuthCompletionRequirements(userId);
+    payload.profile_completed = hasRequiredSelfSignupLearnerFields(merged) && oauth.ok;
   }
 
-  let { error } = await supabase.from("learner_profiles").update(payload).eq("user_id", userId);
-  if (error && isMissingColumnError(error)) {
-    selfSignupColumnsAvailable = false;
-    ({ error } = await supabase
-      .from("learner_profiles")
-      .update(stripSelfSignupWriteColumns(payload))
-      .eq("user_id", userId));
-  }
+  const { error } = await supabase
+    .from("learner_profiles")
+    .update(stripNonDbColumns(payload))
+    .eq("user_id", userId);
   if (error) throw error;
 }
 
 export async function fetchAllLearnerProfiles(): Promise<(LearnerProfileView & { user_id: string })[]> {
-  const { data, error } = await supabase.from("learner_profiles").select("*");
+  const { data, error } = await supabase.from("learner_profiles").select(LEARNER_PROFILE_SELECT);
   if (error) throw error;
-  return (data ?? []).map((row) => ({
-    userId: row.user_id,
-    user_id: row.user_id,
-    name: [row.first_name, row.last_name].filter(Boolean).join(" "),
-    did: row.holder_did ?? holderDidFromUserId(row.user_id),
-    email: "",
-    studentId: row.student_id ?? "—",
-    program: row.program ?? "—",
-    department: row.department ?? "—",
-    batch: row.batch ?? "—",
-    institution: row.institution_name ?? "—",
-    avatar: avatarInitials(row.first_name, row.last_name),
-    avatarUrl: row.avatar_url ?? null,
-    status: row.status ?? "email_pending",
-    isVerifiedStudent: !!row.institution_id && row.status === "verified",
-    institutionLinked: !!row.institution_id,
-    githubUrl: row.github_url ?? null,
-    linkedinUrl: row.linkedin_url ?? null,
-    portfolioUrl: row.portfolio_url ?? null,
-    bio: row.bio ?? null,
-    careerGoal: row.career_goal ?? null,
-    skillsSummary: row.skills_summary ?? null,
-    contactNumber: row.contact_number ?? null,
-    cityCountry: row.city_country ?? null,
-  }));
+  return (data ?? []).map((row) => {
+    const location = parseCityCountry(row.city_country);
+    return {
+      userId: row.user_id,
+      user_id: row.user_id,
+      name: [row.first_name, row.last_name].filter(Boolean).join(" "),
+      did: row.holder_did ?? holderDidFromUserId(row.user_id),
+      email: "",
+      studentId: row.student_id ?? "—",
+      program: row.program ?? "—",
+      department: row.department ?? "—",
+      batch: row.batch ?? "—",
+      institution: row.institution_name ?? "—",
+      avatar: avatarInitials(row.first_name, row.last_name),
+      avatarUrl: row.avatar_url ?? null,
+      status: row.status ?? "email_pending",
+      isVerifiedStudent: !!row.institution_id && row.status === "verified",
+      institutionLinked: !!row.institution_id,
+      githubUrl: row.github_url ?? null,
+      linkedinUrl: row.linkedin_url ?? null,
+      portfolioUrl: row.portfolio_url ?? null,
+      bio: row.bio ?? null,
+      careerGoal: row.career_goal ?? null,
+      skillsSummary: row.skills_summary ?? null,
+      contactNumber: row.contact_number ?? null,
+      cityCountry: row.city_country ?? null,
+      city: location.city || null,
+      country: location.country || null,
+      dateOfBirth: null,
+      gender: null,
+      graduationYear: null,
+    };
+  });
 }

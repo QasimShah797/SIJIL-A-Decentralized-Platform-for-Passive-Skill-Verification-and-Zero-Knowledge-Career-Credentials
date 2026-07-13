@@ -1,10 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { z } from "zod";
 import {
   User,
   GraduationCap,
-  Link2,
   Sparkles,
   ChevronRight,
   UploadCloud,
@@ -25,8 +24,8 @@ import {
 import { toast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { Field } from "@/components/sijil/Field";
+import { VerifiedProfessionalAccounts } from "@/components/profile/VerifiedProfessionalAccounts";
 import {
-  areSelfSignupProfileColumnsAvailable,
   fetchLearnerProfileRow,
   isLearnerProfileComplete,
   rowToSelfSignupForm,
@@ -37,32 +36,30 @@ import {
   type LearnerSelfSignupOnboardingData,
   type SelfSignupProfileForm,
 } from "@/lib/db/learner-profile";
+import {
+  probeLinkedInOAuthConfigured,
+} from "@/lib/db/linkedin-connections";
+import {
+  clearProfileFormDraft,
+  loadProfileFormDraft,
+  saveProfileFormDraft,
+} from "@/lib/profile-oauth-draft";
+import { meetsOAuthCompletionRequirements } from "@/lib/profile-oauth-verification";
 import { formatSupabaseError } from "@/lib/utils";
 
-const optUrl = z.string().trim().url("Invalid URL").optional().or(z.literal(""));
-
-function buildSchema(extendedColumns: boolean) {
-  return z.object({
-    contactNumber: z.string().trim().min(1, "Phone number is required").max(40),
-    dateOfBirth: extendedColumns
-      ? z.string().trim().min(1, "Date of birth is required")
-      : z.string().trim().optional().or(z.literal("")),
-    gender: extendedColumns
-      ? z.string().trim().min(1, "Please select your gender")
-      : z.string().trim().optional().or(z.literal("")),
-    country: z.string().trim().min(1, "Country is required").max(80),
-    city: z.string().trim().min(1, "City is required").max(80),
-    institutionName: z.string().trim().max(200).optional().or(z.literal("")),
-    program: z.string().trim().max(200).optional().or(z.literal("")),
-    graduationYear: z.string().trim().optional().or(z.literal("")),
-    githubUrl: z.string().trim().url("Valid GitHub URL required"),
-    linkedinUrl: z.string().trim().url("Valid LinkedIn URL required"),
-    portfolioUrl: optUrl,
-    bio: z.string().trim().min(1, "Bio is required").max(2000),
-    skillsSummary: z.string().trim().min(1, "Skills summary is required").max(2000),
-    careerGoal: z.string().trim().min(1, "Career goal is required").max(1000),
-  });
-}
+const profileSchema = z.object({
+  contactNumber: z.string().trim().min(1, "Phone number is required").max(40),
+  dateOfBirth: z.string().trim().optional().or(z.literal("")),
+  gender: z.string().trim().optional().or(z.literal("")),
+  country: z.string().trim().min(1, "Country is required").max(80),
+  city: z.string().trim().min(1, "City is required").max(80),
+  institutionName: z.string().trim().max(200).optional().or(z.literal("")),
+  program: z.string().trim().max(200).optional().or(z.literal("")),
+  graduationYear: z.string().trim().optional().or(z.literal("")),
+  bio: z.string().trim().min(1, "Bio is required").max(2000),
+  skillsSummary: z.string().trim().min(1, "Skills summary is required").max(2000),
+  careerGoal: z.string().trim().min(1, "Career goal is required").max(1000),
+});
 
 const GENDER_OPTIONS = [
   { value: "male", label: "Male" },
@@ -81,23 +78,25 @@ const emptyForm = (): SelfSignupProfileForm => ({
   institutionName: "",
   program: "",
   graduationYear: "",
-  githubUrl: "",
-  linkedinUrl: "",
-  portfolioUrl: "",
   bio: "",
   skillsSummary: "",
   careerGoal: "",
 });
 
+const RETURN_PATH = "/learner/complete-profile";
+
 export default function SelfSignupCompleteProfile() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { user, loading: authLoading } = useAuth();
   const [busy, setBusy] = useState(false);
   const [checking, setChecking] = useState(true);
   const [formReady, setFormReady] = useState(false);
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [existingAvatarUrl, setExistingAvatarUrl] = useState<string | null>(null);
-  const [extendedColumns, setExtendedColumns] = useState(true);
+  const [githubVerified, setGithubVerified] = useState(false);
+  const [linkedinVerified, setLinkedinVerified] = useState(true);
+  const [linkedinRequired, setLinkedinRequired] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const [f, setF] = useState<SelfSignupProfileForm>(emptyForm());
 
@@ -105,6 +104,11 @@ export default function SelfSignupCompleteProfile() {
     (k: keyof SelfSignupProfileForm) =>
     (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
       setF((prev) => ({ ...prev, [k]: e.target.value }));
+
+  const persistDraft = () => {
+    if (!user) return;
+    saveProfileFormDraft(user.id, "self_signup", f);
+  };
 
   useEffect(() => {
     if (authLoading) return;
@@ -125,15 +129,24 @@ export default function SelfSignupCompleteProfile() {
           return;
         }
 
-        setExtendedColumns(areSelfSignupProfileColumnsAvailable());
-        setF(rowToSelfSignupForm(row));
+        const draft = loadProfileFormDraft<SelfSignupProfileForm>(user.id, "self_signup");
+        setF(draft ?? rowToSelfSignupForm(row, user.id));
         setExistingAvatarUrl(row.avatar_url ?? null);
         setFormReady(true);
         setChecking(false);
 
+        const oauth = await meetsOAuthCompletionRequirements(user.id);
+        if (cancelled) return;
+        setGithubVerified(oauth.github);
+        setLinkedinVerified(oauth.linkedin);
+        setLinkedinRequired(oauth.linkedinRequired);
+
+        await probeLinkedInOAuthConfigured();
+
         const complete = await isLearnerProfileComplete(user.id);
         if (cancelled) return;
         if (complete) {
+          clearProfileFormDraft(user.id, "self_signup");
           navigate("/learner/profile", { replace: true });
         }
       } catch (err) {
@@ -153,8 +166,24 @@ export default function SelfSignupCompleteProfile() {
   }, [user, authLoading, navigate]);
 
   useEffect(() => {
-    setFormReady(false);
-  }, [user?.id]);
+    const github = searchParams.get("github");
+    const linkedin = searchParams.get("linkedin");
+    if (!github && !linkedin) return;
+
+    const next = new URLSearchParams(searchParams);
+    next.delete("github");
+    next.delete("linkedin");
+    next.delete("code");
+    setSearchParams(next, { replace: true });
+
+    if (user) {
+      void meetsOAuthCompletionRequirements(user.id).then((oauth) => {
+        setGithubVerified(oauth.github);
+        setLinkedinVerified(oauth.linkedin);
+        setLinkedinRequired(oauth.linkedinRequired);
+      });
+    }
+  }, [searchParams, setSearchParams, user]);
 
   useEffect(() => {
     if (!user || !formReady) return;
@@ -170,9 +199,6 @@ export default function SelfSignupCompleteProfile() {
         institutionName: f.institutionName || undefined,
         program: f.program || undefined,
         graduationYear: gradYear ? Number.parseInt(gradYear, 10) : undefined,
-        githubUrl: f.githubUrl,
-        linkedinUrl: f.linkedinUrl,
-        portfolioUrl: f.portfolioUrl || undefined,
         bio: f.bio,
         skillsSummary: f.skillsSummary,
         careerGoal: f.careerGoal,
@@ -184,17 +210,39 @@ export default function SelfSignupCompleteProfile() {
     return () => window.clearTimeout(timer);
   }, [f, user, formReady]);
 
-  const progress = selfSignupProfileProgress(f);
+  const progress = selfSignupProfileProgress(f, {
+    githubVerified,
+    linkedinVerified,
+    linkedinRequired,
+  });
 
   const finish = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
 
-    const parsed = buildSchema(extendedColumns).safeParse(f);
+    const parsed = profileSchema.safeParse(f);
     if (!parsed.success) {
       toast({
         title: "Please complete required fields",
         description: parsed.error.issues[0].message,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const oauth = await meetsOAuthCompletionRequirements(user.id);
+    if (!oauth.github) {
+      toast({
+        title: "GitHub verification required",
+        description: "Connect and verify your GitHub account before completing your profile.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!oauth.linkedin) {
+      toast({
+        title: "LinkedIn verification required",
+        description: "Connect and verify your LinkedIn account before completing your profile.",
         variant: "destructive",
       });
       return;
@@ -233,9 +281,6 @@ export default function SelfSignupCompleteProfile() {
         institutionName: parsed.data.institutionName?.trim() || undefined,
         program: parsed.data.program?.trim() || undefined,
         graduationYear: gradYear,
-        githubUrl: parsed.data.githubUrl.trim(),
-        linkedinUrl: parsed.data.linkedinUrl.trim(),
-        portfolioUrl: parsed.data.portfolioUrl?.trim() || undefined,
         bio: parsed.data.bio.trim(),
         skillsSummary: parsed.data.skillsSummary.trim(),
         careerGoal: parsed.data.careerGoal.trim(),
@@ -243,7 +288,8 @@ export default function SelfSignupCompleteProfile() {
       };
 
       const updated = await saveSelfSignupOnboarding(user.id, data);
-      setF(rowToSelfSignupForm(updated));
+      clearProfileFormDraft(user.id, "self_signup");
+      setF(rowToSelfSignupForm(updated, user.id));
       setExistingAvatarUrl(updated.avatar_url ?? null);
       setAvatarFile(null);
       if (fileRef.current) fileRef.current.value = "";
@@ -349,10 +395,10 @@ export default function SelfSignupCompleteProfile() {
                   placeholder="+92 300 1234567"
                 />
               </Field>
-              <Field label="Date of birth" required>
+              <Field label="Date of birth">
                 <Input type="date" value={f.dateOfBirth} onChange={set("dateOfBirth")} />
               </Field>
-              <Field label="Gender" required>
+              <Field label="Gender">
                 <Select value={f.gender || undefined} onValueChange={(v) => setF((p) => ({ ...p, gender: v }))}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select gender" />
@@ -407,34 +453,15 @@ export default function SelfSignupCompleteProfile() {
             </div>
           </section>
 
-          <section className="space-y-4 rounded-xl border border-border/60 bg-card/50 p-5">
-            <div className="flex items-center gap-2 text-sm font-medium">
-              <Link2 className="h-4 w-4 text-primary" /> Professional links
-            </div>
-            <div className="grid gap-4">
-              <Field label="GitHub profile URL" required>
-                <Input
-                  value={f.githubUrl}
-                  onChange={set("githubUrl")}
-                  placeholder="https://github.com/yourname"
-                />
-              </Field>
-              <Field label="LinkedIn profile URL" required>
-                <Input
-                  value={f.linkedinUrl}
-                  onChange={set("linkedinUrl")}
-                  placeholder="https://linkedin.com/in/yourname"
-                />
-              </Field>
-              <Field label="Portfolio website" hint="Optional">
-                <Input
-                  value={f.portfolioUrl}
-                  onChange={set("portfolioUrl")}
-                  placeholder="https://yourportfolio.com"
-                />
-              </Field>
-            </div>
-          </section>
+          {user ? (
+            <VerifiedProfessionalAccounts
+              userId={user.id}
+              returnTo={RETURN_PATH}
+              onBeforeConnect={persistDraft}
+              onGitHubVerifiedChange={setGithubVerified}
+              onLinkedInVerifiedChange={setLinkedinVerified}
+            />
+          ) : null}
 
           <section className="space-y-4 rounded-xl border border-border/60 bg-card/50 p-5">
             <div className="flex items-center gap-2 text-sm font-medium">
@@ -453,7 +480,7 @@ export default function SelfSignupCompleteProfile() {
 
           <div className="flex items-start gap-2 rounded-lg border border-border/60 bg-muted/30 p-3 text-xs text-muted-foreground">
             <MapPin className="h-4 w-4 shrink-0 mt-0.5" />
-            Your progress is saved automatically. You can return anytime to finish your profile.
+            Your progress is saved automatically. Form data is preserved when you connect GitHub or LinkedIn.
           </div>
 
           <Button type="submit" disabled={busy} className="w-full">

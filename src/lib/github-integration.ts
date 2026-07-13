@@ -112,11 +112,16 @@ export function buildGitHubAuthorizeUrl(ctx: GitHubOAuthContext): string {
   return url.toString();
 }
 
+export type StartGitHubOAuthOptions = {
+  returnTo?: string;
+  skipPortfolioSync?: boolean;
+};
+
 /**
  * Start GitHub OAuth — saves per-user context then routes through /auth/github/prepare
  * which clears any lingering GitHub browser session before authorize.
  */
-export async function startGitHubOAuth(): Promise<string> {
+export async function startGitHubOAuth(options?: StartGitHubOAuthOptions): Promise<string> {
   const { clientId, redirectUri } = getGitHubOAuthConfig();
   const session = await requireSession();
   const userId = session.user.id;
@@ -124,7 +129,7 @@ export async function startGitHubOAuth(): Promise<string> {
   clearAllGitHubConnectionState();
 
   const nonce = crypto.randomUUID();
-  saveGitHubOAuthContext(clientId, redirectUri, userId, nonce);
+  saveGitHubOAuthContext(clientId, redirectUri, userId, nonce, options);
 
   return `${window.location.origin}/auth/github/prepare`;
 }
@@ -229,6 +234,7 @@ export async function disconnectGitHub(userId: string): Promise<void> {
   await supabase.from("github_repos").delete().eq("user_id", userId);
   await supabase.from("github_activities").delete().eq("user_id", userId);
   await supabase.from("github_connections").delete().eq("user_id", userId);
+  await supabase.from("learner_profiles").update({ github_url: null }).eq("user_id", userId);
 }
 
 export async function linkRepoToSkill(

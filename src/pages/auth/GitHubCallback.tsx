@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "@/hooks/use-toast";
+import { getGitHubOAuthReturnTo, loadGitHubOAuthContext } from "@/lib/github-env";
 import {
   buildSkillsForGitHubSync,
   completeGitHubOAuth,
@@ -20,6 +21,9 @@ export default function GitHubCallback() {
     ran.current = true;
 
     (async () => {
+      const returnTo = loadGitHubOAuthContext()?.returnTo ?? getGitHubOAuthReturnTo();
+      const skipPortfolioSync = loadGitHubOAuthContext()?.skipPortfolioSync ?? false;
+
       try {
         const params = new URLSearchParams(window.location.search);
         const code = params.get("code");
@@ -39,7 +43,10 @@ export default function GitHubCallback() {
         let sync = result.sync;
         const userId = sessionData.session.user.id;
 
-        if (!sync || (sync.repos === 0 && sync.synced === 0)) {
+        if (
+          !skipPortfolioSync &&
+          (!sync || (sync.repos === 0 && sync.synced === 0))
+        ) {
           setMsg("Syncing repositories and activity from GitHub…");
           const [skills, credentials] = await Promise.all([
             fetchDeclaredSkills(userId),
@@ -52,18 +59,22 @@ export default function GitHubCallback() {
           sync = await syncGitHubPortfolio(allSkills);
         }
 
+        const syncNote =
+          sync && !skipPortfolioSync
+            ? ` — ${sync.repos} repos, ${sync.synced} activities imported.`
+            : "";
         toast({
           title: "GitHub connected",
-          description: `@${result.github_username} — ${sync.repos} repos, ${sync.synced} activities imported.`,
+          description: `@${result.github_username} verified.${syncNote}`,
         });
-        navigate("/learner/integrations", { replace: true });
+        navigate(`${returnTo}?github=connected`, { replace: true });
       } catch (e) {
         toast({
           title: "GitHub connection failed",
           description: e instanceof Error ? e.message : String(e),
           variant: "destructive",
         });
-        navigate("/learner/integrations", { replace: true });
+        navigate(`${returnTo}?github=error`, { replace: true });
       }
     })();
   }, [navigate]);

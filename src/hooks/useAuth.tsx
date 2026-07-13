@@ -12,6 +12,10 @@ import { AuthChangeEvent, Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { AppRole, fetchUserRoles, pickPrimaryRole } from "@/lib/auth-helpers";
 import { clearAllGitHubConnectionState } from "@/lib/github-env";
+import {
+  clearLinkedInOAuthState,
+  resetLinkedInConfiguredCache,
+} from "@/lib/db/linkedin-connections";
 
 type AuthCtx = {
   user: User | null;
@@ -124,6 +128,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         (prevUserId && prevUserId !== nextUserId)
       ) {
         clearAllGitHubConnectionState();
+        clearLinkedInOAuthState();
+        resetLinkedInConfiguredCache();
+      }
+
+      if (
+        event === "SIGNED_IN" ||
+        event === "INITIAL_SESSION"
+      ) {
+        resetLinkedInConfiguredCache();
+        clearLinkedInOAuthState();
       }
 
       if (event === "SIGNED_OUT") {
@@ -173,6 +187,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = useCallback(async () => {
     clearAllGitHubConnectionState();
+    clearLinkedInOAuthState();
+    resetLinkedInConfiguredCache();
     await supabase.auth.signOut();
   }, []);
 

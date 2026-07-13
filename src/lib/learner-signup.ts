@@ -1,7 +1,7 @@
 import type { AuthError } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { holderDidFromUserId } from "@/lib/did";
-import { isMissingColumnError } from "@/lib/db/learner-profile-columns";
+import { isMissingColumnError, stripNonDbColumns } from "@/lib/db/learner-profile-columns";
 
 export type LearnerSignupInput = {
   fullName: string;
@@ -93,7 +93,7 @@ async function insertLearnerProfileRow(
   const holderDid = holderDidFromUserId(userId);
   const now = new Date().toISOString();
 
-  const fullPayload: Record<string, unknown> = {
+  const fullPayload = stripNonDbColumns({
     user_id: userId,
     first_name: firstName || "Learner",
     last_name: lastName || "",
@@ -102,14 +102,14 @@ async function insertLearnerProfileRow(
     holder_did: holderDid,
     profile_completed: false,
     account_activated_at: now,
-  };
+  });
 
-  const minimalPayload: Record<string, unknown> = {
+  const minimalPayload = stripNonDbColumns({
     user_id: userId,
     first_name: firstName || "Learner",
     last_name: lastName || "",
     profile_completed: false,
-  };
+  });
 
   const { error: fullError } = await supabase.from("learner_profiles").insert(fullPayload);
   if (!fullError) return;

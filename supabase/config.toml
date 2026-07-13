@@ -1,1 +1,7 @@
 project_id = "nhzvtqpplfruzocframc"
+
+[functions.linkedin-oauth-start]
+verify_jwt = true
+
+[functions.linkedin-oauth-callback]
+verify_jwt = false

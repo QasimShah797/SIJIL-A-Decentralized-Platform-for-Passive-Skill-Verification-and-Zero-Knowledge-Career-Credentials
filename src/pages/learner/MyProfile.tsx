@@ -19,17 +19,13 @@ import {
   uploadLearnerAvatar,
   type LearnerEditableProfile,
 } from "@/lib/db/learner-profile";
+import { VerifiedProfessionalAccounts } from "@/components/profile/VerifiedProfessionalAccounts";
 import { formatSupabaseError } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
-
-const optUrl = z.string().trim().url("Invalid URL").optional().or(z.literal(""));
 
 const baseEditSchema = {
   contactNumber: z.string().trim().min(1, "Phone number is required").max(40),
   bio: z.string().trim().min(1, "Short bio is required").max(2000),
-  githubUrl: z.string().trim().url("Valid GitHub URL required"),
-  linkedinUrl: z.string().trim().url("Valid LinkedIn URL required"),
-  portfolioUrl: optUrl,
   skillsSummary: z.string().trim().min(1, "Academic interests / skills summary is required").max(2000),
   careerGoal: z.string().trim().min(1, "Career goal is required").max(1000),
 };
@@ -88,9 +84,6 @@ export default function MyProfile() {
   const [form, setForm] = useState<EditForm>({
     contactNumber: "",
     bio: "",
-    githubUrl: "",
-    linkedinUrl: "",
-    portfolioUrl: "",
     skillsSummary: "",
     careerGoal: "",
     cityCountry: "",
@@ -110,9 +103,6 @@ export default function MyProfile() {
         contactNumber: profile.contactNumber ?? "",
         cityCountry: profile.cityCountry ?? "",
         bio: profile.bio ?? "",
-        githubUrl: profile.githubUrl ?? "",
-        linkedinUrl: profile.linkedinUrl ?? "",
-        portfolioUrl: profile.portfolioUrl ?? "",
         skillsSummary: profile.skillsSummary ?? "",
         careerGoal: profile.careerGoal ?? "",
       });
@@ -122,9 +112,6 @@ export default function MyProfile() {
         city: profile.city ?? "",
         country: profile.country ?? "",
         bio: profile.bio ?? "",
-        githubUrl: profile.githubUrl ?? "",
-        linkedinUrl: profile.linkedinUrl ?? "",
-        portfolioUrl: profile.portfolioUrl ?? "",
         skillsSummary: profile.skillsSummary ?? "",
         careerGoal: profile.careerGoal ?? "",
         dateOfBirth: profile.dateOfBirth ?? "",
@@ -146,9 +133,6 @@ export default function MyProfile() {
           contactNumber: profile.contactNumber ?? "",
           cityCountry: profile.cityCountry ?? "",
           bio: profile.bio ?? "",
-          githubUrl: profile.githubUrl ?? "",
-          linkedinUrl: profile.linkedinUrl ?? "",
-          portfolioUrl: profile.portfolioUrl ?? "",
           skillsSummary: profile.skillsSummary ?? "",
           careerGoal: profile.careerGoal ?? "",
         });
@@ -158,9 +142,6 @@ export default function MyProfile() {
           city: profile.city ?? "",
           country: profile.country ?? "",
           bio: profile.bio ?? "",
-          githubUrl: profile.githubUrl ?? "",
-          linkedinUrl: profile.linkedinUrl ?? "",
-          portfolioUrl: profile.portfolioUrl ?? "",
           skillsSummary: profile.skillsSummary ?? "",
           careerGoal: profile.careerGoal ?? "",
           dateOfBirth: profile.dateOfBirth ?? "",
@@ -205,9 +186,6 @@ export default function MyProfile() {
       const base = {
         contactNumber: parsed.data.contactNumber,
         bio: parsed.data.bio,
-        githubUrl: parsed.data.githubUrl,
-        linkedinUrl: parsed.data.linkedinUrl,
-        portfolioUrl: parsed.data.portfolioUrl || undefined,
         skillsSummary: parsed.data.skillsSummary,
         careerGoal: parsed.data.careerGoal,
         avatarUrl,
@@ -493,29 +471,16 @@ export default function MyProfile() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
               <Link2 className="h-4 w-4 text-primary" />
-              Professional links
+              Verified professional accounts
             </CardTitle>
           </CardHeader>
-          <CardContent className="grid gap-4">
-            {editing ? (
-              <>
-                <Field label="GitHub profile URL" required>
-                  <Input value={form.githubUrl} onChange={set("githubUrl")} />
-                </Field>
-                <Field label="LinkedIn profile URL" required>
-                  <Input value={form.linkedinUrl} onChange={set("linkedinUrl")} />
-                </Field>
-                <Field label="Portfolio website" hint="Optional">
-                  <Input value={form.portfolioUrl} onChange={set("portfolioUrl")} />
-                </Field>
-              </>
-            ) : (
-              <dl className="grid gap-3 sm:grid-cols-2">
-                <ReadOnlyRow label="GitHub" value={profile.githubUrl ?? ""} />
-                <ReadOnlyRow label="LinkedIn" value={profile.linkedinUrl ?? ""} />
-                <ReadOnlyRow label="Portfolio" value={profile.portfolioUrl ?? ""} />
-              </dl>
-            )}
+          <CardContent>
+            {user ? (
+              <VerifiedProfessionalAccounts
+                userId={user.id}
+                returnTo="/learner/my-profile"
+              />
+            ) : null}
           </CardContent>
         </Card>
 

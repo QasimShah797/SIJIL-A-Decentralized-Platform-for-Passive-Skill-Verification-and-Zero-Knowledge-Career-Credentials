@@ -22,6 +22,13 @@ export type GitHubOAuthContext = {
   redirectUri: string;
   userId: string;
   nonce: string;
+  returnTo?: string;
+  skipPortfolioSync?: boolean;
+};
+
+export type GitHubOAuthContextOptions = {
+  returnTo?: string;
+  skipPortfolioSync?: boolean;
 };
 
 /** Persist authorize params so callback uses the exact same redirect_uri and user. */
@@ -30,12 +37,24 @@ export function saveGitHubOAuthContext(
   redirectUri: string,
   userId: string,
   nonce: string,
+  options?: GitHubOAuthContextOptions,
 ) {
   sessionStorage.setItem(
     OAUTH_CTX_KEY,
-    JSON.stringify({ clientId, redirectUri, userId, nonce } satisfies GitHubOAuthContext),
+    JSON.stringify({
+      clientId,
+      redirectUri,
+      userId,
+      nonce,
+      returnTo: options?.returnTo,
+      skipPortfolioSync: options?.skipPortfolioSync,
+    } satisfies GitHubOAuthContext),
   );
   sessionStorage.setItem(GITHUB_ACTIVE_USER_KEY, userId);
+}
+
+export function getGitHubOAuthReturnTo(): string {
+  return loadGitHubOAuthContext()?.returnTo ?? "/learner/integrations";
 }
 
 export function loadGitHubOAuthContext(): GitHubOAuthContext | null {

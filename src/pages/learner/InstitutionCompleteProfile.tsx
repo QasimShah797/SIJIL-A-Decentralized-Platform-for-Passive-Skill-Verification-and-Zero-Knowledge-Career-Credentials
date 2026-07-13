@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { z } from "zod";
 import {
-  User, GraduationCap, Link2, Sparkles, ChevronRight, UploadCloud, X, ShieldCheck,
+  User, GraduationCap, Sparkles, ChevronRight, UploadCloud, X, ShieldCheck,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,7 @@ import { toast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { Field } from "@/components/sijil/Field";
 import { StatusBadge } from "@/components/sijil/StatusBadge";
+import { VerifiedProfessionalAccounts } from "@/components/profile/VerifiedProfessionalAccounts";
 import {
   fetchLearnerProfileRow,
   isLearnerProfileComplete,
@@ -20,9 +21,13 @@ import {
   rowToOnboardingForm,
   type LearnerOnboardingData,
 } from "@/lib/db/learner-profile";
+import {
+  clearProfileFormDraft,
+  loadProfileFormDraft,
+  saveProfileFormDraft,
+} from "@/lib/profile-oauth-draft";
+import { meetsOAuthCompletionRequirements } from "@/lib/profile-oauth-verification";
 import { formatSupabaseError } from "@/lib/utils";
-
-const optUrl = z.string().trim().url("Invalid URL").optional().or(z.literal(""));
 
 const Schema = z.object({
   firstName: z.string().trim().min(1, "First name is required").max(80),
@@ -34,16 +39,32 @@ const Schema = z.object({
   contactNumber: z.string().trim().min(1, "Phone number is required").max(40),
   cityCountry: z.string().trim().min(1, "City / country is required").max(120),
   batch: z.string().trim().max(40).optional().or(z.literal("")),
-  githubUrl: z.string().trim().url("Valid GitHub URL required"),
-  linkedinUrl: z.string().trim().url("Valid LinkedIn URL required"),
-  portfolioUrl: optUrl,
   bio: z.string().trim().min(1, "Short bio is required").max(2000),
   skillsSummary: z.string().trim().min(1, "Academic interests / skills summary is required").max(2000),
   careerGoal: z.string().trim().min(1, "Career goal is required").max(1000),
 });
 
+type InstitutionForm = {
+  firstName: string;
+  lastName: string;
+  universityEmail: string;
+  institutionName: string;
+  program: string;
+  studentId: string;
+  department: string;
+  contactNumber: string;
+  cityCountry: string;
+  batch: string;
+  bio: string;
+  skillsSummary: string;
+  careerGoal: string;
+};
+
+const RETURN_PATH = "/learner/complete-profile";
+
 export default function InstitutionCompleteProfile() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { user, loading: authLoading } = useAuth();
   const [busy, setBusy] = useState(false);
   const [checking, setChecking] = useState(true);
@@ -52,15 +73,19 @@ export default function InstitutionCompleteProfile() {
   const [formReady, setFormReady] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const [f, setF] = useState({
+  const [f, setF] = useState<InstitutionForm>({
     firstName: "", lastName: "", universityEmail: "", institutionName: "", program: "", studentId: "",
     department: "", contactNumber: "", cityCountry: "", batch: "",
-    githubUrl: "", linkedinUrl: "", portfolioUrl: "",
     bio: "", skillsSummary: "", careerGoal: "",
   });
 
-  const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+  const set = (k: keyof InstitutionForm) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
     setF((prev) => ({ ...prev, [k]: e.target.value }));
+
+  const persistDraft = () => {
+    if (!user) return;
+    saveProfileFormDraft(user.id, "institution", f);
+  };
 
   useEffect(() => {
     if (authLoading) return;
@@ -85,14 +110,15 @@ export default function InstitutionCompleteProfile() {
       }
 
       setIsProvisioned(true);
-      setF(rowToOnboardingForm(row, user.email));
+      const draft = loadProfileFormDraft<InstitutionForm>(user.id, "institution");
+      setF(draft ?? rowToOnboardingForm(row, user.email));
       setFormReady(true);
-
       setChecking(false);
 
       const complete = await isLearnerProfileComplete(user.id);
       if (cancelled) return;
       if (complete) {
+        clearProfileFormDraft(user.id, "institution");
         navigate("/learner/profile", { replace: true });
       }
     })();
@@ -103,8 +129,20 @@ export default function InstitutionCompleteProfile() {
   }, [user, authLoading, navigate]);
 
   useEffect(() => {
-    setFormReady(false);
-  }, [user?.id]);
+    const github = searchParams.get("github");
+    const linkedin = searchParams.get("linkedin");
+    if (!github && !linkedin) return;
+
+    const next = new URLSearchParams(searchParams);
+    next.delete("github");
+    next.delete("linkedin");
+    next.delete("code");
+    setSearchParams(next, { replace: true });
+
+    if (user) {
+      void meetsOAuthCompletionRequirements(user.id);
+    }
+  }, [searchParams, setSearchParams, user]);
 
   useEffect(() => {
     if (!user || !formReady) return;
@@ -115,9 +153,6 @@ export default function InstitutionCompleteProfile() {
         lastName: f.lastName,
         contactNumber: f.contactNumber,
         cityCountry: f.cityCountry,
-        githubUrl: f.githubUrl,
-        linkedinUrl: f.linkedinUrl,
-        portfolioUrl: f.portfolioUrl || undefined,
         bio: f.bio,
         skillsSummary: f.skillsSummary,
         careerGoal: f.careerGoal,
@@ -143,6 +178,24 @@ export default function InstitutionCompleteProfile() {
       return;
     }
 
+    const oauth = await meetsOAuthCompletionRequirements(user.id);
+    if (!oauth.github) {
+      toast({
+        title: "GitHub verification required",
+        description: "Connect and verify your GitHub account before completing your profile.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!oauth.linkedin) {
+      toast({
+        title: "LinkedIn verification required",
+        description: "Connect and verify your LinkedIn account before completing your profile.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setBusy(true);
     try {
       let avatarUrl: string | undefined;
@@ -160,9 +213,6 @@ export default function InstitutionCompleteProfile() {
         contactNumber: f.contactNumber.trim(),
         cityCountry: f.cityCountry.trim(),
         batch: f.batch.trim() || undefined,
-        githubUrl: f.githubUrl.trim(),
-        linkedinUrl: f.linkedinUrl.trim(),
-        portfolioUrl: f.portfolioUrl.trim() || undefined,
         bio: f.bio.trim(),
         skillsSummary: f.skillsSummary.trim(),
         careerGoal: f.careerGoal.trim(),
@@ -170,6 +220,7 @@ export default function InstitutionCompleteProfile() {
       };
 
       const updated = await saveLearnerOnboarding(user.id, data);
+      clearProfileFormDraft(user.id, "institution");
       setF(rowToOnboardingForm(updated, user.email));
       setAvatarFile(null);
       if (fileRef.current) fileRef.current.value = "";
@@ -264,22 +315,13 @@ export default function InstitutionCompleteProfile() {
           </div>
         </section>
 
-        <section className="space-y-4">
-          <div className="flex items-center gap-2 text-sm font-medium">
-            <Link2 className="h-4 w-4 text-primary" /> Professional links
-          </div>
-          <div className="grid gap-4">
-            <Field label="GitHub profile URL" required>
-              <Input value={f.githubUrl} onChange={set("githubUrl")} placeholder="https://github.com/yourname" />
-            </Field>
-            <Field label="LinkedIn profile URL" required>
-              <Input value={f.linkedinUrl} onChange={set("linkedinUrl")} placeholder="https://linkedin.com/in/yourname" />
-            </Field>
-            <Field label="Portfolio website" hint="Optional">
-              <Input value={f.portfolioUrl} onChange={set("portfolioUrl")} placeholder="https://yourportfolio.com" />
-            </Field>
-          </div>
-        </section>
+        {user ? (
+          <VerifiedProfessionalAccounts
+            userId={user.id}
+            returnTo={RETURN_PATH}
+            onBeforeConnect={persistDraft}
+          />
+        ) : null}
 
         <section className="space-y-4">
           <div className="flex items-center gap-2 text-sm font-medium">
