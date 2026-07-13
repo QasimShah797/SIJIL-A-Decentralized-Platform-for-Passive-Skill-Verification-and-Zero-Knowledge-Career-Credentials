@@ -114,6 +114,7 @@ function readCorrectOptionId(row: Record<string, unknown>): McqOptionId | null {
       ?? row.correctAnswer
       ?? row.correct_answer
       ?? row.correctOption
+      ?? row.correct_option
       ?? row.answer
       ?? row.correct_index
       ?? row.correctIndex,
@@ -122,6 +123,10 @@ function readCorrectOptionId(row: Record<string, unknown>): McqOptionId | null {
 
 function readQuestionId(row: Record<string, unknown>, index: number): string {
   return String(row.id ?? row.question_id ?? row.questionId ?? `q${index + 1}`).trim();
+}
+
+function canonicalQuestionId(value: unknown): string {
+  return String(value ?? "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
 export function parseAnswerKeyEntries(answerKeyRaw: unknown): McqAnswerKeyEntry[] {
@@ -165,6 +170,13 @@ export function normalizeLearnerAnswers(answers: Record<string, unknown>): Recor
   return normalized;
 }
 
+function normalizeAnswerKeyValue(value: unknown): McqOptionId | null {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return readCorrectOptionId(value as Record<string, unknown>);
+  }
+  return normalizeOptionId(value);
+}
+
 export function scoreMcqSubmission(
   answerKeyRaw: unknown,
   answers: Record<string, unknown>,
@@ -176,10 +188,21 @@ export function scoreMcqSubmission(
 } {
   const entries = parseAnswerKeyEntries(answerKeyRaw);
   const normalizedAnswers = normalizeLearnerAnswers(answers);
+  const canonicalAnswers = new Map<string, McqOptionId>();
+  for (const [questionId, option] of Object.entries(normalizedAnswers)) {
+    const canonical = canonicalQuestionId(questionId);
+    if (canonical) canonicalAnswers.set(canonical, option);
+  }
 
   const totalQuestions = entries.length;
   const correctCount = entries.filter(
-    (item) => normalizedAnswers[item.id] === item.correctOptionId,
+    (item) => {
+      const direct = normalizedAnswers[item.id];
+      if (direct != null) return direct === item.correctOptionId;
+      const canonical = canonicalQuestionId(item.id);
+      if (!canonical) return false;
+      return canonicalAnswers.get(canonical) === item.correctOptionId;
+    },
   ).length;
   const percentage = totalQuestions > 0
     ? Math.round((correctCount / totalQuestions) * 100)
@@ -187,12 +210,6 @@ export function scoreMcqSubmission(
   const passed = totalQuestions > 0
     ? correctCount / totalQuestions >= MCQ_PASS_THRESHOLD
     : false;
-
-  console.log("[mcq-score] selected answers:", JSON.stringify(normalizedAnswers));
-  console.log("[mcq-score] correct answers:", JSON.stringify(
-    Object.fromEntries(entries.map((e) => [e.id, e.correctOptionId])),
-  ));
-  console.log("[mcq-score] calculated:", { correctCount, totalQuestions, percentage, passed });
 
   return { correctCount, totalQuestions, percentage, passed };
 }
@@ -218,8 +235,8 @@ function normalizeAnswerKey(raw: unknown): Record<string, McqOptionId> {
     const key: Record<string, McqOptionId> = {};
     for (const item of raw) {
       const row = item as Record<string, unknown>;
-      const id = String(row.id ?? "");
-      const correct = normalizeOptionId(row.correctOptionId);
+      const id = readQuestionId(row, Object.keys(key).length);
+      const correct = readCorrectOptionId(row);
       if (id && correct) key[id] = correct;
     }
     return key;
@@ -228,7 +245,7 @@ function normalizeAnswerKey(raw: unknown): Record<string, McqOptionId> {
   if (raw && typeof raw === "object") {
     const key: Record<string, McqOptionId> = {};
     for (const [id, value] of Object.entries(raw as Record<string, unknown>)) {
-      const correct = normalizeOptionId(value);
+      const correct = normalizeAnswerKeyValue(value);
       if (correct) key[id] = correct;
     }
     return key;
@@ -261,6 +278,7 @@ function normalizeQuestion(raw: Record<string, unknown>, index: number): McqQues
       ?? raw.correctAnswer
       ?? raw.correct_answer
       ?? raw.correctOption
+      ?? raw.correct_option
       ?? raw.answer
       ?? (typeof raw.correct_index === "number"
         ? (["A", "B", "C", "D"] as const)[raw.correct_index as number]

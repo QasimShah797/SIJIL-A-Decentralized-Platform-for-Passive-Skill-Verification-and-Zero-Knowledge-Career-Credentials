@@ -9,18 +9,20 @@ export type WalletSourceBadge = (typeof WALLET_SOURCE_BADGES)[number];
 
 export const WALLET_RECORD_STATUSES = [
   "Evidence Collected",
-  "Task Submitted",
+  "Submitted",
   "Passed",
   "Needs Improvement",
+  "Timed Out",
   "Review Available",
 ] as const;
 
 export type WalletRecordStatus = (typeof WALLET_RECORD_STATUSES)[number];
 
 export type WalletPracticalTaskStatus =
-  | "Task Submitted"
+  | "Submitted"
   | "Passed"
-  | "Needs Improvement";
+  | "Needs Improvement"
+  | "Timed Out";
 
 export const WALLET_SHARE_FIELD_IDS = [
   "competency_name",

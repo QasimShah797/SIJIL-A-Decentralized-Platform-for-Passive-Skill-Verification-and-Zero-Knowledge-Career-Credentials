@@ -157,11 +157,14 @@ export function isAttemptLocked(
 export function attemptTaskLabel(attempt: AttemptRecord | null): string {
   if (!attempt) return "No task submitted";
   if (attempt.status === "passed" || attempt.passed) return `Passed · ${attempt.attemptId}`;
-  if (attempt.status === "submitted" || attempt.status === "auto_submitted") {
+  if (attempt.status === "auto_submitted") {
+    return `Timed Out · ${attempt.attemptId}`;
+  }
+  if (attempt.status === "submitted") {
     return `Submitted · ${attempt.attemptId}`;
   }
   if (attempt.status === "in_progress") return `In progress · ${attempt.attemptId}`;
-  if (attempt.status === "expired_no_submission") return `Expired · ${attempt.attemptId}`;
+  if (attempt.status === "expired_no_submission") return `Timed Out · ${attempt.attemptId}`;
   return `Attempt ${attempt.attemptId}`;
 }
 
