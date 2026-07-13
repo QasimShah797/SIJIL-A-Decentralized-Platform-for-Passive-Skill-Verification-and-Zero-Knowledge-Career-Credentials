@@ -172,23 +172,24 @@ export function AppShell({ role, children }: { role: Role; children: React.React
         </div>
 
         <div className="space-y-2 border-t border-sidebar-border p-3 text-xs text-sidebar-foreground/60">
-          {(role === "institution" || role === "learner") && (
-            <button
-              type="button"
-              onClick={() =>
-                void signOut().then(() =>
-                  navigate(role === "institution" ? "/login/institution" : "/"),
-                )
-              }
-              className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left transition-colors hover:bg-sidebar-accent/70"
-            >
-              <LogOut className="h-3.5 w-3.5" />
-              Sign out
-            </button>
-          )}
-          {role !== "institution" && role !== "learner" && (
-            <span className="block px-3">Authentication module is being rebuilt.</span>
-          )}
+          <button
+            type="button"
+            onClick={() =>
+              void signOut().then(() =>
+                navigate(
+                  role === "institution"
+                    ? "/login/institution"
+                    : role === "recruiter"
+                      ? "/login/recruiter"
+                      : "/",
+                ),
+              )
+            }
+            className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left transition-colors hover:bg-sidebar-accent/70"
+          >
+            <LogOut className="h-3.5 w-3.5" />
+            Sign out
+          </button>
         </div>
       </aside>
 

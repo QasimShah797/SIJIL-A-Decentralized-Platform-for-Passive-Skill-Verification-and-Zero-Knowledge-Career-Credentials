@@ -3,11 +3,12 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { AuthRebuildNotice } from "@/components/AuthRebuildNotice";
 import { RequireInstitutionRoute } from "@/components/RequireInstitutionRoute";
 import { RequireLearnerRoute } from "@/components/RequireLearnerRoute";
+import { RequireRecruiterRoute } from "@/components/RequireRecruiterRoute";
 import { AuthProvider } from "@/hooks/useAuth";
 import { ThemeProvider } from "@/components/ThemeProvider";
+import AuthEntry from "./pages/auth/AuthEntry";
 import Landing from "./pages/Landing";
 import NotFound from "./pages/NotFound";
 import ReviewInvite from "./pages/review/ReviewInvite";
@@ -36,6 +37,10 @@ import StudentManagement from "./pages/institution/StudentManagement";
 import GitHubPrepare from "./pages/auth/GitHubPrepare";
 import GitHubCallback from "./pages/auth/GitHubCallback";
 import CompetencyPresentationView from "./pages/public/CompetencyPresentationView";
+import RecruiterLogin from "./pages/login/RecruiterLogin";
+import RecruiterSearch from "./pages/recruiter/Search";
+import RecruiterCandidateSummary from "./pages/recruiter/CandidateSummary";
+import RecruiterCompare from "./pages/recruiter/Compare";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -50,7 +55,9 @@ const queryClient = new QueryClient({
   },
 });
 
-const G = <AuthRebuildNotice />;
+const RR = ({ children }: { children: React.ReactNode }) => (
+  <RequireRecruiterRoute>{children}</RequireRecruiterRoute>
+);
 
 const IR = ({ children }: { children: React.ReactNode }) => (
   <RequireInstitutionRoute>{children}</RequireInstitutionRoute>
@@ -73,11 +80,13 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <Routes>
-          <Route path="/" element={<Landing />} />
+          <Route path="/" element={<AuthEntry />} />
+          <Route path="/about" element={<Landing />} />
 
           <Route path="/login/institution" element={<InstitutionLogin />} />
           <Route path="/login/learner" element={<LearnerLogin />} />
           <Route path="/signup/learner" element={<LearnerSignup />} />
+          <Route path="/login/recruiter" element={<RecruiterLogin />} />
           <Route path="/student/activate" element={<ActivateAccount />} />
 
           <Route path="/review/invite/:token" element={<ReviewInvite />} />
@@ -99,9 +108,9 @@ const App = () => (
           <Route path="/learner/credential/:id/proof" element={<LR><LearnerCredentialProof /></LR>} />
           <Route path="/learner/credential/:id/share" element={<LR><LearnerSelectiveDisclosure /></LR>} />
 
-          <Route path="/recruiter/search" element={G} />
-          <Route path="/recruiter/candidate/:id" element={G} />
-          <Route path="/recruiter/compare" element={G} />
+          <Route path="/recruiter/search" element={<RR><RecruiterSearch /></RR>} />
+          <Route path="/recruiter/candidate/:id" element={<RR><RecruiterCandidateSummary /></RR>} />
+          <Route path="/recruiter/compare" element={<RR><RecruiterCompare /></RR>} />
           <Route path="/recruiter/verify/:token" element={<CompetencyPresentationView />} />
 
           <Route path="/institution" element={<IR><Navigate to="/institution/dashboard" replace /></IR>} />
