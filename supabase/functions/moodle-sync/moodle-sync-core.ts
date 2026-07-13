@@ -11,27 +11,70 @@ export const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-const MOODLE_URL = Deno.env.get("MOODLE_URL");
+const MOODLE_BASE_URL = Deno.env.get("MOODLE_BASE_URL");
 const MOODLE_TOKEN = Deno.env.get("MOODLE_TOKEN");
 
-function getMoodleBaseUrl(): string {
-  const raw = MOODLE_URL?.trim().replace(/\/+$/, "") ?? "";
-  if (!raw) {
-    throw new MoodleSyncError("INVALID_MOODLE_TOKEN", "Moodle is not configured (missing MOODLE_URL).");
+let moodleEnvLogged = false;
+
+/** Safe startup diagnostics — never logs the token value. */
+export function logMoodleEnvConfig(): {
+  baseUrl: string | null;
+  tokenExists: boolean;
+  tokenLength: number;
+  restEndpoint: string | null;
+} {
+  const baseUrl = MOODLE_BASE_URL?.trim().replace(/\/+$/, "") ?? null;
+  const tokenExists = Boolean(MOODLE_TOKEN?.trim());
+  const tokenLength = MOODLE_TOKEN?.trim().length ?? 0;
+  const restEndpoint = baseUrl ? `${baseUrl}/webservice/rest/server.php` : null;
+
+  if (!moodleEnvLogged) {
+    moodleEnvLogged = true;
+    logSyncStage("moodle_env_config", {
+      baseUrl,
+      tokenExists,
+      tokenLength,
+      restEndpoint,
+    });
   }
-  return raw;
+
+  return { baseUrl, tokenExists, tokenLength, restEndpoint };
+}
+
+function getMoodleBaseUrl(): string {
+  const { baseUrl } = logMoodleEnvConfig();
+  if (!baseUrl) {
+    throw new MoodleSyncError(
+      "INVALID_MOODLE_TOKEN",
+      "Moodle is not configured (missing MOODLE_BASE_URL).",
+    );
+  }
+  return baseUrl;
+}
+
+export function getMoodleRestEndpoint(): string {
+  const baseUrl = getMoodleBaseUrl();
+  return `${baseUrl.replace(/\/+$/, "")}/webservice/rest/server.php`;
 }
 
 async function parseMoodleJsonResponse(
   res: Response,
   context: string,
+  bodyText: string,
 ): Promise<Record<string, unknown>> {
   const contentType = res.headers.get("content-type") ?? "";
-  const bodyText = await res.text();
+
+  logSyncStage("moodle_http_response", {
+    context,
+    baseUrl: getMoodleBaseUrl(),
+    httpStatus: res.status,
+    contentType,
+  });
 
   if (!bodyText.trim()) {
     throw new MoodleSyncError("MOODLE_API_UNAVAILABLE", `${context}: empty response from Moodle.`, {
       httpStatus: res.status,
+      contentType,
     });
   }
 
@@ -42,12 +85,12 @@ async function parseMoodleJsonResponse(
       context,
       httpStatus: res.status,
       contentType,
-      preview: bodyText.slice(0, 200),
+      preview: bodyText.slice(0, 100),
     });
     throw new MoodleSyncError(
       "MOODLE_API_UNAVAILABLE",
-      "Moodle server returned HTML instead of JSON. Check MOODLE_URL in Supabase secrets (e.g. https://sijil.moodlecloud.com).",
-      { context, httpStatus: res.status },
+      "Moodle server returned HTML instead of JSON. Check MOODLE_BASE_URL in Supabase secrets.",
+      { context, httpStatus: res.status, contentType },
     );
   }
 
@@ -58,12 +101,12 @@ async function parseMoodleJsonResponse(
       context,
       httpStatus: res.status,
       contentType,
-      preview: bodyText.slice(0, 200),
+      preview: bodyText.slice(0, 100),
     });
     throw new MoodleSyncError(
       "MOODLE_API_UNAVAILABLE",
       `${context}: invalid JSON from Moodle.`,
-      { httpStatus: res.status },
+      { httpStatus: res.status, contentType },
     );
   }
 }
@@ -298,10 +341,11 @@ export async function callMoodle(
   wsfunction: string,
   paramsObj: Record<string, unknown> = {},
 ) {
-  if (!MOODLE_URL || !MOODLE_TOKEN) {
+  logMoodleEnvConfig();
+  if (!MOODLE_BASE_URL?.trim() || !MOODLE_TOKEN?.trim()) {
     throw new MoodleSyncError(
       "INVALID_MOODLE_TOKEN",
-      "Moodle is not configured (missing MOODLE_URL or MOODLE_TOKEN).",
+      "Moodle is not configured (missing MOODLE_BASE_URL or MOODLE_TOKEN).",
     );
   }
 
@@ -321,7 +365,7 @@ export async function callMoodle(
 
   let res: Response;
   try {
-    res = await fetch(`${getMoodleBaseUrl()}/webservice/rest/server.php`, {
+    res = await fetch(getMoodleRestEndpoint(), {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: params,
@@ -330,7 +374,8 @@ export async function callMoodle(
     throw new MoodleSyncError("MOODLE_API_UNAVAILABLE", "Could not reach the Moodle server.");
   }
 
-  const data = await parseMoodleJsonResponse(res, wsfunction);
+  const bodyText = await res.text();
+  const data = await parseMoodleJsonResponse(res, wsfunction, bodyText);
 
   logSyncStage("moodle_api_response", {
     wsfunction,
@@ -345,7 +390,10 @@ export async function callMoodle(
 
     logSyncStage("moodle_api_error", {
       wsfunction,
+      baseUrl: getMoodleBaseUrl(),
       httpStatus: res.status,
+      contentType: res.headers.get("content-type") ?? "",
+      preview: bodyText.slice(0, 100),
       errorcode: errorcode || null,
       exception: data?.exception ?? null,
       message: msg,
@@ -393,43 +441,112 @@ export async function resolveUser(req: Request) {
   };
 }
 
-/** Upsert lms_connections; fall back to base columns when Moodle fields are not migrated yet. */
+function isLmsConnectionsColumnError(message: string, code?: string): boolean {
+  const m = message.toLowerCase();
+  return (
+    code === "PGRST204" ||
+    m.includes("does not exist") ||
+    m.includes("schema cache") ||
+    m.includes("could not find")
+  );
+}
+
+/** Build lms_connections payload using only columns defined in repo migrations. */
+function buildLmsConnectionRow(input: {
+  userId: string;
+  moodleUserId: number;
+  moodleEmail: string | null;
+  institutionEmail: string | null;
+  syncedAt: string;
+}): Record<string, unknown> {
+  // Remote schema (migrations): user_id, odoo_*, has_api_key, last_synced_at,
+  // provider, moodle_user_id, moodle_email, institution_email — no moodle_username/metadata.
+  return {
+    user_id: input.userId,
+    provider: "moodle",
+    moodle_user_id: input.moodleUserId,
+    moodle_email: input.moodleEmail,
+    institution_email: input.institutionEmail,
+    last_synced_at: input.syncedAt,
+    updated_at: input.syncedAt,
+  };
+}
+
+/** Upsert lms_connections; strip unknown columns when PostgREST schema cache rejects them. */
 async function upsertLmsConnection(
   admin: SupabaseClient,
   row: Record<string, unknown>,
 ) {
-  logSyncStage("lms_connection_upsert_start", { user_id: row.user_id });
-  const { error } = await admin.from("lms_connections").upsert(row, { onConflict: "user_id" });
-  if (!error) {
-    logSyncStage("lms_connection_upsert_ok", { user_id: row.user_id });
-    return;
-  }
+  logSyncStage("lms_connection_upsert_start", {
+    user_id: row.user_id,
+    columns: Object.keys(row),
+  });
 
-  const message = error.message ?? "";
-  logSyncStage("lms_connection_upsert_fallback", { user_id: row.user_id, error: message });
-  if (!message.includes("does not exist")) {
-    throw new MoodleSyncError("DATABASE_INSERT_FAILED", `Failed to update lms_connections: ${message}`, {
-      table: "lms_connections",
+  let attempt: Record<string, unknown> = { ...row };
+  delete attempt.moodle_username;
+  delete attempt.metadata;
+
+  for (let tries = 0; tries < 8; tries++) {
+    const { error } = await admin.from("lms_connections").upsert(attempt, { onConflict: "user_id" });
+    if (!error) {
+      logSyncStage("lms_connection_upsert_ok", {
+        user_id: row.user_id,
+        columns: Object.keys(attempt),
+      });
+      return;
+    }
+
+    const message = error.message ?? "";
+    logSyncStage("lms_connection_upsert_retry", {
+      user_id: row.user_id,
+      error: message,
+      code: error.code,
+      columns: Object.keys(attempt),
     });
-  }
 
-  const { error: fallbackErr } = await admin.from("lms_connections").upsert(
-    {
+    if (!isLmsConnectionsColumnError(message, error.code ?? undefined)) {
+      throw new MoodleSyncError("DATABASE_INSERT_FAILED", `Failed to update lms_connections: ${message}`, {
+        table: "lms_connections",
+        code: error.code,
+      });
+    }
+
+    const columnMatch = message.match(/'([^']+)'\s+column/i);
+    const missingColumn = columnMatch?.[1];
+    if (missingColumn && missingColumn in attempt) {
+      delete attempt[missingColumn];
+      continue;
+    }
+
+    attempt = {
       user_id: row.user_id,
       last_synced_at: row.last_synced_at,
       updated_at: row.updated_at,
-    },
-    { onConflict: "user_id" },
-  );
-  if (fallbackErr) {
-    throw new MoodleSyncError("DATABASE_INSERT_FAILED", `Failed to update lms_connections: ${fallbackErr.message}`, {
-      table: "lms_connections",
-    });
+    };
   }
-  logSyncStage("lms_connection_upsert_ok_minimal", { user_id: row.user_id });
+
+  throw new MoodleSyncError(
+    "DATABASE_INSERT_FAILED",
+    "Failed to update lms_connections after removing unsupported columns.",
+    { table: "lms_connections" },
+  );
 }
 
-type MoodleUser = { id: number; email?: string; fullname?: string };
+type MoodleUser = { id: number; email?: string; fullname?: string; username?: string };
+
+/** Verify Moodle REST connectivity via site-wide web service token. */
+export async function verifyMoodleSiteConnection(): Promise<{
+  siteurl: string;
+  username: string;
+  userid: number;
+}> {
+  const siteInfo = await callMoodle("core_webservice_get_site_info");
+  const siteurl = String(siteInfo.siteurl ?? "");
+  const username = String(siteInfo.username ?? "");
+  const userid = Number(siteInfo.userid);
+  logSyncStage("moodle_site_verified", { siteurl, username, userid });
+  return { siteurl, username, userid };
+}
 
 export async function findMoodleUserByEmails(emails: string[]): Promise<MoodleUser | null> {
   const tried = [...new Set(emails.map((e) => e.trim().toLowerCase()).filter(Boolean))];
@@ -1095,12 +1212,33 @@ async function fetchAssignmentSubmissionAndGrade(
   return { submission, gradeRow, assignApiAccessDenied, failedFunctions };
 }
 
+async function fetchCourseCompletionStatus(
+  moodleUserId: number,
+  courseId: number,
+): Promise<string | null> {
+  const result = await tryCallMoodle("core_completion_get_course_completion_status", {
+    userid: moodleUserId,
+    courseid: courseId,
+  });
+  if (!result.ok) return null;
+
+  const payload = result.data as {
+    completionstatus?: { completed?: boolean; aggregation?: number };
+  };
+  const status = payload?.completionstatus;
+  if (!status) return null;
+  if (status.completed) return "Completed";
+  if (typeof status.aggregation === "number" && status.aggregation > 0) return "In progress";
+  return "Not completed";
+}
+
 export type SyncActivitiesResult = {
   success: true;
   moodleUserId: number;
   courses: number;
   assignments: number;
   grades: number;
+  feedback: number;
   warnings: string[];
 };
 
@@ -1112,34 +1250,42 @@ export async function syncLearnerMoodleActivities(
 ): Promise<SyncActivitiesResult> {
   logSyncStage("sync_start", { userId, authEmail, institutionEmail });
 
+  const site = await verifyMoodleSiteConnection();
+
   const emails = [authEmail, institutionEmail].filter(Boolean) as string[];
   if (!emails.length) {
     throw new MoodleSyncError("MOODLE_USER_NOT_FOUND", "No email available to match your Moodle account.");
   }
 
-  logSyncStage("find_moodle_user", { emailsTried: emails });
+  logSyncStage("find_moodle_user", { emailsTried: emails, siteurl: site.siteurl });
   const moodleUser = await findMoodleUserByEmails(emails);
   if (!moodleUser?.id) {
     throw new MoodleSyncError(
       "MOODLE_USER_NOT_FOUND",
       "No Moodle account found for your SIJIL or institution email.",
-      { emailsTried: emails },
+      { emailsTried: emails, siteurl: site.siteurl },
     );
   }
 
   const moodleUserId = Number(moodleUser.id);
-  logSyncStage("moodle_user_found", { userId, moodleUserId, moodleEmail: moodleUser.email });
+  const moodleEmail = moodleUser.email ?? authEmail;
+  const moodleUsername = moodleUser.username ?? null;
+
+  logSyncStage("moodle_user_found", { userId, moodleUserId, moodleEmail, moodleUsername, siteurl: site.siteurl });
   const now = new Date().toISOString();
   const warnings: string[] = [];
+  let feedbackCount = 0;
 
-  await upsertLmsConnection(admin, {
-    user_id: userId,
-    moodle_user_id: moodleUserId,
-    moodle_email: moodleUser.email ?? authEmail,
-    institution_email: institutionEmail,
-    last_synced_at: now,
-    updated_at: now,
-  });
+  await upsertLmsConnection(
+    admin,
+    buildLmsConnectionRow({
+      userId,
+      moodleUserId,
+      moodleEmail,
+      institutionEmail,
+      syncedAt: now,
+    }),
+  );
 
   logSyncStage("fetch_enrolled_courses", { moodleUserId });
   const enrolled = await callMoodle("core_enrol_get_users_courses", { userid: moodleUserId });
@@ -1169,6 +1315,7 @@ export async function syncLearnerMoodleActivities(
   for (const course of courses) {
     const courseId = Number(course.id);
     const courseName = course.fullname || course.shortname || `Course ${courseId}`;
+    const courseCompletionStatus = await fetchCourseCompletionStatus(moodleUserId, courseId);
 
     await dbUpsert(
       admin,
@@ -1179,7 +1326,10 @@ export async function syncLearnerMoodleActivities(
         fullname: courseName,
         shortname: course.shortname ?? null,
         summary: course.summary ? stripHtml(String(course.summary)).slice(0, 2000) : null,
-        raw: course,
+        raw: {
+          ...course,
+          completion_status: courseCompletionStatus,
+        },
         synced_at: now,
         updated_at: now,
       },
@@ -1386,11 +1536,16 @@ export async function syncLearnerMoodleActivities(
         "user_id,moodle_assignment_id",
       );
 
+      if (statusFeedback.text?.trim()) {
+        feedbackCount += 1;
+      }
+
       const hash = evidenceHash(userId, courseId, assignmentId);
       const textPreview = [
         `${name} (${moduleType})`,
         gradeDisplay(grade, gradeMax),
         submissionStatus,
+        courseCompletionStatus,
         statusFeedback.text,
       ]
         .filter(Boolean)
@@ -1406,7 +1561,7 @@ export async function syncLearnerMoodleActivities(
             course_name: courseName,
             course_code: course.shortname ?? null,
             grade: gradeDisplay(grade, gradeMax),
-            completion_status: submissionStatus,
+            completion_status: courseCompletionStatus ?? submissionStatus,
             evidence_hash: hash,
             raw: { courseId, assignmentId, assign: assign.raw, source: assign.source, submission, grade: gradeRow, feedback: statusFeedback.text },
             text_preview: textPreview,
@@ -1514,6 +1669,7 @@ export async function syncLearnerMoodleActivities(
     courses: courses.length,
     assignments: assignmentCount,
     grades: gradeItemCount,
+    feedback: feedbackCount,
     warnings,
   };
 

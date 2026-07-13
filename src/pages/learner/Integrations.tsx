@@ -30,6 +30,7 @@ import {
   syncMoodleActivities,
   testMoodleConnection,
   type MoodleCourseActivity,
+  type MoodleConnection,
 } from "@/lib/moodle-integration";
 import {
   ensureGitHubContextForUser,
@@ -104,6 +105,7 @@ export default function Integrations() {
   const prevSkillSyncKey = useRef("");
 
   const [lmsConnected, setLmsConnected] = useState(false);
+  const [moodleConnection, setMoodleConnection] = useState<MoodleConnection | null>(null);
   const [lmsLastSync, setLmsLastSync] = useState<string | null>(null);
   const [lmsImportedCount, setLmsImportedCount] = useState(0);
   const [moodleActivities, setMoodleActivities] = useState<MoodleCourseActivity[]>([]);
@@ -156,6 +158,7 @@ export default function Integrations() {
     setMoodleError(null);
     try {
       const conn = await fetchMoodleConnection();
+      setMoodleConnection(conn);
       setLmsConnected(!!conn);
       setLmsLastSync(
         conn?.last_synced_at ? new Date(conn.last_synced_at).toLocaleString() : null,
@@ -333,7 +336,7 @@ export default function Integrations() {
       await loadMoodleFromDb();
       toast({
         title: "Moodle connected successfully",
-        description: `${result.courses} courses · ${result.assignments} assignments imported.`,
+        description: `${result.courses} courses · ${result.assignments} assignments · ${result.feedback} feedback records imported.`,
       });
       if (result.warnings.length) {
         toast({
@@ -344,8 +347,8 @@ export default function Integrations() {
           variant: hasMoodleAccessControlWarning(result.warnings) ? "destructive" : "default",
         });
       }
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
       setMoodleError(msg);
       toast({
         title: "Moodle connection failed",
@@ -365,7 +368,7 @@ export default function Integrations() {
       await loadMoodleFromDb();
       toast({
         title: "Moodle activities synced",
-        description: `${result.assignments} assignments across ${result.courses} courses.`,
+        description: `${result.assignments} assignments · ${result.feedback} feedback records across ${result.courses} courses.`,
       });
       if (result.warnings.length) {
         toast({
@@ -394,6 +397,7 @@ export default function Integrations() {
     try {
       await disconnectMoodleDb();
       setLmsConnected(false);
+      setMoodleConnection(null);
       setLmsImportedCount(0);
       setLmsLastSync(null);
       setMoodleActivities([]);
@@ -438,7 +442,13 @@ export default function Integrations() {
         <IntegrationCard
           icon={BookOpen}
           name="Moodle LMS"
-          account={lmsConnected ? MOODLE_SITE_URL : undefined}
+          account={
+            lmsConnected
+              ? moodleConnection?.moodle_email
+                ? `${moodleConnection.moodle_email} · ${MOODLE_SITE_URL}`
+                : MOODLE_SITE_URL
+              : undefined
+          }
           connected={lmsConnected}
           lastSync={lmsLastSync}
           records={lmsImportedCount}
@@ -446,6 +456,7 @@ export default function Integrations() {
           onSync={syncMoodle}
           onDisconnect={disconnectMoodle}
           syncing={lmsSyncing}
+          connecting={lmsSyncing}
           connectLabel="Connect Moodle"
           syncLabel="Sync Moodle Activities"
         />

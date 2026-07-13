@@ -1,10 +1,10 @@
 import { supabase } from "@/integrations/supabase/client";
 import { isMissingColumnError, isMissingRelationError } from "@/lib/supabase-errors";
 
-export const MOODLE_SITE_URL = "https://sijil.moodlecloud.com";
+export const MOODLE_SITE_URL = "https://sijil-fyp.moodlecloud.com";
 
 /** Expected edge function version — mismatch means remote deploy is stale. */
-export const MOODLE_SYNC_FUNCTION_VERSION = "2.8.2";
+export const MOODLE_SYNC_FUNCTION_VERSION = "2.9.3";
 
 export type MoodleSyncErrorCode =
   | "INVALID_MOODLE_TOKEN"
@@ -32,6 +32,7 @@ type MoodleFunctionPayload = {
   courses?: number;
   assignments?: number;
   grades?: number;
+  feedback?: number;
   warnings?: string[];
   moodleUserId?: number;
 };
@@ -176,9 +177,28 @@ export type MoodleSyncResult = {
   courses: number;
   assignments: number;
   grades: number;
+  feedback: number;
   warnings: string[];
   functionVersion?: string;
 };
+
+export async function syncMoodleActivities(): Promise<MoodleSyncResult> {
+  const { data: session } = await supabase.auth.getSession();
+  if (!session.session) {
+    throw new Error("Sign in required to sync Moodle activities.");
+  }
+
+  const payload = await invokeMoodleFunction({ action: "sync_activities" });
+
+  return {
+    courses: payload.courses ?? 0,
+    assignments: payload.assignments ?? 0,
+    grades: payload.grades ?? 0,
+    feedback: payload.feedback ?? 0,
+    warnings: payload.warnings ?? [],
+    functionVersion: payload.functionVersion,
+  };
+}
 
 async function requireUserId(): Promise<string> {
   const { data: auth, error } = await supabase.auth.getUser();
@@ -208,23 +228,6 @@ export async function testMoodleConnection(): Promise<{
       error: e instanceof Error ? e.message : "Moodle connection failed",
     };
   }
-}
-
-export async function syncMoodleActivities(): Promise<MoodleSyncResult> {
-  const { data: session } = await supabase.auth.getSession();
-  if (!session.session) {
-    throw new Error("Sign in required to sync Moodle activities.");
-  }
-
-  const payload = await invokeMoodleFunction({ action: "sync_activities" });
-
-  return {
-    courses: payload.courses ?? 0,
-    assignments: payload.assignments ?? 0,
-    grades: payload.grades ?? 0,
-    warnings: payload.warnings ?? [],
-    functionVersion: payload.functionVersion,
-  };
 }
 
 /** Legacy course-only import when an old edge function lacks sync_activities. */

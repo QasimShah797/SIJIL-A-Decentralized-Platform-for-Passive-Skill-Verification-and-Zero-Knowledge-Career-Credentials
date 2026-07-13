@@ -2,6 +2,7 @@ import {
   callMoodle,
   corsHeaders,
   json,
+  logMoodleEnvConfig,
   logSyncStage,
   MoodleSyncError,
   resolveUser,
@@ -9,7 +10,7 @@ import {
 } from "./moodle-sync-core.ts";
 
 /** Bump when deploying — exposed in test/sync responses so frontend can detect stale deploys. */
-const FUNCTION_VERSION = "2.8.2";
+const FUNCTION_VERSION = "2.9.3";
 
 const SUPPORTED_ACTIONS = [
   "test",
@@ -82,10 +83,12 @@ Deno.serve(async (req) => {
     });
 
     if (action === "test") {
+      const envConfig = logMoodleEnvConfig();
       const siteInfo = await callMoodle("core_webservice_get_site_info");
       return json({
         success: true,
         siteInfo,
+        moodleEnv: envConfig,
         functionVersion: FUNCTION_VERSION,
         supportedActions: SUPPORTED_ACTIONS,
       });

@@ -11,7 +11,7 @@ export const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-const MOODLE_URL = Deno.env.get("MOODLE_URL");
+const MOODLE_BASE_URL = Deno.env.get("MOODLE_BASE_URL");
 const MOODLE_TOKEN = Deno.env.get("MOODLE_TOKEN");
 
 export type MoodleSyncErrorCode =
@@ -56,12 +56,14 @@ export async function callMoodle(
   wsfunction: string,
   paramsObj: Record<string, unknown> = {},
 ) {
-  if (!MOODLE_URL || !MOODLE_TOKEN) {
+  if (!MOODLE_BASE_URL?.trim() || !MOODLE_TOKEN?.trim()) {
     throw new MoodleSyncError(
       "INVALID_MOODLE_TOKEN",
-      "Moodle is not configured (missing MOODLE_URL or MOODLE_TOKEN).",
+      "Moodle is not configured (missing MOODLE_BASE_URL or MOODLE_TOKEN).",
     );
   }
+
+  const baseUrl = MOODLE_BASE_URL.trim().replace(/\/+$/, "");
 
   const params = new URLSearchParams();
   params.append("wstoken", MOODLE_TOKEN);
@@ -74,7 +76,7 @@ export async function callMoodle(
 
   let res: Response;
   try {
-    res = await fetch(`${MOODLE_URL}/webservice/rest/server.php`, {
+    res = await fetch(`${baseUrl}/webservice/rest/server.php`, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: params,
