@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.95.0";
+import { resolveGitHubUserEmail } from "./github-contributor-email.ts";
 
 const GH = "https://api.github.com";
 
@@ -112,14 +113,20 @@ export async function runGitHubSync(
         if (Array.isArray(contribs)) {
           for (const c of contribs) {
             if (!c?.login) continue;
+            const resolvedEmail = await resolveGitHubUserEmail(
+              c.login as string,
+              connection.access_token,
+              r.full_name as string,
+            );
             contributorRows.push({
               user_id: userId,
               repo_id: r.id,
-              full_name: r.full_name,
+              full_name: c.login as string,
               github_url: r.html_url,
               contributor_login: c.login,
               contributor_avatar_url: c.avatar_url ?? null,
               contributor_html_url: c.html_url ?? null,
+              contributor_email: resolvedEmail,
               contributions: c.contributions ?? 0,
               synced_at: new Date().toISOString(),
             });

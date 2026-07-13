@@ -14,6 +14,9 @@ import {
   CONTRIBUTOR_VERIFICATION,
 } from "../constants/peer-review";
 import { withPeerReviewUserColumns } from "../utils/peerReviewInsert";
+import {
+  resolveGitHubUserEmail,
+} from "../utils/githubContributorEmail";
 
 const GH = "https://api.github.com";
 
@@ -99,9 +102,19 @@ export async function syncContributorsForRepo(
     if (!Array.isArray(contributors)) return logins;
 
     const learnerLogin = ghConn.username.toLowerCase();
+    const emailByLogin = new Map<string, string | null>();
+
+    for (const c of contributors) {
+      const login = (c.login as string) ?? "";
+      if (!login || login.toLowerCase() === learnerLogin) continue;
+      const email = await resolveGitHubUserEmail(login, ghConn.token, fullName);
+      emailByLogin.set(login.toLowerCase(), email);
+    }
+
     const contributorRows = contributors.map((c) => {
       const login = (c.login as string) ?? "";
       if (login) logins.add(login.toLowerCase());
+      const resolvedEmail = emailByLogin.get(login.toLowerCase()) ?? null;
       return {
         user_id: userId,
         repo_id: repoId,
@@ -110,6 +123,7 @@ export async function syncContributorsForRepo(
         contributor_login: login,
         contributor_avatar_url: (c.avatar_url as string) ?? null,
         contributor_html_url: (c.html_url as string) ?? null,
+        contributor_email: resolvedEmail,
         contributions: (c.contributions as number) ?? 0,
         synced_at: new Date().toISOString(),
       };
@@ -126,16 +140,21 @@ export async function syncContributorsForRepo(
         const login = (c.login as string)?.toLowerCase() ?? "";
         return login && login !== learnerLogin;
       })
-      .map((c) => ({
-        evidence_record_id: target.evidence_record_id,
-        user_id: userId,
-        reviewer_name: (c.login as string) ?? "Contributor",
-        reviewer_login: c.login as string,
-        context_role: "Same repo contributor",
-        source: target.source,
-        external_ref: `github:contributor:${c.login}`,
-        synced_at: new Date().toISOString(),
-      }));
+      .map((c) => {
+        const login = (c.login as string) ?? "";
+        const resolvedEmail = emailByLogin.get(login.toLowerCase()) ?? null;
+        return {
+          evidence_record_id: target.evidence_record_id,
+          user_id: userId,
+          reviewer_name: login || "Contributor",
+          reviewer_login: login,
+          reviewer_email: resolvedEmail,
+          context_role: "Same repo contributor",
+          source: target.source,
+          external_ref: `github:contributor:${login}`,
+          synced_at: new Date().toISOString(),
+        };
+      });
 
     if (contextRows.length && target.evidence_record_id) {
       await supabaseService.client

@@ -11,6 +11,7 @@ export const createPeerReviewInviteSchema = z.object({
   contributorId: z.string().min(1),
   skillId: z.string().uuid(),
   contributorEmail: z.string().email(),
+  resend: z.boolean().optional(),
 });
 
 export const submitPeerReviewSchema = z.object({

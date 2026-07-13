@@ -214,6 +214,7 @@ export default function PeerReviewsPage() {
 
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteByEmail, setInviteByEmail] = useState(false);
+  const [inviteResend, setInviteResend] = useState(false);
   const [inviteContrib, setInviteContrib] = useState<ProjectContributor | null>(null);
   const [inviteSkill, setInviteSkill] = useState<string>(skillForProject);
   const [inviteEmail, setInviteEmail] = useState<string>("");
@@ -243,12 +244,15 @@ export default function PeerReviewsPage() {
   const invitedContributorIds = useMemo(() => {
     if (!selectedProject) return new Set<string>();
     return new Set(
-      invitations.filter((i) => i.projectId === selectedProject.id).map((i) => i.contributorId),
+      invitations
+        .filter((i) => i.projectId === selectedProject.id && i.status !== "Completed")
+        .map((i) => i.contributorId),
     );
   }, [invitations, selectedProject]);
 
   const openInvite = (c: ProjectContributor) => {
     setInviteByEmail(false);
+    setInviteResend(false);
     setInviteContrib(c);
     setInviteSkill(skillForProject);
     setInviteEmail(c.email ?? "");
@@ -256,8 +260,24 @@ export default function PeerReviewsPage() {
     setInviteOpen(true);
   };
 
+  const openResendInvite = (c: ProjectContributor) => {
+    const pendingInvite = invitations.find(
+      (i) => i.projectId === selectedProject?.id
+        && i.contributorId === c.id
+        && i.status !== "Completed",
+    );
+    setInviteByEmail(false);
+    setInviteResend(true);
+    setInviteContrib(c);
+    setInviteSkill(skillForProject);
+    setInviteEmail(pendingInvite?.contributorEmail ?? c.email ?? "");
+    setGeneratedLink(null);
+    setInviteOpen(true);
+  };
+
   const openInviteByEmail = () => {
     setInviteByEmail(true);
+    setInviteResend(false);
     setInviteContrib(null);
     setInviteSkill(skillForProject);
     setInviteEmail("");
@@ -266,7 +286,8 @@ export default function PeerReviewsPage() {
   };
 
   const sendInvite = async () => {
-    if (!selectedProject || !inviteContrib) return;
+    if (!selectedProject) return;
+    if (!inviteByEmail && !inviteContrib) return;
     if (!inviteEmail.trim()) {
       toast({ title: "Email required", description: "We need a contact email to send the review invitation." });
       return;
@@ -279,6 +300,14 @@ export default function PeerReviewsPage() {
       });
       return;
     }
+
+    const normalizedEmail = inviteEmail.trim().toLowerCase();
+    const contributorId = inviteByEmail
+      ? `email-${normalizedEmail}`
+      : inviteContrib!.id;
+    const inviteTargetName = inviteByEmail
+      ? normalizedEmail
+      : inviteContrib!.name;
 
     const skillLink = selectedProject.skillLinks.find((s) => s.skillName === inviteSkill)
       ?? selectedProject.skillLinks[0];
@@ -296,9 +325,10 @@ export default function PeerReviewsPage() {
     let apiError = "";
     const result = await createPeerReviewInviteApi({
       projectId: selectedProject.id,
-      contributorId: inviteContrib.id,
+      contributorId,
       skillId,
-      contributorEmail: inviteEmail.trim(),
+      contributorEmail: normalizedEmail,
+      resend: inviteResend || inviteByEmail,
     }, (msg) => { apiError = msg; });
 
     if (!result) {
@@ -313,7 +343,7 @@ export default function PeerReviewsPage() {
     if (result.alreadyReviewed) {
       toast({
         title: "Review already exists",
-        description: `${inviteContrib.name} has already submitted a review for this project.`,
+        description: `${inviteTargetName} has already submitted a review for this project.`,
       });
       return;
     }
@@ -321,8 +351,16 @@ export default function PeerReviewsPage() {
     setGeneratedLink(result.reviewLink);
     await reload();
     toast({
-      title: result.status === "already_invited" ? "Invitation already pending" : "Review invitation sent",
-      description: `Awaiting feedback from ${inviteContrib.name} for ${inviteSkill} on ${selectedProject.name}.`,
+      title: result.status === "resent"
+        ? "Invitation resent"
+        : result.status === "already_invited"
+          ? "Invitation already pending"
+          : "Review invitation sent",
+      description: result.status === "resent"
+        ? `Review link emailed again to ${normalizedEmail}.`
+        : result.status === "already_invited"
+          ? `An invitation is already pending for ${normalizedEmail}. Use Resend if you need to email the link again.`
+          : `Review invitation emailed to ${normalizedEmail} for ${inviteSkill} on ${selectedProject.name}.`,
     });
   };
 
@@ -486,14 +524,26 @@ export default function PeerReviewsPage() {
                         </StatusBadge>
                       </div>
                       <div className="text-xs text-muted-foreground mt-0.5">
-                        {c.email ?? "no email on file"}
+                        {c.email
+                          ? <span className="text-foreground">{c.email}</span>
+                          : "GitHub email not public — enter manually when inviting"}
                       </div>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
                       {reviewed ? (
                         <StatusBadge variant="info"><MessageSquare className="h-3 w-3" /> Reviewed</StatusBadge>
                       ) : invited ? (
-                        <StatusBadge variant="warning"><Mail className="h-3 w-3" /> Invite sent</StatusBadge>
+                        <>
+                          <StatusBadge variant="warning"><Mail className="h-3 w-3" /> Invite sent</StatusBadge>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
+                            onClick={() => openResendInvite(c)}
+                          >
+                            <RefreshCw className="h-3 w-3 mr-1" />Resend
+                          </Button>
+                        </>
                       ) : (
                         <Button size="sm" variant="outline" onClick={() => openInvite(c)}>
                           <Mail className="h-4 w-4 mr-1.5" />Send review invite
@@ -558,6 +608,11 @@ export default function PeerReviewsPage() {
                   <div className="flex items-center gap-2">
                     <StatusBadge variant={i.status === "Completed" ? "verified" : "warning"}>{i.status}</StatusBadge>
                     <Button size="sm" variant="outline" onClick={() => {
+                      const contributor = selectedProject.contributors.find((c) => c.id === i.contributorId);
+                      if (contributor && i.status !== "Completed") {
+                        openResendInvite(contributor);
+                        return;
+                      }
                       const ctx = contextRequests.find((r) => r.id === i.id);
                       const link = i.reviewLink
                         ?? (ctx
@@ -568,7 +623,11 @@ export default function PeerReviewsPage() {
                       navigator.clipboard.writeText(link);
                       toast({ title: "Link copied", description: link });
                     }}>
-                      <Copy className="h-3 w-3 mr-1" />Copy link
+                      {i.status === "Completed" ? (
+                        <><Copy className="h-3 w-3 mr-1" />Copy link</>
+                      ) : (
+                        <><RefreshCw className="h-3 w-3 mr-1" />Resend</>
+                      )}
                     </Button>
                   </div>
                 </div>
@@ -619,7 +678,7 @@ export default function PeerReviewsPage() {
                           </StatusBadge>
                         </div>
                         <div className="text-xs text-muted-foreground mt-0.5">
-                          {c.email ?? "no email on file"} · project: {selectedProject.name}
+                          {c.email ?? "GitHub email not public"} · project: {selectedProject.name}
                           {row.lastInviteAt && <> · last invite: {new Date(row.lastInviteAt).toLocaleDateString()}</>}
                         </div>
                       </div>
@@ -639,12 +698,14 @@ export default function PeerReviewsPage() {
                             <Eye className="h-3 w-3 mr-1" />View submitted review
                           </Button>
                         )}
-                        {row.status === "Invite Sent" && row.reviewLink && (
-                          <Button size="sm" variant="outline" onClick={() => {
-                            navigator.clipboard.writeText(row.reviewLink!);
-                            toast({ title: "Link copied", description: row.reviewLink! });
-                          }}>
-                            <RefreshCw className="h-3 w-3 mr-1" />Copy review link
+                        {row.status === "Invite Sent" && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
+                            onClick={() => openResendInvite(c)}
+                          >
+                            <RefreshCw className="h-3 w-3 mr-1" />Resend
                           </Button>
                         )}
                         {row.status === "Review Pending" && (
@@ -695,13 +756,19 @@ export default function PeerReviewsPage() {
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>
-              {inviteByEmail ? "Invite reviewer by email" : "Invite contributor to review"}
+              {inviteResend
+                ? "Resend review invitation"
+                : inviteByEmail
+                  ? "Invite reviewer by email"
+                  : "Invite contributor to review"}
             </DialogTitle>
           </DialogHeader>
           {selectedProject && (inviteByEmail || inviteContrib) && (
             <div className="space-y-3 text-sm">
               <p className="text-muted-foreground">
-                {inviteByEmail ? (
+                {inviteResend ? (
+                  <>Resend the secure review link to <span className="font-medium text-foreground">{inviteContrib?.name}</span>. Update the email below if the previous address was wrong.</>
+                ) : inviteByEmail ? (
                   <>Invite someone to review your work on <span className="font-medium text-foreground">{selectedProject.name}</span>. They will receive a secure form link bound to their email.</>
                 ) : (
                   <>You are inviting a verified contributor of <span className="font-medium text-foreground">{selectedProject.name}</span> to review your work on this project. SIJIL will send them a secure form link.</>
@@ -731,6 +798,11 @@ export default function PeerReviewsPage() {
                   onChange={(e) => setInviteEmail(e.target.value)}
                   placeholder="reviewer@example.com"
                 />
+                {!inviteByEmail && inviteContrib?.email && inviteEmail === inviteContrib.email && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Loaded from GitHub profile or commit history. Edit if needed.
+                  </p>
+                )}
               </div>
               <div>
                 <Label>Skill / competency</Label>
@@ -770,7 +842,8 @@ export default function PeerReviewsPage() {
             <Button variant="outline" onClick={() => setInviteOpen(false)}>Close</Button>
             {!generatedLink && (
               <Button onClick={() => void sendInvite()}>
-                <Mail className="h-4 w-4 mr-1.5" />Create secure invitation
+                <Mail className="h-4 w-4 mr-1.5" />
+                {inviteResend ? "Resend invitation email" : "Create secure invitation"}
               </Button>
             )}
           </DialogFooter>

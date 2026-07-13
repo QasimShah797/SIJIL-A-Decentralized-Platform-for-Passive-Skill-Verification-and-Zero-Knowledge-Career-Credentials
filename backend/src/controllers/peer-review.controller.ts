@@ -26,9 +26,11 @@ export async function createPeerReviewInvite(req: Request, res: Response): Promi
   const result = await peerReviewService.createInvite(req.user!.id, input);
   const message = result.alreadyReviewed
     ? "Contributor already has a review for this project"
-    : result.status === "already_invited"
-      ? "Review invite already pending"
-      : "Peer review invite sent";
+    : result.status === "resent"
+      ? "Review invite resent by email"
+      : result.status === "already_invited"
+        ? "Review invite already pending"
+        : "Peer review invite sent";
   return sendSuccess(res, result, message, result.alreadyReviewed ? 200 : 201);
 }
 

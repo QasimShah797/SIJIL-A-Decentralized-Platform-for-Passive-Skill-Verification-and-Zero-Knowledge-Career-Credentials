@@ -22,6 +22,11 @@ const envSchema = z.object({
   CORS_ORIGIN: z.string().default("http://localhost:8080"),
   FRONTEND_URL: z.string().default("http://localhost:8080"),
   PRESENTATION_SIGNING_SECRET: z.string().min(16).optional(),
+  SMTP_HOST: z.string().default("smtp.gmail.com"),
+  SMTP_PORT: z.coerce.number().default(587),
+  SMTP_USER: z.string().email().optional(),
+  SMTP_PASS: z.string().min(1).optional(),
+  EMAIL_FROM: z.string().min(1).optional(),
 });
 
 const parsed = envSchema.safeParse(process.env);

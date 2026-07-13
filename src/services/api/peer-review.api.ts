@@ -60,6 +60,7 @@ export async function createPeerReviewInviteApi(
     contributorId: string;
     skillId: string;
     contributorEmail: string;
+    resend?: boolean;
   },
   onError?: (message: string) => void,
 ): Promise<{

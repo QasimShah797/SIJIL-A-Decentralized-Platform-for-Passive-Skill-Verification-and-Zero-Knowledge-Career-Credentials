@@ -31,6 +31,11 @@ import type {
 } from "../types/peer-review.types";
 import type { Relationship } from "../constants/peer-review";
 import { withPeerReviewUserColumns } from "../utils/peerReviewInsert";
+import {
+  getGitHubConnection,
+  persistContributorEmail,
+  resolveGitHubUserEmail,
+} from "../utils/githubContributorEmail";
 
 type EvidenceRow = {
   id: string;
@@ -51,6 +56,7 @@ type ResolvedProject = {
   evidenceLabel: string;
   evidenceRecordId?: string;
   githubRepoId?: number;
+  repoFullName?: string;
 };
 
 function generateToken(): string {
@@ -207,6 +213,7 @@ async function resolveProject(userId: string, projectId: string): Promise<Resolv
       evidenceLabel: `${evidence.source}: ${repoFullName}`,
       evidenceRecordId: evidence.id,
       githubRepoId: evidence.github_repo_id ?? undefined,
+      repoFullName,
     };
   }
 
@@ -241,6 +248,7 @@ async function resolveProject(userId: string, projectId: string): Promise<Resolv
     evidenceLabel: `GitHub repo: ${fullName}`,
     evidenceRecordId: evidence?.id as string | undefined,
     githubRepoId: repoId,
+    repoFullName: fullName,
   };
 }
 
@@ -296,6 +304,7 @@ async function fetchContributorsForProject(
       id: c.id as string,
       name: c.full_name as string,
       handle: c.contributor_login as string,
+      email: (c.contributor_email as string) ?? undefined,
       role: displayRoleForRelationship(RELATIONSHIP.CONTRIBUTOR),
       relationship: RELATIONSHIP.CONTRIBUTOR,
       avatarUrl: (c.contributor_avatar_url as string) ?? undefined,
@@ -305,6 +314,42 @@ async function fetchContributorsForProject(
   }
 
   return [];
+}
+
+async function enrichContributorEmails(
+  userId: string,
+  project: ResolvedProject,
+  contributors: PeerReviewContributorView[],
+): Promise<PeerReviewContributorView[]> {
+  if (project.source !== "GitHub") return contributors;
+
+  const missing = contributors.filter((c) => !c.email?.trim() && c.handle?.trim());
+  if (!missing.length) return contributors;
+
+  const ghConn = await getGitHubConnection(userId);
+  if (!ghConn) return contributors;
+
+  const enriched = await Promise.all(
+    contributors.map(async (contributor) => {
+      if (contributor.email?.trim() || !contributor.handle?.trim()) return contributor;
+
+      const email = await resolveGitHubUserEmail(
+        contributor.handle,
+        ghConn.token,
+        project.repoFullName,
+      );
+      if (!email) return contributor;
+
+      await persistContributorEmail(userId, contributor.handle, email, {
+        repoId: project.githubRepoId,
+        evidenceRecordId: project.evidenceRecordId,
+      });
+
+      return { ...contributor, email };
+    }),
+  );
+
+  return enriched;
 }
 
 async function ensureContributorVerified(
@@ -646,7 +691,8 @@ export class PeerReviewService {
 
     await triggerGitHubImport(userId, project);
 
-    const contributors = await fetchContributorsForProject(userId, project);
+    let contributors = await fetchContributorsForProject(userId, project);
+    contributors = await enrichContributorEmails(userId, project, contributors);
     const reviews = await this.getReviewsForUser(userId);
     const { data: invites } = await supabaseService.client
       .from("peer_review_invites")
@@ -719,7 +765,7 @@ export class PeerReviewService {
 
     const { data: pendingInvite } = await supabaseService.client
       .from("peer_review_invites")
-      .select("id, token, status")
+      .select("id, token, status, expires_at")
       .eq("learner_user_id", userId)
       .eq("project_id", input.projectId)
       .eq("contributor_id", input.contributorId)
@@ -727,12 +773,59 @@ export class PeerReviewService {
       .maybeSingle();
 
     if (pendingInvite) {
-      const link = buildReviewLink(pendingInvite.token as string);
+      const normalizedEmail = input.contributorEmail.trim().toLowerCase();
+      let token = pendingInvite.token as string;
+      let reviewLink = buildReviewLink(token);
+
+      if (!input.resend) {
+        return {
+          inviteId: pendingInvite.id as string,
+          token,
+          reviewLink,
+          status: "already_invited",
+        };
+      }
+
+      const expiresAt = new Date();
+      expiresAt.setDate(expiresAt.getDate() + PEER_REVIEW_TOKEN_TTL_DAYS);
+      const isExpired = new Date(pendingInvite.expires_at as string) < new Date();
+
+      if (isExpired) {
+        token = generateToken();
+        reviewLink = buildReviewLink(token);
+      }
+
+      const { error: updateError } = await supabaseService.client
+        .from("peer_review_invites")
+        .update({
+          contributor_email: normalizedEmail,
+          token,
+          status: PEER_REVIEW_INVITE_STATUS.SENT,
+          expires_at: expiresAt.toISOString(),
+        })
+        .eq("id", pendingInvite.id);
+
+      if (updateError) {
+        throw new AppError(updateError.message ?? "Failed to resend peer review invite", 500);
+      }
+
+      const learnerName = await getLearnerName(userId);
+      await sendReviewRequestEmail(
+        normalizedEmail,
+        learnerName,
+        project.name,
+        reviewLink,
+        {
+          reviewerName: contributor.name,
+          skillName: skill.name as string,
+        },
+      );
+
       return {
         inviteId: pendingInvite.id as string,
-        token: pendingInvite.token as string,
-        reviewLink: link,
-        status: "already_invited",
+        token,
+        reviewLink,
+        status: "resent",
       };
     }
 
@@ -786,6 +879,10 @@ export class PeerReviewService {
       learnerName,
       project.name,
       reviewLink,
+      {
+        reviewerName: contributor.name,
+        skillName: skill.name as string,
+      },
     );
 
     return {
