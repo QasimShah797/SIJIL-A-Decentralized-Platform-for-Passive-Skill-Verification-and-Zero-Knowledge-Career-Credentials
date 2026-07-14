@@ -4,7 +4,6 @@ import { Briefcase, GraduationCap } from "lucide-react";
 import { AuthEntryLayout } from "@/components/auth/AuthEntryLayout";
 import { LearnerSignInForm } from "@/components/auth/LearnerSignInForm";
 import { LearnerSignUpForm } from "@/components/auth/LearnerSignUpForm";
-import { RecruiterSignInForm } from "@/components/auth/RecruiterSignInForm";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 
@@ -52,7 +51,11 @@ export default function AuthEntry(props: AuthEntryProps = {}) {
   };
 
   const selectRole = (nextRole: AuthRole) => {
-    navigate(nextRole === "recruiter" ? "/login/recruiter" : "/login/learner", { replace: true });
+    if (nextRole === "recruiter") {
+      navigate("/login/recruiter", { replace: true });
+      return;
+    }
+    navigate("/login/learner", { replace: true });
   };
 
   return (
@@ -128,12 +131,6 @@ export default function AuthEntry(props: AuthEntryProps = {}) {
                 />
               </TabsContent>
             </Tabs>
-          )}
-
-          {role === "recruiter" && (
-            <div className="animate-fade-in">
-              <RecruiterSignInForm />
-            </div>
           )}
         </div>
 

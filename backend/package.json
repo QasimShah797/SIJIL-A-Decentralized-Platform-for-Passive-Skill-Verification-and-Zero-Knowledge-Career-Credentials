@@ -8,7 +8,8 @@
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
-    "seed:institution": "tsx scripts/seed-institution.ts"
+    "seed:institution": "tsx scripts/seed-institution.ts",
+    "seed:recruiter": "tsx scripts/seed-recruiter.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.105.1",

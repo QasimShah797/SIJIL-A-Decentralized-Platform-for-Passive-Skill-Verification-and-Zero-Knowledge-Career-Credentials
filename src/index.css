@@ -130,15 +130,49 @@
     background: var(--gradient-subtle);
   }
   .sijil-section {
-    @apply py-20 sm:py-24;
+    @apply py-16 sm:py-20;
   }
   .sijil-section-alt {
     @apply bg-muted/40;
   }
   .sijil-card {
-    @apply rounded-2xl border border-border/60 bg-card p-6 shadow-sm transition-shadow hover:shadow-md;
+    @apply rounded-2xl border border-border/60 bg-card p-6 shadow-sm transition-all duration-200 hover:border-border hover:shadow-md;
   }
   .sijil-container {
-    @apply mx-auto max-w-6xl px-4 sm:px-6 lg:px-8;
+    @apply mx-auto max-w-[1200px] px-4 sm:px-6 lg:px-8;
+  }
+  .landing-reveal {
+    @apply translate-y-4 opacity-0 transition-all duration-700 ease-out;
+  }
+  .landing-reveal-visible {
+    @apply translate-y-0 opacity-100;
+  }
+  .landing-section {
+    @apply py-14 sm:py-16 lg:py-24;
+  }
+  .landing-cta {
+    background: linear-gradient(
+      180deg,
+      hsl(var(--info) / 0.05) 0%,
+      hsl(var(--background)) 100%
+    );
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing-reveal {
+    transform: none;
+    opacity: 1;
+    transition: none;
+  }
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
   }
 }

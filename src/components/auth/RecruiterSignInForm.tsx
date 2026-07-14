@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { Mail, ShieldCheck } from "lucide-react";
+import { Link, useNavigate } from "react-router-dom";
+import { Briefcase, Mail, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -81,7 +81,8 @@ export function RecruiterSignInForm() {
         } else {
           toast({
             title: "Recruiter profile missing",
-            description: "Your account is missing a recruiter profile. Contact SIJIL support.",
+            description:
+              "Your account is missing a recruiter profile. Contact your SIJIL administrator.",
             variant: "destructive",
           });
         }
@@ -94,7 +95,7 @@ export function RecruiterSignInForm() {
         localStorage.removeItem(REMEMBER_EMAIL_KEY);
       }
 
-      toast({ title: "Signed in" });
+      toast({ title: "Signed in", description: "Welcome to the recruiter portal." });
       navigate(ROLE_HOME.recruiter, { replace: true });
     } catch (err) {
       toast({
@@ -109,9 +110,9 @@ export function RecruiterSignInForm() {
 
   return (
     <>
-      <form onSubmit={submit} className="space-y-4">
+      <form onSubmit={submit} className="space-y-5">
         <div>
-          <Label htmlFor="recruiter-signin-email">Email</Label>
+          <Label htmlFor="recruiter-signin-email">Work email</Label>
           <div className="relative mt-1.5">
             <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -145,26 +146,38 @@ export function RecruiterSignInForm() {
               checked={rememberMe}
               onCheckedChange={(checked) => setRememberMe(checked === true)}
             />
-            <span>Remember me</span>
+            <span>Remember email</span>
           </label>
           <button
             type="button"
             onClick={() => setForgotOpen(true)}
-            className="text-sm font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-sm"
+            className="rounded-sm text-sm font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
             Forgot password?
           </button>
         </div>
 
-        <Button type="submit" disabled={busy} className="w-full rounded-xl shadow-md">
-          <ShieldCheck className="mr-2 h-4 w-4" />
-          {busy ? "Signing in…" : "Sign in"}
+        <Button type="submit" disabled={busy} className="w-full rounded-xl shadow-md" size="lg">
+          <ShieldCheck className="mr-2 h-4 w-4" aria-hidden="true" />
+          {busy ? "Signing in…" : "Sign in to Recruiter Portal"}
         </Button>
       </form>
 
-      <p className="mt-4 rounded-xl border border-border/60 bg-muted/30 p-3 text-xs leading-relaxed text-muted-foreground">
-        Recruiter accounts are created by SIJIL. There is no public recruiter registration.
-      </p>
+      <div className="mt-6 space-y-3 border-t border-border/60 pt-5">
+        <p className="text-center text-sm text-muted-foreground">
+          Not a recruiter?{" "}
+          <Link
+            to="/login/learner"
+            className="font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-sm"
+          >
+            Learner sign in
+          </Link>
+        </p>
+        <p className="flex items-center justify-center gap-1.5 text-center text-xs text-muted-foreground">
+          <Briefcase className="h-3.5 w-3.5" aria-hidden="true" />
+          Need access? Contact your SIJIL administrator.
+        </p>
+      </div>
 
       <ForgotPasswordDialog open={forgotOpen} onOpenChange={setForgotOpen} defaultEmail={email} />
     </>
