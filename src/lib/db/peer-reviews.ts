@@ -298,7 +298,7 @@ function parseRating(row: Record<string, unknown>): PeerReview["rating"] {
   return 3;
 }
 
-function rowToReview(row: Record<string, unknown>): PeerReview {
+export function rowToReview(row: Record<string, unknown>): PeerReview {
   const reviewType = row.review_type as string | undefined;
   const imported =
     typeof row.imported === "boolean"

@@ -10,9 +10,9 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
 import {
-  Play, Timer, Lock, Send, AlertTriangle, RefreshCcw, ChevronRight, ChevronLeft,
+  Play, Timer, Lock, Send, RefreshCcw, ChevronRight, ChevronLeft,
 } from "lucide-react";
-import { isSkillDecaying, daysSince, type DeclaredSkill, type AttemptRecord } from "@/lib/sijil-data";
+import { daysSince, type DeclaredSkill, type AttemptRecord } from "@/lib/sijil-data";
 import { useDeclaredSkills } from "@/hooks/useLearnerData";
 import { useAuth } from "@/hooks/useAuth";
 import { useGitHub } from "@/hooks/useGitHub";
@@ -649,7 +649,6 @@ export default function PracticalTask() {
             {skills.map((s) => {
               const a = getAttempt(s.id);
               const locked = isAttemptLocked(s, a);
-              const decaying = isSkillDecaying(s);
               const lastDays = daysSince(s.lastRelatedActivityAt);
               return (
                 <div key={s.id} className="flex flex-col md:flex-row md:items-center gap-3 px-6 py-4">
@@ -658,9 +657,6 @@ export default function PracticalTask() {
                       <span className="font-medium">{s.name}</span>
                       <span className="text-xs text-muted-foreground">· {s.domain}</span>
                       {statusBadge(s)}
-                      {decaying && (
-                        <StatusBadge variant="warning" icon={<AlertTriangle className="h-3 w-3" />}>Skill decaying</StatusBadge>
-                      )}
                     </div>
                     <div className="text-xs text-muted-foreground mt-1">MCQ practical task · {s.domain}</div>
                     <div className="text-[11px] text-muted-foreground mt-0.5">

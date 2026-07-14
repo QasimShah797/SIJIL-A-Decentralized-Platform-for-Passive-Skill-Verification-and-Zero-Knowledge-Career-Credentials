@@ -13,7 +13,7 @@ import {
   resolveLearnerEmail,
   resolveLearnerName,
 } from "@/lib/db/institution-attestation-requests";
-import { buildValidationSummary, type ValidationSummary } from "@/lib/db/validation";
+import { buildValidationSummary, buildValidationSummaryFromAttestation, type ValidationSummary } from "@/lib/db/validation";
 import { fetchDeclaredSkills } from "@/lib/db/skills";
 
 export default function InstitutionValidationTrail() {
@@ -24,7 +24,7 @@ export default function InstitutionValidationTrail() {
   const [validationLoading, setValidationLoading] = useState(true);
 
   useEffect(() => {
-    if (!request?.skillId || !request.learnerUserId) {
+    if (!request?.learnerUserId) {
       setValidationLoading(false);
       return;
     }
@@ -33,10 +33,16 @@ export default function InstitutionValidationTrail() {
     (async () => {
       setValidationLoading(true);
       try {
-        const skills = await fetchDeclaredSkills(request.learnerUserId);
-        const skill = skills.find((s) => s.id === request.skillId);
-        if (skill && !cancelled) {
-          setV(await buildValidationSummary(request.learnerUserId, skill));
+        if (request.skillId) {
+          const skills = await fetchDeclaredSkills(request.learnerUserId);
+          const skill = skills.find((s) => s.id === request.skillId);
+          if (skill && !cancelled) {
+            setV(await buildValidationSummary(request.learnerUserId, skill));
+            return;
+          }
+        }
+        if (!cancelled) {
+          setV(buildValidationSummaryFromAttestation(request));
         }
       } finally {
         if (!cancelled) setValidationLoading(false);
@@ -44,7 +50,7 @@ export default function InstitutionValidationTrail() {
     })();
 
     return () => { cancelled = true; };
-  }, [request?.skillId, request?.learnerUserId]);
+  }, [request?.skillId, request?.learnerUserId, request]);
 
   if (requestLoading || validationLoading) {
     return (

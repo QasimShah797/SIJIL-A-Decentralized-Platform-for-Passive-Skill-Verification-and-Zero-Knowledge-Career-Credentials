@@ -15,6 +15,7 @@ import { PIPELINE_STAGE, SKILL_STATUS } from "../constants/status";
 import { githubSyncService } from "./github-sync.service";
 import { evidenceRecordsService } from "./evidence-records.service";
 import { evaluateSkillProjectMatch } from "../utils/evidence-matching";
+import { cleanupCompetencyRelatedData } from "./competency-cleanup.service";
 
 function parseBreakdown(row: Record<string, unknown>): Record<string, number> {
   const direct = row.language_breakdown;
@@ -196,6 +197,18 @@ export class SkillsService {
   }
 
   async delete(userId: string, skillId: string): Promise<void> {
+    const { data: skill, error: fetchError } = await supabaseService.client
+      .from("declared_skills")
+      .select("id, name")
+      .eq("user_id", userId)
+      .eq("id", skillId)
+      .maybeSingle();
+
+    if (fetchError) throw new AppError(fetchError.message, 500);
+    if (!skill) throw new AppError("Skill not found", 404);
+
+    await cleanupCompetencyRelatedData(userId, skillId, skill.name as string);
+
     const { error } = await supabaseService.client
       .from("declared_skills")
       .delete()

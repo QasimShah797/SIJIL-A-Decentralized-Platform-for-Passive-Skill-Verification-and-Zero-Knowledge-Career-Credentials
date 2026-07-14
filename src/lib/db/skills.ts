@@ -2,6 +2,7 @@ import { supabase } from "@/integrations/supabase/client";
 import type { RelatedEvidenceApiView } from "@/services/api/skills.api";
 import { syncGitHubAfterSkillDeclare } from "@/lib/github-integration";
 import type { DeclaredSkill } from "@/lib/sijil-data";
+import { cleanupCompetencyRelatedData } from "@/lib/db/competency-cleanup";
 
 function rowToSkill(row: {
   id: string;
@@ -128,6 +129,17 @@ export async function fetchSkillRelatedEvidence(
 }
 
 export async function deleteDeclaredSkill(userId: string, skillId: string): Promise<void> {
+  const { data: skill, error: fetchError } = await supabase
+    .from("declared_skills")
+    .select("id, name")
+    .eq("user_id", userId)
+    .eq("id", skillId)
+    .maybeSingle();
+  if (fetchError) throw fetchError;
+  if (!skill) throw new Error("Competency not found");
+
+  await cleanupCompetencyRelatedData(userId, skillId, skill.name as string);
+
   const { error } = await supabase
     .from("declared_skills")
     .delete()

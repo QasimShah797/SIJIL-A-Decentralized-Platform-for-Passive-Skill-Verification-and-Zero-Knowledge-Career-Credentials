@@ -14,7 +14,6 @@ export const PIPELINE_STAGES: { key: PipelineStage; label: string }[] = [
   { key: "evidence_linked", label: "Evidence Linked" },
   { key: "practical_task", label: "Practical Task" },
   { key: "peer_review", label: "Peer Review" },
-  { key: "institution_attestation_pending", label: "Institution Attestation" },
   { key: "wallet_ready", label: "Wallet" },
 ];
 
@@ -102,7 +101,7 @@ export function nextStepForAttempt(
 ): string {
   if (stage === "practical_task" && attempt) {
     if (attempt.status === "passed" || attempt.passed) {
-      return nextStepForStage("institution_attestation_pending", institution);
+      return nextStepForStage("wallet_ready", institution);
     }
     if (attempt.status === "submitted" || attempt.status === "auto_submitted") {
       return "Awaiting practical task evaluation";
@@ -120,14 +119,14 @@ export function pipelineStageIndex(stage: string): number {
     "evidence_linked",
     "practical_task",
     "peer_review",
-    "institution_attestation_pending",
     "wallet_ready",
     "in_wallet",
   ];
   const idx = order.indexOf(stage as PipelineStage);
   if (idx >= 0) return idx;
+  if (stage === "institution_attestation_pending") return order.indexOf("wallet_ready");
   if (stage === "institution_attestation_rejected" || stage === "institution_rejected") {
-    return order.indexOf("institution_attestation_pending");
+    return order.indexOf("practical_task");
   }
   return 0;
 }
@@ -148,25 +147,17 @@ export function resolveEffectivePipelineStage(
   if (opts.inWallet || stored === "in_wallet") return "in_wallet";
   if (stored === "wallet_ready") return "wallet_ready";
   if (stored === "institution_attestation_rejected" || stored === "institution_rejected") {
-    return "institution_attestation_rejected";
+    return "practical_task";
   }
-  if (stored === "institution_attestation_pending") return "institution_attestation_pending";
+  if (stored === "institution_attestation_pending") {
+    return opts.attemptPassed ? "wallet_ready" : "peer_review";
+  }
 
-  if (opts.attestationStatus === "rejected" || opts.attestationStatus === "Attestation Rejected") {
-    return "institution_attestation_rejected";
-  }
-  if (
-    opts.attestationStatus === "pending"
-    || opts.attestationStatus === "Pending Attestation"
-    || opts.attestationStatus === "Needs Clarification"
-  ) {
-    return "institution_attestation_pending";
-  }
   if (opts.attestationStatus === "approved" || opts.attestationStatus === "Attestation Approved") {
     return "wallet_ready";
   }
 
-  if (opts.attemptPassed) return "institution_attestation_pending";
+  if (opts.attemptPassed) return "wallet_ready";
   if (opts.attemptInProgress) return "practical_task";
   if (opts.peerReviewCount && opts.peerReviewCount > 0) return "peer_review";
   if (opts.hasEvidence || stored === "evidence_linked") return "evidence_linked";

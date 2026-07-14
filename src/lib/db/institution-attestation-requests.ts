@@ -1,6 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import type { LearnerProfileView } from "@/lib/db/learner-profile";
-import { fetchPeerReviews } from "@/lib/db/peer-reviews";
+import { fetchPeerReviews, rowToReview } from "@/lib/db/peer-reviews";
 import { updateSkillPipelineStage } from "@/lib/db/skills";
 import { issueCredentialForSkill } from "@/lib/db/credentials";
 import { institutionDisplayName, normalizeInstitutionName } from "@/lib/institution-routing";
@@ -365,6 +365,20 @@ async function fetchSkillEvidence(userId: string, skillId: string, skillName: st
     fetchPeerReviews(userId),
   ]);
 
+  const { data: reviewsBySkillId } = await supabase
+    .from("peer_reviews")
+    .select("*")
+    .eq("learner_user_id", userId)
+    .eq("skill_id", skillId);
+
+  const mergedReviews = new Map<string, ReturnType<typeof rowToReview>>();
+  for (const row of reviewsBySkillId ?? []) {
+    mergedReviews.set(row.id as string, rowToReview(row as Record<string, unknown>));
+  }
+  for (const review of reviews.filter((r) => r.skill.trim().toLowerCase() === skillName.trim().toLowerCase())) {
+    mergedReviews.set(review.id, review);
+  }
+
   const github = [
     ...(ghActs.data ?? []),
     ...(ghRepos.data ?? []),
@@ -372,8 +386,7 @@ async function fetchSkillEvidence(userId: string, skillId: string, skillName: st
 
   const moodle = (lmsEv.data ?? []) as Record<string, unknown>[];
   const certificates = (certs.data ?? []) as Record<string, unknown>[];
-  const peerReviewEvidence = reviews
-    .filter((r) => r.skill === skillName)
+  const peerReviewEvidence = Array.from(mergedReviews.values())
     .map((r) => ({
       id: r.id,
       reviewerName: r.reviewerName,
