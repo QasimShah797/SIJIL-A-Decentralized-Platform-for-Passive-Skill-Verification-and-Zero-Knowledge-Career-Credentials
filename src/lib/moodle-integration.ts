@@ -3,14 +3,77 @@ import { isMissingColumnError, isMissingRelationError } from "@/lib/supabase-err
 
 export const MOODLE_SITE_URL = "https://sijil-fyp.moodlecloud.com";
 
+/** Hostname of the only supported MoodleCloud instance. */
+export const CURRENT_MOODLE_SITE_HOST = "sijil-fyp.moodlecloud.com";
+
+/** Legacy MoodleCloud host — must never be shown in UI. */
+export const LEGACY_MOODLE_SITE_HOST = "sijil.moodlecloud.com";
+
 /** Expected edge function version — mismatch means remote deploy is stale. */
-export const MOODLE_SYNC_FUNCTION_VERSION = "2.9.3";
+export const MOODLE_SYNC_FUNCTION_VERSION = "3.3.0";
+
+export function normalizeMoodleSiteUrl(url: string): string {
+  return url.trim().replace(/\/+$/, "").toLowerCase();
+}
+
+export function displayMoodleSiteHost(url: string = MOODLE_SITE_URL): string {
+  try {
+    const host = new URL(url.startsWith("http") ? url : `https://${url}`).host.toLowerCase();
+    if (host === LEGACY_MOODLE_SITE_HOST || (host.includes("moodlecloud.com") && !host.includes("sijil-fyp"))) {
+      return CURRENT_MOODLE_SITE_HOST;
+    }
+    return host;
+  } catch {
+    const stripped = url.replace(/^https?:\/\//, "").replace(/\/+$/, "").toLowerCase();
+    if (stripped === LEGACY_MOODLE_SITE_HOST) return CURRENT_MOODLE_SITE_HOST;
+    return stripped;
+  }
+}
+
+/** True when URL belongs to the current sijil-fyp MoodleCloud site. */
+export function isCurrentMoodleSiteUrl(url: string | null | undefined): boolean {
+  if (!url?.trim()) return false;
+  return displayMoodleSiteHost(url) === CURRENT_MOODLE_SITE_HOST;
+}
+
+/** True when URL points at the retired sijil.moodlecloud.com instance. */
+export function isLegacyMoodleSiteUrl(url: string | null | undefined): boolean {
+  if (!url?.trim()) return false;
+  const host = displayMoodleSiteHost(url);
+  const normalized = normalizeMoodleSiteUrl(url);
+  return (
+    host === LEGACY_MOODLE_SITE_HOST ||
+    normalized.includes(LEGACY_MOODLE_SITE_HOST) ||
+    (normalized.includes("moodlecloud.com") && !normalized.includes("sijil-fyp"))
+  );
+}
+
+/**
+ * Resolve the Moodle site URL for display from the connection record.
+ * Stale/legacy URLs are replaced with the canonical current site.
+ */
+export function resolveMoodleConnectionSiteUrl(
+  connection: { moodle_site_url: string | null } | null | undefined,
+): string {
+  const stored = connection?.moodle_site_url;
+  if (stored && isCurrentMoodleSiteUrl(stored)) {
+    return normalizeMoodleSiteUrl(stored);
+  }
+  return normalizeMoodleSiteUrl(MOODLE_SITE_URL);
+}
+
+export function resolveMoodleConnectionSiteHost(
+  connection: { moodle_site_url: string | null } | null | undefined,
+): string {
+  return displayMoodleSiteHost(resolveMoodleConnectionSiteUrl(connection));
+}
 
 export type MoodleSyncErrorCode =
   | "INVALID_MOODLE_TOKEN"
   | "MOODLE_API_UNAVAILABLE"
   | "MOODLE_ACCESS_DENIED"
   | "MOODLE_USER_NOT_FOUND"
+  | "MOODLE_EMAIL_MISMATCH"
   | "NO_ENROLLED_COURSES"
   | "NO_ASSIGNMENTS"
   | "DATABASE_TABLE_MISSING"
@@ -33,8 +96,23 @@ type MoodleFunctionPayload = {
   assignments?: number;
   grades?: number;
   feedback?: number;
+  completion?: number;
   warnings?: string[];
   moodleUserId?: number;
+  moodleSiteUrl?: string;
+  url?: string;
+  cleanup?: Record<string, number>;
+  debug?: {
+    moodleUrl: string;
+    userid: number;
+    sijilEmail?: string;
+    moodleEmail?: string;
+    coursesFetched: number;
+    assignmentsFetched: number;
+    gradesFetched: number;
+    feedbackFetched: number;
+    completionFetched: number;
+  };
 };
 
 async function authHeaders(): Promise<Record<string, string>> {
@@ -84,7 +162,9 @@ function mapSyncError(payload: MoodleFunctionPayload | null, fallback: string): 
         "Moodle token lacks permission to read assignment grades. Enable assignment and grade web service permissions in Moodle."
       );
     case "MOODLE_USER_NOT_FOUND":
-      return payload?.error ?? "No Moodle account matched your SIJIL or institution email.";
+      return payload?.error ?? "No Moodle account matched your SIJIL email.";
+    case "MOODLE_EMAIL_MISMATCH":
+      return payload?.error ?? "Moodle account email does not match SIJIL account email";
     case "NO_ENROLLED_COURSES":
       return payload?.error ?? "No enrolled Moodle courses found for your account.";
     case "NO_ASSIGNMENTS":
@@ -125,17 +205,44 @@ export type MoodleConnection = {
   moodle_user_id: number | null;
   moodle_email: string | null;
   institution_email: string | null;
+  moodle_site_url: string | null;
   last_synced_at: string | null;
 };
 
 function rowToMoodleConnection(row: Record<string, unknown>): MoodleConnection {
+  const rawSiteUrl = typeof row.moodle_site_url === "string" ? row.moodle_site_url : null;
+  const moodle_site_url = rawSiteUrl && isCurrentMoodleSiteUrl(rawSiteUrl)
+    ? normalizeMoodleSiteUrl(rawSiteUrl)
+    : rawSiteUrl && isLegacyMoodleSiteUrl(rawSiteUrl)
+      ? normalizeMoodleSiteUrl(MOODLE_SITE_URL)
+      : rawSiteUrl;
   return {
     user_id: String(row.user_id),
     moodle_user_id: row.moodle_user_id != null ? Number(row.moodle_user_id) : null,
     moodle_email: typeof row.moodle_email === "string" ? row.moodle_email : null,
     institution_email: typeof row.institution_email === "string" ? row.institution_email : null,
+    moodle_site_url,
     last_synced_at: typeof row.last_synced_at === "string" ? row.last_synced_at : null,
   };
+}
+
+async function repairStaleMoodleConnectionSiteUrl(userId: string, siteUrl: string | null): Promise<string | null> {
+  if (!siteUrl || isCurrentMoodleSiteUrl(siteUrl)) return siteUrl;
+  if (!isLegacyMoodleSiteUrl(siteUrl)) return siteUrl;
+
+  const canonical = normalizeMoodleSiteUrl(MOODLE_SITE_URL);
+  const { error } = await supabase
+    .from("lms_connections")
+    .update({ moodle_site_url: canonical, updated_at: new Date().toISOString() })
+    .eq("user_id", userId);
+
+  if (error && !isMissingColumnError(error)) {
+    console.warn("Could not repair stale moodle_site_url in lms_connections:", error.message);
+    return canonical;
+  }
+
+  console.info("[Moodle] Repaired legacy moodle_site_url in lms_connections →", canonical);
+  return canonical;
 }
 
 /** Detect Moodle link from columns that exist on the row (no provider filter). */
@@ -149,6 +256,8 @@ export type MoodleCourseActivity = {
   courseId: number;
   courseName: string;
   shortname: string | null;
+  completionStatus: string | null;
+  progress: string | null;
   assignments: MoodleAssignmentActivity[];
 };
 
@@ -167,6 +276,7 @@ export type MoodleAssignmentActivity = {
   submissionFiles: string[] | null;
   gradedAt: string | null;
   submittedAt: string | null;
+  dueDate: string | null;
   gradeReleased: boolean;
   competencyTags: string[];
   importedAt: string;
@@ -178,9 +288,30 @@ export type MoodleSyncResult = {
   assignments: number;
   grades: number;
   feedback: number;
+  completion: number;
   warnings: string[];
   functionVersion?: string;
+  moodleSiteUrl?: string;
+  url?: string;
+  cleanup?: Record<string, number>;
+  debug?: MoodleFunctionPayload["debug"];
 };
+
+function mapSyncPayload(payload: MoodleFunctionPayload): MoodleSyncResult {
+  return {
+    courses: payload.courses ?? 0,
+    assignments: payload.assignments ?? 0,
+    grades: payload.grades ?? 0,
+    feedback: payload.feedback ?? 0,
+    completion: payload.completion ?? 0,
+    warnings: payload.warnings ?? [],
+    functionVersion: payload.functionVersion,
+    moodleSiteUrl: payload.moodleSiteUrl ?? payload.url,
+    url: payload.url ?? payload.moodleSiteUrl ?? MOODLE_SITE_URL,
+    cleanup: payload.cleanup ?? undefined,
+    debug: payload.debug,
+  };
+}
 
 export async function syncMoodleActivities(): Promise<MoodleSyncResult> {
   const { data: session } = await supabase.auth.getSession();
@@ -188,16 +319,34 @@ export async function syncMoodleActivities(): Promise<MoodleSyncResult> {
     throw new Error("Sign in required to sync Moodle activities.");
   }
 
-  const payload = await invokeMoodleFunction({ action: "sync_activities" });
+  const payload = await invokeMoodleFunction({ action: "sync_activities", force: true });
+  return mapSyncPayload(payload);
+}
 
-  return {
-    courses: payload.courses ?? 0,
-    assignments: payload.assignments ?? 0,
-    grades: payload.grades ?? 0,
-    feedback: payload.feedback ?? 0,
-    warnings: payload.warnings ?? [],
-    functionVersion: payload.functionVersion,
-  };
+/** Force full Moodle resync: purge stale data, fetch fresh from sijil-fyp.moodlecloud.com, update DB. */
+export async function syncMoodleData(): Promise<MoodleSyncResult> {
+  const { data: session } = await supabase.auth.getSession();
+  if (!session.session) {
+    throw new Error("Sign in required to sync Moodle data.");
+  }
+
+  console.info("[Moodle Sync Started]", { url: MOODLE_SITE_URL });
+
+  const payload = await invokeMoodleFunction({ action: "sync_moodle_data", force: true });
+  const result = mapSyncPayload(payload);
+
+  console.info("[Moodle Sync Complete]", {
+    url: result.moodleSiteUrl ?? MOODLE_SITE_URL,
+    userid: result.debug?.userid,
+    courses: result.debug?.coursesFetched ?? result.courses,
+    assignments: result.debug?.assignmentsFetched ?? result.assignments,
+    grades: result.debug?.gradesFetched ?? result.grades,
+    feedback: result.debug?.feedbackFetched ?? result.feedback,
+    completion: result.debug?.completionFetched ?? result.completion,
+    cleanup: result.cleanup,
+  });
+
+  return result;
 }
 
 async function requireUserId(): Promise<string> {
@@ -257,7 +406,12 @@ export async function fetchMoodleConnection(): Promise<MoodleConnection | null> 
     return null;
   }
 
-  return rowToMoodleConnection(data as Record<string, unknown>);
+  const conn = rowToMoodleConnection(data as Record<string, unknown>);
+  const repairedSite = await repairStaleMoodleConnectionSiteUrl(userId, conn.moodle_site_url);
+  if (repairedSite !== conn.moodle_site_url) {
+    return { ...conn, moodle_site_url: repairedSite };
+  }
+  return conn;
 }
 
 export async function disconnectMoodle(): Promise<void> {
@@ -282,6 +436,7 @@ export async function disconnectMoodle(): Promise<void> {
     if ("moodle_user_id" in record) updatePayload.moodle_user_id = null;
     if ("moodle_email" in record) updatePayload.moodle_email = null;
     if ("institution_email" in record) updatePayload.institution_email = null;
+    if ("moodle_site_url" in record) updatePayload.moodle_site_url = null;
 
     const { error } = await supabase
       .from("lms_connections")
@@ -297,11 +452,13 @@ export async function disconnectMoodle(): Promise<void> {
 
 export async function fetchMoodleCourseActivities(): Promise<MoodleCourseActivity[]> {
   const userId = await requireUserId();
+  const currentSite = normalizeMoodleSiteUrl(MOODLE_SITE_URL);
 
   const { data: courses, error: courseErr } = await supabase
     .from("moodle_courses")
-    .select("moodle_course_id,fullname,shortname")
+    .select("moodle_course_id,fullname,shortname,raw,synced_at,moodle_site_url")
     .eq("user_id", userId)
+    .eq("moodle_site_url", currentSite)
     .order("synced_at", { ascending: false });
 
   if (courseErr) {
@@ -309,31 +466,95 @@ export async function fetchMoodleCourseActivities(): Promise<MoodleCourseActivit
       console.warn("moodle_courses table missing — run migration 20260706120000_moodle_sync_tables.sql");
       return [];
     }
+    if (isMissingColumnError(courseErr)) {
+      // Never show legacy unfiltered Moodle rows — only current-site data after migration + sync.
+      console.warn("moodle_site_url column missing — run migration 20260714120000_moodle_site_url_isolation.sql then Refresh Moodle Data");
+      return [];
+    }
     throw courseErr;
   }
 
-  const { data: assignments, error: assignErr } = await supabase
+  return buildCourseActivitiesFromRows(userId, courses ?? [], currentSite);
+}
+
+function parseCourseMeta(raw: unknown): { completionStatus: string | null; progress: string | null } {
+  const record = raw as Record<string, unknown> | null;
+  const completionStatus = typeof record?.completion_status === "string"
+    ? record.completion_status
+    : null;
+  const progressRaw = record?.progress;
+  const progress = typeof progressRaw === "string"
+    ? progressRaw
+    : typeof progressRaw === "number"
+      ? `${progressRaw}%`
+      : null;
+  return { completionStatus, progress };
+}
+
+function parseDueDate(raw: unknown): string | null {
+  const record = raw as Record<string, unknown> | null;
+  const assign = record?.assign as Record<string, unknown> | undefined;
+  const due = assign?.duedate ?? assign?.cutoffdate ?? assign?.allowsubmissionsfromdate;
+  if (due == null) return null;
+  const n = Number(due);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return new Date(n * 1000).toISOString();
+}
+
+async function buildCourseActivitiesFromRows(
+  userId: string,
+  courses: Record<string, unknown>[],
+  currentSite: string | null,
+): Promise<MoodleCourseActivity[]> {
+  let assignmentQuery = supabase
     .from("moodle_assignments")
     .select(
-      "id,moodle_course_id,moodle_assignment_id,name,module_type,submission_status,grade,grade_max,grade_formatted,graded_at,submitted_at,grade_released,submission_text,submission_files,competency_tags,synced_at",
+      "id,moodle_course_id,moodle_assignment_id,name,module_type,submission_status,grade,grade_max,grade_formatted,feedback,graded_at,submitted_at,grade_released,submission_text,submission_files,competency_tags,synced_at,raw",
     )
     .eq("user_id", userId)
     .order("synced_at", { ascending: false });
 
-  if (assignErr) {
-    if (isMissingRelationError(assignErr)) return [];
-    throw assignErr;
+  if (currentSite) {
+    assignmentQuery = assignmentQuery.eq("moodle_site_url", currentSite);
   }
 
-  const { data: feedbackRows, error: fbErr } = await supabase
+  let { data: assignments, error: assignErr } = await assignmentQuery;
+
+  if (assignErr) {
+    if (isMissingRelationError(assignErr)) return [];
+    if (isMissingColumnError(assignErr)) {
+      let fallbackQuery = supabase
+        .from("moodle_assignments")
+        .select(
+          "id,moodle_course_id,moodle_assignment_id,name,module_type,submission_status,grade,grade_max,grade_formatted,graded_at,submitted_at,grade_released,submission_text,submission_files,competency_tags,synced_at,raw",
+        )
+        .eq("user_id", userId)
+        .order("synced_at", { ascending: false });
+      if (currentSite) fallbackQuery = fallbackQuery.eq("moodle_site_url", currentSite);
+      const fallback = await fallbackQuery;
+      assignments = fallback.data;
+      assignErr = fallback.error;
+    }
+    if (assignErr) throw assignErr;
+  }
+
+  let feedbackQuery = supabase
     .from("moodle_feedback")
     .select("moodle_assignment_id,feedback_text")
     .eq("user_id", userId);
 
+  if (currentSite) {
+    feedbackQuery = feedbackQuery.eq("moodle_site_url", currentSite);
+  }
+
+  const { data: feedbackRows, error: fbErr } = await feedbackQuery;
+
   if (fbErr && !isMissingRelationError(fbErr)) throw fbErr;
 
   const feedbackMap = new Map(
-    (feedbackRows ?? []).map((f) => [Number(f.moodle_assignment_id), f.feedback_text as string | null]),
+    (feedbackRows ?? [])
+      .filter((f) => String(f.feedback_text ?? "").trim())
+      .map((f) => [Number(f.moodle_assignment_id), f.feedback_text as string]),
   );
 
   const assignByCourse = new Map<number, MoodleAssignmentActivity[]>();
@@ -367,21 +588,27 @@ export async function fetchMoodleCourseActivities(): Promise<MoodleCourseActivit
       }
     }
 
+    const rowFeedback =
+      typeof row.feedback === "string" && row.feedback.trim()
+        ? row.feedback.trim()
+        : null;
+
     list.push({
       id: row.id as string,
       moodleAssignmentId,
       name: row.name as string,
       moduleType: (row.module_type as string) ?? "assign",
       activityType: (row.module_type as string) === "assign" ? "Assignment" : (row.module_type as string),
-      submissionStatus: (row.submission_status as string) ?? "Pending",
+      submissionStatus: formatSubmissionStatusLabel((row.submission_status as string) ?? "Pending"),
       grade: row.grade !== null && row.grade !== undefined ? String(row.grade) : null,
       gradeMax: row.grade_max !== null && row.grade_max !== undefined ? String(row.grade_max) : null,
       gradeFormatted: (row.grade_formatted as string) ?? null,
-      feedback: feedbackMap.get(moodleAssignmentId) ?? null,
+      feedback: rowFeedback ?? feedbackMap.get(moodleAssignmentId) ?? null,
       submissionText: (row.submission_text as string) ?? null,
       submissionFiles,
       gradedAt: (row.graded_at as string) ?? null,
       submittedAt: (row.submitted_at as string) ?? null,
+      dueDate: parseDueDate(row.raw),
       gradeReleased: Boolean(row.grade_released),
       competencyTags,
       importedAt: (row.synced_at as string) ?? new Date().toISOString(),
@@ -390,12 +617,18 @@ export async function fetchMoodleCourseActivities(): Promise<MoodleCourseActivit
     assignByCourse.set(courseId, list);
   }
 
-  return (courses ?? []).map((c) => ({
-    courseId: Number(c.moodle_course_id),
-    courseName: (c.fullname as string) || (c.shortname as string) || `Course ${c.moodle_course_id}`,
-    shortname: (c.shortname as string) ?? null,
-    assignments: assignByCourse.get(Number(c.moodle_course_id)) ?? [],
-  }));
+  return courses.map((c) => {
+    const courseId = Number(c.moodle_course_id);
+    const meta = parseCourseMeta(c.raw);
+    return {
+      courseId,
+      courseName: (c.fullname as string) || (c.shortname as string) || `Course ${c.moodle_course_id}`,
+      shortname: (c.shortname as string) ?? null,
+      completionStatus: meta.completionStatus,
+      progress: meta.progress,
+      assignments: assignByCourse.get(courseId) ?? [],
+    };
+  });
 }
 
 export function hasMoodleAccessControlWarning(warnings: string[]): boolean {
@@ -411,12 +644,29 @@ export function hasMoodleAccessControlWarning(warnings: string[]): boolean {
   });
 }
 
+export function formatSubmissionStatusLabel(status: string): string {
+  const s = status.trim().toLowerCase();
+  if (s === "submitted" || s === "graded") return s === "graded" ? "Graded" : "Submitted";
+  if (s === "not submitted" || s === "notstarted" || s === "not started") return "Not submitted";
+  if (s === "pending" || s === "draft" || s === "new") return "Not submitted";
+  if (s === "grade access denied" || s === "permission required") return status;
+  return status || "Not submitted";
+}
+
+export function formatCompletionStatusLabel(status: string | null | undefined): string {
+  if (!status?.trim()) return "In progress";
+  const s = status.trim().toLowerCase();
+  if (s.includes("complete")) return "Completed";
+  if (s.includes("progress")) return "In progress";
+  return status;
+}
+
 export function activityStatusBadge(status: string): "verified" | "info" | "warning" | "neutral" {
   const s = status.toLowerCase();
-  if (s === "graded") return "verified";
+  if (s === "graded" || s === "completed") return "verified";
   if (s === "submitted") return "info";
   if (s === "grade access denied" || s === "permission required") return "warning";
-  if (s === "pending" || s === "not started") return "warning";
+  if (s === "not submitted" || s === "pending" || s === "not started" || s === "in progress") return "warning";
   return "neutral";
 }
 
@@ -435,6 +685,24 @@ export function formatMoodleFeedbackDisplay(feedback: string | null | undefined)
   return trimmed || null;
 }
 
+export function formatMoodleSyncDebugSummary(result: MoodleSyncResult): string {
+  const debug = result.debug;
+  if (!debug) {
+    return `URL: ${result.moodleSiteUrl ?? MOODLE_SITE_URL}\nCourses: ${result.courses}\nAssignments: ${result.assignments}\nGrades: ${result.grades}\nFeedback: ${result.feedback}\nCompletion: ${result.completion ?? 0}`;
+  }
+  return [
+    debug.sijilEmail ? `SIJIL email: ${debug.sijilEmail}` : null,
+    debug.moodleEmail ? `Moodle email: ${debug.moodleEmail}` : null,
+    `URL: ${debug.moodleUrl}`,
+    `Moodle userid: ${debug.userid}`,
+    `Courses: ${debug.coursesFetched}`,
+    `Assignments: ${debug.assignmentsFetched}`,
+    `Grades: ${debug.gradesFetched}`,
+    `Feedback: ${debug.feedbackFetched}`,
+    `Completion: ${debug.completionFetched ?? 0}`,
+  ].filter(Boolean).join("\n");
+}
+
 export function formatGradeDisplay(a: MoodleAssignmentActivity): string {
   const status = a.submissionStatus.toLowerCase();
   if (status === "grade access denied" || status === "permission required") {
@@ -443,6 +711,6 @@ export function formatGradeDisplay(a: MoodleAssignmentActivity): string {
   if (a.gradeFormatted && a.gradeFormatted !== "—") return a.gradeFormatted;
   if (a.grade && a.gradeMax) return `${a.grade} / ${a.gradeMax}`;
   if (a.grade) return a.grade;
-  if (!a.gradeReleased && a.submissionStatus === "Submitted") return "Grade not released yet";
-  return "—";
+  if (!a.gradeReleased && a.submissionStatus === "Submitted") return "Not graded";
+  return "Not graded";
 }

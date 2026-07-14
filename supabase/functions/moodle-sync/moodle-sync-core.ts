@@ -14,6 +14,9 @@ export const corsHeaders = {
 const MOODLE_BASE_URL = Deno.env.get("MOODLE_BASE_URL");
 const MOODLE_TOKEN = Deno.env.get("MOODLE_TOKEN");
 
+/** Canonical MoodleCloud site — only this instance is supported. */
+export const EXPECTED_MOODLE_SITE_URL = "https://sijil-fyp.moodlecloud.com";
+
 let moodleEnvLogged = false;
 
 /** Safe startup diagnostics — never logs the token value. */
@@ -116,6 +119,7 @@ export type MoodleSyncErrorCode =
   | "MOODLE_API_UNAVAILABLE"
   | "MOODLE_ACCESS_DENIED"
   | "MOODLE_USER_NOT_FOUND"
+  | "MOODLE_EMAIL_MISMATCH"
   | "NO_ENROLLED_COURSES"
   | "NO_ASSIGNMENTS"
   | "DATABASE_TABLE_MISSING"
@@ -156,7 +160,20 @@ async function dbUpsert(
   onConflict: string,
   required = true,
 ): Promise<void> {
-  const { error } = await admin.from(table).upsert(row, { onConflict });
+  let payload = row;
+  let { error } = await admin.from(table).upsert(payload, { onConflict });
+
+  if (
+    error &&
+    table === "moodle_assignments" &&
+    "feedback" in payload &&
+    /feedback/.test(error.message)
+  ) {
+    const { feedback: _omit, ...withoutFeedback } = payload;
+    payload = withoutFeedback;
+    ({ error } = await admin.from(table).upsert(payload, { onConflict }));
+  }
+
   if (!error) {
     logSyncStage("db_upsert_ok", { table, onConflict, user_id: row.user_id });
     return;
@@ -242,12 +259,49 @@ async function fetchCourseGradeReport(
   const byAssignmentId = new Map<number, GradeReportItem>();
   const byName = new Map<string, GradeReportItem>();
 
+  const ingestGradeItems = (items: Record<string, unknown>[], source: string) => {
+    for (const item of items) {
+      const instanceId = Number(item.iteminstance ?? item.itemid ?? 0);
+      const itemName = String(item.itemname ?? item.itemnameformatted ?? "");
+      const module = String(item.itemmodule ?? item.itemtype ?? "").toLowerCase();
+
+      const gradeFormattedRaw = item.gradeformatted
+        ? String(item.gradeformatted)
+        : item.gradeformattedraw
+          ? String(item.gradeformattedraw)
+          : null;
+      let grade = parseMoodleGrade(item.grade ?? item.graderaw ?? item.finalgrade);
+      if (grade === null && gradeFormattedRaw) {
+        const match = gradeFormattedRaw.match(/^([\d.]+)/);
+        if (match) grade = parseMoodleGrade(match[1]);
+      }
+      const gradeMax = parseNum(item.grademax ?? item.grademaxformatted);
+      const feedbackRaw = item.feedback ?? item.feedbackcontent ?? item.feedbacktext ?? null;
+      const feedback = feedbackRaw ? stripHtml(String(feedbackRaw)) : null;
+      const parsed: GradeReportItem = {
+        grade,
+        gradeMax,
+        gradeFormatted: gradeFormattedRaw ?? gradeDisplay(grade, gradeMax),
+        feedback,
+        itemName,
+        raw: { ...item, _source: source },
+      };
+
+      if (module === "assign" && instanceId > 0) {
+        byAssignmentId.set(instanceId, parsed);
+      }
+      if (itemName) {
+        byName.set(normalizeActivityName(itemName), parsed);
+      }
+    }
+  };
+
   const result = await tryCallMoodle("gradereport_user_get_grade_items", {
     userid: moodleUserId,
     courseid: courseId,
   });
 
-  if (!result.ok) {
+  if (!result.ok && byAssignmentId.size === 0) {
     logSyncStage("gradereport_user_get_grade_items_failed", {
       courseId,
       courseName,
@@ -259,37 +313,11 @@ async function fetchCourseGradeReport(
     return { byAssignmentId, byName, accessDenied: result.accessDenied, failedWsfunction: result.wsfunction };
   }
 
-  const items =
-    (result.data as { usergrades?: { gradeitems?: Record<string, unknown>[] }[] })?.usergrades?.[0]
-      ?.gradeitems ?? [];
-
-  for (const item of items) {
-    if (String(item.itemmodule ?? "") !== "assign") continue;
-
-    const instanceId = Number(item.iteminstance);
-    if (!instanceId) continue;
-
-    const gradeFormattedRaw = item.gradeformatted ? String(item.gradeformatted) : null;
-    let grade = parseMoodleGrade(item.grade ?? item.graderaw);
-    if (grade === null && gradeFormattedRaw) {
-      const match = gradeFormattedRaw.match(/^([\d.]+)/);
-      if (match) grade = parseMoodleGrade(match[1]);
-    }
-    const gradeMax = parseNum(item.grademax);
-    const feedbackRaw = item.feedback ?? item.feedbackcontent ?? null;
-    const feedback = feedbackRaw ? stripHtml(String(feedbackRaw)) : null;
-
-    const parsed: GradeReportItem = {
-      grade,
-      gradeMax,
-      gradeFormatted: gradeFormattedRaw ?? gradeDisplay(grade, gradeMax),
-      feedback,
-      itemName: String(item.itemname ?? ""),
-      raw: item,
-    };
-
-    byAssignmentId.set(instanceId, parsed);
-    if (parsed.itemName) byName.set(normalizeActivityName(parsed.itemName), parsed);
+  if (result.ok) {
+    const items =
+      (result.data as { usergrades?: { gradeitems?: Record<string, unknown>[] }[] })?.usergrades?.[0]
+        ?.gradeitems ?? [];
+    ingestGradeItems(items, "gradereport_user_get_grade_items");
   }
 
   logSyncStage("gradereport_user_get_grade_items_result", {
@@ -451,25 +479,532 @@ function isLmsConnectionsColumnError(message: string, code?: string): boolean {
   );
 }
 
+/** Normalize Moodle site URL for consistent storage and filtering. */
+export function normalizeMoodleSiteUrl(url: string): string {
+  return url.trim().replace(/\/+$/, "").toLowerCase();
+}
+
 /** Build lms_connections payload using only columns defined in repo migrations. */
 function buildLmsConnectionRow(input: {
   userId: string;
   moodleUserId: number;
   moodleEmail: string | null;
   institutionEmail: string | null;
+  moodleSiteUrl: string;
   syncedAt: string;
+  lastVerified: string;
 }): Record<string, unknown> {
-  // Remote schema (migrations): user_id, odoo_*, has_api_key, last_synced_at,
-  // provider, moodle_user_id, moodle_email, institution_email — no moodle_username/metadata.
   return {
     user_id: input.userId,
     provider: "moodle",
     moodle_user_id: input.moodleUserId,
     moodle_email: input.moodleEmail,
     institution_email: input.institutionEmail,
+    moodle_site_url: input.moodleSiteUrl,
     last_synced_at: input.syncedAt,
+    last_verified: input.lastVerified,
     updated_at: input.syncedAt,
   };
+}
+
+function normalizeEmailAddress(email: string): string {
+  return email.trim().toLowerCase();
+}
+
+export type ResolvedMoodleIdentity = {
+  moodleUserId: number;
+  moodleEmail: string;
+  moodleFirstName: string | null;
+  moodleLastName: string | null;
+  moodleUsername: string | null;
+};
+
+/**
+ * Resolve Moodle learner by SIJIL auth email — never use token owner userid or stored moodle_user_id.
+ */
+export async function resolveMoodleUserBySijilEmail(
+  sijilEmail: string,
+): Promise<ResolvedMoodleIdentity> {
+  const normalizedSijilEmail = normalizeEmailAddress(sijilEmail);
+  if (!normalizedSijilEmail) {
+    throw new MoodleSyncError(
+      "MOODLE_USER_NOT_FOUND",
+      "SIJIL authenticated user has no email address.",
+    );
+  }
+
+  const result = await callMoodle("core_user_get_users", {
+    criteria: [{ key: "email", value: normalizedSijilEmail }],
+  });
+
+  const users = (result?.users ?? []) as Array<{
+    id?: number;
+    email?: string;
+    firstname?: string;
+    lastname?: string;
+    username?: string;
+  }>;
+
+  if (!users.length) {
+    throw new MoodleSyncError(
+      "MOODLE_USER_NOT_FOUND",
+      `No Moodle account found for email ${sijilEmail}.`,
+      { sijilEmail: normalizedSijilEmail },
+    );
+  }
+
+  const moodleUser = users[0];
+  const moodleUserId = Number(moodleUser.id);
+  const moodleEmail = String(moodleUser.email ?? "").trim();
+
+  if (!moodleUserId || moodleUserId <= 0) {
+    throw new MoodleSyncError(
+      "MOODLE_USER_NOT_FOUND",
+      "Moodle returned an invalid userid for the matched email.",
+      { sijilEmail: normalizedSijilEmail, moodleEmail },
+    );
+  }
+
+  if (!moodleEmail || normalizeEmailAddress(moodleEmail) !== normalizedSijilEmail) {
+    throw new MoodleSyncError(
+      "MOODLE_EMAIL_MISMATCH",
+      "Moodle account email does not match SIJIL account email",
+      { sijilEmail: normalizedSijilEmail, moodleEmail: moodleEmail || null },
+    );
+  }
+
+  return {
+    moodleUserId,
+    moodleEmail,
+    moodleFirstName: moodleUser.firstname ?? null,
+    moodleLastName: moodleUser.lastname ?? null,
+    moodleUsername: moodleUser.username ?? null,
+  };
+}
+
+function logMoodleIdentitySync(input: {
+  sijilEmail: string;
+  moodleEmail: string;
+  moodleUserId: number;
+  coursesReturned: number;
+}) {
+  const payload = {
+    "SIJIL email": input.sijilEmail,
+    "Moodle email": input.moodleEmail,
+    "Moodle userid": input.moodleUserId,
+    "Courses returned": input.coursesReturned,
+  };
+  logSyncStage("Moodle Identity Sync", payload);
+  console.log("Moodle Identity Sync:", JSON.stringify(payload, null, 2));
+}
+
+/** Delete moodle_courses, moodle_assignments, moodle_feedback for one learner before fresh insert. */
+async function purgeLearnerMoodleCourseRecords(
+  admin: SupabaseClient,
+  userId: string,
+): Promise<Pick<MoodleCleanupStats, "moodle_feedback" | "moodle_assignments" | "moodle_courses">> {
+  const deleteCount = (result: { count: number | null; error: { message: string } | null }) => {
+    if (result.error) {
+      logSyncStage("purge_learner_course_records_failed", { error: result.error.message });
+      return 0;
+    }
+    return result.count ?? 0;
+  };
+
+  const feedback = await admin
+    .from("moodle_feedback")
+    .delete({ count: "exact" })
+    .eq("user_id", userId);
+  const assignments = await admin
+    .from("moodle_assignments")
+    .delete({ count: "exact" })
+    .eq("user_id", userId);
+  const courses = await admin
+    .from("moodle_courses")
+    .delete({ count: "exact" })
+    .eq("user_id", userId);
+
+  const stats = {
+    moodle_feedback: deleteCount(feedback),
+    moodle_assignments: deleteCount(assignments),
+    moodle_courses: deleteCount(courses),
+  };
+
+  logSyncStage("purge_learner_course_records_complete", { userId, ...stats });
+  return stats;
+}
+
+export type MoodleCleanupStats = {
+  moodle_feedback: number;
+  moodle_assignments: number;
+  moodle_courses: number;
+  moodle_grades: number;
+  lms_evidence: number;
+  imported_lms_evidence: number;
+  evidence_records: number;
+};
+
+function emptyCleanupStats(): MoodleCleanupStats {
+  return {
+    moodle_feedback: 0,
+    moodle_assignments: 0,
+    moodle_courses: 0,
+    moodle_grades: 0,
+    lms_evidence: 0,
+    imported_lms_evidence: 0,
+    evidence_records: 0,
+  };
+}
+
+function isMoodleLmsSource(source: unknown): boolean {
+  const s = String(source ?? "").trim().toLowerCase();
+  return s.includes("moodle") || s === "lms";
+}
+
+/** Resolve the learner Moodle user ID from SIJIL auth email via core_user_get_users. */
+async function resolveActiveMoodleLearnerUserId(
+  sijilEmail: string,
+): Promise<ResolvedMoodleIdentity> {
+  return resolveMoodleUserBySijilEmail(sijilEmail);
+}
+
+function assertExpectedMoodleSite(siteurl: string): string {
+  const normalized = normalizeMoodleSiteUrl(siteurl || getMoodleBaseUrl());
+  const expected = normalizeMoodleSiteUrl(EXPECTED_MOODLE_SITE_URL);
+  if (normalized !== expected) {
+    logSyncStage("moodle_site_url_mismatch", { siteurl, normalized, expected });
+    throw new MoodleSyncError(
+      "MOODLE_API_UNAVAILABLE",
+      `Moodle token is connected to ${siteurl}, expected ${EXPECTED_MOODLE_SITE_URL}. Update MOODLE_BASE_URL and MOODLE_TOKEN Supabase secrets.`,
+      { siteurl: normalized, expected },
+    );
+  }
+  return normalized;
+}
+
+/** Wipe all Moodle rows for one learner — used after successful fetch before fresh insert. */
+async function purgeAllMoodleDataForLearner(
+  admin: SupabaseClient,
+  userId: string,
+  currentSiteUrl: string,
+  forceAll: boolean,
+): Promise<MoodleCleanupStats> {
+  const { data, error } = await admin.rpc("purge_stale_moodle_data_for_user", {
+    p_user_id: userId,
+    p_current_site: currentSiteUrl,
+    p_force_all: forceAll,
+  });
+
+  if (!error && data && typeof data === "object") {
+    const stats = data as MoodleCleanupStats;
+    logSyncStage("purge_rpc_complete", { userId, forceAll, stats });
+    return stats;
+  }
+
+  logSyncStage("purge_rpc_fallback", { userId, error: error?.message ?? null });
+  return cleanupStaleMoodleDataForLearner(admin, userId, currentSiteUrl, {
+    removeOtherSites: true,
+  });
+}
+
+async function readStoredMoodleConnection(
+  admin: SupabaseClient,
+  userId: string,
+): Promise<{ moodle_user_id: number | null; moodle_site_url: string | null }> {
+  const { data } = await admin
+    .from("lms_connections")
+    .select("moodle_user_id,moodle_site_url")
+    .eq("user_id", userId)
+    .maybeSingle();
+  return {
+    moodle_user_id: data?.moodle_user_id != null ? Number(data.moodle_user_id) : null,
+    moodle_site_url: typeof data?.moodle_site_url === "string" ? data.moodle_site_url : null,
+  };
+}
+
+/**
+ * Safely remove Moodle records for one learner. Always filters by user_id.
+ * Deletes child rows before parents to avoid FK errors.
+ */
+export async function cleanupStaleMoodleDataForLearner(
+  admin: SupabaseClient,
+  userId: string,
+  currentSiteUrl: string,
+  options: {
+    /** Remove rows from other Moodle sites (and legacy NULL site rows). */
+    removeOtherSites?: boolean;
+    /** Remove current-site rows whose Moodle IDs were not returned by the latest sync. */
+    staleCourseIds?: number[];
+    staleAssignmentIds?: number[];
+    staleGradeKeys?: Array<{ courseId: number; itemId: number }>;
+    /** Remove Moodle lms_evidence hashes not in the latest sync set. */
+    staleEvidenceHashes?: string[];
+  } = {},
+): Promise<MoodleCleanupStats> {
+  const stats = emptyCleanupStats();
+  const normalizedCurrent = normalizeMoodleSiteUrl(currentSiteUrl);
+
+  const deleteCount = (result: { count: number | null; error: { message: string } | null }) => {
+    if (result.error) {
+      logSyncStage("cleanup_delete_failed", { error: result.error.message });
+      return 0;
+    }
+    return result.count ?? 0;
+  };
+
+  const isOtherSiteFilter = (column = "moodle_site_url") =>
+    `${column}.is.null,${column}.neq.${normalizedCurrent}`;
+
+  if (options.removeOtherSites) {
+    const fb = await admin
+      .from("moodle_feedback")
+      .delete({ count: "exact" })
+      .eq("user_id", userId)
+      .or(isOtherSiteFilter());
+    stats.moodle_feedback += deleteCount(fb);
+
+    const imported = await admin
+      .from("imported_lms_evidence")
+      .delete({ count: "exact" })
+      .eq("user_id", userId)
+      .or(isOtherSiteFilter());
+    stats.imported_lms_evidence += deleteCount(imported);
+
+    const assigns = await admin
+      .from("moodle_assignments")
+      .delete({ count: "exact" })
+      .eq("user_id", userId)
+      .or(isOtherSiteFilter());
+    stats.moodle_assignments += deleteCount(assigns);
+
+    const grades = await admin
+      .from("moodle_grades")
+      .delete({ count: "exact" })
+      .eq("user_id", userId)
+      .or(isOtherSiteFilter());
+    stats.moodle_grades += deleteCount(grades);
+
+    const courses = await admin
+      .from("moodle_courses")
+      .delete({ count: "exact" })
+      .eq("user_id", userId)
+      .or(isOtherSiteFilter());
+    stats.moodle_courses += deleteCount(courses);
+
+    const { data: staleLmsRows } = await admin
+      .from("lms_evidence")
+      .select("id,source,moodle_site_url")
+      .eq("user_id", userId);
+
+    const staleLmsIds = (staleLmsRows ?? [])
+      .filter((row) => isMoodleLmsSource(row.source))
+      .filter((row) => {
+        const site = row.moodle_site_url;
+        if (!site) return true;
+        return normalizeMoodleSiteUrl(String(site)) !== normalizedCurrent;
+      })
+      .map((row) => row.id as string);
+
+    if (staleLmsIds.length) {
+      await admin
+        .from("imported_lms_evidence")
+        .update({ lms_evidence_id: null })
+        .eq("user_id", userId)
+        .in("lms_evidence_id", staleLmsIds);
+
+      const lmsEv = await admin
+        .from("lms_evidence")
+        .delete({ count: "exact" })
+        .eq("user_id", userId)
+        .in("id", staleLmsIds);
+      stats.lms_evidence += deleteCount(lmsEv);
+    }
+
+    const { data: staleEvidenceRecords } = await admin
+      .from("evidence_records")
+      .select("id,source,metadata")
+      .eq("user_id", userId)
+      .or("source.ilike.%moodle%,source.ilike.%lms%");
+
+    const staleRecordIds = (staleEvidenceRecords ?? [])
+      .filter((row) => {
+        const meta = row.metadata as Record<string, unknown> | null;
+        const metaSite = typeof meta?.moodle_site_url === "string"
+          ? normalizeMoodleSiteUrl(meta.moodle_site_url)
+          : null;
+        return !metaSite || metaSite !== normalizedCurrent;
+      })
+      .map((row) => row.id as string);
+
+    if (staleRecordIds.length) {
+      await admin
+        .from("skill_evidence_links")
+        .delete()
+        .eq("user_id", userId)
+        .in("evidence_record_id", staleRecordIds);
+
+      const evRec = await admin
+        .from("evidence_records")
+        .delete({ count: "exact" })
+        .eq("user_id", userId)
+        .in("id", staleRecordIds);
+      stats.evidence_records += deleteCount(evRec);
+    }
+  }
+
+  if (options.staleAssignmentIds?.length) {
+    const staleAssignIds = options.staleAssignmentIds;
+    const fb = await admin
+      .from("moodle_feedback")
+      .delete({ count: "exact" })
+      .eq("user_id", userId)
+      .eq("moodle_site_url", normalizedCurrent)
+      .in("moodle_assignment_id", staleAssignIds);
+    stats.moodle_feedback += deleteCount(fb);
+
+    const imported = await admin
+      .from("imported_lms_evidence")
+      .delete({ count: "exact" })
+      .eq("user_id", userId)
+      .eq("moodle_site_url", normalizedCurrent)
+      .in("moodle_assignment_id", staleAssignIds);
+    stats.imported_lms_evidence += deleteCount(imported);
+
+    const assigns = await admin
+      .from("moodle_assignments")
+      .delete({ count: "exact" })
+      .eq("user_id", userId)
+      .eq("moodle_site_url", normalizedCurrent)
+      .in("moodle_assignment_id", staleAssignIds);
+    stats.moodle_assignments += deleteCount(assigns);
+  }
+
+  if (options.staleCourseIds?.length) {
+    const staleCourseIds = options.staleCourseIds;
+    const { data: staleAssignRows } = await admin
+      .from("moodle_assignments")
+      .select("moodle_assignment_id")
+      .eq("user_id", userId)
+      .eq("moodle_site_url", normalizedCurrent)
+      .in("moodle_course_id", staleCourseIds);
+
+    const assignIdsFromCourses = (staleAssignRows ?? []).map((r) => Number(r.moodle_assignment_id));
+    if (assignIdsFromCourses.length) {
+      const extra = await cleanupStaleMoodleDataForLearner(admin, userId, currentSiteUrl, {
+        staleAssignmentIds: assignIdsFromCourses,
+      });
+      for (const key of Object.keys(stats) as (keyof MoodleCleanupStats)[]) {
+        stats[key] += extra[key];
+      }
+    }
+
+    const grades = await admin
+      .from("moodle_grades")
+      .delete({ count: "exact" })
+      .eq("user_id", userId)
+      .eq("moodle_site_url", normalizedCurrent)
+      .in("moodle_course_id", staleCourseIds);
+    stats.moodle_grades += deleteCount(grades);
+
+    const courses = await admin
+      .from("moodle_courses")
+      .delete({ count: "exact" })
+      .eq("user_id", userId)
+      .eq("moodle_site_url", normalizedCurrent)
+      .in("moodle_course_id", staleCourseIds);
+    stats.moodle_courses += deleteCount(courses);
+  }
+
+  if (options.staleGradeKeys?.length) {
+    for (const { courseId, itemId } of options.staleGradeKeys) {
+      const grades = await admin
+        .from("moodle_grades")
+        .delete({ count: "exact" })
+        .eq("user_id", userId)
+        .eq("moodle_site_url", normalizedCurrent)
+        .eq("moodle_course_id", courseId)
+        .eq("item_id", itemId);
+      stats.moodle_grades += deleteCount(grades);
+    }
+  }
+
+  if (options.staleEvidenceHashes?.length) {
+    const lmsEv = await admin
+      .from("lms_evidence")
+      .delete({ count: "exact" })
+      .eq("user_id", userId)
+      .eq("moodle_site_url", normalizedCurrent)
+      .in("evidence_hash", options.staleEvidenceHashes);
+    stats.lms_evidence += deleteCount(lmsEv);
+  }
+
+  logSyncStage("cleanup_complete", { userId, currentSiteUrl: normalizedCurrent, stats });
+  return stats;
+}
+
+async function findStaleMoodleIds(
+  admin: SupabaseClient,
+  userId: string,
+  currentSiteUrl: string,
+  syncedCourseIds: Set<number>,
+  syncedAssignmentIds: Set<number>,
+  syncedGradeKeys: Set<string>,
+  syncedEvidenceHashes: Set<string>,
+): Promise<{
+  staleCourseIds: number[];
+  staleAssignmentIds: number[];
+  staleGradeKeys: Array<{ courseId: number; itemId: number }>;
+  staleEvidenceHashes: string[];
+}> {
+  const normalizedCurrent = normalizeMoodleSiteUrl(currentSiteUrl);
+
+  const { data: courseRows } = await admin
+    .from("moodle_courses")
+    .select("moodle_course_id")
+    .eq("user_id", userId)
+    .eq("moodle_site_url", normalizedCurrent);
+
+  const staleCourseIds = (courseRows ?? [])
+    .map((r) => Number(r.moodle_course_id))
+    .filter((id) => id > 0 && !syncedCourseIds.has(id));
+
+  const { data: assignRows } = await admin
+    .from("moodle_assignments")
+    .select("moodle_assignment_id")
+    .eq("user_id", userId)
+    .eq("moodle_site_url", normalizedCurrent);
+
+  const staleAssignmentIds = (assignRows ?? [])
+    .map((r) => Number(r.moodle_assignment_id))
+    .filter((id) => id > 0 && !syncedAssignmentIds.has(id));
+
+  const { data: gradeRows } = await admin
+    .from("moodle_grades")
+    .select("moodle_course_id,item_id")
+    .eq("user_id", userId)
+    .eq("moodle_site_url", normalizedCurrent);
+
+  const staleGradeKeys = (gradeRows ?? [])
+    .map((r) => ({
+      courseId: Number(r.moodle_course_id),
+      itemId: Number(r.item_id),
+      key: `${r.moodle_course_id}:${r.item_id}`,
+    }))
+    .filter((r) => r.courseId > 0 && r.itemId > 0 && !syncedGradeKeys.has(r.key))
+    .map(({ courseId, itemId }) => ({ courseId, itemId }));
+
+  const { data: lmsRows } = await admin
+    .from("lms_evidence")
+    .select("evidence_hash,source")
+    .eq("user_id", userId)
+    .eq("moodle_site_url", normalizedCurrent);
+
+  const staleEvidenceHashes = (lmsRows ?? [])
+    .filter((r) => isMoodleLmsSource(r.source))
+    .map((r) => String(r.evidence_hash))
+    .filter((hash) => hash && !syncedEvidenceHashes.has(hash));
+
+  return { staleCourseIds, staleAssignmentIds, staleGradeKeys, staleEvidenceHashes };
 }
 
 /** Upsert lms_connections; strip unknown columns when PostgREST schema cache rejects them. */
@@ -637,6 +1172,93 @@ function extractTextFromCommentsPlugin(plugin: Record<string, unknown>): string[
   return parts.filter(Boolean);
 }
 
+function extractFeedbackFromFeedbackPlugins(plugins: unknown[]): string | null {
+  const parts = (plugins as Record<string, unknown>[])
+    .flatMap((plugin) => (plugin.editorfields as Record<string, unknown>[]) ?? [])
+    .map((field) => {
+      const text = field?.text;
+      return typeof text === "string" && text.trim() ? cleanMoodleText(text) : null;
+    })
+    .filter((t): t is string => Boolean(t));
+  return parts.length ? [...new Set(parts)].join("\n").trim() : null;
+}
+
+type LastAttemptExtract = {
+  lastAttempt: Record<string, unknown> | null;
+  submission: Record<string, unknown> | undefined;
+  grade: number | null;
+  gradeMax: number | null;
+  feedbackText: string | null;
+  submissionFound: boolean;
+  feedbackFound: boolean;
+  gradedAt: string | null;
+  submittedAt: string | null;
+};
+
+/** Primary grade/feedback source: mod_assign_get_submission_status → lastattempt */
+function extractFromSubmissionStatusResponse(
+  response: Record<string, unknown> | null,
+): LastAttemptExtract {
+  const lastAttempt = (response?.lastattempt as Record<string, unknown> | undefined) ?? null;
+  const submission = lastAttempt ?? undefined;
+  const submissionFound = Boolean(lastAttempt);
+
+  const gradeBlock = lastAttempt?.grade as Record<string, unknown> | undefined;
+  const grade = parseMoodleGrade(gradeBlock?.value ?? gradeBlock?.grade);
+  const gradeMax = parseNum(gradeBlock?.max ?? gradeBlock?.grademax);
+
+  const feedbackPlugins = (lastAttempt?.feedbackplugins as unknown[]) ?? [];
+  const feedbackText = extractFeedbackFromFeedbackPlugins(feedbackPlugins);
+  const feedbackFound = Boolean(feedbackText?.trim());
+
+  const gradedAt = tsToIso(
+    gradeBlock?.dategraded ?? gradeBlock?.timemodified ?? lastAttempt?.timemodified,
+  );
+  const submittedAt = tsToIso(
+    lastAttempt?.timemodified ?? lastAttempt?.timecreated,
+  );
+
+  return {
+    lastAttempt,
+    submission,
+    grade,
+    gradeMax,
+    feedbackText,
+    submissionFound,
+    feedbackFound,
+    gradedAt,
+    submittedAt,
+  };
+}
+
+function logAssignmentSyncDebug(
+  assignmentId: number,
+  extract: Pick<LastAttemptExtract, "submissionFound" | "grade" | "feedbackFound">,
+) {
+  const payload = {
+    assignment_id: assignmentId,
+    submission_found: extract.submissionFound,
+    grade: extract.grade !== null ? String(extract.grade) : null,
+    feedback_found: extract.feedbackFound,
+  };
+  logSyncStage("Assignment Sync", payload);
+  console.log(JSON.stringify(payload));
+}
+
+function extractFeedbackTextFromPluginsLegacy(plugins: unknown[]): string | null {
+  const parts: string[] = [];
+  for (const plugin of plugins) {
+    const p = plugin as Record<string, unknown>;
+    parts.push(...extractTextFromCommentsPlugin(p));
+    for (const key of ["text", "content", "value", "feedback"]) {
+      const v = p[key];
+      if (typeof v === "string" && v.trim()) parts.push(cleanMoodleText(v));
+    }
+  }
+  const unique = [...new Set(parts.filter(Boolean))];
+  return unique.length ? unique.join("\n").trim() : null;
+}
+
 function extractCommentsFeedbackFromPlugins(
   plugins: unknown[],
   context: { assignmentId: number; moodleUserId: number; source: string },
@@ -644,9 +1266,20 @@ function extractCommentsFeedbackFromPlugins(
   logSyncStage("feedback_plugins_inspect", {
     ...context,
     pluginCount: plugins.length,
-    rawPlugins: plugins,
     pluginSummaries: plugins.map((p) => summarizePluginStructure(p as Record<string, unknown>)),
   });
+
+  const broadText = extractFeedbackFromFeedbackPlugins(plugins) ??
+    extractFeedbackTextFromPluginsLegacy(plugins);
+  if (broadText) {
+    const detectedPlugin = (plugins[0] as Record<string, unknown>) ?? null;
+    logSyncStage("feedback_comments_extracted", {
+      ...context,
+      detectedFeedbackPlugin: detectedPlugin ? { type: detectedPlugin.type, name: detectedPlugin.name } : null,
+      extractedFeedbackText: broadText,
+    });
+    return { text: broadText, detectedPlugin };
+  }
 
   let detectedPlugin: Record<string, unknown> | null = null;
   const parts: string[] = [];
@@ -681,6 +1314,7 @@ async function resolveTeacherFeedback(
   moodleUserId: number,
   gradeRow: Record<string, unknown> | undefined,
   courseId?: number,
+  preloadedSubmissionStatus?: Record<string, unknown> | null,
 ): Promise<{
   text: string | null;
   graderId: number | null;
@@ -717,14 +1351,37 @@ async function resolveTeacherFeedback(
     });
   }
 
-  let submissionStatusRaw: Record<string, unknown> | null = null;
-  const statusResult = await tryCallMoodle("mod_assign_get_submission_status", {
-    assignid: assignmentId,
-    userid: moodleUserId,
-  });
+  let submissionStatusRaw: Record<string, unknown> | null = preloadedSubmissionStatus ?? null;
 
-  if (statusResult.ok) {
-    submissionStatusRaw = statusResult.data as Record<string, unknown>;
+  if (!submissionStatusRaw) {
+    const statusResult = await tryCallMoodle("mod_assign_get_submission_status", {
+      assignid: assignmentId,
+      userid: moodleUserId,
+    });
+
+    if (statusResult.ok) {
+      submissionStatusRaw = statusResult.data as Record<string, unknown>;
+    } else {
+      logSyncStage("mod_assign_get_submission_status_failed", {
+        wsfunction: statusResult.wsfunction,
+        assignmentId,
+        moodleUserId,
+        accessDenied: statusResult.accessDenied,
+        error: statusResult.message,
+      });
+    }
+  }
+
+  if (submissionStatusRaw) {
+    const lastAttempt = submissionStatusRaw.lastattempt as Record<string, unknown> | undefined;
+    const lastAttemptPlugins = (lastAttempt?.feedbackplugins as unknown[]) ?? [];
+    if (lastAttemptPlugins.length > 0) {
+      pluginSources.push({
+        source: "mod_assign_get_submission_status.lastattempt.feedbackplugins",
+        plugins: lastAttemptPlugins,
+      });
+    }
+
     const feedbackBlock = submissionStatusRaw.feedback as Record<string, unknown> | undefined;
     const feedbackPlugins = (feedbackBlock?.plugins as unknown[]) ?? [];
 
@@ -755,14 +1412,6 @@ async function resolveTeacherFeedback(
         });
       }
     }
-  } else {
-    logSyncStage("mod_assign_get_submission_status_failed", {
-      wsfunction: statusResult.wsfunction,
-      assignmentId,
-      moodleUserId,
-      accessDenied: statusResult.accessDenied,
-      error: statusResult.message,
-    });
   }
 
   for (const { source, plugins, graderId } of pluginSources) {
@@ -1122,124 +1771,312 @@ async function fetchAssignmentSubmissionAndGrade(
 ): Promise<{
   submission: Record<string, unknown> | undefined;
   gradeRow: Record<string, unknown> | undefined;
+  submissionStatus: Record<string, unknown> | null;
+  lastAttempt: Record<string, unknown> | null;
+  grade: number | null;
+  gradeMax: number | null;
+  feedbackText: string | null;
+  submissionFound: boolean;
+  feedbackFound: boolean;
+  gradedAt: string | null;
+  submittedAt: string | null;
   assignApiAccessDenied: boolean;
   failedFunctions: string[];
 }> {
   let submission: Record<string, unknown> | undefined;
   let gradeRow: Record<string, unknown> | undefined;
+  let submissionStatus: Record<string, unknown> | null = null;
+  let lastAttempt: Record<string, unknown> | null = null;
+  let grade: number | null = null;
+  let gradeMax: number | null = null;
+  let feedbackText: string | null = null;
+  let submissionFound = false;
+  let feedbackFound = false;
+  let gradedAt: string | null = null;
+  let submittedAt: string | null = null;
   const failedFunctions: string[] = [];
   let assignApiAccessDenied = false;
 
-  const subResult = await tryCallMoodle("mod_assign_get_submissions", {
-    assignmentids: [assignmentId],
+  const statusResult = await tryCallMoodle("mod_assign_get_submission_status", {
+    assignid: assignmentId,
+    userid: moodleUserId,
   });
 
-  if (subResult.ok) {
-    const subData = subResult.data as { assignments?: { assignmentid?: number; submissions?: Record<string, unknown>[] }[] };
-    const block = (subData?.assignments ?? []).find(
-      (b) => Number(b.assignmentid) === assignmentId,
-    ) ?? subData?.assignments?.[0];
+  if (statusResult.ok) {
+    submissionStatus = statusResult.data as Record<string, unknown>;
+    const extracted = extractFromSubmissionStatusResponse(submissionStatus);
+    lastAttempt = extracted.lastAttempt;
+    submission = extracted.submission;
+    grade = extracted.grade;
+    gradeMax = extracted.gradeMax;
+    feedbackText = extracted.feedbackText;
+    submissionFound = extracted.submissionFound;
+    feedbackFound = extracted.feedbackFound;
+    gradedAt = extracted.gradedAt;
+    submittedAt = extracted.submittedAt;
 
-    submission = (block?.submissions ?? []).find(
-      (s) => Number(s.userid) === moodleUserId,
-    ) as Record<string, unknown> | undefined;
+    if (lastAttempt) {
+      gradeRow = {
+        ...(lastAttempt.grade as Record<string, unknown> ?? {}),
+        value: (lastAttempt.grade as Record<string, unknown> | undefined)?.value ?? grade,
+        max: (lastAttempt.grade as Record<string, unknown> | undefined)?.max ?? gradeMax,
+        feedbackplugins: lastAttempt.feedbackplugins,
+        _source: "mod_assign_get_submission_status.lastattempt",
+      };
+    }
 
-    logSyncStage("mod_assign_get_submissions_result", {
+    logAssignmentSyncDebug(assignmentId, { submissionFound, grade, feedbackFound });
+    logSyncStage("mod_assign_get_submission_status_result", {
       courseId,
       courseName,
       assignmentId,
       moodleUserId,
-      submissionCount: (block?.submissions ?? []).length,
-      foundForUser: Boolean(submission),
-      submissionStatus: submission?.status ?? null,
-      gradingStatus: submission?.gradingstatus ?? null,
+      submissionFound,
+      grade,
+      gradeMax,
+      feedbackFound,
+      lastAttemptKeys: lastAttempt ? Object.keys(lastAttempt) : [],
     });
   } else {
-    failedFunctions.push(subResult.wsfunction);
-    if (subResult.accessDenied) assignApiAccessDenied = true;
-    logSyncStage("mod_assign_get_submissions_failed", {
-      wsfunction: subResult.wsfunction,
+    failedFunctions.push(statusResult.wsfunction);
+    if (statusResult.accessDenied) assignApiAccessDenied = true;
+    logSyncStage("mod_assign_get_submission_status_failed", {
+      wsfunction: statusResult.wsfunction,
       courseId,
       assignmentId,
       moodleUserId,
-      accessDenied: subResult.accessDenied,
-      error: subResult.message,
+      accessDenied: statusResult.accessDenied,
+      error: statusResult.message,
     });
+    logAssignmentSyncDebug(assignmentId, { submissionFound: false, grade: null, feedbackFound: false });
   }
 
-  const gradeResult = await tryCallMoodle("mod_assign_get_grades", {
-    assignmentids: [assignmentId],
-  });
-
-  if (gradeResult.ok) {
-    const gradeData = gradeResult.data as { assignments?: { assignmentid?: number; grades?: Record<string, unknown>[] }[] };
-    const block = (gradeData?.assignments ?? []).find(
-      (b) => Number(b.assignmentid) === assignmentId,
-    ) ?? gradeData?.assignments?.[0];
-
-    gradeRow = (block?.grades ?? []).find(
-      (g) => Number(g.userid) === moodleUserId,
-    ) as Record<string, unknown> | undefined;
-
-    logSyncStage("mod_assign_get_grades_result", {
-      courseId,
-      courseName,
-      assignmentId,
-      moodleUserId,
-      gradeCount: (block?.grades ?? []).length,
-      foundForUser: Boolean(gradeRow),
-      grade: gradeRow?.grade ?? null,
-      timemodified: gradeRow?.timemodified ?? null,
-      grader: gradeRow?.grader ?? null,
-      grade_plugins: gradeRow?.plugins ?? null,
-      grade_feedback: gradeRow?.feedback ?? null,
-      grade_feedbacktext: gradeRow?.feedbacktext ?? null,
-      gradeKeys: gradeRow ? Object.keys(gradeRow) : [],
+  if (!submission) {
+    const subResult = await tryCallMoodle("mod_assign_get_submissions", {
+      assignmentids: [assignmentId],
     });
-  } else {
-    failedFunctions.push(gradeResult.wsfunction);
-    if (gradeResult.accessDenied) assignApiAccessDenied = true;
-    logSyncStage("mod_assign_get_grades_failed", {
-      wsfunction: gradeResult.wsfunction,
-      courseId,
-      assignmentId,
-      moodleUserId,
-      accessDenied: gradeResult.accessDenied,
-      error: gradeResult.message,
-    });
+
+    if (subResult.ok) {
+      const subData = subResult.data as { assignments?: { assignmentid?: number; submissions?: Record<string, unknown>[] }[] };
+      const block = (subData?.assignments ?? []).find(
+        (b) => Number(b.assignmentid) === assignmentId,
+      ) ?? subData?.assignments?.[0];
+
+      submission = (block?.submissions ?? []).find(
+        (s) => Number(s.userid) === moodleUserId,
+      ) as Record<string, unknown> | undefined;
+
+      logSyncStage("mod_assign_get_submissions_result", {
+        courseId,
+        courseName,
+        assignmentId,
+        moodleUserId,
+        submissionCount: (block?.submissions ?? []).length,
+        foundForUser: Boolean(submission),
+        submissionStatus: submission?.status ?? null,
+        gradingStatus: submission?.gradingstatus ?? null,
+      });
+    } else {
+      failedFunctions.push(subResult.wsfunction);
+      if (subResult.accessDenied) assignApiAccessDenied = true;
+      logSyncStage("mod_assign_get_submissions_failed", {
+        wsfunction: subResult.wsfunction,
+        courseId,
+        assignmentId,
+        moodleUserId,
+        accessDenied: subResult.accessDenied,
+        error: subResult.message,
+      });
+    }
   }
 
-  return { submission, gradeRow, assignApiAccessDenied, failedFunctions };
+  if (grade === null) {
+    const gradeResult = await tryCallMoodle("mod_assign_get_grades", {
+      assignmentids: [assignmentId],
+    });
+
+    if (gradeResult.ok) {
+      const gradeData = gradeResult.data as { assignments?: { assignmentid?: number; grades?: Record<string, unknown>[] }[] };
+      const block = (gradeData?.assignments ?? []).find(
+        (b) => Number(b.assignmentid) === assignmentId,
+      ) ?? gradeData?.assignments?.[0];
+
+      const fallbackGradeRow = (block?.grades ?? []).find(
+        (g) => Number(g.userid) === moodleUserId,
+      ) as Record<string, unknown> | undefined;
+
+      if (fallbackGradeRow) {
+        gradeRow = { ...fallbackGradeRow, _source: "mod_assign_get_grades" };
+        grade = parseMoodleGrade(fallbackGradeRow.grade ?? fallbackGradeRow.graderaw);
+        if (gradeMax === null) gradeMax = parseNum(fallbackGradeRow.grademax);
+        if (gradedAt === null) gradedAt = tsToIso(fallbackGradeRow.timemodified ?? fallbackGradeRow.timecreated);
+      }
+
+      logSyncStage("mod_assign_get_grades_result", {
+        courseId,
+        courseName,
+        assignmentId,
+        moodleUserId,
+        gradeCount: (block?.grades ?? []).length,
+        foundForUser: Boolean(fallbackGradeRow),
+        grade: fallbackGradeRow?.grade ?? null,
+        timemodified: fallbackGradeRow?.timemodified ?? null,
+        grader: fallbackGradeRow?.grader ?? null,
+        grade_plugins: fallbackGradeRow?.plugins ?? null,
+        gradeKeys: fallbackGradeRow ? Object.keys(fallbackGradeRow) : [],
+      });
+    } else {
+      failedFunctions.push(gradeResult.wsfunction);
+      if (gradeResult.accessDenied) assignApiAccessDenied = true;
+      logSyncStage("mod_assign_get_grades_failed", {
+        wsfunction: gradeResult.wsfunction,
+        courseId,
+        assignmentId,
+        moodleUserId,
+        accessDenied: gradeResult.accessDenied,
+        error: gradeResult.message,
+      });
+    }
+  }
+
+  if (submittedAt === null && submission) {
+    submittedAt = tsToIso(submission.timemodified ?? submission.timecreated);
+  }
+
+  return {
+    submission,
+    gradeRow,
+    submissionStatus,
+    lastAttempt,
+    grade,
+    gradeMax,
+    feedbackText,
+    submissionFound,
+    feedbackFound,
+    gradedAt,
+    submittedAt,
+    assignApiAccessDenied,
+    failedFunctions,
+  };
 }
 
+function isOptionalCompletionError(errorcode: string, message: string): boolean {
+  const code = errorcode.toLowerCase();
+  const msg = message.toLowerCase();
+  return (
+    code === "nocriteriaset" ||
+    code === "completionnotenabled" ||
+    msg.includes("no completion criteria") ||
+    msg.includes("completion criteria set") ||
+    msg.includes("completion is not enabled")
+  );
+}
+
+/** Optional — never fails sync when Moodle has no completion tracking for a course. */
 async function fetchCourseCompletionStatus(
   moodleUserId: number,
   courseId: number,
 ): Promise<string | null> {
-  const result = await tryCallMoodle("core_completion_get_course_completion_status", {
-    userid: moodleUserId,
-    courseid: courseId,
-  });
-  if (!result.ok) return null;
+  try {
+    const result = await tryCallMoodle("core_completion_get_course_completion_status", {
+      userid: moodleUserId,
+      courseid: courseId,
+    });
 
-  const payload = result.data as {
-    completionstatus?: { completed?: boolean; aggregation?: number };
-  };
-  const status = payload?.completionstatus;
-  if (!status) return null;
-  if (status.completed) return "Completed";
-  if (typeof status.aggregation === "number" && status.aggregation > 0) return "In progress";
-  return "Not completed";
+    if (!result.ok) {
+      logSyncStage("completion_unavailable", {
+        course_id: courseId,
+        moodleUserId,
+        reason: result.message,
+      });
+      return null;
+    }
+
+    const payload = result.data as {
+      completionstatus?: { completed?: boolean; aggregation?: number };
+    };
+    const status = payload?.completionstatus;
+    if (!status) return null;
+    if (status.completed) return "Completed";
+    if (typeof status.aggregation === "number" && status.aggregation > 0) return "In progress";
+    return "Not completed";
+  } catch (err) {
+    const details = err instanceof MoodleSyncError ? err.details : undefined;
+    const errorcode = String(details?.errorcode ?? "");
+    const message = err instanceof Error ? err.message : String(err);
+
+    logSyncStage("completion_unavailable", {
+      course_id: courseId,
+      moodleUserId,
+      errorcode: errorcode || null,
+      message,
+      optional: isOptionalCompletionError(errorcode, message),
+    });
+
+    return null;
+  }
 }
 
 export type SyncActivitiesResult = {
   success: true;
   moodleUserId: number;
+  moodleSiteUrl: string;
   courses: number;
   assignments: number;
   grades: number;
   feedback: number;
+  completion: number;
   warnings: string[];
+  cleanup?: MoodleCleanupStats;
+  debug?: {
+    moodleUrl: string;
+    userid: number;
+    sijilEmail?: string;
+    moodleEmail?: string;
+    coursesFetched: number;
+    assignmentsFetched: number;
+    gradesFetched: number;
+    feedbackFetched: number;
+    completionFetched: number;
+  };
+  /** Canonical Moodle site URL (sync_moodle_data response). */
+  url?: string;
+};
+
+type PendingAssignmentSync = {
+  courseId: number;
+  courseName: string;
+  courseShortname: string | null;
+  courseCompletionStatus: string | null;
+  competencyTags: string[];
+  assign: NormalizedAssignment;
+  submission: Record<string, unknown> | undefined;
+  gradeRow: Record<string, unknown> | undefined;
+  reportItem: GradeReportItem | null;
+  submissionStatus: string;
+  grade: number | null;
+  gradeMax: number | null;
+  gradeFormatted: string;
+  gradeReleased: boolean;
+  statusFeedback: Awaited<ReturnType<typeof resolveTeacherFeedback>>;
+  submissionText: string | null;
+  submissionFiles: string[] | null;
+  gradedAt: string | null;
+  submittedAt: string | null;
+  failedFunctions: string[];
+  lastAttempt: Record<string, unknown> | null;
+  submissionStatusResponse: Record<string, unknown> | null;
+};
+
+type PendingGradeItem = {
+  courseId: number;
+  itemId: number;
+  itemName: string;
+  itemType: string | null;
+  grade: number | null;
+  gradeMax: number | null;
+  gradeFormatted: string;
+  raw: Record<string, unknown>;
 };
 
 export async function syncLearnerMoodleActivities(
@@ -1247,34 +2084,41 @@ export async function syncLearnerMoodleActivities(
   userId: string,
   authEmail: string | null,
   institutionEmail: string | null,
+  options: { forceResync?: boolean } = {},
 ): Promise<SyncActivitiesResult> {
-  logSyncStage("sync_start", { userId, authEmail, institutionEmail });
+  logSyncStage("sync_start", { userId, authEmail, institutionEmail, forceResync: options.forceResync ?? false });
 
-  const site = await verifyMoodleSiteConnection();
-
-  const emails = [authEmail, institutionEmail].filter(Boolean) as string[];
-  if (!emails.length) {
-    throw new MoodleSyncError("MOODLE_USER_NOT_FOUND", "No email available to match your Moodle account.");
-  }
-
-  logSyncStage("find_moodle_user", { emailsTried: emails, siteurl: site.siteurl });
-  const moodleUser = await findMoodleUserByEmails(emails);
-  if (!moodleUser?.id) {
+  if (!authEmail?.trim()) {
     throw new MoodleSyncError(
-      "MOODLE_USER_NOT_FOUND",
-      "No Moodle account found for your SIJIL or institution email.",
-      { emailsTried: emails, siteurl: site.siteurl },
+      "UNAUTHORIZED",
+      "SIJIL authenticated user has no email address.",
     );
   }
 
-  const moodleUserId = Number(moodleUser.id);
-  const moodleEmail = moodleUser.email ?? authEmail;
-  const moodleUsername = moodleUser.username ?? null;
+  const site = await verifyMoodleSiteConnection();
+  const moodleSiteUrl = assertExpectedMoodleSite(site.siteurl || getMoodleBaseUrl());
 
-  logSyncStage("moodle_user_found", { userId, moodleUserId, moodleEmail, moodleUsername, siteurl: site.siteurl });
+  const {
+    moodleUserId,
+    moodleEmail,
+    moodleFirstName,
+    moodleLastName,
+    moodleUsername,
+  } = await resolveActiveMoodleLearnerUserId(authEmail);
+
+  logSyncStage("moodle_user_found", {
+    userId,
+    moodleUserId,
+    moodleEmail,
+    moodleUsername,
+    moodleFirstName,
+    moodleLastName,
+    moodleSiteUrl,
+    sijilEmail: authEmail,
+  });
+
   const now = new Date().toISOString();
   const warnings: string[] = [];
-  let feedbackCount = 0;
 
   await upsertLmsConnection(
     admin,
@@ -1283,18 +2127,29 @@ export async function syncLearnerMoodleActivities(
       moodleUserId,
       moodleEmail,
       institutionEmail,
+      moodleSiteUrl,
       syncedAt: now,
+      lastVerified: now,
     }),
   );
 
-  logSyncStage("fetch_enrolled_courses", { moodleUserId });
+  logSyncStage("fetch_enrolled_courses", { moodleUserId, moodleSiteUrl, sijilEmail: authEmail });
   const enrolled = await callMoodle("core_enrol_get_users_courses", { userid: moodleUserId });
   const courses = (Array.isArray(enrolled) ? enrolled : []).filter(
     (c: { id?: number }) => c?.id && Number(c.id) > 1,
   );
 
+  logMoodleIdentitySync({
+    sijilEmail: authEmail,
+    moodleEmail,
+    moodleUserId,
+    coursesReturned: courses.length,
+  });
+
   logSyncStage("enrolled_courses_result", {
     moodleUserId,
+    sijilEmail: authEmail,
+    moodleEmail,
     courseCount: courses.length,
     courseIds: courses.map((c: { id?: number }) => Number(c.id)),
     courseNames: courses.map((c: { fullname?: string; shortname?: string; id?: number }) =>
@@ -1302,40 +2157,18 @@ export async function syncLearnerMoodleActivities(
     ),
   });
 
-  if (!courses.length) {
-    throw new MoodleSyncError("NO_ENROLLED_COURSES", "No enrolled Moodle courses found for your account.", {
-      moodleUserId,
-    });
-  }
-
-  let assignmentCount = 0;
-  let gradeItemCount = 0;
+  const pendingAssignments: PendingAssignmentSync[] = [];
+  const pendingGradeItems: PendingGradeItem[] = [];
+  const courseCompletionById = new Map<number, string | null>();
+  let completionCount = 0;
   let gradePermissionWarningAdded = false;
 
   for (const course of courses) {
     const courseId = Number(course.id);
     const courseName = course.fullname || course.shortname || `Course ${courseId}`;
     const courseCompletionStatus = await fetchCourseCompletionStatus(moodleUserId, courseId);
-
-    await dbUpsert(
-      admin,
-      "moodle_courses",
-      {
-        user_id: userId,
-        moodle_course_id: courseId,
-        fullname: courseName,
-        shortname: course.shortname ?? null,
-        summary: course.summary ? stripHtml(String(course.summary)).slice(0, 2000) : null,
-        raw: {
-          ...course,
-          completion_status: courseCompletionStatus,
-        },
-        synced_at: now,
-        updated_at: now,
-      },
-      "user_id,moodle_course_id",
-    );
-
+    courseCompletionById.set(courseId, courseCompletionStatus);
+    if (courseCompletionStatus) completionCount += 1;
     const competencyTags = await fetchCompetencyTags(courseId);
 
     const {
@@ -1359,21 +2192,8 @@ export async function syncLearnerMoodleActivities(
       );
     }
 
-    let savedInCourse = 0;
-
-    logSyncStage("process_course_assignments", {
-      courseId,
-      courseName,
-      moodleUserId,
-      assignmentIds: courseAssignments.map((a) => a.id),
-      assignmentNames: courseAssignments.map((a) => a.name),
-    });
-
     for (const assign of courseAssignments) {
       const assignmentId = assign.id;
-      const cmid = assign.cmid ?? (assign.raw.cmid ? Number(assign.raw.cmid) : null);
-      const modInfo = cmid ? moduleMap.get(cmid) : undefined;
-      const moduleType = "assign";
       const name = assign.name;
 
       const reportItem =
@@ -1381,44 +2201,52 @@ export async function syncLearnerMoodleActivities(
         gradeReport.byName.get(normalizeActivityName(name)) ??
         null;
 
-      const { submission, gradeRow, assignApiAccessDenied: itemAssignDenied, failedFunctions } =
-        await fetchAssignmentSubmissionAndGrade(
+      let submission: Record<string, unknown> | undefined;
+      let gradeRow: Record<string, unknown> | undefined;
+      let submissionStatusPayload: Record<string, unknown> | null = null;
+      let lastAttemptPayload: Record<string, unknown> | null = null;
+      let itemAssignDenied = false;
+      let failedFunctions: string[] = [];
+      let grade: number | null = null;
+      let gradeMax = assign.gradeMax ?? parseNum(assign.raw.grade) ?? null;
+      let feedbackText: string | null = null;
+      let gradedAt: string | null = null;
+      let submittedAt: string | null = null;
+
+      try {
+        const fetched = await fetchAssignmentSubmissionAndGrade(
           assignmentId,
           moodleUserId,
           courseId,
           courseName,
         );
+        submission = fetched.submission;
+        gradeRow = fetched.gradeRow;
+        submissionStatusPayload = fetched.submissionStatus;
+        lastAttemptPayload = fetched.lastAttempt;
+        itemAssignDenied = fetched.assignApiAccessDenied;
+        failedFunctions = fetched.failedFunctions;
+        grade = fetched.grade;
+        if (fetched.gradeMax !== null) gradeMax = fetched.gradeMax;
+        feedbackText = fetched.feedbackText;
+        gradedAt = fetched.gradedAt;
+        submittedAt = fetched.submittedAt;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        warnings.push(`Submission status unavailable for "${name}": ${msg}`);
+        logSyncStage("assignment_submission_fetch_skipped", { assignmentId, courseId, error: msg });
+      }
 
-      let grade = parseMoodleGrade(gradeRow?.grade);
-      let gradeMax = assign.gradeMax ?? parseNum(assign.raw.grade) ?? reportItem?.gradeMax ?? null;
-
+      // gradereport_user_get_grade_items — fallback only when lastattempt has no grade
       if (grade === null && reportItem?.grade !== null && reportItem?.grade !== undefined) {
         grade = reportItem.grade;
-        logSyncStage("grade_from_report_fallback", {
-          courseId,
-          assignmentId,
-          assignmentName: name,
-          moodleUserId,
-          grade,
-          gradeMax: reportItem.gradeMax,
-          source: "gradereport_user_get_grade_items",
-        });
       } else if (
         grade === null &&
         reportItem?.gradeFormatted &&
         reportItem.gradeFormatted !== "—"
       ) {
         const match = reportItem.gradeFormatted.match(/^([\d.]+)/);
-        if (match) {
-          grade = parseMoodleGrade(match[1]);
-          logSyncStage("grade_from_report_formatted_fallback", {
-            courseId,
-            assignmentId,
-            assignmentName: name,
-            gradeFormatted: reportItem.gradeFormatted,
-            parsedGrade: grade,
-          });
-        }
+        if (match) grade = parseMoodleGrade(match[1]);
       }
       if (gradeMax === null && reportItem?.gradeMax !== null) {
         gradeMax = reportItem.gradeMax;
@@ -1432,42 +2260,43 @@ export async function syncLearnerMoodleActivities(
       const submissionStatus = resolveAssignmentStatus(
         submission,
         gradeRow,
-        reportItem,
+        grade !== null ? null : reportItem,
         grade,
         gradeReleased,
         assignApisDenied && grade === null,
       );
 
-      const statusFeedback = await resolveTeacherFeedback(
-        assignmentId,
-        moodleUserId,
-        gradeRow,
-        courseId,
-      );
+      let statusFeedback: Awaited<ReturnType<typeof resolveTeacherFeedback>> = feedbackText?.trim()
+        ? {
+          text: feedbackText.trim(),
+          graderId: gradeRow?.grader ? Number(gradeRow.grader) : null,
+          detectedPlugin: null,
+          source: "mod_assign_get_submission_status.lastattempt.feedbackplugins",
+          rawDebug: {
+            lastAttempt: lastAttemptPayload,
+            submissionStatus: submissionStatusPayload,
+          },
+        }
+        : await resolveTeacherFeedback(
+          assignmentId,
+          moodleUserId,
+          gradeRow,
+          courseId,
+          submissionStatusPayload,
+        );
+
+      if (!statusFeedback.text?.trim() && reportItem?.feedback?.trim()) {
+        statusFeedback = {
+          ...statusFeedback,
+          text: reportItem.feedback,
+          source: "gradereport_user_get_grade_items.feedback",
+        };
+      }
+
       const { submissionText, submissionFiles } = extractStudentSubmission(submission);
-
-      const gradeFormatted = reportItem?.gradeFormatted ?? gradeDisplay(grade, gradeMax);
-
-      logSyncStage("assignment_feedback_extracted", {
-        courseId,
-        courseName,
-        assignmentId,
-        assignmentName: name,
-        moodleUserId,
-        grade,
-        gradeMax,
-        gradeFormatted,
-        submissionStatus,
-        gradeSource: gradeRow ? "mod_assign_get_grades" : reportItem?.grade !== null ? "gradereport_user_get_grade_items" : null,
-        failedFunctions: failedFunctions.length ? failedFunctions : null,
-        teacherFeedbackText: statusFeedback.text,
-        teacherFeedbackSource: statusFeedback.source,
-        submissionTextPreview: submissionText?.slice(0, 120) ?? null,
-        submissionFileCount: submissionFiles?.length ?? 0,
-      });
-
-      const gradedAt = tsToIso(gradeRow?.timemodified ?? gradeRow?.timecreated);
-      const submittedAt = tsToIso(submission?.timemodified ?? submission?.timecreated);
+      const gradeFormatted = grade !== null
+        ? gradeDisplay(grade, gradeMax)
+        : (reportItem?.gradeFormatted ?? gradeDisplay(null, gradeMax));
 
       if (grade === null && submissionStatus === "Submitted") {
         warnings.push(`Grade not released yet for "${name}" in ${courseName}`);
@@ -1476,139 +2305,31 @@ export async function syncLearnerMoodleActivities(
         warnings.push(`Grade access denied for "${name}" in ${courseName} — Moodle token needs assignment/grade permissions.`);
       }
 
-      if (grade !== null) gradeItemCount += 1;
-
-      await dbUpsert(
-        admin,
-        "moodle_assignments",
-        {
-          user_id: userId,
-          moodle_course_id: courseId,
-          moodle_assignment_id: assignmentId,
-          moodle_cmid: cmid,
-          name,
-          module_type: moduleType,
-          submission_status: submissionStatus,
-          grade,
-          grade_max: gradeMax,
-          grade_formatted: gradeFormatted,
-          graded_at: gradedAt,
-          submitted_at: submittedAt,
-          grade_released: grade !== null ? true : gradeReleased,
-          submission_text: submissionText,
-          submission_files: submissionFiles,
-          competency_tags: competencyTags.length ? competencyTags : null,
-          raw: {
-            source: assign.source,
-            assign: assign.raw,
-            submission,
-            grade: gradeRow,
-            gradeReport: reportItem?.raw ?? null,
-            failedFunctions: failedFunctions.length ? failedFunctions : null,
-            teacherFeedbackPlugin: statusFeedback.detectedPlugin,
-          },
-          synced_at: now,
-          updated_at: now,
-        },
-        "user_id,moodle_assignment_id",
-      );
-
-      savedInCourse += 1;
-
-      await dbUpsert(
-        admin,
-        "moodle_feedback",
-        {
-          user_id: userId,
-          moodle_assignment_id: assignmentId,
-          feedback_text: statusFeedback.text,
-          grader_id: statusFeedback.graderId,
-          raw: {
-            source: statusFeedback.source ?? "mod_assign_get_grades",
-            gradePlugins: (gradeRow?.plugins as unknown[]) ?? null,
-            detectedFeedbackPlugin: statusFeedback.detectedPlugin,
-            gradeRow: gradeRow ?? null,
-            debug: statusFeedback.rawDebug,
-          },
-          synced_at: now,
-          updated_at: now,
-        },
-        "user_id,moodle_assignment_id",
-      );
-
-      if (statusFeedback.text?.trim()) {
-        feedbackCount += 1;
-      }
-
-      const hash = evidenceHash(userId, courseId, assignmentId);
-      const textPreview = [
-        `${name} (${moduleType})`,
-        gradeDisplay(grade, gradeMax),
-        submissionStatus,
+      pendingAssignments.push({
+        courseId,
+        courseName,
+        courseShortname: course.shortname ?? null,
         courseCompletionStatus,
-        statusFeedback.text,
-      ]
-        .filter(Boolean)
-        .join(" · ")
-        .slice(0, 500);
-
-      const { data: lmsRows, error: lmsErr } = await admin
-        .from("lms_evidence")
-        .upsert(
-          {
-            user_id: userId,
-            source: "Moodle LMS",
-            course_name: courseName,
-            course_code: course.shortname ?? null,
-            grade: gradeDisplay(grade, gradeMax),
-            completion_status: courseCompletionStatus ?? submissionStatus,
-            evidence_hash: hash,
-            raw: { courseId, assignmentId, assign: assign.raw, source: assign.source, submission, grade: gradeRow, feedback: statusFeedback.text },
-            text_preview: textPreview,
-            fetched_at: now,
-          },
-          { onConflict: "user_id,evidence_hash" },
-        )
-        .select("id");
-
-      if (lmsErr) {
-        warnings.push(`lms_evidence save skipped for "${name}": ${lmsErr.message}`);
-        logSyncStage("lms_evidence_upsert_skipped", { assignmentId, error: lmsErr.message });
-      }
-
-      const lmsEvidenceId = lmsRows?.[0]?.id ?? null;
-
-      await dbUpsert(
-        admin,
-        "imported_lms_evidence",
-        {
-          user_id: userId,
-          source: "Moodle LMS",
-          moodle_course_id: courseId,
-          moodle_assignment_id: assignmentId,
-          course_name: courseName,
-          activity_name: name,
-          activity_type: moduleType === "assign" ? "Assignment" : moduleType,
-          grade: grade !== null ? String(grade) : null,
-          grade_max: gradeMax !== null ? String(gradeMax) : null,
-          submission_status: submissionStatus,
-          feedback_preview: statusFeedback.text,
-          lms_evidence_id: lmsEvidenceId,
-          imported_at: now,
-          updated_at: now,
-        },
-        "user_id,moodle_assignment_id",
-        false,
-      );
+        competencyTags,
+        assign,
+        submission,
+        gradeRow,
+        reportItem,
+        submissionStatus,
+        grade,
+        gradeMax,
+        gradeFormatted,
+        gradeReleased,
+        statusFeedback,
+        submissionText,
+        submissionFiles,
+        gradedAt: gradedAt ?? tsToIso(gradeRow?.timemodified ?? gradeRow?.timecreated),
+        submittedAt: submittedAt ?? tsToIso(submission?.timemodified ?? submission?.timecreated),
+        failedFunctions,
+        lastAttempt: lastAttemptPayload,
+        submissionStatusResponse: submissionStatusPayload,
+      });
     }
-
-    assignmentCount += savedInCourse;
-    logSyncStage("course_assignments_saved", {
-      courseId,
-      courseName,
-      savedAssignmentCount: savedInCourse,
-      totalAssignmentsSaved: assignmentCount,
-    });
 
     try {
       const reportResult = await tryCallMoodle("gradereport_user_get_grade_items", {
@@ -1625,33 +2346,17 @@ export async function syncLearnerMoodleActivities(
           if (!itemId) continue;
           const itemGrade = parseMoodleGrade(item.grade ?? item.gradeformatted);
           const itemMax = parseNum(item.grademax);
-          await dbUpsert(
-            admin,
-            "moodle_grades",
-            {
-              user_id: userId,
-              moodle_course_id: courseId,
-              item_id: itemId,
-              item_name: String(item.itemname ?? "Grade item"),
-              item_type: item.itemmodule ?? item.itemtype ?? null,
-              grade: itemGrade,
-              grade_max: itemMax,
-              grade_formatted: item.gradeformatted ? String(item.gradeformatted) : gradeDisplay(itemGrade, itemMax),
-              raw: item,
-              synced_at: now,
-              updated_at: now,
-            },
-            "user_id,moodle_course_id,item_id",
-            false,
-          );
-          gradeItemCount += 1;
+          pendingGradeItems.push({
+            courseId,
+            itemId,
+            itemName: String(item.itemname ?? "Grade item"),
+            itemType: String(item.itemmodule ?? item.itemtype ?? "") || null,
+            grade: itemGrade,
+            gradeMax: itemMax,
+            gradeFormatted: item.gradeformatted ? String(item.gradeformatted) : gradeDisplay(itemGrade, itemMax),
+            raw: item,
+          });
         }
-      } else if (reportResult.accessDenied) {
-        logSyncStage("gradereport_non_assign_skipped", {
-          courseId,
-          courseName,
-          wsfunction: reportResult.wsfunction,
-        });
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -1659,18 +2364,309 @@ export async function syncLearnerMoodleActivities(
     }
   }
 
-  if (assignmentCount === 0) {
-    warnings.push("No Moodle assignments found in your enrolled courses.");
+  logSyncStage("fetch_complete_starting_db_sync", {
+    userId,
+    moodleSiteUrl,
+    moodleUserId,
+    courseCount: courses.length,
+    pendingAssignments: pendingAssignments.length,
+    pendingGradeItems: pendingGradeItems.length,
+  });
+
+  const courseRecordCleanup = await purgeLearnerMoodleCourseRecords(admin, userId);
+  const cleanupStats: MoodleCleanupStats = {
+    ...emptyCleanupStats(),
+    ...courseRecordCleanup,
+  };
+
+  const syncedCourseIds = new Set<number>();
+  const syncedAssignmentIds = new Set<number>();
+  const syncedGradeKeys = new Set<string>();
+  const syncedEvidenceHashes = new Set<string>();
+  let feedbackCount = 0;
+  let gradeItemCount = 0;
+
+  for (const course of courses) {
+    const courseId = Number(course.id);
+    const courseName = course.fullname || course.shortname || `Course ${courseId}`;
+    const courseCompletionStatus = courseCompletionById.get(courseId) ?? null;
+
+    await dbUpsert(
+      admin,
+      "moodle_courses",
+      {
+        user_id: userId,
+        moodle_course_id: courseId,
+        moodle_site_url: moodleSiteUrl,
+        fullname: courseName,
+        shortname: course.shortname ?? null,
+        summary: course.summary ? stripHtml(String(course.summary)).slice(0, 2000) : null,
+        raw: {
+          ...course,
+          completion_status: courseCompletionStatus,
+          moodle_site_url: moodleSiteUrl,
+        },
+        synced_at: now,
+        updated_at: now,
+      },
+      "user_id,moodle_course_id",
+    );
+    syncedCourseIds.add(courseId);
   }
+
+  for (const pending of pendingAssignments) {
+    const {
+      courseId,
+      courseName,
+      courseShortname,
+      courseCompletionStatus,
+      competencyTags,
+      assign,
+      submission,
+      gradeRow,
+      reportItem,
+      submissionStatus,
+      grade,
+      gradeMax,
+      gradeFormatted,
+      gradeReleased,
+      statusFeedback,
+      submissionText,
+      submissionFiles,
+      gradedAt,
+      submittedAt,
+      failedFunctions,
+      lastAttempt,
+      submissionStatusResponse,
+    } = pending;
+
+    const assignmentId = assign.id;
+    const cmid = assign.cmid ?? (assign.raw.cmid ? Number(assign.raw.cmid) : null);
+    const moduleType = "assign";
+    const name = assign.name;
+
+    if (grade !== null || (gradeFormatted && gradeFormatted !== "—")) gradeItemCount += 1;
+
+    await dbUpsert(
+      admin,
+      "moodle_assignments",
+      {
+        user_id: userId,
+        moodle_course_id: courseId,
+        moodle_assignment_id: assignmentId,
+        moodle_site_url: moodleSiteUrl,
+        moodle_cmid: cmid,
+        name,
+        module_type: moduleType,
+        submission_status: submissionStatus,
+        grade,
+        grade_max: gradeMax,
+        grade_formatted: gradeFormatted,
+        feedback: statusFeedback.text?.trim() || null,
+        graded_at: gradedAt,
+        submitted_at: submittedAt,
+        grade_released: grade !== null ? true : gradeReleased,
+        submission_text: submissionText,
+        submission_files: submissionFiles,
+        competency_tags: competencyTags.length ? competencyTags : null,
+        raw: {
+          source: assign.source,
+          assign: assign.raw,
+          submission,
+          submissionStatus: submissionStatusResponse,
+          lastAttempt,
+          grade: gradeRow,
+          gradeReport: reportItem?.raw ?? null,
+          failedFunctions: failedFunctions.length ? failedFunctions : null,
+          teacherFeedbackPlugin: statusFeedback.detectedPlugin,
+          moodle_site_url: moodleSiteUrl,
+        },
+        synced_at: now,
+        updated_at: now,
+      },
+      "user_id,moodle_assignment_id",
+    );
+    syncedAssignmentIds.add(assignmentId);
+
+    if (statusFeedback.text?.trim()) {
+      await dbUpsert(
+        admin,
+        "moodle_feedback",
+        {
+          user_id: userId,
+          moodle_assignment_id: assignmentId,
+          moodle_site_url: moodleSiteUrl,
+          feedback_text: statusFeedback.text,
+          grader_id: statusFeedback.graderId,
+          raw: {
+            source: statusFeedback.source ?? "mod_assign_get_grades",
+            gradePlugins: (gradeRow?.plugins as unknown[]) ?? null,
+            detectedFeedbackPlugin: statusFeedback.detectedPlugin,
+            gradeRow: gradeRow ?? null,
+            debug: statusFeedback.rawDebug,
+            moodle_site_url: moodleSiteUrl,
+          },
+          synced_at: now,
+          updated_at: now,
+        },
+        "user_id,moodle_assignment_id",
+      );
+      feedbackCount += 1;
+    } else {
+      await admin
+        .from("moodle_feedback")
+        .delete()
+        .eq("user_id", userId)
+        .eq("moodle_assignment_id", assignmentId)
+        .eq("moodle_site_url", moodleSiteUrl);
+    }
+
+    const hash = evidenceHash(userId, courseId, assignmentId);
+    syncedEvidenceHashes.add(hash);
+    const textPreview = [
+      `${name} (${moduleType})`,
+      grade !== null ? gradeFormatted : "Not graded",
+      submissionStatus,
+      courseCompletionStatus,
+      statusFeedback.text,
+    ]
+      .filter(Boolean)
+      .join(" · ")
+      .slice(0, 500);
+
+    const { data: lmsRows, error: lmsErr } = await admin
+      .from("lms_evidence")
+      .upsert(
+        {
+          user_id: userId,
+          source: "Moodle LMS",
+          moodle_site_url: moodleSiteUrl,
+          course_name: courseName,
+          course_code: courseShortname,
+          grade: grade !== null ? gradeFormatted : null,
+          completion_status: courseCompletionStatus ?? submissionStatus,
+          evidence_hash: hash,
+          raw: {
+            courseId,
+            assignmentId,
+            moodle_site_url: moodleSiteUrl,
+            assign: assign.raw,
+            source: assign.source,
+            submission,
+            grade: gradeRow,
+            feedback: statusFeedback.text,
+          },
+          text_preview: textPreview,
+          fetched_at: now,
+        },
+        { onConflict: "user_id,evidence_hash" },
+      )
+      .select("id");
+
+    if (lmsErr) {
+      warnings.push(`lms_evidence save skipped for "${name}": ${lmsErr.message}`);
+      logSyncStage("lms_evidence_upsert_skipped", { assignmentId, error: lmsErr.message });
+    }
+
+    const lmsEvidenceId = lmsRows?.[0]?.id ?? null;
+
+    await dbUpsert(
+      admin,
+      "imported_lms_evidence",
+      {
+        user_id: userId,
+        source: "Moodle LMS",
+        moodle_site_url: moodleSiteUrl,
+        moodle_course_id: courseId,
+        moodle_assignment_id: assignmentId,
+        course_name: courseName,
+        activity_name: name,
+        activity_type: moduleType === "assign" ? "Assignment" : moduleType,
+        grade: grade !== null ? String(grade) : null,
+        grade_max: gradeMax !== null ? String(gradeMax) : null,
+        submission_status: submissionStatus,
+        feedback_preview: statusFeedback.text,
+        lms_evidence_id: lmsEvidenceId,
+        imported_at: now,
+        updated_at: now,
+      },
+      "user_id,moodle_assignment_id",
+      false,
+    );
+  }
+
+  for (const item of pendingGradeItems) {
+    await dbUpsert(
+      admin,
+      "moodle_grades",
+      {
+        user_id: userId,
+        moodle_course_id: item.courseId,
+        moodle_site_url: moodleSiteUrl,
+        item_id: item.itemId,
+        item_name: item.itemName,
+        item_type: item.itemType,
+        grade: item.grade,
+        grade_max: item.gradeMax,
+        grade_formatted: item.gradeFormatted,
+        raw: { ...item.raw, moodle_site_url: moodleSiteUrl },
+        synced_at: now,
+        updated_at: now,
+      },
+      "user_id,moodle_course_id,item_id",
+      false,
+    );
+    syncedGradeKeys.add(`${item.courseId}:${item.itemId}`);
+    if (item.grade !== null) gradeItemCount += 1;
+  }
+
+  await upsertLmsConnection(
+    admin,
+    buildLmsConnectionRow({
+      userId,
+      moodleUserId,
+      moodleEmail,
+      institutionEmail,
+      moodleSiteUrl,
+      syncedAt: now,
+      lastVerified: now,
+    }),
+  );
+
+  if (courses.length === 0) {
+    warnings.push("This Moodle account is connected but is not enrolled in any courses.");
+  } else if (pendingAssignments.length === 0) {
+    warnings.push("No assignments are currently available for your enrolled courses.");
+  }
+
+  const debug = {
+    moodleUrl: moodleSiteUrl,
+    userid: moodleUserId,
+    sijilEmail: authEmail,
+    moodleEmail,
+    coursesFetched: courses.length,
+    assignmentsFetched: pendingAssignments.length,
+    gradesFetched: gradeItemCount,
+    feedbackFetched: feedbackCount,
+    completionFetched: completionCount,
+  };
+
+  logSyncStage("moodle_sync_debug", debug);
+  console.log("Moodle Sync Debug:", JSON.stringify(debug, null, 2));
 
   const result = {
     success: true as const,
     moodleUserId,
+    moodleSiteUrl,
+    url: moodleSiteUrl,
     courses: courses.length,
-    assignments: assignmentCount,
+    assignments: pendingAssignments.length,
     grades: gradeItemCount,
     feedback: feedbackCount,
+    completion: completionCount,
     warnings,
+    cleanup: cleanupStats,
+    debug,
   };
 
   logSyncStage("sync_complete", { userId, ...result });

@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
+import { MOODLE_SITE_URL, normalizeMoodleSiteUrl } from "@/lib/moodle-integration";
 import type { DeclaredSkill } from "@/lib/sijil-data";
 import { rowToReview } from "@/lib/db/peer-reviews";
 import {
@@ -58,43 +59,55 @@ async function fetchMoodleEvidenceForSkill(
   userId: string,
   skill: DeclaredSkill,
 ): Promise<MoodleTrailEvidence[]> {
+  const currentSite = normalizeMoodleSiteUrl(MOODLE_SITE_URL);
+
+  const siteFilter = (query: ReturnType<typeof supabase.from>) =>
+    query.eq("moodle_site_url", currentSite);
+
   const [lmsAll, imported, assignments, courses, feedback] = await Promise.all([
     safeQuery(
-      () => supabase
-        .from("lms_evidence")
-        .select("*")
-        .eq("user_id", userId)
-        .order("fetched_at", { ascending: false }),
+      () => siteFilter(
+        supabase
+          .from("lms_evidence")
+          .select("*")
+          .eq("user_id", userId),
+      ).order("fetched_at", { ascending: false }),
       { data: [], error: null },
     ),
     safeQuery(
-      () => supabase
-        .from("imported_lms_evidence")
-        .select("*")
-        .eq("user_id", userId)
-        .order("imported_at", { ascending: false }),
+      () => siteFilter(
+        supabase
+          .from("imported_lms_evidence")
+          .select("*")
+          .eq("user_id", userId),
+      ).order("imported_at", { ascending: false }),
       { data: [], error: null },
     ),
     safeQuery(
-      () => supabase
-        .from("moodle_assignments")
-        .select("*")
-        .eq("user_id", userId)
-        .order("synced_at", { ascending: false }),
+      () => siteFilter(
+        supabase
+          .from("moodle_assignments")
+          .select("*")
+          .eq("user_id", userId),
+      ).order("synced_at", { ascending: false }),
       { data: [], error: null },
     ),
     safeQuery(
-      () => supabase
-        .from("moodle_courses")
-        .select("moodle_course_id, fullname, shortname")
-        .eq("user_id", userId),
+      () => siteFilter(
+        supabase
+          .from("moodle_courses")
+          .select("moodle_course_id, fullname, shortname")
+          .eq("user_id", userId),
+      ),
       { data: [], error: null },
     ),
     safeQuery(
-      () => supabase
-        .from("moodle_feedback")
-        .select("moodle_assignment_id, feedback_text")
-        .eq("user_id", userId),
+      () => siteFilter(
+        supabase
+          .from("moodle_feedback")
+          .select("moodle_assignment_id, feedback_text")
+          .eq("user_id", userId),
+      ),
       { data: [], error: null },
     ),
   ]);

@@ -1,6 +1,7 @@
 import {
   callMoodle,
   corsHeaders,
+  EXPECTED_MOODLE_SITE_URL,
   json,
   logMoodleEnvConfig,
   logSyncStage,
@@ -10,11 +11,12 @@ import {
 } from "./moodle-sync-core.ts";
 
 /** Bump when deploying — exposed in test/sync responses so frontend can detect stale deploys. */
-const FUNCTION_VERSION = "2.9.3";
+const FUNCTION_VERSION = "3.3.0";
 
 const SUPPORTED_ACTIONS = [
   "test",
   "sync_activities",
+  "sync_moodle_data",
   "get_courses",
   "find_user_by_email",
   "get_user_courses",
@@ -24,11 +26,15 @@ const SUPPORTED_ACTIONS = [
 
 function normalizeAction(raw: unknown): string {
   const s = String(raw ?? "").trim().toLowerCase().replace(/-/g, "_");
+  if (s === "sync_moodle_data" || s === "refresh_moodle_data") {
+    return "sync_moodle_data";
+  }
   if (
     s === "sync" ||
     s === "sync_moodle" ||
     s === "sync_moodle_activities" ||
-    s === "syncactivities"
+    s === "syncactivities" ||
+    s === "sync_activities"
   ) {
     return "sync_activities";
   }
@@ -44,7 +50,7 @@ function invalidActionResponse(raw: unknown, normalized: string) {
       normalized: normalized || null,
       supportedActions: SUPPORTED_ACTIONS,
       functionVersion: FUNCTION_VERSION,
-      hint: "Moodle sync function does not support this action. Check frontend/backend action names and redeploy: supabase functions deploy moodle-sync",
+      hint: "Moodle sync function does not support this action. Redeploy: supabase functions deploy moodle-sync",
     },
     400,
   );
@@ -60,6 +66,58 @@ async function parseBody(req: Request): Promise<Record<string, unknown>> {
   } catch {
     return {};
   }
+}
+
+async function runLearnerSync(
+  req: Request,
+  body: Record<string, unknown>,
+  forceResync: boolean,
+) {
+  const resolved = await resolveUser(req);
+  if ("error" in resolved && resolved.error) return resolved.error;
+
+  const { userId, authEmail, admin } = resolved;
+  logSyncStage("sync_auth_ok", { userId, authEmail, forceResync });
+
+  let institutionEmail: string | null =
+    typeof body.institutionEmail === "string" ? body.institutionEmail : null;
+
+  if (!institutionEmail) {
+    const { data: profile, error: profileErr } = await admin
+      .from("learner_profiles")
+      .select("university_email")
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (profileErr) {
+      logSyncStage("learner_profile_lookup_failed", { userId, error: profileErr.message });
+    }
+    institutionEmail = profile?.university_email ?? null;
+  }
+
+  const result = await syncLearnerMoodleActivities(
+    admin,
+    userId,
+    authEmail,
+    institutionEmail,
+    { forceResync },
+  );
+
+  return json({
+    success: true,
+    courses: result.courses,
+    assignments: result.assignments,
+    grades: result.grades,
+    feedback: result.feedback,
+    completion: result.completion,
+    url: result.url ?? EXPECTED_MOODLE_SITE_URL,
+    moodleUserId: result.moodleUserId,
+    moodleSiteUrl: result.moodleSiteUrl,
+    warnings: result.warnings,
+    cleanup: result.cleanup ?? null,
+    debug: result.debug ?? null,
+    functionVersion: FUNCTION_VERSION,
+    supportedActions: SUPPORTED_ACTIONS,
+  });
 }
 
 Deno.serve(async (req) => {
@@ -80,6 +138,7 @@ Deno.serve(async (req) => {
       action,
       rawAction: rawAction ?? null,
       functionVersion: FUNCTION_VERSION,
+      supportedActions: SUPPORTED_ACTIONS,
     });
 
     if (action === "test") {
@@ -92,6 +151,11 @@ Deno.serve(async (req) => {
         functionVersion: FUNCTION_VERSION,
         supportedActions: SUPPORTED_ACTIONS,
       });
+    }
+
+    /** Force full Moodle resync — purge stale data, fetch fresh, insert with canonical site URL. */
+    if (action === "sync_moodle_data") {
+      return await runLearnerSync(req, body, true);
     }
 
     /** Legacy: all site courses (kept for backward compatibility). */
@@ -142,37 +206,10 @@ Deno.serve(async (req) => {
       return json({ success: true, grades });
     }
 
-    /** Full learner sync: courses, assignments, grades, teacher feedback → Supabase upsert. */
+    /** Full learner sync (non-destructive refresh). */
     if (action === "sync_activities") {
-      const resolved = await resolveUser(req);
-      if ("error" in resolved && resolved.error) return resolved.error;
-
-      const { userId, authEmail, admin } = resolved;
-      logSyncStage("sync_activities_auth_ok", { userId, authEmail });
-
-      let institutionEmail: string | null =
-        typeof body.institutionEmail === "string" ? body.institutionEmail : null;
-
-      if (!institutionEmail) {
-        const { data: profile, error: profileErr } = await admin
-          .from("learner_profiles")
-          .select("university_email")
-          .eq("user_id", userId)
-          .maybeSingle();
-        if (profileErr) {
-          logSyncStage("learner_profile_lookup_failed", { userId, error: profileErr.message });
-        }
-        institutionEmail = profile?.university_email ?? null;
-      }
-
-      const result = await syncLearnerMoodleActivities(
-        admin,
-        userId,
-        authEmail,
-        institutionEmail,
-      );
-
-      return json({ ...result, functionVersion: FUNCTION_VERSION });
+      const forceResync = body.force === true || body.forceResync === true;
+      return await runLearnerSync(req, body, forceResync);
     }
 
     if (!action) {
@@ -182,7 +219,7 @@ Deno.serve(async (req) => {
           code: "MISSING_ACTION",
           supportedActions: SUPPORTED_ACTIONS,
           functionVersion: FUNCTION_VERSION,
-          hint: 'Send JSON body: { "action": "sync_activities" }',
+          hint: 'Send JSON body: { "action": "sync_moodle_data" } or { "action": "sync_activities" }',
         },
         400,
       );
@@ -200,6 +237,7 @@ Deno.serve(async (req) => {
           code: error.code,
           details: error.details ?? null,
           functionVersion: FUNCTION_VERSION,
+          supportedActions: SUPPORTED_ACTIONS,
         },
         error.code === "UNAUTHORIZED" ? 401 : 400,
       );
@@ -212,6 +250,7 @@ Deno.serve(async (req) => {
         error: message,
         code: "MOODLE_API_UNAVAILABLE",
         functionVersion: FUNCTION_VERSION,
+        supportedActions: SUPPORTED_ACTIONS,
       },
       500,
     );

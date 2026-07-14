@@ -671,38 +671,43 @@ async function loadAggregatedWallet(userId: string): Promise<WalletCompetencyRec
     safeFetchRows("lms_evidence", () =>
       db()
         .from("lms_evidence")
-        .select("id, linked_skill_id, source, course_name, course_code, grade, completion_status, text_preview, fetched_at, evidence_hash")
+        .select("id, linked_skill_id, source, course_name, course_code, grade, completion_status, text_preview, fetched_at, evidence_hash, moodle_site_url")
         .eq("user_id", userId),
     ),
     safeFetchRows("moodle_courses", () =>
       db()
         .from("moodle_courses")
-        .select("moodle_course_id, fullname, shortname, synced_at")
-        .eq("user_id", userId),
+        .select("moodle_course_id, fullname, shortname, synced_at, moodle_site_url")
+        .eq("user_id", userId)
+        .eq("moodle_site_url", "https://sijil-fyp.moodlecloud.com"),
     ),
     safeFetchRows("moodle_assignments", () =>
       db()
         .from("moodle_assignments")
-        .select("moodle_course_id, moodle_assignment_id, name, module_type, submission_status, grade, grade_max, grade_formatted, graded_at, submitted_at, submission_text, competency_tags, synced_at")
-        .eq("user_id", userId),
+        .select("moodle_course_id, moodle_assignment_id, name, module_type, submission_status, grade, grade_max, grade_formatted, graded_at, submitted_at, submission_text, competency_tags, synced_at, moodle_site_url")
+        .eq("user_id", userId)
+        .eq("moodle_site_url", "https://sijil-fyp.moodlecloud.com"),
     ),
     safeFetchRows("moodle_grades", () =>
       db()
         .from("moodle_grades")
-        .select("moodle_course_id, item_id, item_name, item_type, grade, grade_max, grade_formatted, synced_at")
-        .eq("user_id", userId),
+        .select("moodle_course_id, item_id, item_name, item_type, grade, grade_max, grade_formatted, synced_at, moodle_site_url")
+        .eq("user_id", userId)
+        .eq("moodle_site_url", "https://sijil-fyp.moodlecloud.com"),
     ),
     safeFetchRows("moodle_feedback", () =>
       db()
         .from("moodle_feedback")
-        .select("moodle_assignment_id, feedback_text, synced_at")
-        .eq("user_id", userId),
+        .select("moodle_assignment_id, feedback_text, synced_at, moodle_site_url")
+        .eq("user_id", userId)
+        .eq("moodle_site_url", "https://sijil-fyp.moodlecloud.com"),
     ),
     safeFetchRows("imported_lms_evidence", () =>
       db()
         .from("imported_lms_evidence")
-        .select("id, moodle_course_id, moodle_assignment_id, course_name, activity_name, activity_type, grade, grade_max, submission_status, feedback_preview, lms_evidence_id, imported_at")
-        .eq("user_id", userId),
+        .select("id, moodle_course_id, moodle_assignment_id, course_name, activity_name, activity_type, grade, grade_max, submission_status, feedback_preview, lms_evidence_id, imported_at, moodle_site_url")
+        .eq("user_id", userId)
+        .eq("moodle_site_url", "https://sijil-fyp.moodlecloud.com"),
     ),
     safeFetchRows("practical_attempts", () =>
       db()
@@ -785,7 +790,15 @@ async function loadAggregatedWallet(userId: string): Promise<WalletCompetencyRec
     );
 
     const skillLmsEvidence = dedupeByKey(
-      lmsEvidence.filter((row) => asText(row.linked_skill_id) === competencyId),
+      lmsEvidence.filter((row) => {
+        if (asText(row.linked_skill_id) !== competencyId) return false;
+        const source = asText(row.source).toLowerCase();
+        if (source.includes("moodle") || source.includes("lms")) {
+          const site = asText(row.moodle_site_url).trim().replace(/\/+$/, "").toLowerCase();
+          return site === "https://sijil-fyp.moodlecloud.com";
+        }
+        return true;
+      }),
       (row) => asText(row.id) || `${asText(row.course_name)}:${asText(row.course_code)}`,
     );
 
