@@ -42,6 +42,7 @@ export interface PeerReviewRecordView {
   source: string;
   origin: string;
   skill: string;
+  skillId?: string | null;
   projectId?: string;
   projectName?: string;
   evidenceLabel: string;
@@ -71,6 +72,8 @@ export interface SubmitPeerReviewInput {
   rating: number;
   feedback: string;
   recommendation: string;
+  reviewerEmail?: string;
+  reviewerGithubUsername?: string;
 }
 
 export interface PeerReviewInviteFormView {

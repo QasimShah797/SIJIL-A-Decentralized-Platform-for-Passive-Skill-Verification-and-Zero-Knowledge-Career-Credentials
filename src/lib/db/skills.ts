@@ -1,8 +1,9 @@
 import { supabase } from "@/integrations/supabase/client";
 import type { RelatedEvidenceApiView } from "@/services/api/skills.api";
 import { syncGitHubAfterSkillDeclare } from "@/lib/github-integration";
-import type { DeclaredSkill } from "@/lib/sijil-data";
 import { cleanupCompetencyRelatedData } from "@/lib/db/competency-cleanup";
+import { deleteSkillApi } from "@/services/api/skills.api";
+import type { DeclaredSkill } from "@/lib/sijil-data";
 
 function rowToSkill(row: {
   id: string;
@@ -129,6 +130,9 @@ export async function fetchSkillRelatedEvidence(
 }
 
 export async function deleteDeclaredSkill(userId: string, skillId: string): Promise<void> {
+  const viaApi = await deleteSkillApi(skillId);
+  if (viaApi) return;
+
   const { data: skill, error: fetchError } = await supabase
     .from("declared_skills")
     .select("id, name")

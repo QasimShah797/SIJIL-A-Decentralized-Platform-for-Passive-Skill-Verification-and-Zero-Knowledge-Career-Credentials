@@ -38,6 +38,10 @@ import type {
 
 import { evaluateSkillProjectMatch, buildMatchReasonForSkill, type ProjectEvidenceInput } from "../utils/evidence-matching";
 import { githubSyncService } from "./github-sync.service";
+import {
+  fetchDeclaredSkillRefs,
+  filterProjectsForDeclaredSkills,
+} from "../utils/skill-review-filter";
 
 
 
@@ -359,7 +363,7 @@ export class EvidenceRecordsService {
 
 
 
-    return repoList.map((repo) => {
+    const projects = repoList.map((repo) => {
 
       const repoUuid = repo.id as string;
 
@@ -414,6 +418,9 @@ export class EvidenceRecordsService {
       };
 
     });
+
+    const skillRefs = await fetchDeclaredSkillRefs(userId);
+    return filterProjectsForDeclaredSkills(projects, skillRefs);
 
   }
 

@@ -48,6 +48,8 @@ export interface ReviewRequestFormView {
   contextSource: string;
   reviewerContext: string;
   reviewerName: string;
+  invitedReviewerEmail?: string | null;
+  invitedGithubLogin?: string | null;
   expiresAt: string;
 }
 
@@ -98,7 +100,13 @@ export async function getReviewRequestByTokenApi(
 
 export async function submitContextReviewApi(
   token: string,
-  body: { rating: number; feedback: string; recommendation: ContextRecommendation },
+  body: {
+    rating: number;
+    feedback: string;
+    recommendation: ContextRecommendation;
+    reviewerEmail?: string;
+    reviewerGithubUsername?: string;
+  },
 ): Promise<ContextReviewView> {
   return apiRequest<ContextReviewView>(`/reviews/submit/${token}`, {
     method: "POST",

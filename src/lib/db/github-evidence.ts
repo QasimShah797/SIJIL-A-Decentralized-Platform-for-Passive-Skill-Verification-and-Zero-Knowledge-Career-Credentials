@@ -16,6 +16,10 @@ import {
 
 import { buildMatchReasonForSkill } from "@/lib/evidence-matching";
 import { isMissingColumnError, isMissingRelationError } from "@/lib/supabase-errors";
+import {
+  filterProjectsForDeclaredSkills,
+  type DeclaredSkillRef,
+} from "@/lib/skill-review-filter";
 
 export type { GitHubEvidenceView, ProjectEvidenceApiView, SkillLinkApiView };
 
@@ -86,11 +90,22 @@ function parseBreakdown(raw: unknown): Record<string, number> {
   return {};
 }
 
+function scopeProjectsToDeclaredSkills(
+  projects: ProjectEvidenceApiView[],
+  declaredSkills?: DeclaredSkillRef[],
+): ProjectEvidenceApiView[] {
+  if (!declaredSkills) return projects;
+  return filterProjectsForDeclaredSkills(projects, declaredSkills);
+}
+
 export async function fetchLinkedProjectEvidence(
   userId: string,
+  declaredSkills?: DeclaredSkillRef[],
 ): Promise<ProjectEvidenceApiView[]> {
   const viaApi = await getLinkedProjectEvidenceApi();
-  if (viaApi?.length) return viaApi;
+  if (viaApi?.length) {
+    return scopeProjectsToDeclaredSkills(viaApi, declaredSkills);
+  }
 
   const { data: legacyRepos } = await supabase
     .from("github_repos")
@@ -132,7 +147,10 @@ export async function fetchLinkedProjectEvidence(
       userId,
       projects.map((p) => p.githubRepoId),
     );
-    return enrichProjectsWithBreakdown(projects, breakdownMap);
+    return scopeProjectsToDeclaredSkills(
+      enrichProjectsWithBreakdown(projects, breakdownMap),
+      declaredSkills,
+    );
   }
 
   let links: Record<string, unknown>[] | null = null;
@@ -206,7 +224,10 @@ export async function fetchLinkedProjectEvidence(
       userId,
       projects.map((p) => p.githubRepoId),
     );
-    return enrichProjectsWithBreakdown(projects, breakdownMap);
+    return scopeProjectsToDeclaredSkills(
+      enrichProjectsWithBreakdown(projects, breakdownMap),
+      declaredSkills,
+    );
   }
   const projects = ((legacyRepos ?? []) as typeof legacyRepos).map((repo) => ({
     repoId: repo.id as string,
@@ -240,7 +261,10 @@ export async function fetchLinkedProjectEvidence(
     userId,
     projects.map((p) => p.githubRepoId),
   );
-  return enrichProjectsWithBreakdown(projects, breakdownMap);
+  return scopeProjectsToDeclaredSkills(
+    enrichProjectsWithBreakdown(projects, breakdownMap),
+    declaredSkills,
+  );
 }
 
 export async function fetchUnmappedGitHubEvidence(

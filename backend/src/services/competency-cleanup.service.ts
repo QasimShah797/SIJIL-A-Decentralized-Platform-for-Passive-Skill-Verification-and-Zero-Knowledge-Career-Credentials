@@ -72,6 +72,16 @@ export async function cleanupCompetencyRelatedData(
       .update({ suggested_skill_id: null, suggested_skill_name: null })
       .eq("user_id", userId)
       .eq("suggested_skill_id", skillId),
+    supabaseService.client
+      .from("github_repo_skill_links")
+      .delete()
+      .eq("user_id", userId)
+      .eq("skill_id", skillId),
+    supabaseService.client
+      .from("skill_evidence_links")
+      .delete()
+      .eq("user_id", userId)
+      .eq("skill_id", skillId),
   ];
 
   await Promise.allSettled(cleanupTasks);

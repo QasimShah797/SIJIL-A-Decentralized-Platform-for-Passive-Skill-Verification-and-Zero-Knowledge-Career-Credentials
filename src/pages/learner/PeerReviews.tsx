@@ -172,8 +172,14 @@ export default function PeerReviewsPage() {
         });
       })
       .finally(() => setLoading(false));
+  }, [user?.id, user?.email]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    reload()
+      .catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.id]);
+  }, [user?.id, declaredSkills.map((skill) => skill.id).join("|")]);
 
   useEffect(() => {
     if (selectedProject && !skillForProject) {
@@ -213,7 +219,6 @@ export default function PeerReviewsPage() {
   );
 
   const [inviteOpen, setInviteOpen] = useState(false);
-  const [inviteByEmail, setInviteByEmail] = useState(false);
   const [inviteResend, setInviteResend] = useState(false);
   const [inviteContrib, setInviteContrib] = useState<ProjectContributor | null>(null);
   const [inviteSkill, setInviteSkill] = useState<string>(skillForProject);
@@ -251,7 +256,6 @@ export default function PeerReviewsPage() {
   }, [invitations, selectedProject]);
 
   const openInvite = (c: ProjectContributor) => {
-    setInviteByEmail(false);
     setInviteResend(false);
     setInviteContrib(c);
     setInviteSkill(skillForProject);
@@ -266,7 +270,6 @@ export default function PeerReviewsPage() {
         && i.contributorId === c.id
         && i.status !== "Completed",
     );
-    setInviteByEmail(false);
     setInviteResend(true);
     setInviteContrib(c);
     setInviteSkill(skillForProject);
@@ -275,19 +278,9 @@ export default function PeerReviewsPage() {
     setInviteOpen(true);
   };
 
-  const openInviteByEmail = () => {
-    setInviteByEmail(true);
-    setInviteResend(false);
-    setInviteContrib(null);
-    setInviteSkill(skillForProject);
-    setInviteEmail("");
-    setGeneratedLink(null);
-    setInviteOpen(true);
-  };
-
   const sendInvite = async () => {
     if (!selectedProject) return;
-    if (!inviteByEmail && !inviteContrib) return;
+    if (!inviteContrib) return;
     if (!inviteEmail.trim()) {
       toast({ title: "Email required", description: "We need a contact email to send the review invitation." });
       return;
@@ -301,13 +294,18 @@ export default function PeerReviewsPage() {
       return;
     }
 
-    const normalizedEmail = inviteEmail.trim().toLowerCase();
-    const contributorId = inviteByEmail
-      ? `email-${normalizedEmail}`
-      : inviteContrib!.id;
-    const inviteTargetName = inviteByEmail
-      ? normalizedEmail
-      : inviteContrib!.name;
+    const normalizedEmail = (inviteContrib.email ?? inviteEmail).trim().toLowerCase();
+    if (!normalizedEmail) {
+      toast({
+        title: "Contributor email required",
+        description: "Sync GitHub contributors or wait for a verified contact email before inviting this reviewer.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const contributorId = inviteContrib.id;
+    const inviteTargetName = inviteContrib.name;
 
     const skillLink = selectedProject.skillLinks.find((s) => s.skillName === inviteSkill)
       ?? selectedProject.skillLinks[0];
@@ -328,7 +326,7 @@ export default function PeerReviewsPage() {
       contributorId,
       skillId,
       contributorEmail: normalizedEmail,
-      resend: inviteResend || inviteByEmail,
+      resend: inviteResend,
     }, (msg) => { apiError = msg; });
 
     if (!result) {
@@ -422,13 +420,19 @@ export default function PeerReviewsPage() {
 
       {loading ? (
         <div className="text-sm text-muted-foreground mb-6">Loading your reviews…</div>
+      ) : declaredSkills.length === 0 ? (
+        <div className="rounded-md border p-6 text-sm text-muted-foreground mb-6">
+          No declared competencies yet. Add a competency on <strong>My Profile</strong> and link GitHub evidence on <strong>Integrations</strong> before requesting peer reviews.
+        </div>
       ) : projects.length === 0 ? (
         <div className="rounded-md border p-6 text-sm text-muted-foreground mb-6">
-          No synced project evidence yet. Open <strong>Integrations</strong>, connect GitHub, and run sync — your repositories will appear here for context reviews.
+          No project evidence is linked to your declared competencies yet. Open <strong>Integrations</strong>, connect GitHub, and sync repositories against an active competency.
         </div>
       ) : null}
 
       {/* Trust signals summary */}
+      {declaredSkills.length > 0 && (
+      <>
       <div className="grid grid-cols-2 md:grid-cols-6 gap-3 mb-6">
         <Stat label="Total reviews" value={signals.total} />
         <Stat label="Context verified" value={signals.verifiedContext} />
@@ -558,11 +562,6 @@ export default function PeerReviewsPage() {
                   No contributors found for this project.
                 </div>
               )}
-              <div className="p-3 border-t">
-                <Button size="sm" variant="outline" className="w-full sm:w-auto" onClick={openInviteByEmail}>
-                  <Mail className="h-4 w-4 mr-1.5" />Invite by email
-                </Button>
-              </div>
             </div>
           </CardContent>
         </Card>
@@ -750,31 +749,27 @@ export default function PeerReviewsPage() {
           </div>
         </CardContent>
       </Card>
+      </>
+      )}
 
       {/* Invite dialog */}
       <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>
-              {inviteResend
-                ? "Resend review invitation"
-                : inviteByEmail
-                  ? "Invite reviewer by email"
-                  : "Invite contributor to review"}
+              {inviteResend ? "Resend review invitation" : "Invite contributor to review"}
             </DialogTitle>
           </DialogHeader>
-          {selectedProject && (inviteByEmail || inviteContrib) && (
+          {selectedProject && inviteContrib && (
             <div className="space-y-3 text-sm">
               <p className="text-muted-foreground">
                 {inviteResend ? (
-                  <>Resend the secure review link to <span className="font-medium text-foreground">{inviteContrib?.name}</span>. Update the email below if the previous address was wrong.</>
-                ) : inviteByEmail ? (
-                  <>Invite someone to review your work on <span className="font-medium text-foreground">{selectedProject.name}</span>. They will receive a secure form link bound to their email.</>
+                  <>Resend the secure review link to <span className="font-medium text-foreground">{inviteContrib.name}</span>. The recipient cannot be changed.</>
                 ) : (
-                  <>You are inviting a verified contributor of <span className="font-medium text-foreground">{selectedProject.name}</span> to review your work on this project. SIJIL will send them a secure form link.</>
+                  <>You are inviting verified contributor <span className="font-medium text-foreground">{inviteContrib.name}</span> from <span className="font-medium text-foreground">{selectedProject.name}</span>. They must verify their invited email or GitHub username before submitting.</>
                 )}
               </p>
-              {!inviteByEmail && selectedReviewer && (
+              {selectedReviewer && (
                 <div>
                   <Label>Reviewer</Label>
                   <div className="mt-1.5 rounded-md border p-2 bg-muted/30">
@@ -794,15 +789,20 @@ export default function PeerReviewsPage() {
                 <Label>Contact email</Label>
                 <Input
                   className="mt-1.5"
-                  value={inviteEmail}
-                  onChange={(e) => setInviteEmail(e.target.value)}
-                  placeholder="reviewer@example.com"
+                  value={inviteContrib.email ?? inviteEmail}
+                  readOnly={Boolean(inviteContrib.email) || inviteResend}
+                  onChange={(e) => {
+                    if (!inviteContrib.email && !inviteResend) {
+                      setInviteEmail(e.target.value);
+                    }
+                  }}
+                  placeholder="contributor@example.com"
                 />
-                {!inviteByEmail && inviteContrib?.email && inviteEmail === inviteContrib.email && (
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Loaded from GitHub profile or commit history. Edit if needed.
-                  </p>
-                )}
+                <p className="text-xs text-muted-foreground mt-1">
+                  {inviteContrib.email || inviteResend
+                    ? "This invite is locked to the verified contributor and cannot be redirected to another person."
+                    : "Enter this contributor's own contact email once. It will be locked for future resends and checked again when they submit the review."}
+                </p>
               </div>
               <div>
                 <Label>Skill / competency</Label>
@@ -824,7 +824,7 @@ export default function PeerReviewsPage() {
                   </div>
                   <div className="mt-1 mono break-all">{generatedLink}</div>
                   <p className="text-xs text-muted-foreground mt-2">
-                    This link is secure and can only be used by the invited reviewer.
+                    This link is secure and can only be used by the invited contributor after identity verification.
                   </p>
                   <div className="flex gap-2 mt-2">
                     <Button size="sm" variant="outline" onClick={() => { navigator.clipboard.writeText(generatedLink); toast({ title: "Link copied" }); }}>

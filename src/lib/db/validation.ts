@@ -24,6 +24,7 @@ import {
   pipelineStageLabel,
   resolveEffectivePipelineStage,
 } from "@/lib/competency-pipeline";
+import { filterReviewsForDeclaredSkills } from "@/lib/skill-review-filter";
 
 export type ValidationSummary = {
   skillId: string;
@@ -333,6 +334,7 @@ export async function buildValidationSummary(
     safeQuery(() => fetchCredentials(userId), []),
   ]);
 
+  const skillReviews = filterReviewsForDeclaredSkills(reviews, [{ id: skill.id, name: skill.name }]);
   const rows: ValidationSummary["rows"] = [];
   const inWallet = credentials.some(
     (c) => c.skill.trim().toLowerCase() === skill.name.trim().toLowerCase(),

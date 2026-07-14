@@ -47,6 +47,8 @@ export interface ReviewRequestFormView {
   contextSource: string;
   reviewerContext: string;
   reviewerName: string;
+  invitedReviewerEmail?: string | null;
+  invitedGithubLogin?: string | null;
   expiresAt: string;
 }
 
@@ -61,6 +63,8 @@ export interface SubmitContextReviewInput {
   rating: number;
   feedback: string;
   recommendation: ContextRecommendation;
+  reviewerEmail?: string;
+  reviewerGithubUsername?: string;
 }
 
 export interface ImportExternalResult {

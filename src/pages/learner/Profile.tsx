@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { AppShell } from "@/components/sijil/AppShell";
 import { PageHeader } from "@/components/sijil/PageHeader";
@@ -56,7 +56,7 @@ export default function LearnerProfile() {
   const location = useLocation();
   const { profile, loading: profileLoading } = useLearnerProfile();
   const { skills, loading: skillsLoading, addSkill, removeSkill, updateSkill } = useDeclaredSkills();
-  const { reviews } = usePeerReviews();
+  const { reviews, refresh: refreshReviews } = usePeerReviews();
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [name, setName] = useState("");
@@ -74,6 +74,11 @@ export default function LearnerProfile() {
 
   const decaying = useMemo(() => skills.filter((s) => isSkillDecaying(s)), [skills]);
   const trust = useMemo(() => computeTrustSignals(reviews), [reviews]);
+  const skillSyncKey = useMemo(() => skills.map((s) => s.id).join("|"), [skills]);
+
+  useEffect(() => {
+    void refreshReviews();
+  }, [skillSyncKey, refreshReviews]);
   const notifPanelOpen = location.hash === "#notifications";
   const isEditing = editingId !== null;
 

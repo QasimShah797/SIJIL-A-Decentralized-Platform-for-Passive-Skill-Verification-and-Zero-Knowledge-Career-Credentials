@@ -4,6 +4,7 @@ import { fetchLearnerProfile, type LearnerProfileView } from "@/lib/db/learner-p
 import { fetchDeclaredSkills, insertDeclaredSkill, deleteDeclaredSkill, updateDeclaredSkill } from "@/lib/db/skills";
 import { fetchCredentials, type CredentialView } from "@/lib/db/credentials";
 import { fetchPeerReviews } from "@/lib/db/peer-reviews";
+import { filterReviewsForDeclaredSkills } from "@/lib/skill-review-filter";
 import type { DeclaredSkill, PeerReview } from "@/lib/sijil-data";
 
 function useStableUserIds() {
@@ -155,7 +156,12 @@ export function usePeerReviews() {
       setLoading(true);
     }
     try {
-      setReviews(await fetchPeerReviews(userId));
+      const [reviews, skills] = await Promise.all([
+        fetchPeerReviews(userId),
+        fetchDeclaredSkills(userId),
+      ]);
+      const skillRefs = skills.map((skill) => ({ id: skill.id, name: skill.name }));
+      setReviews(filterReviewsForDeclaredSkills(reviews, skillRefs));
       hasLoadedRef.current = true;
     } finally {
       setLoading(false);

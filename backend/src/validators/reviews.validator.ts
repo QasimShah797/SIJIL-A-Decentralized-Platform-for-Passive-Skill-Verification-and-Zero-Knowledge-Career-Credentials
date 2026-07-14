@@ -23,4 +23,8 @@ export const submitContextReviewSchema = z.object({
     CONTEXT_RECOMMENDATION.NEEDS_MORE,
     CONTEXT_RECOMMENDATION.NOT_ENOUGH,
   ]),
+  reviewerEmail: z.string().email().optional(),
+  reviewerGithubUsername: z.string().min(1).max(80).optional(),
+}).refine((value) => Boolean(value.reviewerEmail?.trim() || value.reviewerGithubUsername?.trim()), {
+  message: "Enter your invited email or GitHub username to verify your identity",
 });

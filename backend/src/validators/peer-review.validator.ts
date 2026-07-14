@@ -26,4 +26,8 @@ export const submitPeerReviewSchema = z.object({
     PEER_REVIEW_RECOMMENDATION.NEEDS_MORE,
     PEER_REVIEW_RECOMMENDATION.CANNOT_CONFIRM,
   ]),
+  reviewerEmail: z.string().email().optional(),
+  reviewerGithubUsername: z.string().min(1).max(80).optional(),
+}).refine((value) => Boolean(value.reviewerEmail?.trim() || value.reviewerGithubUsername?.trim()), {
+  message: "Enter your invited email or GitHub username to verify your identity",
 });

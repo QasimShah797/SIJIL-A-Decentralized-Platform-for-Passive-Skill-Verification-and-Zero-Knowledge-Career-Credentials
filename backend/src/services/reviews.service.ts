@@ -5,6 +5,11 @@ import { randomBytes } from "crypto";
 import { supabaseService } from "./supabase.service";
 import { AppError } from "../utils/AppError";
 import {
+  assertContributorInviteEmail,
+  assertReviewerIdentityForInvite,
+  normalizeEmail,
+} from "../utils/contributor-invite-email";
+import {
   REVIEW_TYPE,
   REVIEW_DISPLAY_STATUS,
   REVIEW_REQUEST_STATUS,
@@ -293,6 +298,21 @@ export class ReviewsService {
 
     if (!context) throw new AppError("Reviewer is not eligible for this evidence context", 403);
 
+    assertContributorInviteEmail({
+      contributorId: context.id as string,
+      contributorHandle: context.reviewer_login as string,
+      contributorEmailOnFile: context.reviewer_email as string | null,
+      requestedEmail: input.reviewerEmail,
+    });
+
+    const normalizedEmail = normalizeEmail(input.reviewerEmail);
+    if (!context.reviewer_email) {
+      await supabaseService.client
+        .from("reviewer_contexts")
+        .update({ reviewer_email: normalizedEmail })
+        .eq("id", context.id);
+    }
+
     const { data: skill } = await supabaseService.client
       .from("declared_skills")
       .select("id, name")
@@ -314,7 +334,7 @@ export class ReviewsService {
         skill_id: input.skillId,
         reviewer_context_id: input.reviewerContextId,
         reviewer_name: context.reviewer_name,
-        reviewer_email: input.reviewerEmail.trim().toLowerCase(),
+        reviewer_email: normalizedEmail,
         reviewer_context_role: context.context_role,
         context_source: evidence.source,
         token,
@@ -338,7 +358,7 @@ export class ReviewsService {
     const reviewLink = buildReviewLink(token);
 
     await sendReviewRequestEmail(
-      input.reviewerEmail,
+      normalizedEmail,
       learnerName,
       evidence.repository_name,
       reviewLink,
@@ -399,6 +419,8 @@ export class ReviewsService {
           (invite.relationship as Relationship) ?? "contributor",
         ),
         reviewerName: invite.contributor_name as string,
+        invitedReviewerEmail: invite.contributor_email as string,
+        invitedGithubLogin: invite.contributor_name as string,
         expiresAt: invite.expires_at as string,
       };
     }
@@ -437,6 +459,8 @@ export class ReviewsService {
       contextSource: evidence?.source ?? (request.context_source as string),
       reviewerContext: request.reviewer_context_role as string,
       reviewerName: request.reviewer_name as string,
+      invitedReviewerEmail: request.reviewer_email as string,
+      invitedGithubLogin: request.reviewer_name as string,
       expiresAt: request.expires_at as string,
     };
   }
@@ -455,6 +479,8 @@ export class ReviewsService {
         rating: input.rating,
         feedback: input.feedback,
         recommendation: input.recommendation,
+        reviewerEmail: input.reviewerEmail,
+        reviewerGithubUsername: input.reviewerGithubUsername,
       });
       return {
         id: review.id,
@@ -492,11 +518,18 @@ export class ReviewsService {
     if (request.reviewer_context_id) {
       const { data: ctx } = await supabaseService.client
         .from("reviewer_contexts")
-        .select("id")
+        .select("id, reviewer_login")
         .eq("id", request.reviewer_context_id)
         .maybeSingle();
       if (!ctx) throw new AppError("Reviewer context could not be verified", 403);
     }
+
+    assertReviewerIdentityForInvite({
+      invitedEmail: request.reviewer_email as string,
+      invitedGithubLogin: request.reviewer_name as string,
+      submittedEmail: input.reviewerEmail,
+      submittedGithub: input.reviewerGithubUsername,
+    });
 
     const evidence = request.evidence_records as {
       id: string;

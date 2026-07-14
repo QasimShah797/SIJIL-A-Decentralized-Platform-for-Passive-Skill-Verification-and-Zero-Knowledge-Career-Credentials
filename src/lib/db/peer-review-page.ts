@@ -6,6 +6,13 @@ import { fetchProjectsFromDb } from "@/lib/db/projects";
 import { fetchLinkedProjectEvidence } from "@/lib/db/github-evidence";
 import type { ProjectEvidenceApiView } from "@/lib/db/github-evidence";
 import { fetchPeerReviews, fetchInvitations } from "@/lib/db/peer-reviews";
+import { fetchDeclaredSkills } from "@/lib/db/skills";
+import { cleanupOrphanedLearnerReviewData } from "@/lib/db/skill-cleanup";
+import {
+  filterInvitationsForDeclaredSkills,
+  filterProjectsForDeclaredSkills,
+  filterReviewsForDeclaredSkills,
+} from "@/lib/skill-review-filter";
 import { isApiEnabled } from "@/services/api/client";
 import {
   getPeerReviewProjectsApi,
@@ -419,6 +426,15 @@ export async function loadPeerReviewPageData(userId: string): Promise<{
   ]);
 
   const allContextRequests = [...peerReviewInvites, ...contextRequests];
+  const declaredSkills = await safeLoad(
+    () => fetchDeclaredSkills(userId),
+    [],
+  );
+  const skillRefs = declaredSkills.map((skill) => ({ id: skill.id, name: skill.name }));
+
+  if (!skillRefs.length) {
+    await safeLoad(() => cleanupOrphanedLearnerReviewData(userId), undefined);
+  }
 
   if (isApiEnabled()) {
     const [apiProjects, apiReviews] = await Promise.all([
@@ -427,10 +443,10 @@ export async function loadPeerReviewPageData(userId: string): Promise<{
     ]);
     if (apiProjects) {
       return {
-        projects: apiProjects,
-        reviews: apiReviews ?? [],
-        legacyInvitations,
-        contextRequests: allContextRequests,
+        projects: filterProjectsForDeclaredSkills(apiProjects, skillRefs),
+        reviews: filterReviewsForDeclaredSkills(apiReviews ?? [], skillRefs),
+        legacyInvitations: filterInvitationsForDeclaredSkills(legacyInvitations, skillRefs),
+        contextRequests: filterInvitationsForDeclaredSkills(allContextRequests, skillRefs),
       };
     }
   }
@@ -449,10 +465,18 @@ export async function loadPeerReviewPageData(userId: string): Promise<{
     safeLoad(() => fetchContributors(userId), [] as Array<ProjectContributor & { repoId: number }>),
   ]);
 
-  const projects = attachContributors(
-    buildPeerReviewProjects(dbProjects, linkedEvidence, evidenceProjects),
-    contributors,
+  const projects = filterProjectsForDeclaredSkills(
+    attachContributors(
+      buildPeerReviewProjects(dbProjects, linkedEvidence, evidenceProjects),
+      contributors,
+    ),
+    skillRefs,
   );
 
-  return { projects, reviews, legacyInvitations, contextRequests: allContextRequests };
+  return {
+    projects,
+    reviews: filterReviewsForDeclaredSkills(reviews, skillRefs),
+    legacyInvitations: filterInvitationsForDeclaredSkills(legacyInvitations, skillRefs),
+    contextRequests: filterInvitationsForDeclaredSkills(allContextRequests, skillRefs),
+  };
 }

@@ -128,6 +128,10 @@ export default function Integrations() {
     () => declaredSkills.map((s) => `${s.id}:${s.status}`).sort().join("|"),
     [declaredSkills],
   );
+  const declaredSkillRefs = useMemo(
+    () => declaredSkills.map((s) => ({ id: s.id, name: s.name })),
+    [declaredSkills],
+  );
 
   const filteredLinkedProjects = useMemo(() => {
     let list = linkedProjects;
@@ -235,7 +239,7 @@ export default function Integrations() {
     if (gen !== ghFetchGen.current) return;
     setGhConn(conn as GhConn | null);
     try {
-      setGhProjects(await fetchLinkedProjectEvidence(userId));
+      setGhProjects(await fetchLinkedProjectEvidence(userId, declaredSkillRefs));
     } catch {
       setGhProjects([]);
     }
@@ -249,7 +253,7 @@ export default function Integrations() {
     }
     loadGitHub();
     loadLms();
-  }, [user?.id]); // eslint-disable-line
+  }, [user?.id, declaredSkillRefs.map((s) => s.id).join("|")]); // eslint-disable-line
 
   const connectGithub = async () => {
     if (!user) {

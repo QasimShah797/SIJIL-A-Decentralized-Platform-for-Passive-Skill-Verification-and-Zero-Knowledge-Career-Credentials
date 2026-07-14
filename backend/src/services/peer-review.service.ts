@@ -19,6 +19,12 @@ import {
   displayRoleForRelationship,
 } from "../constants/peer-review";
 import { REVIEW_TYPE } from "../constants/reviews";
+import {
+  fetchDeclaredSkillRefs,
+  filterInvitationsForDeclaredSkills,
+  filterProjectsForDeclaredSkills,
+  filterReviewsForDeclaredSkills,
+} from "../utils/skill-review-filter";
 import type {
   CreatePeerReviewInviteInput,
   PeerReviewContributorView,
@@ -95,9 +101,11 @@ function contributorIdentityMatches(
   );
 }
 
-function isEmailInviteContributorId(value: string): boolean {
-  return normalizeText(value).startsWith("email-");
-}
+import {
+  assertContributorInviteEmail,
+  assertReviewerIdentityForInvite,
+  normalizeEmail,
+} from "../utils/contributor-invite-email";
 
 function reviewerNameFromEmail(email: string): string {
   const localPart = email.split("@")[0] ?? email;
@@ -125,6 +133,7 @@ function rowToPeerReview(row: Record<string, unknown>): PeerReviewRecordView {
     source: row.source as string,
     origin: (row.origin as string) ?? (imported ? "GitHub PR" : "SIJIL"),
     skill: row.skill as string,
+    skillId: (row.skill_id as string | null) ?? null,
     projectId: (row.project_id as string | undefined)
       ?? (row.evidence_record_id ? `ev-${row.evidence_record_id}` : undefined),
     projectName: row.project_name as string | undefined,
@@ -361,17 +370,6 @@ async function ensureContributorVerified(
   const contributors = await fetchContributorsForProject(userId, project);
   const contributor = contributors.find((c) => contributorIdentityMatches(c, contributorId, contributorEmail));
   if (!contributor) {
-    if (isEmailInviteContributorId(contributorId) && contributorEmail?.trim()) {
-      return {
-        id: contributorId,
-        name: reviewerNameFromEmail(contributorEmail),
-        email: contributorEmail.trim().toLowerCase(),
-        role: project.source === "LMS" ? "Instructor" : "Project Collaborator",
-        relationship: RELATIONSHIP.CONTRIBUTOR,
-        verified: true,
-        reviewStatus: "Review Pending",
-      };
-    }
     throw new AppError("Only verified contributors of the same project can submit reviews", 403);
   }
   return contributor;
@@ -680,7 +678,8 @@ export class PeerReviewService {
       });
     }
 
-    return projects;
+    const skillRefs = await fetchDeclaredSkillRefs(userId);
+    return filterProjectsForDeclaredSkills(projects, skillRefs);
   }
 
   async getProjectContributors(
@@ -773,7 +772,14 @@ export class PeerReviewService {
       .maybeSingle();
 
     if (pendingInvite) {
-      const normalizedEmail = input.contributorEmail.trim().toLowerCase();
+      const normalizedEmail = normalizeEmail(input.contributorEmail);
+      assertContributorInviteEmail({
+        contributorId: input.contributorId,
+        contributorHandle: contributor.handle,
+        contributorEmailOnFile: contributor.email,
+        requestedEmail: normalizedEmail,
+        existingInviteEmail: pendingInvite.contributor_email as string,
+      });
       let token = pendingInvite.token as string;
       let reviewLink = buildReviewLink(token);
 
@@ -832,6 +838,14 @@ export class PeerReviewService {
     const token = generateToken();
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + PEER_REVIEW_TOKEN_TTL_DAYS);
+    const normalizedEmail = normalizeEmail(input.contributorEmail);
+
+    assertContributorInviteEmail({
+      contributorId: input.contributorId,
+      contributorHandle: contributor.handle,
+      contributorEmailOnFile: contributor.email,
+      requestedEmail: normalizedEmail,
+    });
 
     let reviewerContextId: string | null = null;
     if (project.evidenceRecordId) {
@@ -855,7 +869,7 @@ export class PeerReviewService {
         source: project.source,
         contributor_id: input.contributorId,
         contributor_name: contributor.name,
-        contributor_email: input.contributorEmail.trim().toLowerCase(),
+        contributor_email: normalizedEmail,
         contributor_role: contributor.role,
         relationship: contributor.relationship,
         skill_id: skill.id,
@@ -875,7 +889,7 @@ export class PeerReviewService {
     const learnerName = await getLearnerName(userId);
     const reviewLink = buildReviewLink(token);
     await sendReviewRequestEmail(
-      input.contributorEmail,
+      normalizedEmail,
       learnerName,
       project.name,
       reviewLink,
@@ -949,17 +963,30 @@ export class PeerReviewService {
 
     const userId = invite.learner_user_id as string;
     const project = await resolveProject(userId, invite.project_id as string);
+    const verifiedContributor = await ensureContributorVerified(
+      userId,
+      project,
+      invite.contributor_id as string,
+      invite.contributor_email as string,
+    );
+
+    assertReviewerIdentityForInvite({
+      invitedEmail: invite.contributor_email as string,
+      invitedGithubLogin: verifiedContributor.handle ?? invite.contributor_name as string,
+      submittedEmail: input.reviewerEmail,
+      submittedGithub: input.reviewerGithubUsername,
+    });
+
     const contributor: PeerReviewContributorView = {
       id: invite.contributor_id as string,
       name: invite.contributor_name as string,
+      handle: verifiedContributor.handle,
       role: invite.contributor_role as string,
       relationship: (invite.relationship as Relationship) ?? RELATIONSHIP.CONTRIBUTOR,
       email: invite.contributor_email as string,
       verified: true,
       reviewStatus: "Review Pending",
     };
-
-    await ensureContributorVerified(userId, project, contributor.id);
 
     const payload = buildReviewInsertPayload({
       learnerUserId: userId,
@@ -999,42 +1026,68 @@ export class PeerReviewService {
   }
 
   async getReviewsForUser(userId: string): Promise<PeerReviewRecordView[]> {
-    const { data, error } = await supabaseService.client
-      .from("peer_reviews")
-      .select("*")
-      .eq("learner_user_id", userId)
-      .order("review_date", { ascending: false });
+    const [skillRefs, { data, error }] = await Promise.all([
+      fetchDeclaredSkillRefs(userId),
+      supabaseService.client
+        .from("peer_reviews")
+        .select("*")
+        .eq("learner_user_id", userId)
+        .order("review_date", { ascending: false }),
+    ]);
 
     if (error) throw new AppError(error.message, 500);
-    return (data ?? []).map((r) => rowToPeerReview(r as Record<string, unknown>));
+    const reviews = (data ?? []).map((r) => rowToPeerReview(r as Record<string, unknown>));
+    return filterReviewsForDeclaredSkills(reviews, skillRefs);
   }
 
   async getStats(userId: string): Promise<PeerReviewStatsView> {
+    const skillRefs = await fetchDeclaredSkillRefs(userId);
     const [reviews, { data: invites }, { data: legacyInvites }, { data: reviewRequests }] =
       await Promise.all([
         this.getReviewsForUser(userId),
         supabaseService.client
           .from("peer_review_invites")
-          .select("status")
+          .select("status, skill, skill_id")
           .eq("learner_user_id", userId),
         supabaseService.client
           .from("review_invitations")
-          .select("status")
+          .select("status, skill")
           .eq("learner_user_id", userId),
         supabaseService.client
           .from("review_requests")
-          .select("status")
+          .select("status, skill_id")
           .eq("learner_user_id", userId),
       ]);
 
-    const pendingPeerInvites = (invites ?? []).filter(
+    const scopedInvites = filterInvitationsForDeclaredSkills(
+      (invites ?? []).map((row) => ({
+        skill: (row.skill as string) ?? "",
+        skillId: (row.skill_id as string | null) ?? null,
+        status: row.status as string,
+      })),
+      skillRefs,
+    );
+    const scopedLegacyInvites = filterInvitationsForDeclaredSkills(
+      (legacyInvites ?? []).map((row) => ({
+        skill: row.skill as string,
+        status: row.status as string,
+      })),
+      skillRefs,
+    );
+    const scopedReviewRequests = skillRefs.length
+      ? (reviewRequests ?? []).filter((row) =>
+        skillRefs.some((skill) => skill.id === (row.skill_id as string | null)),
+      )
+      : [];
+
+    const pendingPeerInvites = scopedInvites.filter(
       (i) => i.status !== PEER_REVIEW_INVITE_STATUS.COMPLETED
         && i.status !== PEER_REVIEW_INVITE_STATUS.EXPIRED,
     ).length;
-    const pendingLegacy = (legacyInvites ?? []).filter(
-      (i) => (i.status as string) !== "Completed",
+    const pendingLegacy = scopedLegacyInvites.filter(
+      (i) => i.status !== "Completed",
     ).length;
-    const pendingRequests = (reviewRequests ?? []).filter(
+    const pendingRequests = scopedReviewRequests.filter(
       (r) => (r.status as string) !== "completed" && (r.status as string) !== "expired",
     ).length;
 
