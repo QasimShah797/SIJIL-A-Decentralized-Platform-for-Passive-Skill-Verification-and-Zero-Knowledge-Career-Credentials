@@ -264,9 +264,8 @@ async function upsertWalletCompetencyRecord(params: {
     safeFetchArray<QueryRow>("lms_evidence wallet", () =>
       admin
         .from("lms_evidence")
-        .select("id, source, course_name, course_code, grade, completion_status, text_preview, fetched_at")
-        .eq("user_id", userId)
-        .eq("linked_skill_id", skillId),
+        .select("id, linked_skill_id, source, course_name, course_code, grade, completion_status, text_preview, fetched_at")
+        .eq("user_id", userId),
     ),
     safeFetchArray<QueryRow>("moodle_assignments wallet", () =>
       admin
@@ -338,6 +337,20 @@ async function upsertWalletCompetencyRecord(params: {
       .filter((value): value is number => value != null),
   );
 
+  for (const row of moodleCoursesRaw) {
+    if (matchesCompetency(row.fullname, competencyName) || matchesCompetency(row.shortname, competencyName)) {
+      const courseId = numericValue(row.moodle_course_id);
+      if (courseId != null) courseIds.add(courseId);
+    }
+  }
+
+  const lmsEvidence = lmsEvidenceRaw.filter((row) =>
+    row.linked_skill_id === skillId
+    || matchesCompetency(row.course_name, competencyName)
+    || matchesCompetency(row.course_code, competencyName)
+    || matchesCompetency(row.text_preview, competencyName),
+  );
+
   const importedLmsEvidence = importedLmsRaw.filter((row) => {
     const assignmentId = numericValue(row.moodle_assignment_id);
     const courseId = numericValue(row.moodle_course_id);
@@ -369,11 +382,19 @@ async function upsertWalletCompetencyRecord(params: {
     return assignmentId != null && assignmentIds.has(assignmentId);
   });
 
-  const peerReviews = peerReviewsRaw.filter((row) => (
-    row.skill_id === skillId
-    || matchesCompetency(row.skill, competencyName)
-    || matchesCompetency(row.competency_name, competencyName)
-  ));
+  const peerReviews = peerReviewsRaw.filter((row) => {
+    if (textValue(row.source) === "LMS") return false;
+    const source = normalizedText(row.source);
+    const origin = normalizedText(row.origin);
+    const role = normalizedText(row.reviewer_role);
+    if (source.includes("lms") || source.includes("moodle") || origin.includes("moodle")
+      || role.includes("teacher feedback") || role.includes("lms instructor")) {
+      return false;
+    }
+    return row.skill_id === skillId
+      || matchesCompetency(row.skill, competencyName)
+      || matchesCompetency(row.competency_name, competencyName);
+  });
 
   const attestationRequests = attestationRequestsRaw.filter((row) => (
     row.skill_id === skillId || matchesCompetency(row.competency_name, competencyName)
@@ -402,6 +423,61 @@ async function upsertWalletCompetencyRecord(params: {
     .map(mapAttemptHistoryItem);
   const latestAttempt = attemptHistory[0] ?? null;
 
+  const githubEvidenceOnly = githubEvidenceRecords.filter((row) => textValue(row.source) !== "LMS");
+  const lmsEvidenceRecords = githubEvidenceRecords.filter((row) => textValue(row.source) === "LMS");
+  const lmsFromRecords = {
+    evidence: lmsEvidenceRecords.map((row) => {
+      const metadata = (row.metadata && typeof row.metadata === "object" ? row.metadata : {}) as Record<string, unknown>;
+      const grade = metadata.grade;
+      const gradeMax = metadata.grade_max;
+      return {
+        id: row.id,
+        course_name: metadata.course_name ?? row.repository_name,
+        assignment_name: metadata.assignment_name ?? row.description,
+        grade: grade != null && gradeMax != null ? `${grade}/${gradeMax}` : grade,
+        text_preview: metadata.assignment_name ?? row.description,
+        fetched_at: row.sync_date,
+        metadata,
+      };
+    }),
+    courses: lmsEvidenceRecords.map((row) => {
+      const metadata = (row.metadata && typeof row.metadata === "object" ? row.metadata : {}) as Record<string, unknown>;
+      return {
+        moodle_course_id: metadata.moodle_course_id,
+        fullname: metadata.course_name ?? "LMS Course",
+        shortname: null,
+        synced_at: row.sync_date,
+      };
+    }),
+    assignments: lmsEvidenceRecords.map((row) => {
+      const metadata = (row.metadata && typeof row.metadata === "object" ? row.metadata : {}) as Record<string, unknown>;
+      const grade = metadata.grade;
+      const gradeMax = metadata.grade_max;
+      return {
+        moodle_assignment_id: metadata.moodle_assignment_id,
+        name: metadata.assignment_name ?? row.description,
+        grade,
+        grade_max: gradeMax,
+        grade_formatted: grade != null && gradeMax != null ? `${grade}/${gradeMax}` : null,
+        feedback: metadata.teacher_feedback,
+        synced_at: row.sync_date,
+      };
+    }),
+  };
+  const teacherFeedbackFromRecords = lmsEvidenceRecords
+    .map((row) => {
+      const metadata = (row.metadata && typeof row.metadata === "object" ? row.metadata : {}) as Record<string, unknown>;
+      const text = metadata.teacher_feedback;
+      if (!text || typeof text !== "string") return null;
+      return {
+        source: "Moodle Teacher Feedback",
+        feedback_text: text,
+        reviewed_at: row.sync_date,
+        moodle_assignment_id: metadata.moodle_assignment_id,
+      };
+    })
+    .filter(Boolean);
+
   const summary = buildWalletEvidenceSummary({
     competencyId: skillId,
     competencyName,
@@ -412,19 +488,19 @@ async function upsertWalletCompetencyRecord(params: {
     github: {
       repos: sortRowsByLatestDate(githubRepos, ["last_updated", "synced_at"]),
       activities: sortRowsByLatestDate(githubActivities, ["occurred_at", "synced_at"]),
-      evidenceRecords: sortRowsByLatestDate(githubEvidenceRecords, ["sync_date"]),
+      evidenceRecords: sortRowsByLatestDate(githubEvidenceOnly, ["sync_date"]),
       reviews: sortRowsByLatestDate(githubReviewMatches, ["comment_created_at", "created_at"]),
     },
     lms: {
-      evidence: sortRowsByLatestDate(lmsEvidence, ["fetched_at"]),
-      courses: sortRowsByLatestDate(moodleCourses, ["synced_at"]),
-      assignments: sortRowsByLatestDate(matchingAssignments, ["submitted_at", "graded_at", "synced_at"]),
+      evidence: sortRowsByLatestDate([...lmsFromRecords.evidence, ...lmsEvidence], ["fetched_at"]),
+      courses: sortRowsByLatestDate([...lmsFromRecords.courses, ...moodleCourses], ["synced_at"]),
+      assignments: sortRowsByLatestDate([...lmsFromRecords.assignments, ...matchingAssignments], ["submitted_at", "graded_at", "synced_at"]),
       grades: sortRowsByLatestDate(moodleGrades, ["synced_at"]),
       importedEvidence: sortRowsByLatestDate(importedLmsEvidence, ["imported_at"]),
     },
     practicalTasks: attemptHistory,
     peerReviews: sortRowsByLatestDate(peerReviews, ["reviewed_at", "review_date", "created_at"]),
-    teacherFeedback: sortRowsByLatestDate(teacherFeedback, ["reviewed_at", "synced_at", "created_at"]),
+    teacherFeedback: sortRowsByLatestDate([...teacherFeedbackFromRecords, ...teacherFeedback], ["reviewed_at", "synced_at", "created_at"]),
     institutionReview: {
       status: textValue(latestInstitutionReview?.status) || null,
       feedback: textValue(latestInstitutionReview?.institution_feedback) || null,
@@ -685,7 +761,7 @@ Deno.serve(async (req) => {
             status: "completed",
             feedback: passed
               ? `MCQ passed with ${percentage}%.`
-              : `MCQ score ${percentage}% — needs improvement (pass threshold is 70%).`,
+              : `MCQ score ${percentage}% — needs improvement (pass threshold is 60%).`,
             submitted_at: submittedAt,
           })
           .eq("id", attemptId);
@@ -833,7 +909,7 @@ Deno.serve(async (req) => {
           totalQuestions,
           passed,
           resultLabel,
-          passThreshold: 70,
+          passThreshold: 60,
           attestationSent: attestationRequestId != null,
           message: passed
             ? `Test submitted successfully. Your result is ${percentage}% — Passed. Sent to your institution for attestation.`

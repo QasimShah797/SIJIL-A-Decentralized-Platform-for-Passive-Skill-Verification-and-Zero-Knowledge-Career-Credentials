@@ -58,16 +58,6 @@ export function moodleCourseMatchesSkill(
     || matchesCompetency(row.shortname, skillName);
 }
 
-export type MoodleTrailEvidence = {
-  id: string;
-  name: string;
-  courseName: string;
-  grade: string | null;
-  feedback: string | null;
-  status: string | null;
-  date: string | null;
-};
-
 export function isLmsPeerReviewRow(row: Record<string, unknown>): boolean {
   const source = typeof row.source === "string" ? row.source.trim() : "";
   if (source === "LMS") return true;

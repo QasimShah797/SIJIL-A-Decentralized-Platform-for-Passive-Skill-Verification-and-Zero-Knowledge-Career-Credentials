@@ -233,7 +233,7 @@ function normalizePracticalTaskResult(raw: Record<string, unknown> | null | unde
         ? Number(raw.score)
         : undefined;
 
-  const passed = raw?.passed === true || (scorePercent != null && scorePercent >= 70);
+  const passed = raw?.passed === true || (scorePercent != null && scorePercent >= 60);
   const status = (raw?.status as PracticalTaskResult["status"])
     ?? (passed ? "Passed" : "Failed");
 

@@ -13,6 +13,15 @@ import {
 } from "@/lib/wallet-competency-shared";
 import { parseMcqSession } from "@/lib/mcq-tasks";
 import { isMissingColumnError } from "@/lib/supabase-errors";
+import {
+  aggregateLmsEvidenceForCompetency,
+  isLmsPeerReviewRow,
+} from "@/lib/moodle-evidence-matching";
+import {
+  buildLmsBundleFromEvidenceRecords,
+  logWalletLoad,
+  splitEvidenceRecordsBySource,
+} from "@/lib/wallet-evidence-mapping";
 
 type WalletCompetencyRecordRow = {
   id: string;
@@ -108,6 +117,11 @@ function sortByLatest<T extends Record<string, unknown>>(rows: T[], fields: stri
   };
 
   return [...rows].sort((a, b) => timeFor(b) - timeFor(a));
+}
+
+function sortStringsByLatest(list: Array<string | null | undefined>): string[] {
+  return [...new Set(list.filter((item): item is string => Boolean(item)))]
+    .sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
 }
 
 function asAttemptHistory(value: unknown): WalletAttemptHistoryItem[] {
@@ -294,6 +308,54 @@ function buildAttemptHistoryItem(row: Record<string, unknown>): WalletAttemptHis
   };
 }
 
+function dedupeRowsByKey<T extends Record<string, unknown>>(
+  items: T[],
+  getKey: (item: T) => string,
+): T[] {
+  const seen = new Set<string>();
+  const deduped: T[] = [];
+  for (const item of items) {
+    const key = getKey(item);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(item);
+  }
+  return deduped;
+}
+
+function mergeLmsBuckets(
+  primary: {
+    evidence: Record<string, unknown>[];
+    courses: Record<string, unknown>[];
+    assignments: Record<string, unknown>[];
+    grades: Record<string, unknown>[];
+    importedEvidence: Record<string, unknown>[];
+    teacherFeedback: Record<string, unknown>[];
+  },
+  fromRecords: ReturnType<typeof buildLmsBundleFromEvidenceRecords>,
+) {
+  return {
+    evidence: dedupeRowsByKey(
+      [...fromRecords.evidence, ...primary.evidence],
+      (row) => asText(row.id) || `${asText(row.course_name)}:${asText(row.assignment_name)}`,
+    ),
+    courses: dedupeRowsByKey(
+      [...fromRecords.courses, ...primary.courses],
+      (row) => asText(row.moodle_course_id) || asText(row.fullname),
+    ),
+    assignments: dedupeRowsByKey(
+      [...fromRecords.assignments, ...primary.assignments],
+      (row) => asText(row.moodle_assignment_id) || asText(row.name),
+    ),
+    grades: primary.grades,
+    importedEvidence: primary.importedEvidence,
+    teacherFeedback: dedupeRowsByKey(
+      [...fromRecords.teacherFeedback, ...primary.teacherFeedback],
+      (row) => `${asText(row.moodle_assignment_id)}:${asText(row.feedback_text).slice(0, 32)}`,
+    ),
+  };
+}
+
 async function safeFetchRows(
   table: string,
   run: () => Promise<{ data: unknown[] | null; error: { message?: string } | null }>,
@@ -311,6 +373,32 @@ async function safeFetchRows(
     console.warn(`[wallet fallback] ${table} query threw:`, error);
     return [];
   }
+}
+
+async function fetchEvidenceRecords(
+  client: ReturnType<typeof asUntypedClient>,
+  userId: string,
+): Promise<Record<string, unknown>[]> {
+  const fullSelect =
+    "id, mapped_skill_id, suggested_skill_id, source, repository_name, repository_url, language, commit_count, pr_summary, sync_date, status, external_id, description, metadata, last_updated";
+  const basicSelect =
+    "id, mapped_skill_id, suggested_skill_id, source, repository_name, repository_url, language, commit_count, pr_summary, sync_date, status, external_id, description, last_updated";
+
+  try {
+    const { data, error } = await client.from("evidence_records").select(fullSelect).eq("user_id", userId);
+    if (!error && Array.isArray(data) && data.length > 0) {
+      return data.filter((item): item is Record<string, unknown> => !!item && typeof item === "object");
+    }
+    if (error) {
+      console.warn("[wallet] evidence_records full select failed:", error.message ?? error);
+    }
+  } catch (error) {
+    console.warn("[wallet] evidence_records full select threw:", error);
+  }
+
+  return safeFetchRows("evidence_records", () =>
+    client.from("evidence_records").select(basicSelect).eq("user_id", userId),
+  );
 }
 
 async function safeFetchSingleRow(
@@ -342,11 +430,15 @@ async function fetchDerivedWalletCompetencyRecords(
     skillRows,
     githubRepos,
     githubActivities,
-    evidenceRecords,
     lmsEvidence,
+    moodleCourses,
+    moodleAssignments,
+    moodleGrades,
+    moodleFeedback,
     peerReviews,
     practicalAttempts,
     mcqAttempts,
+    evidenceRecords,
   ] = await Promise.all([
     safeFetchRows("declared_skills", () =>
       client.from("declared_skills").select("id, name, domain, description, created_at").eq("user_id", userId).order("created_at", { ascending: true }),
@@ -357,11 +449,20 @@ async function fetchDerivedWalletCompetencyRecords(
     safeFetchRows("github_activities", () =>
       client.from("github_activities").select("id, linked_skill_id, activity_type, activity_title, activity_url, repo_name, commit_hash, occurred_at, synced_at").eq("user_id", userId),
     ),
-    safeFetchRows("evidence_records", () =>
-      client.from("evidence_records").select("id, mapped_skill_id, suggested_skill_id, source, repository_name, repository_url, language, commit_count, pr_summary, sync_date, status").eq("user_id", userId),
-    ),
     safeFetchRows("lms_evidence", () =>
       client.from("lms_evidence").select("id, linked_skill_id, source, course_name, course_code, grade, completion_status, text_preview, fetched_at").eq("user_id", userId),
+    ),
+    safeFetchRows("moodle_courses", () =>
+      client.from("moodle_courses").select("moodle_course_id, fullname, shortname, synced_at").eq("user_id", userId),
+    ),
+    safeFetchRows("moodle_assignments", () =>
+      client.from("moodle_assignments").select("moodle_course_id, moodle_assignment_id, name, submission_status, grade, grade_max, grade_formatted, graded_at, submitted_at, competency_tags, feedback, synced_at").eq("user_id", userId),
+    ),
+    safeFetchRows("moodle_grades", () =>
+      client.from("moodle_grades").select("moodle_course_id, item_id, item_name, item_type, grade, grade_max, grade_formatted, synced_at").eq("user_id", userId),
+    ),
+    safeFetchRows("moodle_feedback", () =>
+      client.from("moodle_feedback").select("moodle_assignment_id, feedback_text, synced_at").eq("user_id", userId),
     ),
     safeFetchRows("peer_reviews", () =>
       client.from("peer_reviews").select("id, skill_id, skill, competency_name, reviewer_name, reviewer_role, source, review_text, comment, recommendation, reviewed_at, review_date, created_at").eq("learner_user_id", userId),
@@ -391,7 +492,11 @@ async function fetchDerivedWalletCompetencyRecords(
         return [];
       }
     })(),
+    fetchEvidenceRecords(client, userId),
   ]);
+
+  const { github: githubEvidenceAll, lms: lmsEvidenceAll } = splitEvidenceRecordsBySource(evidenceRecords);
+  const walletMatchLog: Array<{ skillName: string; matched: boolean }> = [];
 
   const derived = skillRows.map((skillRow) => {
     const competencyId = asText(skillRow.id);
@@ -401,14 +506,39 @@ async function fetchDerivedWalletCompetencyRecords(
 
     const skillGithubRepos = githubRepos.filter((row) => asText(row.linked_skill_id) === competencyId);
     const skillGithubActivities = githubActivities.filter((row) => asText(row.linked_skill_id) === competencyId);
-    const skillEvidenceRecords = evidenceRecords.filter((row) =>
-      asText(row.mapped_skill_id) === competencyId || asText(row.suggested_skill_id) === competencyId,
+    const skillGithubEvidenceRecords = githubEvidenceAll.filter((row) =>
+      asText(row.mapped_skill_id) === competencyId
+      || asText(row.suggested_skill_id) === competencyId,
     );
-    const skillLmsEvidence = lmsEvidence.filter((row) => asText(row.linked_skill_id) === competencyId);
+    const skillLmsEvidenceRecords = lmsEvidenceAll.filter((row) =>
+      asText(row.mapped_skill_id) === competencyId,
+    );
+    walletMatchLog.push({
+      skillName: competencyName,
+      matched: skillLmsEvidenceRecords.length > 0,
+    });
+
+    const lmsFromRecords = buildLmsBundleFromEvidenceRecords(lmsEvidenceAll, competencyId);
+    const aggregatedLms = mergeLmsBuckets(
+      aggregateLmsEvidenceForCompetency(competencyId, competencyName, {
+        lmsEvidence,
+        moodleCourses,
+        moodleAssignments,
+        moodleGrades,
+        moodleFeedback,
+        importedLmsEvidence: [],
+        lmsEvidenceRecords: skillLmsEvidenceRecords,
+      }),
+      lmsFromRecords,
+    );
     const skillPeerReviews = peerReviews.filter((row) =>
-      asText(row.skill_id) === competencyId
-      || competencyMatches(row.skill, competencyName)
-      || competencyMatches(row.competency_name, competencyName),
+      asText(row.source) !== "LMS"
+      && !isLmsPeerReviewRow(row)
+      && (
+        asText(row.skill_id) === competencyId
+        || competencyMatches(row.skill, competencyName)
+        || competencyMatches(row.competency_name, competencyName)
+      ),
     );
 
     const mcqHistory = sortByLatest(
@@ -445,19 +575,19 @@ async function fetchDerivedWalletCompetencyRecords(
       github: {
         repos: sortByLatest(skillGithubRepos, ["last_updated", "synced_at"]),
         activities: sortByLatest(skillGithubActivities, ["occurred_at", "synced_at"]),
-        evidenceRecords: sortByLatest(skillEvidenceRecords, ["sync_date"]),
+        evidenceRecords: sortByLatest(skillGithubEvidenceRecords, ["sync_date"]),
         reviews: [],
       },
       lms: {
-        evidence: sortByLatest(skillLmsEvidence, ["fetched_at"]),
-        courses: [],
-        assignments: [],
-        grades: [],
-        importedEvidence: [],
+        evidence: sortByLatest(aggregatedLms.evidence, ["fetched_at"]),
+        courses: sortByLatest(aggregatedLms.courses, ["synced_at"]),
+        assignments: sortByLatest(aggregatedLms.assignments, ["submitted_at", "graded_at", "synced_at"]),
+        grades: sortByLatest(aggregatedLms.grades, ["synced_at"]),
+        importedEvidence: sortByLatest(aggregatedLms.importedEvidence, ["imported_at"]),
       },
       practicalTasks: mcqHistory,
       peerReviews: sortByLatest(skillPeerReviews, ["reviewed_at", "review_date", "created_at"]),
-      teacherFeedback: [],
+      teacherFeedback: sortByLatest(aggregatedLms.teacherFeedback, ["reviewed_at"]),
       externalEvidence: [],
       institutionReview: {
         status: null,
@@ -468,12 +598,18 @@ async function fetchDerivedWalletCompetencyRecords(
         github: [
           ...skillGithubRepos.map((row) => asNullableText(row.last_updated) ?? asNullableText(row.synced_at)),
           ...skillGithubActivities.map((row) => asNullableText(row.occurred_at) ?? asNullableText(row.synced_at)),
-          ...skillEvidenceRecords.map((row) => asNullableText(row.sync_date)),
+          ...skillGithubEvidenceRecords.map((row) => asNullableText(row.sync_date)),
         ],
-        lms: skillLmsEvidence.map((row) => asNullableText(row.fetched_at)),
+        lms: sortStringsByLatest([
+          ...aggregatedLms.evidence.map((row) => asNullableText(row.fetched_at)),
+          ...aggregatedLms.courses.map((row) => asNullableText(row.synced_at)),
+          ...aggregatedLms.assignments.map((row) => asNullableText(row.submitted_at) ?? asNullableText(row.graded_at) ?? asNullableText(row.synced_at)),
+          ...aggregatedLms.grades.map((row) => asNullableText(row.synced_at)),
+          ...aggregatedLms.importedEvidence.map((row) => asNullableText(row.imported_at)),
+        ]),
         practicalTask: mcqHistory.map((row) => row.submittedAt),
         peerReviews: skillPeerReviews.map((row) => asNullableText(row.reviewed_at) ?? asNullableText(row.review_date) ?? asNullableText(row.created_at)),
-        teacherFeedback: [],
+        teacherFeedback: aggregatedLms.teacherFeedback.map((row) => asNullableText(row.reviewed_at)),
         externalEvidence: [],
       },
     });
@@ -522,6 +658,12 @@ async function fetchDerivedWalletCompetencyRecords(
     };
 
     return rowToWalletRecord(row);
+  });
+
+  logWalletLoad({
+    declaredSkillCount: skillRows.length,
+    lmsEvidenceCount: lmsEvidenceAll.length,
+    matches: walletMatchLog,
   });
 
   return derived

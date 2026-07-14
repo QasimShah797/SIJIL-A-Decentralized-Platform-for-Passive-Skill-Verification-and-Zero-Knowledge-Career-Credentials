@@ -132,7 +132,7 @@ function rowToPeerReview(row: Record<string, unknown>): PeerReviewRecordView {
     reviewerRole: (row.reviewer_role as string) ?? displayRoleForRelationship(relationship),
     source: row.source as string,
     origin: (row.origin as string) ?? (imported ? "GitHub PR" : "SIJIL"),
-    skill: row.skill as string,
+    skill: (row.skill as string) ?? (row.competency_name as string) ?? "",
     skillId: (row.skill_id as string | null) ?? null,
     projectId: (row.project_id as string | undefined)
       ?? (row.evidence_record_id ? `ev-${row.evidence_record_id}` : undefined),
@@ -504,85 +504,6 @@ async function fetchSupplementalGitHubReviews(userId: string): Promise<PeerRevie
     relationship: RELATIONSHIP.CONTRIBUTOR,
     imported: true,
   })).filter((review) => review.comment.trim().length > 0);
-}
-
-async function fetchSupplementalLmsReviews(userId: string): Promise<PeerReviewRecordView[]> {
-  const [feedbackRes, assignmentsRes, importedEvidenceRes, lmsEvidenceRes, skillsRes] = await Promise.all([
-    supabaseService.client
-      .from("moodle_feedback")
-      .select("moodle_assignment_id, feedback_text, synced_at, created_at")
-      .eq("user_id", userId),
-    supabaseService.client
-      .from("moodle_assignments")
-      .select("moodle_assignment_id, moodle_course_id, name, submission_status, graded_at, submitted_at, synced_at")
-      .eq("user_id", userId),
-    supabaseService.client
-      .from("imported_lms_evidence")
-      .select("moodle_assignment_id, moodle_course_id, course_name, activity_name, lms_evidence_id, imported_at")
-      .eq("user_id", userId),
-    supabaseService.client
-      .from("lms_evidence")
-      .select("id, linked_skill_id, course_name")
-      .eq("user_id", userId),
-    supabaseService.client
-      .from("declared_skills")
-      .select("id, name")
-      .eq("user_id", userId),
-  ]);
-
-  if (feedbackRes.error) return [];
-
-  const assignmentsById = new Map(
-    (assignmentsRes.data ?? []).map((row) => [Number(row.moodle_assignment_id), row as Record<string, unknown>]),
-  );
-  const importedByAssignmentId = new Map(
-    (importedEvidenceRes.data ?? []).map((row) => [Number(row.moodle_assignment_id), row as Record<string, unknown>]),
-  );
-  const lmsEvidenceById = new Map(
-    (lmsEvidenceRes.data ?? []).map((row) => [row.id as string, row as Record<string, unknown>]),
-  );
-  const skillNameById = new Map(
-    (skillsRes.data ?? []).map((row) => [row.id as string, row.name as string]),
-  );
-
-  return (feedbackRes.data ?? [])
-    .map((row) => {
-      const assignmentId = Number(row.moodle_assignment_id);
-      const assignment = assignmentsById.get(assignmentId);
-      const imported = importedByAssignmentId.get(assignmentId);
-      const lmsEvidence = imported?.lms_evidence_id
-        ? lmsEvidenceById.get(imported.lms_evidence_id as string)
-        : null;
-      const skillName = lmsEvidence?.linked_skill_id
-        ? skillNameById.get(lmsEvidence.linked_skill_id as string)
-        : null;
-      const comment = (row.feedback_text as string | null)?.trim() ?? "";
-      if (!comment) return null;
-
-      return {
-        id: `lms-feedback-${assignmentId}`,
-        reviewerName: "LMS Instructor",
-        reviewerRole: "Teacher Feedback",
-        source: "LMS",
-        origin: "Moodle Feedback",
-        skill: skillName ?? (lmsEvidence?.course_name as string) ?? (imported?.course_name as string) ?? "LMS coursework",
-        projectId: `lms-${assignmentId}`,
-        projectName: (imported?.course_name as string) ?? (lmsEvidence?.course_name as string) ?? "Moodle assignment",
-        evidenceLabel: (assignment?.name as string) ?? (imported?.activity_name as string) ?? "Moodle assignment feedback",
-        evidenceUrl: undefined,
-        rating: 4,
-        comment,
-        recommendation: undefined,
-        date: (row.synced_at as string) ?? (row.created_at as string) ?? (assignment?.graded_at as string) ?? new Date().toISOString(),
-        contextStatus: CONTEXT_STATUS.VERIFIED,
-        contributorVerification: CONTRIBUTOR_VERIFICATION.VERIFIED,
-        trustWeight: "High Trust",
-        trustWeightScore: 0.95,
-        relationship: RELATIONSHIP.INSTRUCTOR,
-        imported: true,
-      } satisfies PeerReviewRecordView;
-    })
-    .filter((review): review is PeerReviewRecordView => review !== null);
 }
 
 export class PeerReviewService {
@@ -1036,7 +957,19 @@ export class PeerReviewService {
     ]);
 
     if (error) throw new AppError(error.message, 500);
-    const reviews = (data ?? []).map((r) => rowToPeerReview(r as Record<string, unknown>));
+    const reviews = (data ?? [])
+      .map((r) => rowToPeerReview(r as Record<string, unknown>))
+      .filter((review) => {
+        if (review.source === "LMS") return false;
+        const source = String(review.source ?? "").toLowerCase();
+        const origin = String(review.origin ?? "").toLowerCase();
+        const role = String(review.reviewerRole ?? "").toLowerCase();
+        return !source.includes("lms")
+          && !source.includes("moodle")
+          && !origin.includes("moodle")
+          && !role.includes("teacher feedback")
+          && !role.includes("lms instructor");
+      });
     return filterReviewsForDeclaredSkills(reviews, skillRefs);
   }
 

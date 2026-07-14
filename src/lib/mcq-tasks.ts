@@ -184,7 +184,17 @@ export async function generateSecureMcqTask(
   return parsed;
 }
 
-export const MCQ_PASS_PERCENT = 70;
+export const MCQ_PASS_PERCENT = 60;
+
+export function isMcqPassed(percentage: number | null | undefined): boolean {
+  return typeof percentage === "number" && percentage >= MCQ_PASS_PERCENT;
+}
+
+export function mcqResultLabel(percentage: number | null | undefined, passed?: boolean | null): string | null {
+  if (percentage == null) return null;
+  const didPass = typeof passed === "boolean" ? passed : isMcqPassed(percentage);
+  return didPass ? "Passed" : "Needs Improvement";
+}
 
 export async function evaluateSecureMcqAttempt(
   attemptId: string,
@@ -222,8 +232,8 @@ export async function evaluateSecureMcqAttempt(
   }
 
   const percentage = Number(data.percentage ?? 0);
-  const passed = data.passed === true;
-  const resultLabel = String(data.resultLabel ?? (passed ? "Passed" : "Needs Improvement"));
+  const passed = isMcqPassed(percentage);
+  const resultLabel = mcqResultLabel(percentage, passed) ?? "Needs Improvement";
 
   console.log("[mcq-submit] server result:", {
     percentage,

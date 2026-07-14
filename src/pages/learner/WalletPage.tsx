@@ -36,6 +36,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { getWalletCompetenciesApi } from "@/services/api/wallet.api";
+import { parseEvidenceMetadata } from "@/lib/wallet-evidence-mapping";
 
 function formatDate(value: string | null | undefined): string {
   if (!value) return "Recent";
@@ -66,8 +67,10 @@ function badgeVariant(
 }
 
 function latestAttempt(summary: WalletEvidenceSummary): WalletAttemptHistoryItem | null {
-  return summary.practicalTask.latestAttempt
-    ?? summary.practicalTask.attemptHistory[0]
+  const practicalTask = summary?.practicalTask;
+  if (!practicalTask) return null;
+  return practicalTask.latestAttempt
+    ?? (Array.isArray(practicalTask.attemptHistory) ? practicalTask.attemptHistory[0] : null)
     ?? null;
 }
 
@@ -114,35 +117,200 @@ function ItemCard({
   );
 }
 
-function WalletEvidenceDialog({
-  record,
-  fallbackDid,
-  open,
-  onOpenChange,
+function EmptyEvidenceNote({ message }: { message: string }) {
+  return (
+    <div className="rounded-xl border border-dashed border-border/60 bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
+      {message}
+    </div>
+  );
+}
+
+function metadataText(value: unknown): string | null {
+  if (value == null) return null;
+  if (typeof value === "string") return formatOptional(value);
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  return null;
+}
+
+function formatGradeDisplay(
+  metadata: Record<string, unknown>,
+  item?: Record<string, unknown>,
+): string {
+  const grade = metadata.grade ?? item?.grade;
+  const gradeMax = metadata.grade_max ?? item?.grade_max;
+  const formatted = metadata.grade_formatted ?? item?.grade_formatted;
+  if (formatted != null && String(formatted).trim()) return String(formatted);
+  if (grade != null && gradeMax != null) return `${grade} / ${gradeMax}`;
+  if (grade != null) return String(grade);
+  return "N/A";
+}
+
+function courseNameForAssignment(
+  assignment: Record<string, unknown>,
+  courses: Record<string, unknown>[],
+): string {
+  const metadata = parseEvidenceMetadata(assignment.metadata);
+  const fromMetadata = metadataText(metadata.course_name);
+  if (fromMetadata) return fromMetadata;
+
+  const courseId = typeof assignment.moodle_course_id === "string" || typeof assignment.moodle_course_id === "number"
+    ? String(assignment.moodle_course_id)
+    : "";
+  if (!courseId) return "N/A";
+
+  const course = courses.find((row) => String(row.moodle_course_id ?? "") === courseId);
+  return metadataText(course?.fullname) ?? metadataText(course?.shortname) ?? "N/A";
+}
+
+function LmsEvidenceItemCard({ item }: { item: Record<string, unknown> }) {
+  const metadata = parseEvidenceMetadata(item.metadata);
+  const courseName = metadataText(metadata.course_name) ?? metadataText(item.course_name) ?? "N/A";
+  const assignmentName = metadataText(metadata.assignment_name)
+    ?? metadataText(item.assignment_name)
+    ?? metadataText(item.text_preview)
+    ?? "N/A";
+  const grade = formatGradeDisplay(metadata, item);
+  const status = metadataText(item.status) ?? metadataText(item.completion_status) ?? "N/A";
+  const teacherFeedback = metadataText(metadata.teacher_feedback);
+  const title = courseName !== "N/A" ? courseName : assignmentName;
+
+  return (
+    <div className="rounded-xl border border-border/60 bg-card p-4">
+      <div className="text-sm font-medium">{title}</div>
+      <div className="mt-3 space-y-2 text-sm">
+        <div>
+          <div className="text-[11px] text-muted-foreground">Course</div>
+          <div className="mt-0.5">{courseName}</div>
+        </div>
+        <div>
+          <div className="text-[11px] text-muted-foreground">Assignment</div>
+          <div className="mt-0.5">{assignmentName}</div>
+        </div>
+        <div>
+          <div className="text-[11px] text-muted-foreground">Grade</div>
+          <div className="mt-0.5">{grade}</div>
+        </div>
+        <div>
+          <div className="text-[11px] text-muted-foreground">Status</div>
+          <div className="mt-0.5">{status}</div>
+        </div>
+        {teacherFeedback && (
+          <div>
+            <div className="text-[11px] text-muted-foreground">Teacher Feedback</div>
+            <div className="mt-0.5 text-muted-foreground">{teacherFeedback}</div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function LmsAssignmentCard({
+  assignment,
+  courses,
 }: {
+  assignment: Record<string, unknown>;
+  courses: Record<string, unknown>[];
+}) {
+  const metadata = parseEvidenceMetadata(assignment.metadata);
+  const assignmentName = metadataText(assignment.name) ?? metadataText(metadata.assignment_name) ?? "N/A";
+  const courseName = courseNameForAssignment(assignment, courses);
+  const grade = formatGradeDisplay(metadata, assignment);
+  const submissionStatus = metadataText(assignment.submission_status) ?? metadataText(assignment.status) ?? "N/A";
+  const teacherFeedback = metadataText(metadata.teacher_feedback) ?? metadataText(assignment.feedback);
+
+  return (
+    <div className="rounded-xl border border-border/60 bg-card p-4">
+      <div className="text-sm font-medium">{assignmentName}</div>
+      <div className="mt-3 space-y-2 text-sm">
+        <div>
+          <div className="text-[11px] text-muted-foreground">Course</div>
+          <div className="mt-0.5">{courseName}</div>
+        </div>
+        <div>
+          <div className="text-[11px] text-muted-foreground">Assignment</div>
+          <div className="mt-0.5">{assignmentName}</div>
+        </div>
+        <div>
+          <div className="text-[11px] text-muted-foreground">Grade</div>
+          <div className="mt-0.5">{grade}</div>
+        </div>
+        <div>
+          <div className="text-[11px] text-muted-foreground">Submission status</div>
+          <div className="mt-0.5">{submissionStatus}</div>
+        </div>
+        {teacherFeedback && (
+          <div>
+            <div className="text-[11px] text-muted-foreground">Teacher Feedback</div>
+            <div className="mt-0.5 text-muted-foreground">{teacherFeedback}</div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function WalletEvidenceDialog(props: {
   record: WalletCompetencyRecordView | null;
   fallbackDid: string | null;
   open: boolean;
   onOpenChange: (next: boolean) => void;
 }) {
+  const { record, fallbackDid, open, onOpenChange } = props;
+
   if (!record) return null;
 
   const summary = record.evidencePackage;
+  const githubRepos = Array.isArray(summary?.github?.repos) ? summary.github.repos : [];
+  const githubActivities = Array.isArray(summary?.github?.activities) ? summary.github.activities : [];
+  const githubEvidenceRecords = Array.isArray(summary?.github?.evidenceRecords) ? summary.github.evidenceRecords : [];
+  const githubReviews = Array.isArray(summary?.github?.reviews) ? summary.github.reviews : [];
+  const lmsEvidenceItems = Array.isArray(record?.evidencePackage?.lms?.evidence)
+    ? record.evidencePackage.lms.evidence
+    : [];
+  const lmsAssignments = Array.isArray(record?.evidencePackage?.lms?.assignments)
+    ? record.evidencePackage.lms.assignments
+    : [];
+  const lmsCourses = Array.isArray(record?.evidencePackage?.lms?.courses)
+    ? record.evidencePackage.lms.courses
+    : [];
+  const peerReviews = Array.isArray(summary?.peerReviews) ? summary.peerReviews : [];
+  const teacherFeedback = Array.isArray(summary?.teacherFeedback) ? summary.teacherFeedback : [];
+  const attemptHistory = Array.isArray(summary?.practicalTask?.attemptHistory)
+    ? summary.practicalTask.attemptHistory
+    : [];
+
   const githubItems = [
-    ...summary.github.repos,
-    ...summary.github.activities,
-    ...summary.github.evidenceRecords,
-    ...summary.github.reviews,
+    ...githubRepos,
+    ...githubActivities,
+    ...githubEvidenceRecords,
+    ...githubReviews,
   ];
-  const lmsItems = [
-    ...summary.lms.evidence,
-    ...summary.lms.courses,
-    ...summary.lms.assignments,
-    ...summary.lms.grades,
-    ...summary.lms.importedEvidence,
-  ];
-  const did = summary.learner.did ?? fallbackDid;
+  const hasLmsContent = lmsEvidenceItems.length > 0 || lmsAssignments.length > 0;
+  const did = summary?.learner?.did ?? fallbackDid;
   const attempt = latestAttempt(summary);
+  const shownFeedback = new Set<string>();
+  for (const item of lmsEvidenceItems) {
+    const metadata = parseEvidenceMetadata(item.metadata);
+    const text = metadataText(metadata.teacher_feedback);
+    if (text) shownFeedback.add(text);
+  }
+  for (const assignment of lmsAssignments) {
+    const metadata = parseEvidenceMetadata(assignment.metadata);
+    const text = metadataText(metadata.teacher_feedback) ?? metadataText(assignment.feedback);
+    if (text) shownFeedback.add(text);
+  }
+  const standaloneTeacherFeedback = teacherFeedback.filter((feedback) => {
+    const text = formatOptional(feedback.feedback_text);
+    if (!text) return false;
+    return !shownFeedback.has(text);
+  });
+
+  console.log("LMS WALLET DATA", {
+    lmsEvidence: lmsEvidenceItems,
+    assignments: lmsAssignments,
+    evidencePackage: record?.evidencePackage,
+  });
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -194,123 +362,88 @@ function WalletEvidenceDialog({
             </CardContent>
           </Card>
 
-          {githubItems.length > 0 && (
-            <Section title="GitHub Evidence">
-              {summary.github.repos.map((repo, index) => (
-                <ItemCard
-                  key={`repo-${index}`}
-                  title={formatOptional(repo.full_name) ?? formatOptional(repo.repo_name) ?? "Repository"}
-                  meta={[
-                    formatOptional(repo.primary_language),
-                    typeof repo.commit_count === "number" ? `${repo.commit_count} commits` : null,
-                    formatDate(formatOptional(repo.last_updated) ?? formatOptional(repo.synced_at)),
-                  ].filter(Boolean).join(" · ")}
-                  body={formatOptional(repo.description)}
-                  href={formatOptional(repo.github_url)}
-                />
-              ))}
-              {summary.github.activities.map((activity, index) => (
-                <ItemCard
-                  key={`activity-${index}`}
-                  title={formatOptional(activity.activity_title) ?? "GitHub activity"}
-                  meta={[
-                    formatOptional(activity.activity_type),
-                    formatOptional(activity.repo_name),
-                    formatDate(formatOptional(activity.occurred_at) ?? formatOptional(activity.synced_at)),
-                  ].filter(Boolean).join(" · ")}
-                  body={formatOptional(activity.commit_hash)}
-                  href={formatOptional(activity.activity_url)}
-                />
-              ))}
-              {summary.github.evidenceRecords.map((item, index) => (
-                <ItemCard
-                  key={`evidence-${index}`}
-                  title={formatOptional(item.repository_name) ?? "Evidence record"}
-                  meta={[
-                    formatOptional(item.status),
-                    formatOptional(item.language),
-                    formatDate(formatOptional(item.sync_date)),
-                  ].filter(Boolean).join(" · ")}
-                  href={formatOptional(item.repository_url)}
-                />
-              ))}
-              {summary.github.reviews.map((review, index) => (
-                <ItemCard
-                  key={`review-${index}`}
-                  title={formatOptional(review.discussion_title) ?? "GitHub review"}
-                  meta={[
-                    formatOptional(review.review_type),
-                    formatOptional(review.comment_author),
-                    formatDate(formatOptional(review.comment_created_at)),
-                  ].filter(Boolean).join(" · ")}
-                  body={formatOptional(review.comment_body)}
-                  href={formatOptional(review.discussion_url)}
-                />
-              ))}
-            </Section>
-          )}
+          <Section title="GitHub Evidence">
+            {githubItems.length > 0 ? (
+              <>
+                {Array.isArray(githubRepos) && githubRepos.map((repo, index) => (
+                  <ItemCard
+                    key={`repo-${index}`}
+                    title={formatOptional(repo.full_name) ?? formatOptional(repo.repo_name) ?? "Repository"}
+                    meta={[
+                      formatOptional(repo.primary_language),
+                      typeof repo.commit_count === "number" ? `${repo.commit_count} commits` : null,
+                      formatDate(formatOptional(repo.last_updated) ?? formatOptional(repo.synced_at)),
+                    ].filter(Boolean).join(" · ")}
+                    body={formatOptional(repo.description)}
+                    href={formatOptional(repo.github_url)}
+                  />
+                ))}
+                {Array.isArray(githubActivities) && githubActivities.map((activity, index) => (
+                  <ItemCard
+                    key={`activity-${index}`}
+                    title={formatOptional(activity.activity_title) ?? "GitHub activity"}
+                    meta={[
+                      formatOptional(activity.activity_type),
+                      formatOptional(activity.repo_name),
+                      formatDate(formatOptional(activity.occurred_at) ?? formatOptional(activity.synced_at)),
+                    ].filter(Boolean).join(" · ")}
+                    body={formatOptional(activity.commit_hash)}
+                    href={formatOptional(activity.activity_url)}
+                  />
+                ))}
+                {Array.isArray(githubEvidenceRecords) && githubEvidenceRecords.map((item, index) => (
+                  <ItemCard
+                    key={`evidence-${index}`}
+                    title={formatOptional(item.repository_name) ?? "Evidence record"}
+                    meta={[
+                      formatOptional(item.status),
+                      formatOptional(item.language),
+                      formatDate(formatOptional(item.sync_date)),
+                    ].filter(Boolean).join(" · ")}
+                    href={formatOptional(item.repository_url)}
+                  />
+                ))}
+                {Array.isArray(githubReviews) && githubReviews.map((review, index) => (
+                  <ItemCard
+                    key={`review-${index}`}
+                    title={formatOptional(review.discussion_title) ?? "GitHub review"}
+                    meta={[
+                      formatOptional(review.review_type),
+                      formatOptional(review.comment_author),
+                      formatDate(formatOptional(review.comment_created_at)),
+                    ].filter(Boolean).join(" · ")}
+                    body={formatOptional(review.comment_body)}
+                    href={formatOptional(review.discussion_url)}
+                  />
+                ))}
+              </>
+            ) : (
+              <EmptyEvidenceNote message="No GitHub evidence available" />
+            )}
+          </Section>
 
-          {lmsItems.length > 0 && (
-            <Section title="LMS / Moodle Evidence">
-              {summary.lms.evidence.map((item, index) => (
-                <ItemCard
-                  key={`lms-evidence-${index}`}
-                  title={formatOptional(item.course_name) ?? "LMS evidence"}
-                  meta={[
-                    formatOptional(item.grade),
-                    formatOptional(item.completion_status),
-                    formatDate(formatOptional(item.fetched_at)),
-                  ].filter(Boolean).join(" · ")}
-                  body={formatOptional(item.text_preview)}
-                />
-              ))}
-              {summary.lms.courses.map((course, index) => (
-                <ItemCard
-                  key={`course-${index}`}
-                  title={formatOptional(course.fullname) ?? formatOptional(course.shortname) ?? "Course"}
-                  meta={formatDate(formatOptional(course.synced_at))}
-                />
-              ))}
-              {summary.lms.assignments.map((assignment, index) => (
-                <ItemCard
-                  key={`assignment-${index}`}
-                  title={formatOptional(assignment.name) ?? "Assignment"}
-                  meta={[
-                    formatOptional(assignment.grade_formatted)
-                      ?? (typeof assignment.grade === "number" ? String(assignment.grade) : null),
-                    formatOptional(assignment.submission_status),
-                    formatDate(formatOptional(assignment.submitted_at) ?? formatOptional(assignment.graded_at) ?? formatOptional(assignment.synced_at)),
-                  ].filter(Boolean).join(" · ")}
-                />
-              ))}
-              {summary.lms.grades.map((grade, index) => (
-                <ItemCard
-                  key={`grade-${index}`}
-                  title={formatOptional(grade.item_name) ?? "Grade"}
-                  meta={[
-                    formatOptional(grade.grade_formatted)
-                      ?? (typeof grade.grade === "number" ? String(grade.grade) : null),
-                    formatOptional(grade.item_type),
-                    formatDate(formatOptional(grade.synced_at)),
-                  ].filter(Boolean).join(" · ")}
-                />
-              ))}
-              {summary.lms.importedEvidence.map((item, index) => (
-                <ItemCard
-                  key={`imported-${index}`}
-                  title={formatOptional(item.activity_name) ?? "Imported LMS evidence"}
-                  meta={[
-                    formatOptional(item.course_name),
-                    formatOptional(item.grade),
-                    formatDate(formatOptional(item.imported_at)),
-                  ].filter(Boolean).join(" · ")}
-                  body={formatOptional(item.feedback_preview)}
-                />
-              ))}
-            </Section>
-          )}
-
-          {summary.practicalTask.attemptHistory.length > 0 && (
+          <Section title="LMS Evidence">
+            {hasLmsContent ? (
+              <>
+                {lmsEvidenceItems.map((item, index) => (
+                  <LmsEvidenceItemCard
+                    key={String(item.id ?? item.external_id ?? `lms-evidence-${index}`)}
+                    item={item}
+                  />
+                ))}
+                {lmsAssignments.map((assignment, index) => (
+                  <LmsAssignmentCard
+                    key={String(assignment.moodle_assignment_id ?? assignment.id ?? `lms-assignment-${index}`)}
+                    assignment={assignment}
+                    courses={lmsCourses}
+                  />
+                ))}
+              </>
+            ) : (
+              <EmptyEvidenceNote message="No LMS evidence available" />
+            )}
+          </Section>
+          {attemptHistory.length > 0 && (
             <Section title="Practical Task">
               {attempt && (
                 <Card>
@@ -347,7 +480,7 @@ function WalletEvidenceDialog({
                 </Card>
               )}
 
-              {summary.practicalTask.attemptHistory.map((item) => (
+              {Array.isArray(attemptHistory) && attemptHistory.map((item) => (
                 <ItemCard
                   key={item.attemptId}
                   title={item.title}
@@ -362,9 +495,9 @@ function WalletEvidenceDialog({
             </Section>
           )}
 
-          {summary.peerReviews.length > 0 && (
+          {peerReviews.length > 0 && (
             <Section title="Peer Reviews">
-              {summary.peerReviews.map((review, index) => (
+              {Array.isArray(peerReviews) && peerReviews.map((review, index) => (
                 <ItemCard
                   key={`peer-${index}`}
                   title={formatOptional(review.reviewer_name) ?? formatOptional(review.reviewerName) ?? "Peer review"}
@@ -379,9 +512,9 @@ function WalletEvidenceDialog({
             </Section>
           )}
 
-          {summary.teacherFeedback.length > 0 && (
+          {standaloneTeacherFeedback.length > 0 && (
             <Section title="Teacher Feedback">
-              {summary.teacherFeedback.map((feedback, index) => (
+              {Array.isArray(standaloneTeacherFeedback) && standaloneTeacherFeedback.map((feedback, index) => (
                 <ItemCard
                   key={`teacher-${index}`}
                   title={formatOptional(feedback.source) ?? "Teacher feedback"}
@@ -404,6 +537,7 @@ export default function WalletPage() {
   const { user } = useAuth();
   const { profile, loading: profileLoading } = useLearnerProfile();
   const [records, setRecords] = useState<WalletCompetencyRecordView[]>([]);
+  const [derivedRecordsById, setDerivedRecordsById] = useState<Map<string, WalletCompetencyRecordView>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedRecord, setSelectedRecord] = useState<WalletCompetencyRecordView | null>(null);
@@ -421,13 +555,26 @@ export default function WalletPage() {
     setError(null);
 
     (async () => {
+      const derivedRecords = await fetchWalletCompetencyRecords(user.id);
       const apiRecords = await getWalletCompetenciesApi();
-      if (apiRecords) return apiRecords;
-      return fetchWalletCompetencyRecords(user.id);
+      if (!apiRecords?.length) {
+        const derivedById = new Map(derivedRecords.map((record) => [record.competencyId, record]));
+        return { merged: derivedRecords, derivedById };
+      }
+
+      const derivedById = new Map(derivedRecords.map((record) => [record.competencyId, record]));
+      const merged = apiRecords.map((record) => derivedById.get(record.competencyId) ?? record);
+      for (const record of derivedRecords) {
+        if (!merged.some((item) => item.competencyId === record.competencyId)) {
+          merged.push(record);
+        }
+      }
+      return { merged, derivedById };
     })()
-      .then((next) => {
+      .then((result) => {
         if (!active) return;
-        setRecords(next);
+        setRecords(result.merged);
+        setDerivedRecordsById(result.derivedById);
       })
       .catch((nextError: unknown) => {
         if (!active) return;
@@ -539,7 +686,7 @@ export default function WalletPage() {
                     </div>
 
                     <div className="flex flex-wrap gap-2">
-                      {record.sourceBadges.map((badge) => (
+                      {Array.isArray(record.sourceBadges) && record.sourceBadges.map((badge) => (
                         <StatusBadge key={badge} variant={badgeVariant(badge)}>
                           {badge}
                         </StatusBadge>
@@ -562,7 +709,10 @@ export default function WalletPage() {
                     </div>
 
                     <div className="grid gap-2 sm:grid-cols-2">
-                      <Button className="w-full" onClick={() => setSelectedRecord(record)}>
+                      <Button
+                        className="w-full"
+                        onClick={() => setSelectedRecord(derivedRecordsById.get(record.competencyId) ?? record)}
+                      >
                         <Eye className="mr-1.5 h-4 w-4" />
                         View Evidence Package
                       </Button>

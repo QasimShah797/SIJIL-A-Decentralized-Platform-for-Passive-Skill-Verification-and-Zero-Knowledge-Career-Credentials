@@ -39,7 +39,7 @@ export type GeneratedMcqTest = {
   questions: McqQuestionFull[];
 };
 
-const MCQ_PASS_THRESHOLD = 0.7;
+const MCQ_PASS_THRESHOLD = 0.6;
 export const MCQ_PASS_PERCENT = Math.round(MCQ_PASS_THRESHOLD * 100);
 
 const MCQ_GENERATION_SCHEMA = {

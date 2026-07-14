@@ -1,4 +1,5 @@
 import { supabaseService } from "../services/supabase.service";
+import { matchesCompetency } from "./moodle-evidence-matching";
 
 export type DeclaredSkillRef = {
   id: string;
@@ -18,8 +19,7 @@ export function reviewMatchesDeclaredSkills(
   const ids = new Set(skills.map((skill) => skill.id));
   if (review.skillId && ids.has(review.skillId)) return true;
 
-  const names = new Set(skills.map((skill) => normalizeSkillName(skill.name)));
-  return names.has(normalizeSkillName(review.skill));
+  return skills.some((skill) => matchesCompetency(review.skill, skill.name));
 }
 
 export function filterProjectsForDeclaredSkills<T extends {

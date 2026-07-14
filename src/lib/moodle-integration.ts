@@ -10,7 +10,7 @@ export const CURRENT_MOODLE_SITE_HOST = "sijil-fyp.moodlecloud.com";
 export const LEGACY_MOODLE_SITE_HOST = "sijil.moodlecloud.com";
 
 /** Expected edge function version — mismatch means remote deploy is stale. */
-export const MOODLE_SYNC_FUNCTION_VERSION = "3.3.0";
+export const MOODLE_SYNC_FUNCTION_VERSION = "3.4.0";
 
 export function normalizeMoodleSiteUrl(url: string): string {
   return url.trim().replace(/\/+$/, "").toLowerCase();
@@ -323,6 +323,31 @@ export async function syncMoodleActivities(): Promise<MoodleSyncResult> {
   return mapSyncPayload(payload);
 }
 
+/** Backfill evidence_records from existing moodle_assignments without re-fetching Moodle. */
+export async function repairMoodleEvidenceRecords(): Promise<{
+  assignmentsFound: number;
+  evidenceCreated: number;
+  evidenceUpdated: number;
+  unmatchedAssignments: number;
+  logs: string[];
+}> {
+  const { data: session } = await supabase.auth.getSession();
+  if (!session.session) {
+    throw new Error("Sign in required to repair Moodle evidence records.");
+  }
+
+  const payload = await invokeMoodleFunction({ action: "repair_moodle_evidence_records" });
+  const result = (payload as { result?: Record<string, unknown> }).result ?? payload;
+
+  return {
+    assignmentsFound: Number(result.assignmentsFound ?? 0),
+    evidenceCreated: Number(result.evidenceCreated ?? 0),
+    evidenceUpdated: Number(result.evidenceUpdated ?? 0),
+    unmatchedAssignments: Number(result.unmatchedAssignments ?? 0),
+    logs: Array.isArray(result.logs) ? result.logs.map(String) : [],
+  };
+}
+
 /** Force full Moodle resync: purge stale data, fetch fresh from sijil-fyp.moodlecloud.com, update DB. */
 export async function syncMoodleData(): Promise<MoodleSyncResult> {
   const { data: session } = await supabase.auth.getSession();
@@ -334,6 +359,13 @@ export async function syncMoodleData(): Promise<MoodleSyncResult> {
 
   const payload = await invokeMoodleFunction({ action: "sync_moodle_data", force: true });
   const result = mapSyncPayload(payload);
+
+  try {
+    const repair = await repairMoodleEvidenceRecords();
+    console.info("[Moodle Evidence Repair]", repair);
+  } catch (repairError) {
+    console.warn("[Moodle Evidence Repair] skipped:", repairError);
+  }
 
   console.info("[Moodle Sync Complete]", {
     url: result.moodleSiteUrl ?? MOODLE_SITE_URL,

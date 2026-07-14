@@ -8,6 +8,15 @@ import {
   verifySelectiveDisclosureProof,
 } from "./proof.service";
 import { supabaseService } from "./supabase.service";
+import {
+  aggregateLmsEvidenceForCompetency,
+  isLmsPeerReviewRow,
+} from "../utils/moodle-evidence-matching";
+import {
+  buildLmsBundleFromEvidenceRecords,
+  logWalletLoad,
+  splitEvidenceRecordsBySource,
+} from "../utils/wallet-evidence-mapping";
 import type {
   PublicPresentationVerification,
   PublicPresentationView,
@@ -341,7 +350,7 @@ function buildAttemptHistoryItem(row: DbRow): WalletAttemptHistoryItem | null {
   const scorePercent = asNumber(row.score ?? row.resultPercentage) ?? evaluation.scorePercent;
   const correctCount = asNumber(row.resultCorrectCount) ?? evaluation.correctCount;
   const totalQuestions = asNumber(row.resultTotalQuestions) ?? evaluation.totalQuestions;
-  const passed = row.passed === true || (scorePercent != null && scorePercent >= 70);
+  const passed = row.passed === true || (scorePercent != null && scorePercent >= 60);
   const submittedAt = asNullableText(row.submitted_at ?? row.updated_at ?? row.created_at);
 
   if (!title && !submittedAt && scorePercent == null && !attemptId) {
@@ -608,6 +617,47 @@ async function persistWalletRecord(record: WalletCompetencyRecordView): Promise<
   }
 }
 
+function dedupeRowsByKey<T extends DbRow>(
+  items: T[],
+  getKey: (item: T) => string,
+): T[] {
+  const seen = new Set<string>();
+  const deduped: T[] = [];
+  for (const item of items) {
+    const key = getKey(item);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(item);
+  }
+  return deduped;
+}
+
+function mergeLmsBuckets(
+  primary: ReturnType<typeof aggregateLmsEvidenceForCompetency>,
+  fromRecords: ReturnType<typeof buildLmsBundleFromEvidenceRecords>,
+) {
+  return {
+    evidence: dedupeRowsByKey(
+      [...fromRecords.evidence, ...primary.evidence],
+      (row) => asText(row.id) || `${asText(row.course_name)}:${asText(row.assignment_name)}`,
+    ),
+    courses: dedupeRowsByKey(
+      [...fromRecords.courses, ...primary.courses],
+      (row) => asText(row.moodle_course_id) || asText(row.fullname),
+    ),
+    assignments: dedupeRowsByKey(
+      [...fromRecords.assignments, ...primary.assignments],
+      (row) => asText(row.moodle_assignment_id) || asText(row.name),
+    ),
+    grades: primary.grades,
+    importedEvidence: primary.importedEvidence,
+    teacherFeedback: dedupeRowsByKey(
+      [...fromRecords.teacherFeedback, ...primary.teacherFeedback],
+      (row) => `${asText(row.moodle_assignment_id)}:${asText(row.feedback_text).slice(0, 32)}`,
+    ),
+  };
+}
+
 async function loadAggregatedWallet(userId: string): Promise<WalletCompetencyRecordView[]> {
   const learnerProfile = await safeFetchSingle("learner_profiles", () =>
     db()
@@ -628,7 +678,6 @@ async function loadAggregatedWallet(userId: string): Promise<WalletCompetencyRec
     moodleAssignments,
     moodleGrades,
     moodleFeedback,
-    importedLmsEvidence,
     practicalAttempts,
     mcqAttempts,
     peerReviews,
@@ -665,7 +714,7 @@ async function loadAggregatedWallet(userId: string): Promise<WalletCompetencyRec
     safeFetchRows("evidence_records", () =>
       db()
         .from("evidence_records")
-        .select("id, mapped_skill_id, suggested_skill_id, source, repository_name, repository_url, language, commit_count, pr_summary, sync_date, status, external_id")
+        .select("id, mapped_skill_id, suggested_skill_id, source, repository_name, repository_url, language, commit_count, pr_summary, sync_date, status, external_id, description, metadata, last_updated")
         .eq("user_id", userId),
     ),
     safeFetchRows("lms_evidence", () =>
@@ -678,36 +727,25 @@ async function loadAggregatedWallet(userId: string): Promise<WalletCompetencyRec
       db()
         .from("moodle_courses")
         .select("moodle_course_id, fullname, shortname, synced_at, moodle_site_url")
-        .eq("user_id", userId)
-        .eq("moodle_site_url", "https://sijil-fyp.moodlecloud.com"),
+        .eq("user_id", userId),
     ),
     safeFetchRows("moodle_assignments", () =>
       db()
         .from("moodle_assignments")
-        .select("moodle_course_id, moodle_assignment_id, name, module_type, submission_status, grade, grade_max, grade_formatted, graded_at, submitted_at, submission_text, competency_tags, synced_at, moodle_site_url")
-        .eq("user_id", userId)
-        .eq("moodle_site_url", "https://sijil-fyp.moodlecloud.com"),
+        .select("moodle_course_id, moodle_assignment_id, name, module_type, submission_status, grade, grade_max, grade_formatted, graded_at, submitted_at, submission_text, competency_tags, feedback, synced_at, moodle_site_url")
+        .eq("user_id", userId),
     ),
     safeFetchRows("moodle_grades", () =>
       db()
         .from("moodle_grades")
         .select("moodle_course_id, item_id, item_name, item_type, grade, grade_max, grade_formatted, synced_at, moodle_site_url")
-        .eq("user_id", userId)
-        .eq("moodle_site_url", "https://sijil-fyp.moodlecloud.com"),
+        .eq("user_id", userId),
     ),
     safeFetchRows("moodle_feedback", () =>
       db()
         .from("moodle_feedback")
         .select("moodle_assignment_id, feedback_text, synced_at, moodle_site_url")
-        .eq("user_id", userId)
-        .eq("moodle_site_url", "https://sijil-fyp.moodlecloud.com"),
-    ),
-    safeFetchRows("imported_lms_evidence", () =>
-      db()
-        .from("imported_lms_evidence")
-        .select("id, moodle_course_id, moodle_assignment_id, course_name, activity_name, activity_type, grade, grade_max, submission_status, feedback_preview, lms_evidence_id, imported_at, moodle_site_url")
-        .eq("user_id", userId)
-        .eq("moodle_site_url", "https://sijil-fyp.moodlecloud.com"),
+        .eq("user_id", userId),
     ),
     safeFetchRows("practical_attempts", () =>
       db()
@@ -763,6 +801,9 @@ async function loadAggregatedWallet(userId: string): Promise<WalletCompetencyRec
     repoLinksBySkill.set(skillId, bucket);
   }
 
+  const { github: githubEvidenceAll, lms: lmsEvidenceAll } = splitEvidenceRecordsBySource(evidenceRecords);
+  const walletMatchLog: Array<{ skillName: string; matched: boolean }> = [];
+
   const records = skillRows.map((skill) => {
     const competencyId = asText(skill.id);
     const competencyName = asText(skill.name);
@@ -783,66 +824,41 @@ async function loadAggregatedWallet(userId: string): Promise<WalletCompetencyRec
     );
 
     const skillGithubEvidenceRecords = dedupeByKey(
-      evidenceRecords.filter((row) =>
-        asText(row.mapped_skill_id) === competencyId || asText(row.suggested_skill_id) === competencyId,
+      githubEvidenceAll.filter((row) =>
+        asText(row.mapped_skill_id) === competencyId
+        || asText(row.suggested_skill_id) === competencyId,
       ),
       (row) => asText(row.id) || asText(row.external_id),
     );
 
-    const skillLmsEvidence = dedupeByKey(
-      lmsEvidence.filter((row) => {
-        if (asText(row.linked_skill_id) !== competencyId) return false;
-        const source = asText(row.source).toLowerCase();
-        if (source.includes("moodle") || source.includes("lms")) {
-          const site = asText(row.moodle_site_url).trim().replace(/\/+$/, "").toLowerCase();
-          return site === "https://sijil-fyp.moodlecloud.com";
-        }
-        return true;
+    const skillLmsEvidenceRecords = dedupeByKey(
+      lmsEvidenceAll.filter((row) => asText(row.mapped_skill_id) === competencyId),
+      (row) => asText(row.id) || asText(row.external_id),
+    );
+    walletMatchLog.push({
+      skillName: competencyName,
+      matched: skillLmsEvidenceRecords.length > 0,
+    });
+
+    const aggregatedLms = mergeLmsBuckets(
+      aggregateLmsEvidenceForCompetency(competencyId, competencyName, {
+        lmsEvidence,
+        moodleCourses,
+        moodleAssignments,
+        moodleGrades,
+        moodleFeedback,
+        importedLmsEvidence: [],
+        lmsEvidenceRecords: skillLmsEvidenceRecords,
       }),
-      (row) => asText(row.id) || `${asText(row.course_name)}:${asText(row.course_code)}`,
+      buildLmsBundleFromEvidenceRecords(lmsEvidenceAll, competencyId),
     );
 
-    const lmsEvidenceIds = new Set(skillLmsEvidence.map((row) => asText(row.id)).filter(Boolean));
-    const skillImportedLmsEvidence = dedupeByKey(
-      importedLmsEvidence.filter((row) => lmsEvidenceIds.has(asText(row.lms_evidence_id))),
-      (row) => asText(row.id) || asText(row.moodle_assignment_id),
-    );
-
-    const assignmentIds = new Set(
-      skillImportedLmsEvidence
-        .map((row) => asText(row.moodle_assignment_id))
-        .filter(Boolean),
-    );
-    const courseIds = new Set(
-      skillImportedLmsEvidence
-        .map((row) => asText(row.moodle_course_id))
-        .filter(Boolean),
-    );
-
-    const skillMoodleAssignments = dedupeByKey(
-      moodleAssignments.filter((row) => assignmentIds.has(asText(row.moodle_assignment_id))),
-      (row) => asText(row.moodle_assignment_id),
-    );
-    const skillMoodleCourses = dedupeByKey(
-      moodleCourses.filter((row) => courseIds.has(asText(row.moodle_course_id))),
-      (row) => asText(row.moodle_course_id),
-    );
-    const skillMoodleGrades = dedupeByKey(
-      moodleGrades.filter((row) => courseIds.has(asText(row.moodle_course_id))),
-      (row) => `${asText(row.moodle_course_id)}:${asText(row.item_id)}`,
-    );
-    const skillTeacherFeedback = dedupeByKey(
-      moodleFeedback
-        .filter((row) => assignmentIds.has(asText(row.moodle_assignment_id)))
-        .map((row) => ({
-          source: "Moodle Teacher Feedback",
-          feedback_text: asNullableText(row.feedback_text),
-          reviewed_at: asNullableText(row.synced_at),
-          status: "Available",
-          moodle_assignment_id: asText(row.moodle_assignment_id),
-        })),
-      (row) => `${asText(row.moodle_assignment_id)}:${asText(row.reviewed_at)}`,
-    );
+    const skillLmsEvidence = sortByLatest(aggregatedLms.evidence, ["fetched_at"]);
+    const skillImportedLmsEvidence = sortByLatest(aggregatedLms.importedEvidence, ["imported_at"]);
+    const skillMoodleAssignments = sortByLatest(aggregatedLms.assignments, ["submitted_at", "graded_at", "synced_at"]);
+    const skillMoodleCourses = sortByLatest(aggregatedLms.courses, ["synced_at"]);
+    const skillMoodleGrades = sortByLatest(aggregatedLms.grades, ["synced_at"]);
+    const skillTeacherFeedback = sortByLatest(aggregatedLms.teacherFeedback, ["reviewed_at"]);
 
     const githubReviews = dedupeByKey(
       peerReviews.filter((row) =>
@@ -858,7 +874,9 @@ async function loadAggregatedWallet(userId: string): Promise<WalletCompetencyRec
 
     const skillPeerReviews = dedupeByKey(
       peerReviews.filter((row) =>
-        !githubReviews.some((review) => asText(review.id) === asText(row.id))
+        asText(row.source) !== "LMS"
+        && !isLmsPeerReviewRow(row)
+        && !githubReviews.some((review) => asText(review.id) === asText(row.id))
         && (
           asText(row.skill_id) === competencyId
           || competencyMatches(row.skill, competencyName)
@@ -1079,6 +1097,12 @@ async function loadAggregatedWallet(userId: string): Promise<WalletCompetencyRec
     };
 
     return rowToWalletRecord(persistedRow, summary);
+  });
+
+  logWalletLoad({
+    declaredSkillCount: skillRows.length,
+    lmsEvidenceCount: lmsEvidenceAll.length,
+    matches: walletMatchLog,
   });
 
   return records

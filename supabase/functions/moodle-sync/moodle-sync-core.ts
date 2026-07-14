@@ -4,6 +4,11 @@
  */
 
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.95.0";
+import {
+  repairMoodleEvidenceRecords,
+  resolveCompetencyForMoodleAssignment,
+  upsertMoodleAssignmentEvidenceRecord,
+} from "./moodle-evidence-records.ts";
 
 export const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -1537,6 +1542,89 @@ function evidenceHash(userId: string, courseId: number, assignmentId: number): s
   return `moodle:${userId}:${courseId}:${assignmentId}`;
 }
 
+function normalizedCompetencyText(value: unknown): string {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function matchesCompetency(value: unknown, competencyName: string): boolean {
+  const left = normalizedCompetencyText(value);
+  const right = normalizedCompetencyText(competencyName);
+  if (!left || !right) return false;
+  return left === right || left.includes(right) || right.includes(left);
+}
+
+function matchesCompetencyTags(tags: unknown, competencyName: string): boolean {
+  if (!Array.isArray(tags)) return false;
+  return tags.some((tag) => {
+    if (typeof tag === "string") return matchesCompetency(tag, competencyName);
+    if (tag && typeof tag === "object") {
+      const row = tag as Record<string, unknown>;
+      return matchesCompetency(row.name, competencyName)
+        || matchesCompetency(row.shortname, competencyName)
+        || matchesCompetency(row.label, competencyName);
+    }
+    return false;
+  });
+}
+
+function resolveLinkedSkillId(
+  declaredSkills: Array<{ id: string; name: string }>,
+  params: {
+    courseName: string;
+    courseShortname?: string | null;
+    assignmentName?: string | null;
+    competencyTags?: unknown;
+  },
+): string | null {
+  for (const skill of declaredSkills) {
+    if (
+      matchesCompetency(params.courseName, skill.name)
+      || matchesCompetency(params.courseShortname, skill.name)
+      || matchesCompetency(params.assignmentName, skill.name)
+      || matchesCompetencyTags(params.competencyTags, skill.name)
+    ) {
+      return skill.id;
+    }
+  }
+  return null;
+}
+
+async function linkUnmappedLmsEvidenceToSkills(
+  admin: SupabaseClient,
+  userId: string,
+  declaredSkills: Array<{ id: string; name: string }>,
+): Promise<number> {
+  if (declaredSkills.length === 0) return 0;
+
+  const { data: rows, error } = await admin
+    .from("lms_evidence")
+    .select("id, course_name, course_code, text_preview, linked_skill_id")
+    .eq("user_id", userId)
+    .is("linked_skill_id", null);
+
+  if (error || !rows?.length) return 0;
+
+  let linked = 0;
+  for (const row of rows) {
+    const skillId = resolveLinkedSkillId(declaredSkills, {
+      courseName: String(row.course_name ?? ""),
+      courseShortname: String(row.course_code ?? ""),
+      assignmentName: String(row.text_preview ?? ""),
+    });
+    if (!skillId) continue;
+
+    const { error: updateError } = await admin
+      .from("lms_evidence")
+      .update({ linked_skill_id: skillId })
+      .eq("id", row.id)
+      .eq("user_id", userId);
+
+    if (!updateError) linked += 1;
+  }
+
+  return linked;
+}
+
 type CourseModule = { id: number; modname: string; name: string; instance: number | null };
 
 type NormalizedAssignment = {
@@ -2414,6 +2502,17 @@ export async function syncLearnerMoodleActivities(
     syncedCourseIds.add(courseId);
   }
 
+  const { data: declaredSkillsRows } = await admin
+    .from("declared_skills")
+    .select("id, name")
+    .eq("user_id", userId);
+  const declaredSkills = (declaredSkillsRows ?? []).map((row) => ({
+    id: String(row.id),
+    name: String(row.name ?? ""),
+  }));
+
+  console.log("[moodle-evidence] Moodle assignments found:", pendingAssignments.length);
+
   for (const pending of pendingAssignments) {
     const {
       courseId,
@@ -2523,6 +2622,12 @@ export async function syncLearnerMoodleActivities(
 
     const hash = evidenceHash(userId, courseId, assignmentId);
     syncedEvidenceHashes.add(hash);
+    const linkedSkillId = resolveLinkedSkillId(declaredSkills, {
+      courseName,
+      courseShortname,
+      assignmentName: name,
+      competencyTags: competencyTags.length ? competencyTags : null,
+    });
     const textPreview = [
       `${name} (${moduleType})`,
       grade !== null ? gradeFormatted : "Not graded",
@@ -2546,6 +2651,7 @@ export async function syncLearnerMoodleActivities(
           grade: grade !== null ? gradeFormatted : null,
           completion_status: courseCompletionStatus ?? submissionStatus,
           evidence_hash: hash,
+          linked_skill_id: linkedSkillId,
           raw: {
             courseId,
             assignmentId,
@@ -2593,6 +2699,29 @@ export async function syncLearnerMoodleActivities(
       "user_id,moodle_assignment_id",
       false,
     );
+
+    const matchedSkill = resolveCompetencyForMoodleAssignment(declaredSkills, {
+      courseName,
+      courseShortname,
+      assignmentName: name,
+      competencyTags: competencyTags.length ? competencyTags : null,
+    });
+    if (matchedSkill && grade !== null) {
+      await upsertMoodleAssignmentEvidenceRecord(admin, {
+        userId,
+        skill: matchedSkill,
+        moodleSiteUrl,
+        moodleCourseId: courseId,
+        moodleAssignmentId: assignmentId,
+        courseName,
+        assignmentName: name,
+        grade,
+        gradeMax,
+        teacherFeedback: statusFeedback.text?.trim() || null,
+        syncedAt: now,
+        requireGrade: true,
+      });
+    }
   }
 
   for (const item of pendingGradeItems) {
@@ -2619,6 +2748,12 @@ export async function syncLearnerMoodleActivities(
     syncedGradeKeys.add(`${item.courseId}:${item.itemId}`);
     if (item.grade !== null) gradeItemCount += 1;
   }
+
+  const evidenceRepair = await repairMoodleEvidenceRecords(admin, userId);
+  logSyncStage("moodle_evidence_repair", evidenceRepair);
+  console.log("[moodle-evidence] Repair summary:", JSON.stringify(evidenceRepair));
+
+  await linkUnmappedLmsEvidenceToSkills(admin, userId, declaredSkills);
 
   await upsertLmsConnection(
     admin,
@@ -2666,6 +2801,7 @@ export async function syncLearnerMoodleActivities(
     completion: completionCount,
     warnings,
     cleanup: cleanupStats,
+    evidenceRepair,
     debug,
   };
 

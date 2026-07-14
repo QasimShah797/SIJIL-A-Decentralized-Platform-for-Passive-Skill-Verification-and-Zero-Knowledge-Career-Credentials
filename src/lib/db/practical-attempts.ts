@@ -6,6 +6,7 @@ import {
   type DeclaredSkill,
 } from "@/lib/sijil-data";
 import { isMissingColumnError, isMissingRelationError } from "@/lib/supabase-errors";
+import { isMcqPassed } from "@/lib/mcq-tasks";
 
 export type McqAttemptResultRow = {
   id: string;
@@ -57,11 +58,154 @@ export async function fetchAttempts(userId: string): Promise<Record<string, Atte
   return map;
 }
 
-/** Load attempts from Supabase and merge any legacy browser-stored attempts. */
-export async function loadAttempts(userId: string, skillIds: string[]): Promise<Record<string, AttemptRecord>> {
+export type PracticalTaskState = "NOT_STARTED" | "IN_PROGRESS" | "COMPLETED";
+
+export function isMcqRowCompleted(row: McqAttemptResultRow): boolean {
+  const status = String(row.status ?? "").toLowerCase();
+  return status === "completed"
+    || status === "submitted"
+    || status === "passed"
+    || row.submitted_at != null
+    || (typeof row.percentage === "number" && row.submitted_at != null);
+}
+
+function isMcqRowInProgress(row: McqAttemptResultRow): boolean {
+  if (isMcqRowCompleted(row)) return false;
+  const status = String(row.status ?? "").toLowerCase();
+  return status === "in_progress" || status === "in progress";
+}
+
+export function mcqResultToAttemptRecord(
+  skillId: string,
+  row: McqAttemptResultRow,
+  existing?: AttemptRecord | null,
+): AttemptRecord {
+  const percentage = typeof row.percentage === "number" ? row.percentage : undefined;
+  const passed = typeof row.passed === "boolean" ? row.passed : (percentage != null ? isMcqPassed(percentage) : undefined);
+  const status: AttemptRecord["status"] = passed === true
+    ? "passed"
+    : isMcqRowCompleted(row)
+      ? "submitted"
+      : "in_progress";
+
+  return {
+    skillId,
+    attemptId: row.id,
+    startedAt: row.created_at ?? existing?.startedAt ?? new Date().toISOString(),
+    endsAt: row.submitted_at ?? existing?.endsAt ?? new Date().toISOString(),
+    durationMinutes: existing?.durationMinutes ?? 10,
+    status,
+    submission: existing?.submission ?? "",
+    credentialSyncSnapshot: existing?.credentialSyncSnapshot ?? null,
+    passed,
+    score: percentage,
+    feedback: row.title ?? existing?.feedback,
+  };
+}
+
+export function derivePracticalTaskState(
+  attempt: AttemptRecord | null,
+  mcqResult: McqAttemptResultRow | null,
+): PracticalTaskState {
+  if (mcqResult && isMcqRowCompleted(mcqResult)) return "COMPLETED";
+  if (attempt && (attempt.status === "submitted" || attempt.status === "auto_submitted" || attempt.status === "passed")) {
+    return "COMPLETED";
+  }
+  if (mcqResult && isMcqRowInProgress(mcqResult)) return "IN_PROGRESS";
+  if (attempt?.status === "in_progress") return "IN_PROGRESS";
+  return "NOT_STARTED";
+}
+
+export async function fetchLatestCompletedMcqAttemptResult(
+  userId: string,
+  skillId: string,
+): Promise<McqAttemptResultRow | null> {
+  const completedColumns = "id, skill_id, competency_name, competency_domain, title, status, percentage, correct_count, total_questions, passed, submitted_at, created_at";
+  const basicColumns = "id, skill_id, competency_name, competency_domain, title, status, passed, submitted_at, created_at";
+
+  for (const columns of [completedColumns, basicColumns]) {
+    try {
+      const { data, error } = await rawTable("mcq_task_attempts")
+        .select(columns)
+        .eq("learner_user_id", userId)
+        .eq("skill_id", skillId)
+        .not("submitted_at", "is", null)
+        .order("submitted_at", { ascending: false })
+        .order("created_at", { ascending: false })
+        .limit(1);
+
+      if (error) throw error;
+      const row = ((data ?? [])[0] as McqAttemptResultRow | undefined) ?? null;
+      if (row) return row;
+    } catch (error) {
+      if (!isMissingColumnError(error) && !isMissingRelationError(error)) {
+        console.warn("mcq_task_attempts completed query failed:", error);
+      }
+    }
+  }
+
+  try {
+    const { data, error } = await rawTable("mcq_task_attempts")
+      .select(completedColumns)
+      .eq("learner_user_id", userId)
+      .eq("skill_id", skillId)
+      .eq("status", "completed")
+      .order("created_at", { ascending: false })
+      .limit(1);
+
+    if (error) throw error;
+    return ((data ?? [])[0] as McqAttemptResultRow | undefined) ?? null;
+  } catch (error) {
+    if (!isMissingRelationError(error)) {
+      console.warn("mcq_task_attempts completed status query failed:", error);
+    }
+    return null;
+  }
+}
+
+export async function fetchLatestMcqAttemptResults(
+  userId: string,
+  skillIds: string[],
+): Promise<Record<string, McqAttemptResultRow>> {
+  const map: Record<string, McqAttemptResultRow> = {};
+  await Promise.all(skillIds.map(async (skillId) => {
+    const completed = await fetchLatestCompletedMcqAttemptResult(userId, skillId);
+    if (completed) {
+      map[skillId] = completed;
+      return;
+    }
+    const latest = await fetchLatestMcqAttemptResult(userId, skillId);
+    if (latest) map[skillId] = latest;
+  }));
+  return map;
+}
+
+/** Load attempts from Supabase, merge MCQ results, and prefer completed over stale in-progress rows. */
+export async function loadAttempts(
+  userId: string,
+  skillIds: string[],
+): Promise<Record<string, AttemptRecord>> {
+  const { attempts } = await loadAttemptsWithMcqResults(userId, skillIds);
+  return attempts;
+}
+
+export async function loadAttemptsWithMcqResults(
+  userId: string,
+  skillIds: string[],
+): Promise<{
+  attempts: Record<string, AttemptRecord>;
+  mcqResults: Record<string, McqAttemptResultRow>;
+}> {
   const map = await fetchAttempts(userId);
+  const mcqResults = await fetchLatestMcqAttemptResults(userId, skillIds);
 
   for (const skillId of skillIds) {
+    const mcqResult = mcqResults[skillId] ?? null;
+    if (mcqResult && isMcqRowCompleted(mcqResult)) {
+      map[skillId] = mcqResultToAttemptRecord(skillId, mcqResult, map[skillId] ?? null);
+      continue;
+    }
+
     if (map[skillId]) continue;
     const localAttempt = getLocalAttempt(skillId);
     if (!localAttempt) continue;
@@ -73,7 +217,7 @@ export async function loadAttempts(userId: string, skillIds: string[]): Promise<
     }
   }
 
-  return map;
+  return { attempts: map, mcqResults };
 }
 
 export async function fetchAttempt(userId: string, skillId: string): Promise<AttemptRecord | null> {
@@ -87,16 +231,54 @@ export async function fetchAttempt(userId: string, skillId: string): Promise<Att
   return data ? rowToAttempt(data) : null;
 }
 
-export async function fetchLatestMcqAttemptResult(
+export async function fetchMcqAttemptHistory(
   userId: string,
   skillId: string,
-): Promise<McqAttemptResultRow | null> {
+): Promise<McqAttemptResultRow[]> {
   try {
     const { data, error } = await rawTable("mcq_task_attempts")
       .select("id, skill_id, competency_name, competency_domain, title, status, percentage, correct_count, total_questions, passed, submitted_at, created_at")
       .eq("learner_user_id", userId)
       .eq("skill_id", skillId)
-      .order("submitted_at", { ascending: false })
+      .order("created_at", { ascending: false });
+
+    if (error) throw error;
+    return (data ?? []) as McqAttemptResultRow[];
+  } catch (error) {
+    if (!isMissingColumnError(error) && !isMissingRelationError(error)) {
+      console.warn("mcq_task_attempts history query failed:", error);
+    }
+  }
+
+  try {
+    const { data, error } = await rawTable("mcq_task_attempts")
+      .select("id, skill_id, competency_name, competency_domain, title, status, passed, submitted_at, created_at")
+      .eq("learner_user_id", userId)
+      .eq("skill_id", skillId)
+      .order("created_at", { ascending: false });
+
+    if (error) throw error;
+    return (data ?? []) as McqAttemptResultRow[];
+  } catch (error) {
+    if (!isMissingRelationError(error)) {
+      console.warn("mcq_task_attempts basic history query failed:", error);
+    }
+    return [];
+  }
+}
+
+export async function fetchLatestMcqAttemptResult(
+  userId: string,
+  skillId: string,
+): Promise<McqAttemptResultRow | null> {
+  const completed = await fetchLatestCompletedMcqAttemptResult(userId, skillId);
+  if (completed) return completed;
+
+  try {
+    const { data, error } = await rawTable("mcq_task_attempts")
+      .select("id, skill_id, competency_name, competency_domain, title, status, percentage, correct_count, total_questions, passed, submitted_at, created_at")
+      .eq("learner_user_id", userId)
+      .eq("skill_id", skillId)
       .order("created_at", { ascending: false })
       .limit(1);
 
@@ -113,7 +295,6 @@ export async function fetchLatestMcqAttemptResult(
       .select("id, skill_id, competency_name, competency_domain, title, status, passed, submitted_at, created_at")
       .eq("learner_user_id", userId)
       .eq("skill_id", skillId)
-      .order("submitted_at", { ascending: false })
       .order("created_at", { ascending: false })
       .limit(1);
 

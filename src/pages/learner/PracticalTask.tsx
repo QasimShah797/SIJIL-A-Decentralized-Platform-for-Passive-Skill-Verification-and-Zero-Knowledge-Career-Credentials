@@ -17,10 +17,17 @@ import { useDeclaredSkills } from "@/hooks/useLearnerData";
 import { useAuth } from "@/hooks/useAuth";
 import { useGitHub } from "@/hooks/useGitHub";
 import {
-  loadAttempts,
+  loadAttemptsWithMcqResults,
   saveAttemptDb,
   fetchLatestMcqAttemptResult,
+  fetchLatestCompletedMcqAttemptResult,
+  fetchMcqAttemptHistory,
+  derivePracticalTaskState,
+  mcqResultToAttemptRecord,
+  isMcqRowCompleted,
   isAttemptLocked,
+  type McqAttemptResultRow,
+  type PracticalTaskState,
 } from "@/lib/db/practical-attempts";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -29,8 +36,9 @@ import {
   evaluateSecureMcqAttempt,
   generateSecureMcqTask,
   buildMcqSubmissionAnswers,
-  MCQ_PASS_PERCENT,
   MCQ_SECONDS_PER_QUESTION,
+  isMcqPassed,
+  mcqResultLabel,
   parseMcqAnswers,
   parseMcqProgress,
   parseMcqSession,
@@ -68,10 +76,6 @@ function practicalTaskStorageKey(userId: string, skillId: string) {
   return `sijil-practical-task-${userId}-${skillId}`;
 }
 
-function practicalTaskModalKey(userId: string) {
-  return `sijil-practical-task-modal-${userId}`;
-}
-
 function genAttemptId() {
   return `att-${Math.random().toString(36).slice(2, 8).toUpperCase()}-${Date.now().toString(36).toUpperCase()}`;
 }
@@ -95,7 +99,13 @@ function restoreFromAttemptRecord(existing: AttemptRecord) {
   const restoredTask = restoreMcqTaskFromSubmission(existing.submission ?? "");
   const session = parseMcqSession(existing.submission ?? "");
   const progress = parseMcqProgress(existing.submission ?? "");
-  const submitted = existing.status === "submitted" || existing.status === "auto_submitted";
+  const submitted = existing.status === "submitted"
+    || existing.status === "auto_submitted"
+    || existing.status === "passed";
+  const resultPercentage = session?.resultPercentage ?? existing.score ?? null;
+  const nextPassed = session?.passed ?? (resultPercentage != null
+    ? isMcqPassed(resultPercentage)
+    : existing.passed ?? (existing.status === "passed" ? true : null));
 
   return {
     task: restoredTask,
@@ -103,15 +113,52 @@ function restoreFromAttemptRecord(existing: AttemptRecord) {
     answers: progress?.answers ?? parseMcqAnswers(existing.submission ?? ""),
     currentQuestionIndex: progress?.currentIndex ?? 0,
     questionEndsAt: progress?.questionEndsAt ?? null,
-    resultPercentage: session?.resultPercentage ?? existing.score ?? null,
+    resultPercentage,
     resultCorrectCount: session?.resultCorrectCount ?? null,
     resultTotalQuestions: session?.resultTotalQuestions ?? null,
     resultMessage: session?.resultMessage ?? existing.feedback ?? null,
-    resultLabel: session?.resultLabel
-      ?? (existing.passed ? "Passed" : existing.score != null ? "Needs Improvement" : null),
-    passed: session?.passed ?? existing.passed ?? (existing.status === "passed" ? true : existing.score != null ? existing.score >= MCQ_PASS_PERCENT : null),
+    resultLabel: session?.resultLabel ?? mcqResultLabel(resultPercentage, nextPassed),
+    passed: nextPassed,
     submitted,
   };
+}
+
+function formatAttemptDate(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+type PanelMode = "start" | "mcq" | "result";
+
+function getSkillMcqDisplay(
+  skillId: string,
+  attemptsMap: Record<string, AttemptRecord>,
+  mcqResultsMap: Record<string, McqAttemptResultRow>,
+) {
+  const mcq = mcqResultsMap[skillId] ?? null;
+  const attempt = attemptsMap[skillId] ?? null;
+  const percentage = typeof mcq?.percentage === "number"
+    ? mcq.percentage
+    : attempt?.score ?? null;
+  const passed = typeof mcq?.passed === "boolean"
+    ? mcq.passed
+    : isMcqPassed(percentage);
+  const label = mcqResultLabel(percentage, passed);
+  const submittedAt = mcq?.submitted_at ?? attempt?.endsAt ?? null;
+  return { percentage, passed, label, submittedAt };
+}
+
+function formatAttemptHistoryLabel(row: McqAttemptResultRow): string {
+  const percentage = typeof row.percentage === "number" ? row.percentage : null;
+  const passed = typeof row.passed === "boolean" ? row.passed : isMcqPassed(percentage);
+  const label = mcqResultLabel(percentage, passed);
+  if (percentage != null && label) return `${percentage}% · ${label}`;
+  if (percentage != null) return `${percentage}%`;
+  return label ?? "Submitted";
 }
 
 export default function PracticalTask() {
@@ -120,9 +167,9 @@ export default function PracticalTask() {
   const { skills, loading: skillsLoading } = useDeclaredSkills();
   const { repos } = useGitHub();
   const [attemptsMap, setAttemptsMap] = useState<Record<string, AttemptRecord>>({});
+  const [mcqResultsMap, setMcqResultsMap] = useState<Record<string, McqAttemptResultRow>>({});
   const [, force] = useState(0);
   const refresh = () => force((n) => n + 1);
-  const modalRestoredRef = useRef(false);
   const attemptsLoadedRef = useRef(false);
   const attemptsSkillKeyRef = useRef("");
 
@@ -139,11 +186,21 @@ export default function PracticalTask() {
     }
 
     attemptsSkillKeyRef.current = skillKey;
-    loadAttempts(userId, skills.map((s) => s.id)).then((map) => {
-      setAttemptsMap(map);
+    loadAttemptsWithMcqResults(userId, skills.map((s) => s.id)).then(({ attempts, mcqResults }) => {
+      setAttemptsMap(attempts);
+      setMcqResultsMap(mcqResults);
       attemptsLoadedRef.current = true;
     });
   }, [userId, skills]);
+
+  useEffect(() => {
+    if (!userId) return;
+    for (const [skillId, mcqResult] of Object.entries(mcqResultsMap)) {
+      if (isMcqRowCompleted(mcqResult)) {
+        localStorage.removeItem(practicalTaskStorageKey(userId, skillId));
+      }
+    }
+  }, [userId, mcqResultsMap]);
 
   const getAttempt = useCallback((skillId: string) => attemptsMap[skillId] ?? null, [attemptsMap]);
   const saveAttempt = useCallback(async (rec: AttemptRecord) => {
@@ -153,6 +210,7 @@ export default function PracticalTask() {
   }, [userId]);
 
   const [activeSkill, setActiveSkill] = useState<DeclaredSkill | null>(null);
+  const [panelMode, setPanelMode] = useState<PanelMode>("start");
   const [task, setTask] = useState<McqTask | null>(null);
   const [taskLoading, setTaskLoading] = useState(false);
   const [generatingMcqs, setGeneratingMcqs] = useState(false);
@@ -168,6 +226,8 @@ export default function PracticalTask() {
   const [resultMessage, setResultMessage] = useState<string | null>(null);
   const [resultLabel, setResultLabel] = useState<string | null>(null);
   const [passed, setPassed] = useState<boolean | null>(null);
+  const [showResultModal, setShowResultModal] = useState(false);
+  const [attemptHistory, setAttemptHistory] = useState<McqAttemptResultRow[]>([]);
   const [now, setNow] = useState(Date.now());
   const tickRef = useRef<number | null>(null);
   const advancingRef = useRef(false);
@@ -179,6 +239,7 @@ export default function PracticalTask() {
   const isSubmitted = attempt && (
     attempt.status === "submitted"
     || attempt.status === "auto_submitted"
+    || attempt.status === "passed"
   );
 
   const applyStoredState = useCallback((stored: StoredPracticalTaskState) => {
@@ -197,8 +258,8 @@ export default function PracticalTask() {
     if (typeof stored.passed === "boolean") setPassed(stored.passed);
   }, []);
 
-  const hydratePracticalTaskState = useCallback((skillId: string): boolean => {
-    if (!userId) return false;
+  const hydratePracticalTaskState = useCallback((skillId: string, allowInProgress = true): boolean => {
+    if (!userId || !allowInProgress) return false;
     const saved = localStorage.getItem(practicalTaskStorageKey(userId, skillId));
     if (!saved) return false;
 
@@ -224,6 +285,8 @@ export default function PracticalTask() {
     setResultMessage(null);
     setResultLabel(null);
     setPassed(null);
+    setShowResultModal(false);
+    setAttemptHistory([]);
     setGenerateError(null);
 
     if (userId) {
@@ -246,12 +309,10 @@ export default function PracticalTask() {
     const nextPercentage = typeof remote.percentage === "number" ? remote.percentage : existing.score ?? null;
     const nextCorrectCount = typeof remote.correct_count === "number" ? remote.correct_count : null;
     const nextTotalQuestions = typeof remote.total_questions === "number" ? remote.total_questions : null;
-    const nextPassed = typeof remote.passed === "boolean" ? remote.passed : existing.passed ?? null;
-    const nextLabel = nextPassed === true
-      ? "Passed"
-      : nextPercentage != null
-        ? "Needs Improvement"
-        : null;
+    const nextPassed = nextPercentage != null
+      ? isMcqPassed(nextPercentage)
+      : (typeof remote.passed === "boolean" ? remote.passed : existing.passed ?? null);
+    const nextLabel = mcqResultLabel(nextPercentage, nextPassed);
 
     setResultPercentage(nextPercentage);
     setResultCorrectCount(nextCorrectCount);
@@ -273,9 +334,9 @@ export default function PracticalTask() {
 
     const nextStatus: AttemptRecord["status"] = nextPassed === true
       ? "passed"
-      : existing.status === "in_progress"
-        ? existing.status
-        : "submitted";
+      : nextPercentage != null
+        ? "submitted"
+        : existing.status;
 
     if (
       nextPercentage === (existing.score ?? null)
@@ -333,12 +394,14 @@ export default function PracticalTask() {
     isSubmitted,
   ]);
 
-  useEffect(() => {
-    if (!userId) return;
-    if (activeSkill?.id) {
-      localStorage.setItem(practicalTaskModalKey(userId), activeSkill.id);
+  const loadAttemptHistory = useCallback(async (skillId: string) => {
+    if (!userId) {
+      setAttemptHistory([]);
+      return;
     }
-  }, [userId, activeSkill?.id]);
+    const history = await fetchMcqAttemptHistory(userId, skillId);
+    setAttemptHistory(history);
+  }, [userId]);
 
   const currentQuestion = task?.questions[currentQuestionIndex] ?? null;
   const isLastQuestion = task ? currentQuestionIndex >= task.questions.length - 1 : false;
@@ -385,21 +448,23 @@ export default function PracticalTask() {
     try {
       const submissionAnswers = buildMcqSubmissionAnswers(task, answersOverride ?? answers);
       const result = await evaluateSecureMcqAttempt(task.attemptId, submissionAnswers, invokeRapidTask);
-      const walletMessage = result.passed
+      const nextPassed = isMcqPassed(result.percentage);
+      const nextResultLabel = mcqResultLabel(result.percentage, nextPassed) ?? result.resultLabel;
+      const walletMessage = nextPassed
         ? "Wallet record updated. This competency now includes the submitted task result in its evidence package."
         : "Wallet record updated. This attempt remains part of the competency evidence history.";
       setResultPercentage(result.percentage);
       setResultCorrectCount(result.correctCount);
       setResultTotalQuestions(result.totalQuestions);
       setResultMessage(walletMessage);
-      setResultLabel(result.resultLabel);
-      setPassed(result.passed);
+      setResultLabel(nextResultLabel);
+      setPassed(nextPassed);
 
       const { attemptId, ...taskBody } = task;
       const evaluatedAttempt: AttemptRecord = {
         ...attempt,
-        status: result.passed ? "passed" : "submitted",
-        passed: result.passed,
+        status: nextPassed ? "passed" : "submitted",
+        passed: nextPassed,
         score: result.percentage,
         feedback: walletMessage,
         submission: serializeMcqSession({
@@ -415,16 +480,41 @@ export default function PracticalTask() {
           resultCorrectCount: result.correctCount,
           resultTotalQuestions: result.totalQuestions,
           resultMessage: walletMessage,
-          resultLabel: result.resultLabel,
-          passed: result.passed,
+          resultLabel: nextResultLabel,
+          passed: nextPassed,
         }),
       };
 
       await saveAttempt(evaluatedAttempt);
       setAttempt(evaluatedAttempt);
+      setAttemptsMap((m) => ({ ...m, [activeSkill.id]: evaluatedAttempt }));
+
+      const completedRow: McqAttemptResultRow = {
+        id: task.attemptId,
+        skill_id: activeSkill.id,
+        competency_name: activeSkill.name,
+        competency_domain: activeSkill.domain ?? "General",
+        title: task.title,
+        status: "completed",
+        percentage: result.percentage,
+        correct_count: result.correctCount,
+        total_questions: result.totalQuestions,
+        passed: nextPassed,
+        submitted_at: new Date().toISOString(),
+        created_at: attempt.startedAt,
+      };
+      setMcqResultsMap((m) => ({ ...m, [activeSkill.id]: completedRow }));
+
+      if (userId) {
+        localStorage.removeItem(practicalTaskStorageKey(userId, activeSkill.id));
+      }
+
+      await loadAttemptHistory(activeSkill.id);
+      setPanelMode("result");
+      setShowResultModal(true);
 
       toast({
-        title: result.resultLabel,
+        title: nextResultLabel,
         description: walletMessage,
       });
 
@@ -438,7 +528,7 @@ export default function PracticalTask() {
     } finally {
       setEvaluating(false);
     }
-  }, [task, attempt, activeSkill, userId, answers, currentQuestionIndex, questionEndsAt, saveAttempt]);
+  }, [task, attempt, activeSkill, userId, answers, currentQuestionIndex, questionEndsAt, saveAttempt, loadAttemptHistory]);
 
   const advanceQuestion = useCallback(async (timedOut = false) => {
     if (advancingRef.current || !task || !attempt || !activeSkill || attempt.status !== "in_progress") {
@@ -480,62 +570,90 @@ export default function PracticalTask() {
     void advanceQuestion(true);
   }, [questionRemainingMs, attempt?.status, task, questionEndsAt, advanceQuestion]);
 
-  const openSkill = useCallback(async (skill: DeclaredSkill) => {
+  const openSkill = useCallback(async (
+    skill: DeclaredSkill,
+    intent: "start" | "resume" | "view" = "start",
+  ) => {
+    if (!userId) return;
+
     setActiveSkill(skill);
     setGenerateError(null);
+    setShowResultModal(false);
     setTaskLoading(true);
 
     try {
-      const restoredFromStorage = hydratePracticalTaskState(skill.id);
+      const mcqResult = mcqResultsMap[skill.id]
+        ?? await fetchLatestCompletedMcqAttemptResult(userId, skill.id);
+      const existing = attemptsMap[skill.id] ?? null;
+      const taskState = derivePracticalTaskState(existing, mcqResult ?? null);
+
+      await loadAttemptHistory(skill.id);
+
+      if (taskState === "COMPLETED" && intent !== "start") {
+        localStorage.removeItem(practicalTaskStorageKey(userId, skill.id));
+
+        const display = getSkillMcqDisplay(skill.id, attemptsMap, {
+          ...mcqResultsMap,
+          ...(mcqResult ? { [skill.id]: mcqResult } : {}),
+        });
+
+        setTask(null);
+        setAnswers({});
+        setCurrentQuestionIndex(0);
+        setQuestionEndsAt(null);
+        setResultPercentage(display.percentage);
+        setResultCorrectCount(mcqResult?.correct_count ?? null);
+        setResultTotalQuestions(mcqResult?.total_questions ?? null);
+        setResultLabel(display.label);
+        setPassed(display.passed);
+        setAttempt(existing ?? (mcqResult ? mcqResultToAttemptRecord(skill.id, mcqResult) : null));
+        setPanelMode("result");
+        return;
+      }
+
+      if (intent === "start" || taskState === "NOT_STARTED") {
+        resetPracticalTaskState(skill.id);
+        setPanelMode("start");
+        return;
+      }
+
+      setPanelMode("mcq");
+      const restoredFromStorage = hydratePracticalTaskState(skill.id, true);
       if (restoredFromStorage) {
-        const existing = attemptsMap[skill.id] ?? null;
         if (existing) {
           void syncAttemptResultFromServer(skill.id, existing);
         }
         return;
       }
 
-      const existing = attemptsMap[skill.id] ?? null;
       if (existing) {
         applyStoredState(restoreFromAttemptRecord(existing));
         void syncAttemptResultFromServer(skill.id, existing);
         return;
       }
 
-      setTask(null);
-      setAttempt(null);
-      setAnswers({});
-      setCurrentQuestionIndex(0);
-      setQuestionEndsAt(null);
-      setResultPercentage(null);
-      setResultCorrectCount(null);
-      setResultTotalQuestions(null);
-      setResultMessage(null);
-      setResultLabel(null);
-      setPassed(null);
+      resetPracticalTaskState(skill.id);
+      setPanelMode("start");
     } finally {
       setTaskLoading(false);
     }
-  }, [applyStoredState, attemptsMap, hydratePracticalTaskState, syncAttemptResultFromServer]);
-
-  useEffect(() => {
-    if (!userId || skillsLoading || modalRestoredRef.current) return;
-
-    const savedSkillId = localStorage.getItem(practicalTaskModalKey(userId));
-    if (!savedSkillId) return;
-
-    const skill = skills.find((s) => s.id === savedSkillId);
-    if (!skill) return;
-
-    modalRestoredRef.current = true;
-    void openSkill(skill);
-  }, [userId, skillsLoading, skills, openSkill]);
+  }, [
+    userId,
+    mcqResultsMap,
+    attemptsMap,
+    applyStoredState,
+    hydratePracticalTaskState,
+    loadAttemptHistory,
+    resetPracticalTaskState,
+    syncAttemptResultFromServer,
+  ]);
 
   const startMcqAttempt = async () => {
     if (!activeSkill) return;
 
     resetPracticalTaskState(activeSkill.id);
     setGeneratingMcqs(true);
+    setPanelMode("mcq");
 
     try {
       const generatedTask = await generateSecureMcqTask(activeSkill, repos, invokeRapidTask);
@@ -611,20 +729,33 @@ export default function PracticalTask() {
 
   const closePanel = () => {
     setActiveSkill(null);
+    setPanelMode("start");
+    setShowResultModal(false);
     refresh();
   };
 
+  const getTaskState = useCallback((skillId: string): PracticalTaskState => {
+    return derivePracticalTaskState(
+      attemptsMap[skillId] ?? null,
+      mcqResultsMap[skillId] ?? null,
+    );
+  }, [attemptsMap, mcqResultsMap]);
+
   const statusBadge = (skill: DeclaredSkill) => {
     const a = getAttempt(skill.id);
+    const taskState = getTaskState(skill.id);
+    const display = getSkillMcqDisplay(skill.id, attemptsMap, mcqResultsMap);
     const locked = isAttemptLocked(skill, a);
-    if (!a) return <StatusBadge variant="neutral">No Attempt</StatusBadge>;
-    if (a.status === "in_progress") return <StatusBadge variant="info">In Progress</StatusBadge>;
-    if (a.status === "submitted" || a.status === "auto_submitted") {
-      if (a.score != null) {
-        return <StatusBadge variant="info">Submitted · {a.score}%</StatusBadge>;
-      }
-      return <StatusBadge variant="info">Submitted</StatusBadge>;
+
+    if (taskState === "COMPLETED") {
+      return (
+        <StatusBadge variant={display.passed ? "verified" : "warning"}>
+          {display.percentage != null ? `${display.percentage}% · ${display.label}` : display.label ?? "Completed"}
+        </StatusBadge>
+      );
     }
+    if (taskState === "IN_PROGRESS") return <StatusBadge variant="info">In Progress</StatusBadge>;
+    if (!a) return <StatusBadge variant="neutral">No Attempt</StatusBadge>;
     if (a.status === "expired_no_submission") return <StatusBadge variant="warning">No Submission</StatusBadge>;
     return locked ? <StatusBadge variant="neutral">Locked</StatusBadge> : <StatusBadge variant="neutral">Available</StatusBadge>;
   };
@@ -650,6 +781,8 @@ export default function PracticalTask() {
               const a = getAttempt(s.id);
               const locked = isAttemptLocked(s, a);
               const lastDays = daysSince(s.lastRelatedActivityAt);
+              const taskState = getTaskState(s.id);
+              const display = getSkillMcqDisplay(s.id, attemptsMap, mcqResultsMap);
               return (
                 <div key={s.id} className="flex flex-col md:flex-row md:items-center gap-3 px-6 py-4">
                   <div className="flex-1 min-w-0">
@@ -663,18 +796,36 @@ export default function PracticalTask() {
                       Last related sync: {lastDays === null ? "never" : `${lastDays}d ago`}
                       {locked && <> · Locked until next credential sync</>}
                     </div>
+                    {taskState === "COMPLETED" && (
+                      <div className="mt-3 rounded-md border bg-muted/30 p-3 text-sm space-y-2 max-w-lg">
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                          <span className="font-medium">Score: {display.percentage ?? "—"}%</span>
+                          {display.label && (
+                            <StatusBadge variant={display.passed ? "verified" : "warning"}>
+                              {display.label}
+                            </StatusBadge>
+                          )}
+                          <span className="text-xs text-muted-foreground">
+                            {formatAttemptDate(display.submittedAt)}
+                          </span>
+                        </div>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => void openSkill(s, "view")}
+                        >
+                          <Lock className="h-4 w-4 mr-1.5" />View Attempt
+                        </Button>
+                      </div>
+                    )}
                   </div>
                   <div className="flex items-center gap-2">
-                    {a && (a.status === "submitted" || a.status === "auto_submitted") ? (
-                      <Button variant="outline" onClick={() => void openSkill(s)}>
-                        <Lock className="h-4 w-4 mr-1.5" />View attempt
-                      </Button>
-                    ) : a && a.status === "in_progress" ? (
-                      <Button onClick={() => void openSkill(s)}>
+                    {taskState === "COMPLETED" ? null : taskState === "IN_PROGRESS" ? (
+                      <Button onClick={() => void openSkill(s, "resume")}>
                         <Timer className="h-4 w-4 mr-1.5" />Resume MCQ
                       </Button>
                     ) : (
-                      <Button onClick={() => void openSkill(s)} disabled={locked && !a}>
+                      <Button onClick={() => void openSkill(s, "start")} disabled={locked && !a}>
                         <Play className="h-4 w-4 mr-1.5" />Start task
                       </Button>
                     )}
@@ -699,7 +850,60 @@ export default function PracticalTask() {
                 <RefreshCcw className="h-6 w-6 animate-spin text-muted-foreground" />
                 <span className="text-sm text-muted-foreground">Loading attempt…</span>
               </div>
-            ) : !attempt ? (
+            ) : panelMode === "result" ? (
+              <>
+                <DialogHeader className="shrink-0 pr-8">
+                  <DialogTitle>{activeSkill.name} · Attempt Result</DialogTitle>
+                  <DialogDescription>
+                    Latest completed MCQ practical task for this competency.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <div className="rounded-md border bg-muted/30 p-4 text-sm space-y-3">
+                    <p className="font-medium">
+                      Score: {resultPercentage ?? attempt?.score ?? "—"}%
+                      {resultLabel && (
+                        <span className={passed ? " text-success" : " text-destructive"}>
+                          {" "}· {resultLabel}
+                        </span>
+                      )}
+                    </p>
+                    {resultCorrectCount != null && resultTotalQuestions != null && (
+                      <p className="text-muted-foreground">
+                        Correct answers: {resultCorrectCount} / {resultTotalQuestions}
+                      </p>
+                    )}
+                    <p className="text-muted-foreground text-xs">
+                      Submitted: {formatAttemptDate(
+                        mcqResultsMap[activeSkill.id]?.submitted_at ?? attempt?.endsAt,
+                      )}
+                    </p>
+                    {attemptHistory.length > 0 && (
+                      <div className="space-y-2 pt-2 border-t">
+                        <p className="text-xs font-medium text-muted-foreground">Attempt history</p>
+                        <ul className="space-y-2">
+                          {attemptHistory.map((row) => (
+                            <li
+                              key={row.id}
+                              className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-background px-3 py-2 text-xs"
+                            >
+                              <span>{row.title ?? `${activeSkill.name} MCQ`}</span>
+                              <span className="text-muted-foreground">
+                                {formatAttemptHistoryLabel(row)}
+                                {row.submitted_at ? ` · ${formatAttemptDate(row.submitted_at)}` : ""}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <DialogFooter className="shrink-0">
+                  <Button variant="outline" onClick={closePanel}>Close</Button>
+                </DialogFooter>
+              </>
+            ) : panelMode === "start" ? (
               <>
                 <DialogHeader className="shrink-0 pr-8">
                   <DialogTitle>{activeSkill.name} Practical Task</DialogTitle>
@@ -733,7 +937,12 @@ export default function PracticalTask() {
                   </Button>
                 </div>
               </>
-            ) : task ? (
+            ) : generatingMcqs && !task ? (
+              <div className="flex flex-1 flex-col items-center justify-center py-16 gap-3 min-h-0">
+                <RefreshCcw className="h-6 w-6 animate-spin text-muted-foreground" />
+                <span className="text-sm text-muted-foreground">Generating MCQ task…</span>
+              </div>
+            ) : task && attempt ? (
               <>
                 <DialogHeader className="shrink-0 pr-8">
                   <DialogTitle className="flex items-center gap-2">
@@ -748,30 +957,35 @@ export default function PracticalTask() {
                 <div className="flex-1 min-h-0 overflow-y-auto pr-2 -mr-2" {...NO_COPY_PROPS}>
                   {isSubmitted ? (
                     <div className="space-y-4">
-                      <div className="rounded-md border bg-muted/30 p-4 text-sm space-y-2">
-                        <p>Test submitted successfully.</p>
-                        <p className="font-medium">
-                          Result: {resultPercentage ?? attempt.score ?? "—"}%
-                          {resultLabel && (
-                            <span className={passed ? " text-success" : " text-destructive"}>
-                              {" "}· {resultLabel}
-                            </span>
-                          )}
-                        </p>
-                        {resultCorrectCount != null && resultTotalQuestions != null && (
+                      <div className="rounded-md border bg-muted/30 p-4 text-sm space-y-3">
+                        <p className="font-medium">Attempt history</p>
+                        {attemptHistory.length > 0 ? (
+                          <ul className="space-y-2">
+                            {attemptHistory.map((row) => (
+                              <li
+                                key={row.id}
+                                className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-background px-3 py-2"
+                              >
+                                <span>{row.title ?? `${activeSkill.name} MCQ`}</span>
+                                <span className="text-muted-foreground">
+                                  {formatAttemptHistoryLabel(row)}
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
                           <p className="text-muted-foreground">
-                            Correct answers: {resultCorrectCount} / {resultTotalQuestions}
+                            Submitted · Result: {resultPercentage ?? attempt.score ?? "—"}%
+                            {resultLabel && (
+                              <span className={passed ? " text-success" : " text-destructive"}>
+                                {" "}· {resultLabel}
+                              </span>
+                            )}
                           </p>
                         )}
-                        <p className="text-muted-foreground">
-                          Competency wallet record updated.
-                          {!passed && resultLabel === "Needs Improvement" && (
-                            <> The failed attempt remains visible in your evidence history.</>
-                          )}
+                        <p className="text-muted-foreground text-xs">
+                          Previous attempts stay in your evidence history. Result details appear only right after a new submission.
                         </p>
-                        {resultMessage && (
-                          <p className="text-muted-foreground text-xs">{resultMessage}</p>
-                        )}
                       </div>
                     </div>
                   ) : currentQuestion ? (
@@ -844,6 +1058,38 @@ export default function PracticalTask() {
               </div>
             )
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showResultModal} onOpenChange={setShowResultModal}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>MCQ Result</DialogTitle>
+            <DialogDescription>
+              Your latest submission has been recorded.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 text-sm">
+            <p className="font-medium">
+              Result: {resultPercentage ?? "—"}%
+              {resultLabel && (
+                <span className={passed ? " text-success" : " text-destructive"}>
+                  {" "}· {resultLabel}
+                </span>
+              )}
+            </p>
+            {resultCorrectCount != null && resultTotalQuestions != null && (
+              <p className="text-muted-foreground">
+                Correct answers: {resultCorrectCount} / {resultTotalQuestions}
+              </p>
+            )}
+            {resultMessage && (
+              <p className="text-muted-foreground text-xs">{resultMessage}</p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setShowResultModal(false)}>Close</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </AppShell>

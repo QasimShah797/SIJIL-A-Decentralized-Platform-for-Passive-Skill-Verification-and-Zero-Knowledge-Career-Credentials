@@ -9,14 +9,16 @@ import {
   resolveUser,
   syncLearnerMoodleActivities,
 } from "./moodle-sync-core.ts";
+import { repairMoodleEvidenceRecords } from "./moodle-evidence-records.ts";
 
 /** Bump when deploying — exposed in test/sync responses so frontend can detect stale deploys. */
-const FUNCTION_VERSION = "3.3.0";
+const FUNCTION_VERSION = "3.4.0";
 
 const SUPPORTED_ACTIONS = [
   "test",
   "sync_activities",
   "sync_moodle_data",
+  "repair_moodle_evidence_records",
   "get_courses",
   "find_user_by_email",
   "get_user_courses",
@@ -30,11 +32,18 @@ function normalizeAction(raw: unknown): string {
     return "sync_moodle_data";
   }
   if (
-    s === "sync" ||
-    s === "sync_moodle" ||
-    s === "sync_moodle_activities" ||
-    s === "syncactivities" ||
-    s === "sync_activities"
+    s === "repair_moodle_evidence"
+    || s === "repair_moodle_evidence_records"
+    || s === "repair_moodle_evidence_mapping"
+  ) {
+    return "repair_moodle_evidence_records";
+  }
+  if (
+    s === "sync"
+    || s === "sync_moodle"
+    || s === "sync_moodle_activities"
+    || s === "syncactivities"
+    || s === "sync_activities"
   ) {
     return "sync_activities";
   }
@@ -114,6 +123,7 @@ async function runLearnerSync(
     moodleSiteUrl: result.moodleSiteUrl,
     warnings: result.warnings,
     cleanup: result.cleanup ?? null,
+    evidenceRepair: result.evidenceRepair ?? null,
     debug: result.debug ?? null,
     functionVersion: FUNCTION_VERSION,
     supportedActions: SUPPORTED_ACTIONS,
@@ -153,12 +163,10 @@ Deno.serve(async (req) => {
       });
     }
 
-    /** Force full Moodle resync — purge stale data, fetch fresh, insert with canonical site URL. */
     if (action === "sync_moodle_data") {
       return await runLearnerSync(req, body, true);
     }
 
-    /** Legacy: all site courses (kept for backward compatibility). */
     if (action === "get_courses") {
       const courses = await callMoodle("core_course_get_courses");
       return json({ success: true, courses, functionVersion: FUNCTION_VERSION });
@@ -206,10 +214,29 @@ Deno.serve(async (req) => {
       return json({ success: true, grades });
     }
 
-    /** Full learner sync (non-destructive refresh). */
     if (action === "sync_activities") {
       const forceResync = body.force === true || body.forceResync === true;
       return await runLearnerSync(req, body, forceResync);
+    }
+
+    if (action === "repair_moodle_evidence_records") {
+      const resolved = await resolveUser(req);
+      if ("error" in resolved && resolved.error) {
+        return resolved.error;
+      }
+
+      const result = await repairMoodleEvidenceRecords(
+        resolved.admin,
+        resolved.userId,
+      );
+
+      return json({
+        success: true,
+        action: "repair_moodle_evidence_records",
+        result,
+        functionVersion: FUNCTION_VERSION,
+        supportedActions: SUPPORTED_ACTIONS,
+      });
     }
 
     if (!action) {
@@ -219,7 +246,7 @@ Deno.serve(async (req) => {
           code: "MISSING_ACTION",
           supportedActions: SUPPORTED_ACTIONS,
           functionVersion: FUNCTION_VERSION,
-          hint: 'Send JSON body: { "action": "sync_moodle_data" } or { "action": "sync_activities" }',
+          hint: 'Send JSON body: { "action": "repair_moodle_evidence_records" }',
         },
         400,
       );

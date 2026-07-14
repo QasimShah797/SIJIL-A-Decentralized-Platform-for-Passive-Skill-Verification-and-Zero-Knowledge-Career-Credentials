@@ -10,7 +10,6 @@ import {
 import { fetchCredentials } from "@/lib/db/credentials";
 import { institutionDisplayName } from "@/lib/institution-routing";
 import {
-  importedLmsMatchesSkill,
   lmsEvidenceMatchesSkill,
   matchesCompetency,
   moodleAssignmentMatchesSkill,
@@ -64,7 +63,7 @@ async function fetchMoodleEvidenceForSkill(
   const siteFilter = (query: ReturnType<typeof supabase.from>) =>
     query.eq("moodle_site_url", currentSite);
 
-  const [lmsAll, imported, assignments, courses, feedback] = await Promise.all([
+  const [lmsAll, assignments, courses, feedback] = await Promise.all([
     safeQuery(
       () => siteFilter(
         supabase
@@ -72,15 +71,6 @@ async function fetchMoodleEvidenceForSkill(
           .select("*")
           .eq("user_id", userId),
       ).order("fetched_at", { ascending: false }),
-      { data: [], error: null },
-    ),
-    safeQuery(
-      () => siteFilter(
-        supabase
-          .from("imported_lms_evidence")
-          .select("*")
-          .eq("user_id", userId),
-      ).order("imported_at", { ascending: false }),
       { data: [], error: null },
     ),
     safeQuery(
@@ -149,26 +139,6 @@ async function fetchMoodleEvidenceForSkill(
       feedback: null,
       status: record.completion_status != null ? String(record.completion_status) : null,
       date: record.fetched_at != null ? String(record.fetched_at) : null,
-    });
-  }
-
-  for (const row of imported.data ?? []) {
-    const record = row as Record<string, unknown>;
-    const courseName = String(record.course_name ?? "");
-    if (!importedLmsMatchesSkill(record, skill.name) && !matchesCompetency(courseName, skill.name)) continue;
-    const assignmentId = Number(record.moodle_assignment_id);
-    pushItem({
-      id: `imported:${String(record.id ?? assignmentId)}`,
-      name: String(record.activity_name ?? "Moodle assignment"),
-      courseName: String(record.course_name ?? "Moodle course"),
-      grade: record.grade_formatted != null
-        ? String(record.grade_formatted)
-        : record.grade != null
-          ? String(record.grade)
-          : null,
-      feedback: String(record.feedback_preview ?? feedbackByAssignment.get(assignmentId) ?? "").trim() || null,
-      status: record.submission_status != null ? String(record.submission_status) : null,
-      date: record.imported_at != null ? String(record.imported_at) : null,
     });
   }
 
