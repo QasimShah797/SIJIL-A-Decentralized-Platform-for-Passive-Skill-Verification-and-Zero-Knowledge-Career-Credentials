@@ -1,3 +1,8 @@
+/**
+ * @deprecated LinkedIn OAuth is no longer used by the learner UI.
+ * Learners enter a manual LinkedIn profile URL in learner_profiles.linkedin_url instead.
+ * This function is retained for reference and may be removed in a future cleanup.
+ */
 import { corsHeaders } from "https://esm.sh/@supabase/supabase-js@2.95.0/cors";
 import {
   buildFrontendRedirect,
@@ -76,6 +81,19 @@ Deno.serve(async (req) => {
 
     try {
       const result = await completeLinkedInOAuthExchange(code, state, log);
+
+      if (log.connectionUpsert !== "success" || !result.linkedin_member_id) {
+        log.redirectType = "error";
+        log.reason = "connection_save_failed";
+        console.error("LinkedIn OAuth callback: connection not saved", {
+          connectionUpsert: log.connectionUpsert,
+          linkedinSubExists: log.linkedinSubExists,
+        });
+        return redirect(
+          buildFrontendRedirect("error", "/learner/complete-profile", "connection_save_failed"),
+        );
+      }
+
       log.redirectType = "connected";
       console.log("LinkedIn OAuth callback success", {
         storedStateFound: log.storedStateFound,
@@ -84,8 +102,10 @@ Deno.serve(async (req) => {
         userinfoStatus: log.userinfoStatus,
         linkedinSubExists: log.linkedinSubExists,
         connectionUpsert: log.connectionUpsert,
+        databaseSaveSuccess: true,
         redirectType: log.redirectType,
         linkedin_member_id: result.linkedin_member_id,
+        profile_url_returned: result.profile_url !== null,
       });
       const redirectUrl = buildFrontendRedirect("connected", "/learner/complete-profile");
       console.log("LinkedIn OAuth final redirect", { redirectType: "connected", url: redirectUrl });

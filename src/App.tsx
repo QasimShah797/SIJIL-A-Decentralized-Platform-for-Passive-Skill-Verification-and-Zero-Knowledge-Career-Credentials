@@ -36,7 +36,6 @@ import InstitutionValidationTrail from "./pages/institution/ValidationTrail";
 import StudentManagement from "./pages/institution/StudentManagement";
 import GitHubPrepare from "./pages/auth/GitHubPrepare";
 import GitHubCallback from "./pages/auth/GitHubCallback";
-import LinkedInCallback from "./pages/auth/LinkedInCallback";
 import CompetencyPresentationView from "./pages/public/CompetencyPresentationView";
 import RecruiterLogin from "./pages/login/RecruiterLogin";
 import RecruiterSearch from "./pages/recruiter/Search";
@@ -95,7 +94,6 @@ const App = () => (
 
           <Route path="/auth/github/prepare" element={<LRIncomplete><GitHubPrepare /></LRIncomplete>} />
           <Route path="/auth/github/callback" element={<GitHubCallback />} />
-          <Route path="/auth/linkedin/callback" element={<LinkedInCallback />} />
 
           <Route path="/learner/complete-profile" element={<LRIncomplete><CompleteProfile /></LRIncomplete>} />
           <Route path="/learner/profile" element={<LR><LearnerProfile /></LR>} />

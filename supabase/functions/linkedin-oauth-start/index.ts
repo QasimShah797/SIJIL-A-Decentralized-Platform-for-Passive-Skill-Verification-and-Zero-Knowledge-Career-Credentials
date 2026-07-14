@@ -1,3 +1,8 @@
+/**
+ * @deprecated LinkedIn OAuth is no longer used by the learner UI.
+ * Learners enter a manual LinkedIn profile URL in learner_profiles.linkedin_url instead.
+ * This function is retained for reference and may be removed in a future cleanup.
+ */
 import { corsHeaders } from "https://esm.sh/@supabase/supabase-js@2.95.0/cors";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.95.0";
 import {

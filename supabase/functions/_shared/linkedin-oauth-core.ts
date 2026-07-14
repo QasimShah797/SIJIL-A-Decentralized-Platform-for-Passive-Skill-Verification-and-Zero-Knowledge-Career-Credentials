@@ -343,18 +343,18 @@ export async function completeLinkedInOAuthExchange(
   }
 
   const displayName = resolveDisplayName(profile);
-  const email = (profile.email as string | undefined)?.trim() || null;
-  const avatarUrl = (profile.picture as string | undefined)?.trim() || null;
+  const email = typeof profile.email === "string" ? profile.email : null;
+  const avatarUrl = typeof profile.picture === "string" ? profile.picture : null;
   const profileUrl = extractLinkedInProfileUrl(profile);
   const now = new Date().toISOString();
 
   const payload = {
     user_id: oauthState.userId,
-    linkedin_member_id: memberId,
+    linkedin_member_id: String(profile.sub),
     display_name: displayName,
     email,
-    profile_url: profileUrl,
     avatar_url: avatarUrl,
+    profile_url: profileUrl,
     verified_at: now,
     connected_at: now,
     updated_at: now,
@@ -366,12 +366,12 @@ export async function completeLinkedInOAuthExchange(
     .select()
     .single();
 
-  if (upErr) {
+  if (upErr || !saved) {
     if (log) log.connectionUpsert = "failure";
     console.error("linkedin_connections upsert failed", {
-      code: upErr.code,
-      message: upErr.message,
-      details: upErr.details,
+      code: upErr?.code ?? null,
+      message: upErr?.message ?? "upsert returned no row",
+      details: upErr?.details ?? null,
     });
     throw new Error("connection_save_failed");
   }
@@ -388,8 +388,10 @@ export async function completeLinkedInOAuthExchange(
   }
 
   console.log("linkedin_connections row saved", {
-    user_id: saved?.user_id ?? oauthState.userId,
-    linkedin_member_id: saved?.linkedin_member_id ?? memberId,
+    user_id: saved.user_id,
+    linkedin_member_id: saved.linkedin_member_id,
+    profile_url_returned: saved.profile_url !== null,
+    databaseSaveSuccess: true,
   });
 
   return {

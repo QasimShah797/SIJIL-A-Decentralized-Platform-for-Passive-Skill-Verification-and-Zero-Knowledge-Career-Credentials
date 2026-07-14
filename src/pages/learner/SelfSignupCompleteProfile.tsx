@@ -37,14 +37,16 @@ import {
   type SelfSignupProfileForm,
 } from "@/lib/db/learner-profile";
 import {
-  probeLinkedInOAuthConfigured,
-} from "@/lib/db/linkedin-connections";
-import {
   clearProfileFormDraft,
   loadProfileFormDraft,
   saveProfileFormDraft,
 } from "@/lib/profile-oauth-draft";
 import { meetsOAuthCompletionRequirements } from "@/lib/profile-oauth-verification";
+import {
+  isOptionalLinkedInProfileUrlValid,
+  LINKEDIN_PROFILE_URL_ERROR,
+  validateOptionalLinkedInProfileUrl,
+} from "@/lib/linkedin-profile-url";
 import { formatSupabaseError } from "@/lib/utils";
 
 const profileSchema = z.object({
@@ -59,6 +61,14 @@ const profileSchema = z.object({
   bio: z.string().trim().min(1, "Bio is required").max(2000),
   skillsSummary: z.string().trim().min(1, "Skills summary is required").max(2000),
   careerGoal: z.string().trim().min(1, "Career goal is required").max(1000),
+  linkedinUrl: z
+    .string()
+    .trim()
+    .optional()
+    .or(z.literal(""))
+    .refine((val) => isOptionalLinkedInProfileUrlValid(val ?? ""), {
+      message: LINKEDIN_PROFILE_URL_ERROR,
+    }),
 });
 
 const GENDER_OPTIONS = [
@@ -81,6 +91,7 @@ const emptyForm = (): SelfSignupProfileForm => ({
   bio: "",
   skillsSummary: "",
   careerGoal: "",
+  linkedinUrl: "",
 });
 
 const RETURN_PATH = "/learner/complete-profile";
@@ -95,8 +106,6 @@ export default function SelfSignupCompleteProfile() {
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [existingAvatarUrl, setExistingAvatarUrl] = useState<string | null>(null);
   const [githubVerified, setGithubVerified] = useState(false);
-  const [linkedinVerified, setLinkedinVerified] = useState(true);
-  const [linkedinRequired, setLinkedinRequired] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const [f, setF] = useState<SelfSignupProfileForm>(emptyForm());
 
@@ -138,10 +147,6 @@ export default function SelfSignupCompleteProfile() {
         const oauth = await meetsOAuthCompletionRequirements(user.id);
         if (cancelled) return;
         setGithubVerified(oauth.github);
-        setLinkedinVerified(oauth.linkedin);
-        setLinkedinRequired(oauth.linkedinRequired);
-
-        await probeLinkedInOAuthConfigured();
 
         const complete = await isLearnerProfileComplete(user.id);
         if (cancelled) return;
@@ -167,20 +172,16 @@ export default function SelfSignupCompleteProfile() {
 
   useEffect(() => {
     const github = searchParams.get("github");
-    const linkedin = searchParams.get("linkedin");
-    if (!github && !linkedin) return;
+    if (!github) return;
 
     const next = new URLSearchParams(searchParams);
     next.delete("github");
-    next.delete("linkedin");
     next.delete("code");
     setSearchParams(next, { replace: true });
 
     if (user) {
       void meetsOAuthCompletionRequirements(user.id).then((oauth) => {
         setGithubVerified(oauth.github);
-        setLinkedinVerified(oauth.linkedin);
-        setLinkedinRequired(oauth.linkedinRequired);
       });
     }
   }, [searchParams, setSearchParams, user]);
@@ -190,6 +191,21 @@ export default function SelfSignupCompleteProfile() {
 
     const timer = window.setTimeout(() => {
       const gradYear = f.graduationYear.trim();
+      let linkedinUrl: string | null | undefined;
+      if (f.linkedinUrl.trim()) {
+        if (!isOptionalLinkedInProfileUrlValid(f.linkedinUrl)) {
+          linkedinUrl = undefined;
+        } else {
+          try {
+            linkedinUrl = validateOptionalLinkedInProfileUrl(f.linkedinUrl);
+          } catch {
+            linkedinUrl = undefined;
+          }
+        }
+      } else {
+        linkedinUrl = null;
+      }
+
       void saveSelfSignupProfileProgress(user.id, {
         contactNumber: f.contactNumber,
         dateOfBirth: f.dateOfBirth || undefined,
@@ -202,6 +218,7 @@ export default function SelfSignupCompleteProfile() {
         bio: f.bio,
         skillsSummary: f.skillsSummary,
         careerGoal: f.careerGoal,
+        ...(linkedinUrl !== undefined ? { linkedinUrl } : {}),
       }).catch(() => {
         // Silent debounced save — explicit submit still surfaces errors.
       });
@@ -212,8 +229,6 @@ export default function SelfSignupCompleteProfile() {
 
   const progress = selfSignupProfileProgress(f, {
     githubVerified,
-    linkedinVerified,
-    linkedinRequired,
   });
 
   const finish = async (e: React.FormEvent) => {
@@ -235,14 +250,6 @@ export default function SelfSignupCompleteProfile() {
       toast({
         title: "GitHub verification required",
         description: "Connect and verify your GitHub account before completing your profile.",
-        variant: "destructive",
-      });
-      return;
-    }
-    if (!oauth.linkedin) {
-      toast({
-        title: "LinkedIn verification required",
-        description: "Connect and verify your LinkedIn account before completing your profile.",
         variant: "destructive",
       });
       return;
@@ -271,6 +278,7 @@ export default function SelfSignupCompleteProfile() {
       }
 
       const gradYear = gradYearStr ? Number.parseInt(gradYearStr, 10) : undefined;
+      const linkedinUrl = validateOptionalLinkedInProfileUrl(parsed.data.linkedinUrl ?? "");
 
       const data: LearnerSelfSignupOnboardingData = {
         contactNumber: parsed.data.contactNumber.trim(),
@@ -285,6 +293,7 @@ export default function SelfSignupCompleteProfile() {
         skillsSummary: parsed.data.skillsSummary.trim(),
         careerGoal: parsed.data.careerGoal.trim(),
         avatarUrl,
+        linkedinUrl,
       };
 
       const updated = await saveSelfSignupOnboarding(user.id, data);
@@ -457,9 +466,10 @@ export default function SelfSignupCompleteProfile() {
             <VerifiedProfessionalAccounts
               userId={user.id}
               returnTo={RETURN_PATH}
+              linkedinUrl={f.linkedinUrl}
+              onLinkedInUrlChange={(value) => setF((prev) => ({ ...prev, linkedinUrl: value }))}
               onBeforeConnect={persistDraft}
               onGitHubVerifiedChange={setGithubVerified}
-              onLinkedInVerifiedChange={setLinkedinVerified}
             />
           ) : null}
 
@@ -480,7 +490,7 @@ export default function SelfSignupCompleteProfile() {
 
           <div className="flex items-start gap-2 rounded-lg border border-border/60 bg-muted/30 p-3 text-xs text-muted-foreground">
             <MapPin className="h-4 w-4 shrink-0 mt-0.5" />
-            Your progress is saved automatically. Form data is preserved when you connect GitHub or LinkedIn.
+            Your progress is saved automatically. Form data is preserved when you connect GitHub.
           </div>
 
           <Button type="submit" disabled={busy} className="w-full">

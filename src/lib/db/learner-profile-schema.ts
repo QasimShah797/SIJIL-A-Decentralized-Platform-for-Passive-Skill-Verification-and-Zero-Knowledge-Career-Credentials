@@ -91,6 +91,7 @@ export type SelfSignupDbInput = {
   skillsSummary?: string;
   careerGoal?: string;
   avatarUrl?: string;
+  linkedinUrl?: string | null;
   profileCompleted?: boolean;
 };
 
@@ -103,6 +104,7 @@ export type InstitutionDbInput = {
   skillsSummary?: string;
   careerGoal?: string;
   avatarUrl?: string;
+  linkedinUrl?: string | null;
   profileCompleted?: boolean;
 };
 
@@ -117,6 +119,7 @@ export function buildSelfSignupDbPayload(data: SelfSignupDbInput): LearnerProfil
   if (data.skillsSummary !== undefined) payload.skills_summary = data.skillsSummary.trim();
   if (data.careerGoal !== undefined) payload.career_goal = data.careerGoal.trim();
   if (data.avatarUrl) payload.avatar_url = data.avatarUrl;
+  if (data.linkedinUrl !== undefined) payload.linkedin_url = data.linkedinUrl;
   if (data.profileCompleted !== undefined) payload.profile_completed = data.profileCompleted;
 
   if (data.cityCountry !== undefined) {
@@ -140,6 +143,7 @@ export function buildInstitutionDbPayload(data: InstitutionDbInput): LearnerProf
   if (data.skillsSummary !== undefined) payload.skills_summary = data.skillsSummary.trim();
   if (data.careerGoal !== undefined) payload.career_goal = data.careerGoal.trim();
   if (data.avatarUrl) payload.avatar_url = data.avatarUrl;
+  if (data.linkedinUrl !== undefined) payload.linkedin_url = data.linkedinUrl;
   if (data.profileCompleted !== undefined) payload.profile_completed = data.profileCompleted;
 
   return stripNonDbColumns(payload) as LearnerProfileDbUpdate;

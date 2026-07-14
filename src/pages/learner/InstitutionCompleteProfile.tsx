@@ -27,6 +27,11 @@ import {
   saveProfileFormDraft,
 } from "@/lib/profile-oauth-draft";
 import { meetsOAuthCompletionRequirements } from "@/lib/profile-oauth-verification";
+import {
+  isOptionalLinkedInProfileUrlValid,
+  LINKEDIN_PROFILE_URL_ERROR,
+  validateOptionalLinkedInProfileUrl,
+} from "@/lib/linkedin-profile-url";
 import { formatSupabaseError } from "@/lib/utils";
 
 const Schema = z.object({
@@ -42,6 +47,14 @@ const Schema = z.object({
   bio: z.string().trim().min(1, "Short bio is required").max(2000),
   skillsSummary: z.string().trim().min(1, "Academic interests / skills summary is required").max(2000),
   careerGoal: z.string().trim().min(1, "Career goal is required").max(1000),
+  linkedinUrl: z
+    .string()
+    .trim()
+    .optional()
+    .or(z.literal(""))
+    .refine((val) => isOptionalLinkedInProfileUrlValid(val ?? ""), {
+      message: LINKEDIN_PROFILE_URL_ERROR,
+    }),
 });
 
 type InstitutionForm = {
@@ -58,6 +71,7 @@ type InstitutionForm = {
   bio: string;
   skillsSummary: string;
   careerGoal: string;
+  linkedinUrl: string;
 };
 
 const RETURN_PATH = "/learner/complete-profile";
@@ -76,7 +90,7 @@ export default function InstitutionCompleteProfile() {
   const [f, setF] = useState<InstitutionForm>({
     firstName: "", lastName: "", universityEmail: "", institutionName: "", program: "", studentId: "",
     department: "", contactNumber: "", cityCountry: "", batch: "",
-    bio: "", skillsSummary: "", careerGoal: "",
+    bio: "", skillsSummary: "", careerGoal: "", linkedinUrl: "",
   });
 
   const set = (k: keyof InstitutionForm) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
@@ -130,12 +144,10 @@ export default function InstitutionCompleteProfile() {
 
   useEffect(() => {
     const github = searchParams.get("github");
-    const linkedin = searchParams.get("linkedin");
-    if (!github && !linkedin) return;
+    if (!github) return;
 
     const next = new URLSearchParams(searchParams);
     next.delete("github");
-    next.delete("linkedin");
     next.delete("code");
     setSearchParams(next, { replace: true });
 
@@ -148,6 +160,21 @@ export default function InstitutionCompleteProfile() {
     if (!user || !formReady) return;
 
     const timer = window.setTimeout(() => {
+      let linkedinUrl: string | null | undefined;
+      if (f.linkedinUrl.trim()) {
+        if (!isOptionalLinkedInProfileUrlValid(f.linkedinUrl)) {
+          linkedinUrl = undefined;
+        } else {
+          try {
+            linkedinUrl = validateOptionalLinkedInProfileUrl(f.linkedinUrl);
+          } catch {
+            linkedinUrl = undefined;
+          }
+        }
+      } else {
+        linkedinUrl = null;
+      }
+
       void saveLearnerProfileProgress(user.id, {
         firstName: f.firstName,
         lastName: f.lastName,
@@ -156,6 +183,7 @@ export default function InstitutionCompleteProfile() {
         bio: f.bio,
         skillsSummary: f.skillsSummary,
         careerGoal: f.careerGoal,
+        ...(linkedinUrl !== undefined ? { linkedinUrl } : {}),
       }).catch(() => {
         // Silent debounced save — explicit submit still surfaces errors.
       });
@@ -187,14 +215,6 @@ export default function InstitutionCompleteProfile() {
       });
       return;
     }
-    if (!oauth.linkedin) {
-      toast({
-        title: "LinkedIn verification required",
-        description: "Connect and verify your LinkedIn account before completing your profile.",
-        variant: "destructive",
-      });
-      return;
-    }
 
     setBusy(true);
     try {
@@ -202,6 +222,8 @@ export default function InstitutionCompleteProfile() {
       if (avatarFile) {
         avatarUrl = await uploadLearnerAvatar(user.id, avatarFile);
       }
+
+      const linkedinUrl = validateOptionalLinkedInProfileUrl(parsed.data.linkedinUrl ?? "");
 
       const data: LearnerOnboardingData = {
         firstName: f.firstName.trim(),
@@ -217,6 +239,7 @@ export default function InstitutionCompleteProfile() {
         skillsSummary: f.skillsSummary.trim(),
         careerGoal: f.careerGoal.trim(),
         avatarUrl,
+        linkedinUrl,
       };
 
       const updated = await saveLearnerOnboarding(user.id, data);
@@ -319,6 +342,8 @@ export default function InstitutionCompleteProfile() {
           <VerifiedProfessionalAccounts
             userId={user.id}
             returnTo={RETURN_PATH}
+            linkedinUrl={f.linkedinUrl}
+            onLinkedInUrlChange={(value) => setF((prev) => ({ ...prev, linkedinUrl: value }))}
             onBeforeConnect={persistDraft}
           />
         ) : null}

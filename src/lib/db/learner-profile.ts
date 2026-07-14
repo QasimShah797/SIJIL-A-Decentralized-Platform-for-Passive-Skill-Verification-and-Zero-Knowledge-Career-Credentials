@@ -201,6 +201,7 @@ function rowToOnboardingForm(
   bio: string;
   skillsSummary: string;
   careerGoal: string;
+  linkedinUrl: string;
 } {
   return {
     firstName: row.first_name?.trim() ?? "",
@@ -216,6 +217,7 @@ function rowToOnboardingForm(
     bio: row.bio?.trim() ?? "",
     skillsSummary: row.skills_summary?.trim() ?? "",
     careerGoal: row.career_goal?.trim() ?? "",
+    linkedinUrl: row.linkedin_url?.trim() ?? "",
   };
 }
 
@@ -252,6 +254,7 @@ export type LearnerSelfSignupOnboardingData = {
   skillsSummary: string;
   careerGoal: string;
   avatarUrl?: string;
+  linkedinUrl?: string | null;
 };
 
 export type SelfSignupProfileForm = {
@@ -266,6 +269,7 @@ export type SelfSignupProfileForm = {
   bio: string;
   skillsSummary: string;
   careerGoal: string;
+  linkedinUrl: string;
 };
 
 export function rowToSelfSignupForm(row: LearnerProfileDbRow, userId?: string): SelfSignupProfileForm {
@@ -283,13 +287,12 @@ export function rowToSelfSignupForm(row: LearnerProfileDbRow, userId?: string): 
     bio: row.bio?.trim() ?? "",
     skillsSummary: row.skills_summary?.trim() ?? "",
     careerGoal: row.career_goal?.trim() ?? "",
+    linkedinUrl: row.linkedin_url?.trim() ?? "",
   };
 }
 
 export type SelfSignupProfileProgressOptions = {
   githubVerified?: boolean;
-  linkedinVerified?: boolean;
-  linkedinRequired?: boolean;
 };
 
 export function selfSignupProfileProgress(
@@ -302,7 +305,6 @@ export function selfSignupProfileProgress(
     form.city.trim(),
     form.bio.trim(),
     opts?.githubVerified ? "github" : "",
-    opts?.linkedinRequired ? (opts.linkedinVerified ? "linkedin" : "") : "linkedin-skip",
     form.skillsSummary.trim(),
     form.careerGoal.trim(),
   ];
@@ -331,6 +333,7 @@ export async function saveSelfSignupProfileProgress(
     skillsSummary: data.skillsSummary,
     careerGoal: data.careerGoal,
     avatarUrl: data.avatarUrl,
+    linkedinUrl: data.linkedinUrl,
   });
 
   const merged: LearnerProfileDbRow = {
@@ -374,15 +377,13 @@ export async function saveSelfSignupOnboarding(
     skillsSummary: data.skillsSummary,
     careerGoal: data.careerGoal,
     avatarUrl: data.avatarUrl,
+    linkedinUrl: data.linkedinUrl,
     profileCompleted: true,
   });
 
   const oauth = await meetsOAuthCompletionRequirements(userId);
   if (!oauth.github) {
     throw new Error("Connect and verify your GitHub account before completing your profile.");
-  }
-  if (!oauth.linkedin) {
-    throw new Error("Connect and verify your LinkedIn account before completing your profile.");
   }
 
   const { data: updated, error } = await updateLearnerProfileRow(userId, payload);
@@ -405,6 +406,7 @@ export type LearnerOnboardingData = {
   skillsSummary: string;
   careerGoal: string;
   avatarUrl?: string;
+  linkedinUrl?: string | null;
 };
 
 export async function createLearnerProfileStub(userId: string, username: string): Promise<void> {
@@ -450,15 +452,13 @@ export async function saveLearnerOnboarding(userId: string, data: LearnerOnboard
     skillsSummary: data.skillsSummary,
     careerGoal: data.careerGoal,
     avatarUrl: data.avatarUrl,
+    linkedinUrl: data.linkedinUrl,
     profileCompleted: true,
   });
 
   const oauth = await meetsOAuthCompletionRequirements(userId);
   if (!oauth.github) {
     throw new Error("Connect and verify your GitHub account before completing your profile.");
-  }
-  if (!oauth.linkedin) {
-    throw new Error("Connect and verify your LinkedIn account before completing your profile.");
   }
 
   const { data: updated, error } = await updateLearnerProfileRow(userId, payload);
@@ -486,6 +486,7 @@ export async function saveLearnerProfileProgress(
     skillsSummary: data.skillsSummary,
     careerGoal: data.careerGoal,
     avatarUrl: data.avatarUrl,
+    linkedinUrl: data.linkedinUrl,
   });
 
   const merged: LearnerProfileDbRow = {
@@ -529,6 +530,7 @@ export type LearnerEditableProfile = {
   graduationYear?: number | null;
   institutionName?: string;
   program?: string;
+  linkedinUrl?: string | null;
 };
 
 /** Update learner-editable fields only; institution-verified fields are never changed. */
@@ -554,6 +556,7 @@ export async function updateLearnerEditableProfile(
     avatarUrl: data.avatarUrl,
     institutionName: !existing.institution_id ? data.institutionName : undefined,
     program: !existing.institution_id ? data.program : undefined,
+    linkedinUrl: data.linkedinUrl,
   });
 
   if (!existing.institution_id) {

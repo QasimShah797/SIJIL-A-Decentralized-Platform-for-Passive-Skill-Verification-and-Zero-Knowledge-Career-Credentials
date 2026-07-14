@@ -20,6 +20,11 @@ import {
   type LearnerEditableProfile,
 } from "@/lib/db/learner-profile";
 import { VerifiedProfessionalAccounts } from "@/components/profile/VerifiedProfessionalAccounts";
+import {
+  isOptionalLinkedInProfileUrlValid,
+  LINKEDIN_PROFILE_URL_ERROR,
+  validateOptionalLinkedInProfileUrl,
+} from "@/lib/linkedin-profile-url";
 import { formatSupabaseError } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
 
@@ -28,6 +33,14 @@ const baseEditSchema = {
   bio: z.string().trim().min(1, "Short bio is required").max(2000),
   skillsSummary: z.string().trim().min(1, "Academic interests / skills summary is required").max(2000),
   careerGoal: z.string().trim().min(1, "Career goal is required").max(1000),
+  linkedinUrl: z
+    .string()
+    .trim()
+    .optional()
+    .or(z.literal(""))
+    .refine((val) => isOptionalLinkedInProfileUrlValid(val ?? ""), {
+      message: LINKEDIN_PROFILE_URL_ERROR,
+    }),
 };
 
 const institutionEditSchema = z.object({
@@ -94,6 +107,7 @@ export default function MyProfile() {
     graduationYear: "",
     institutionName: "",
     program: "",
+    linkedinUrl: "",
   });
 
   useEffect(() => {
@@ -105,6 +119,7 @@ export default function MyProfile() {
         bio: profile.bio ?? "",
         skillsSummary: profile.skillsSummary ?? "",
         careerGoal: profile.careerGoal ?? "",
+        linkedinUrl: profile.linkedinUrl ?? "",
       });
     } else {
       setForm({
@@ -119,6 +134,7 @@ export default function MyProfile() {
         graduationYear: profile.graduationYear != null ? String(profile.graduationYear) : "",
         institutionName: profile.institution !== "—" ? profile.institution : "",
         program: profile.program !== "—" ? profile.program : "",
+        linkedinUrl: profile.linkedinUrl ?? "",
       });
     }
   }, [profile, editing]);
@@ -135,6 +151,7 @@ export default function MyProfile() {
           bio: profile.bio ?? "",
           skillsSummary: profile.skillsSummary ?? "",
           careerGoal: profile.careerGoal ?? "",
+          linkedinUrl: profile.linkedinUrl ?? "",
         });
       } else {
         setForm({
@@ -149,6 +166,7 @@ export default function MyProfile() {
           graduationYear: profile.graduationYear != null ? String(profile.graduationYear) : "",
           institutionName: profile.institution !== "—" ? profile.institution : "",
           program: profile.program !== "—" ? profile.program : "",
+          linkedinUrl: profile.linkedinUrl ?? "",
         });
       }
     }
@@ -183,12 +201,15 @@ export default function MyProfile() {
         avatarUrl = await uploadLearnerAvatar(user.id, avatarFile);
       }
 
+      const linkedinUrl = validateOptionalLinkedInProfileUrl(parsed.data.linkedinUrl ?? "");
+
       const base = {
         contactNumber: parsed.data.contactNumber,
         bio: parsed.data.bio,
         skillsSummary: parsed.data.skillsSummary,
         careerGoal: parsed.data.careerGoal,
         avatarUrl,
+        linkedinUrl,
       };
 
       const payload: LearnerEditableProfile = profile.institutionLinked
@@ -471,7 +492,7 @@ export default function MyProfile() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
               <Link2 className="h-4 w-4 text-primary" />
-              Verified professional accounts
+              Professional links
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -479,6 +500,9 @@ export default function MyProfile() {
               <VerifiedProfessionalAccounts
                 userId={user.id}
                 returnTo="/learner/my-profile"
+                linkedinUrl={editing ? form.linkedinUrl ?? "" : profile.linkedinUrl ?? ""}
+                onLinkedInUrlChange={(value) => setForm((prev) => ({ ...prev, linkedinUrl: value }))}
+                linkedinReadOnly={!editing}
               />
             ) : null}
           </CardContent>
