@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
 import {
   User, GraduationCap, Link2, Sparkles, Wallet, Lock, Pencil, UploadCloud, X, ShieldCheck,
@@ -94,6 +94,16 @@ export default function MyProfile() {
   const [busy, setBusy] = useState(false);
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const avatarPreviewUrl = useMemo(
+    () => (avatarFile ? URL.createObjectURL(avatarFile) : null),
+    [avatarFile],
+  );
+
+  useEffect(() => {
+    return () => {
+      if (avatarPreviewUrl) URL.revokeObjectURL(avatarPreviewUrl);
+    };
+  }, [avatarPreviewUrl]);
   const [form, setForm] = useState<EditForm>({
     contactNumber: "",
     bio: "",
@@ -293,8 +303,15 @@ export default function MyProfile() {
       />
 
       <div className="mb-6 flex items-center gap-4 rounded-xl border bg-card p-5">
-        {profile.avatarUrl && !avatarFile ? (
+        {avatarPreviewUrl ? (
           <img
+            src={avatarPreviewUrl}
+            alt={profile.name}
+            className="h-20 w-20 rounded-full object-cover border"
+          />
+        ) : profile.avatarUrl ? (
+          <img
+            key={profile.avatarUrl}
             src={profile.avatarUrl}
             alt={profile.name}
             className="h-20 w-20 rounded-full object-cover border"
@@ -362,7 +379,14 @@ export default function MyProfile() {
                 <div className="sm:col-span-2">
                   <Field label="Profile picture" hint="Optional">
                     {avatarFile ? (
-                      <div className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm">
+                      <div className="flex items-center gap-3 rounded-md border px-3 py-2 text-sm">
+                        {avatarPreviewUrl ? (
+                          <img
+                            src={avatarPreviewUrl}
+                            alt="New profile preview"
+                            className="h-12 w-12 rounded-full object-cover border shrink-0"
+                          />
+                        ) : null}
                         <span className="flex-1 truncate">{avatarFile.name}</span>
                         <button
                           type="button"

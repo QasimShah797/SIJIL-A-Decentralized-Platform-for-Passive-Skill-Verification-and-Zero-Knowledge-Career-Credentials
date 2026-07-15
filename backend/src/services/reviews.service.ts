@@ -130,6 +130,28 @@ async function getGitHubToken(userId: string): Promise<{ token: string; username
   };
 }
 
+async function resolveInvitedGithubLogin(invite: Record<string, unknown>): Promise<string> {
+  const reviewerContextId = invite.reviewer_context_id as string | null | undefined;
+  if (reviewerContextId) {
+    const { data: ctx } = await supabaseService.client
+      .from("reviewer_contexts")
+      .select("reviewer_login")
+      .eq("id", reviewerContextId)
+      .maybeSingle();
+    if (ctx?.reviewer_login) return ctx.reviewer_login as string;
+  }
+
+  const contributorId = invite.contributor_id as string;
+  const { data: ghContributor } = await supabaseService.client
+    .from("github_repo_contributors")
+    .select("contributor_login")
+    .eq("id", contributorId)
+    .maybeSingle();
+  if (ghContributor?.contributor_login) return ghContributor.contributor_login as string;
+
+  return invite.contributor_name as string;
+}
+
 export class ReviewsService {
   async importExternalForEvidence(userId: string, evidenceId: string): Promise<ImportExternalResult> {
     const target = await resolveGitHubImportTarget(userId, { evidenceId });
@@ -408,6 +430,7 @@ export class ReviewsService {
       const learnerName = profile
         ? [profile.first_name, profile.last_name].filter(Boolean).join(" ") || "Learner"
         : "Learner";
+      const invitedGithubLogin = await resolveInvitedGithubLogin(invite);
       return {
         token,
         status: invite.status as string,
@@ -420,7 +443,7 @@ export class ReviewsService {
         ),
         reviewerName: invite.contributor_name as string,
         invitedReviewerEmail: invite.contributor_email as string,
-        invitedGithubLogin: invite.contributor_name as string,
+        invitedGithubLogin,
         expiresAt: invite.expires_at as string,
       };
     }

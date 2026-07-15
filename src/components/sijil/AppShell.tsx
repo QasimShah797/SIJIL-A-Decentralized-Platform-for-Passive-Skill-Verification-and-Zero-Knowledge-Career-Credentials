@@ -219,9 +219,18 @@ export function AppShell({ role, children }: { role: Role; children: React.React
             {didShort && (
               <span className="mono hidden text-xs text-muted-foreground md:inline">{didShort}</span>
             )}
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
-              {avatar}
-            </div>
+            {role === "learner" && profile?.avatarUrl ? (
+              <img
+                key={profile.avatarUrl}
+                src={profile.avatarUrl}
+                alt={profile.name ?? "Profile"}
+                className="h-9 w-9 rounded-full border object-cover"
+              />
+            ) : (
+              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
+                {avatar}
+              </div>
+            )}
           </div>
         </header>
         <div className="mx-auto w-full max-w-7xl flex-1 animate-fade-in p-6 lg:p-8">{children}</div>

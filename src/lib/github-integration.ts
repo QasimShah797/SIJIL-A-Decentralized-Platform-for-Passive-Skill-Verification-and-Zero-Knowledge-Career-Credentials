@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
+import { syncDeclaredSkillEvidenceStatuses } from "@/lib/db/skills";
 import {
   clearAllGitHubConnectionState,
   ensureGitHubContextForUser,
@@ -212,6 +213,14 @@ export async function syncGitHubPortfolio(
   const data = await invokeEdge<GitHubSyncStats & { upserted?: number }>("github-sync", {
     declared_skills: declaredSkills,
   });
+  try {
+    const session = await supabase.auth.getSession();
+    if (session.data.session?.user.id) {
+      await syncDeclaredSkillEvidenceStatuses(session.data.session.user.id);
+    }
+  } catch {
+    // Status sync should not block portfolio sync.
+  }
   return {
     synced: data.synced ?? 0,
     repos: data.repos ?? 0,
@@ -251,6 +260,26 @@ export async function linkRepoToSkill(
     })
     .eq("id", repoId);
   if (error) throw error;
+
+  const session = await supabase.auth.getSession();
+  const userId = session.data.session?.user.id;
+  if (!userId) return;
+
+  if (skillId) {
+    const { error: skillError } = await supabase
+      .from("declared_skills")
+      .update({
+        status: "Evidence Linked",
+        pipeline_stage: "evidence_linked",
+        last_related_activity_at: new Date().toISOString(),
+      })
+      .eq("user_id", userId)
+      .eq("id", skillId);
+    if (skillError) throw skillError;
+    return;
+  }
+
+  await syncDeclaredSkillEvidenceStatuses(userId);
 }
 
 export { clearAllGitHubConnectionState, ensureGitHubContextForUser };

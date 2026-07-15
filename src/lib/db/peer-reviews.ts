@@ -1,5 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import type { PeerReview, ReviewInvitation } from "@/lib/sijil-data";
+import { resolvePeerReviewDate } from "@/lib/peer-review-date";
 import {
   countWalletEvidence,
   deriveWalletSourceBadges,
@@ -363,7 +364,7 @@ export function rowToReview(row: Record<string, unknown>): PeerReview {
     rating: parseRating(row),
     comment: reviewText ?? (row.comment as string) ?? "",
     recommendation: (decision ?? row.recommendation) as PeerReview["recommendation"],
-    date: reviewedAt ?? (row.review_date as string) ?? new Date().toISOString(),
+    date: resolvePeerReviewDate(row),
     contextStatus: (row.context_status as PeerReview["contextStatus"])
       ?? ((row.verification_status as string) === "verified"
         ? "Context Verified"
@@ -401,6 +402,7 @@ const SECURE_PEER_REVIEW_INSERT_KEYS = [
   "reviewer_confidence",
   "evidence_package",
   "reviewed_at",
+  "review_date",
   "reviewer_email",
   "reviewer_github_username",
   "contributor_verification",
@@ -735,6 +737,7 @@ export async function submitSecurePeerReview(
     },
 
     reviewed_at: new Date().toISOString(),
+    review_date: new Date().toISOString(),
   };
 
   if (!peerReviewPayload.user_id && !peerReviewPayload.learner_user_id) {

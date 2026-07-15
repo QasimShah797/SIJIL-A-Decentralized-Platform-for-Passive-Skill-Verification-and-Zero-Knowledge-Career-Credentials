@@ -12,14 +12,27 @@ function useStableUserIds() {
   return { userId: user?.id, userEmail: user?.email };
 }
 
+let sharedLearnerProfile: LearnerProfileView | null = null;
+let sharedLearnerProfileUserId: string | null = null;
+const learnerProfileListeners = new Set<() => void>();
+
+function publishLearnerProfile(userId: string | null, profile: LearnerProfileView | null) {
+  sharedLearnerProfileUserId = userId;
+  sharedLearnerProfile = profile;
+  learnerProfileListeners.forEach((listener) => listener());
+}
+
 export function useLearnerProfile() {
   const { userId, userEmail } = useStableUserIds();
-  const [profile, setProfile] = useState<LearnerProfileView | null>(null);
+  const [profile, setProfile] = useState<LearnerProfileView | null>(() =>
+    userId && sharedLearnerProfileUserId === userId ? sharedLearnerProfile : null,
+  );
   const [loading, setLoading] = useState(true);
   const hasLoadedRef = useRef(false);
 
   const refresh = useCallback(async () => {
     if (!userId) {
+      publishLearnerProfile(null, null);
       setProfile(null);
       setLoading(false);
       hasLoadedRef.current = false;
@@ -29,12 +42,30 @@ export function useLearnerProfile() {
       setLoading(true);
     }
     try {
-      setProfile(await fetchLearnerProfile(userId, userEmail));
+      const next = await fetchLearnerProfile(userId, userEmail);
+      publishLearnerProfile(userId, next);
+      setProfile(next);
       hasLoadedRef.current = true;
     } finally {
       setLoading(false);
     }
   }, [userId, userEmail]);
+
+  useEffect(() => {
+    const syncFromShared = () => {
+      if (!userId) {
+        setProfile(null);
+        return;
+      }
+      if (sharedLearnerProfileUserId === userId) {
+        setProfile(sharedLearnerProfile);
+      }
+    };
+    learnerProfileListeners.add(syncFromShared);
+    return () => {
+      learnerProfileListeners.delete(syncFromShared);
+    };
+  }, [userId]);
 
   useEffect(() => {
     hasLoadedRef.current = false;

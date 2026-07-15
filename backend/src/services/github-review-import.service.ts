@@ -48,6 +48,7 @@ type ImportableReview = {
   kind: "pr-review" | "pr-comment" | "issue-comment";
   prNumber: number;
   reviewState?: string;
+  reviewDate: string;
 };
 
 function ghHeaders(token: string): Record<string, string> {
@@ -272,6 +273,7 @@ async function collectReviewsForPullRequest(
           kind: "pr-review",
           prNumber,
           reviewState: state,
+          reviewDate: (rv.submitted_at as string) ?? new Date().toISOString(),
         });
       }
     }
@@ -301,6 +303,7 @@ async function collectReviewsForPullRequest(
           recommendation: CONTEXT_RECOMMENDATION.SUPPORT,
           kind: "pr-comment",
           prNumber,
+          reviewDate: (cm.created_at as string) ?? new Date().toISOString(),
         });
       }
     }
@@ -331,6 +334,7 @@ async function collectReviewsForPullRequest(
           recommendation: CONTEXT_RECOMMENDATION.SUPPORT,
           kind: "issue-comment",
           prNumber,
+          reviewDate: (cm.created_at as string) ?? new Date().toISOString(),
         });
       }
     }
@@ -453,6 +457,8 @@ export async function importGitHubReviewsForEvidence(
           comment: item.body,
           recommendation: item.recommendation,
           external_reference: item.externalReference,
+          review_date: item.reviewDate,
+          reviewed_at: item.reviewDate,
         });
 
         if (ok) {

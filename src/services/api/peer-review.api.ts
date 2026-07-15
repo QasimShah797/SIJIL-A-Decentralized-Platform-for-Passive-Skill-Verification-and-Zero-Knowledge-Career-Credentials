@@ -5,6 +5,7 @@ import { tryApiRequest, apiRequest, isApiEnabled, ApiUnavailableError } from "./
 import { createPeerReviewInviteLocal } from "@/lib/db/peer-review-page";
 import type { PeerReview, ProjectContributor } from "@/lib/sijil-data";
 import type { PeerReviewProject } from "@/lib/db/peer-review-page";
+import { resolvePeerReviewDate } from "@/lib/peer-review-date";
 
 export interface PeerReviewStatsApi {
   totalReviews: number;
@@ -37,7 +38,7 @@ function mapReview(row: Record<string, unknown>): PeerReview {
     rating: row.rating as PeerReview["rating"],
     comment: row.comment as string,
     recommendation: row.recommendation as PeerReview["recommendation"],
-    date: row.date as string,
+    date: resolvePeerReviewDate(row),
     contextStatus: row.contextStatus as PeerReview["contextStatus"],
     contributorVerification: row.contributorVerification as PeerReview["contributorVerification"],
     trustWeight: row.trustWeight as PeerReview["trustWeight"],
