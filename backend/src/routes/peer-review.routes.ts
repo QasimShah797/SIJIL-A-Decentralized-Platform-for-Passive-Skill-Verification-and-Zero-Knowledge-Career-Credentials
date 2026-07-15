@@ -9,6 +9,7 @@ import {
   getPeerReviewProjects,
   getPeerReviewContributors,
   createPeerReviewInvite,
+  resendPeerReviewInvitation,
   submitPeerReview,
   getPeerReviewStats,
   getPeerReviewInviteByToken,
@@ -26,6 +27,7 @@ router.get("/projects", asyncHandler(getPeerReviewProjects));
 router.get("/reviews", asyncHandler(getPeerReviews));
 router.get("/project/:id/contributors", asyncHandler(getPeerReviewContributors));
 router.post("/invite", asyncHandler(createPeerReviewInvite));
+router.post("/invitations/:id/resend", asyncHandler(resendPeerReviewInvitation));
 router.get("/stats", asyncHandler(getPeerReviewStats));
 
 export default router;

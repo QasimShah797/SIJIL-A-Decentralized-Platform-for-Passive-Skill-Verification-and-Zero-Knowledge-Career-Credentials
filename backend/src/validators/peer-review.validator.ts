@@ -12,6 +12,11 @@ export const createPeerReviewInviteSchema = z.object({
   skillId: z.string().uuid(),
   contributorEmail: z.string().email(),
   resend: z.boolean().optional(),
+  inviteId: z.string().uuid().optional(),
+});
+
+export const resendPeerReviewInvitationSchema = z.object({
+  source: z.enum(["peer", "request", "legacy"]),
 });
 
 /** Alternate invite payload used by some clients. */

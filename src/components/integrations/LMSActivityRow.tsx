@@ -19,6 +19,11 @@ export function LMSActivityRow({
   const feedbackText = formatFeedback(a.feedback);
   const gradeText = formatGrade(a);
   const submissionLabel = formatSubmission(a.submissionStatus);
+  const hasGradeValue =
+    gradeText !== "Not graded"
+    && gradeText !== "Grade not synced — refresh Moodle data"
+    && gradeText !== "—"
+    && gradeText !== "-";
   const importedLabel = a.importedAt
     ? new Date(a.importedAt).toLocaleString(undefined, {
         dateStyle: "medium",
@@ -39,8 +44,8 @@ export function LMSActivityRow({
           <StatusBadge variant={activityStatusBadge(submissionLabel)}>
             {submissionLabel}
           </StatusBadge>
-          <StatusBadge variant={gradeText === "Not graded" ? "warning" : "verified"}>
-            {gradeText === "Not graded" ? "Not graded" : "Graded"}
+          <StatusBadge variant={hasGradeValue ? "verified" : "warning"}>
+            {hasGradeValue ? "Graded" : "Not graded"}
           </StatusBadge>
         </div>
       </div>

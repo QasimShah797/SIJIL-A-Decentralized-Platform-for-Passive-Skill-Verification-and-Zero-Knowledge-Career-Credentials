@@ -40,6 +40,7 @@ import {
   createPeerReviewInviteApi,
   getPeerReviewStatsApi,
   getPeerReviewContributorsApi,
+  resendPeerReviewInvitationApi,
   type PeerReviewStatsApi,
 } from "@/services/api/peer-review.api";
 import { isApiEnabled } from "@/services/api/client";
@@ -346,6 +347,8 @@ export default function PeerReviewsPage() {
 
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteResend, setInviteResend] = useState(false);
+  const [inviteResendId, setInviteResendId] = useState<string | null>(null);
+  const [inviteResendSource, setInviteResendSource] = useState<"peer" | "request" | "legacy">("peer");
   const [inviteContrib, setInviteContrib] = useState<ProjectContributor | null>(null);
   const [inviteSkill, setInviteSkill] = useState<string>(skillForProject);
   const [inviteEmail, setInviteEmail] = useState<string>("");
@@ -384,6 +387,8 @@ export default function PeerReviewsPage() {
 
   const openInvite = (c: ProjectContributor) => {
     setInviteResend(false);
+    setInviteResendId(null);
+    setInviteResendSource("peer");
     setInviteContrib(c);
     setInviteSkill(skillForProject);
     setInviteEmail(c.email ?? "");
@@ -391,20 +396,24 @@ export default function PeerReviewsPage() {
     setInviteOpen(true);
   };
 
-  const openResendInvite = (c: ProjectContributor) => {
+  const openResendInvite = (c: ProjectContributor, projectId?: string) => {
+    const targetProjectId = projectId ?? selectedProject?.id;
     const pendingInvite = invitations.find(
-      (i) => i.projectId === selectedProject?.id
+      (i) => i.projectId === targetProjectId
         && i.contributorId === c.id
         && i.status !== "Completed",
     );
     setInviteResend(true);
+    setInviteResendId(pendingInvite?.id ?? null);
+    setInviteResendSource(pendingInvite?.recordSource ?? "peer");
     setInviteContrib(c);
-    setInviteSkill(skillForProject);
+    setInviteSkill(pendingInvite?.skill ?? skillForProject);
     setInviteEmail(pendingInvite?.contributorEmail ?? c.email ?? "");
     setGeneratedLink(null);
     setInviteOpen(true);
   };
 
+<<<<<<< HEAD
   const resolveInviteSkill = (project: PeerReviewProject, skillName: string) => {
     const skillLink = project.skillLinks.find((s) => s.skillName === skillName)
       ?? project.skillLinks[0];
@@ -430,10 +439,27 @@ export default function PeerReviewsPage() {
       toast({
         title: "Skill required",
         description: "Select a declared skill or link this repository to a skill on Integrations.",
+=======
+  const resolveInvitationLink = (invitation: ReviewInvitation) => {
+    if (invitation.reviewLink) return invitation.reviewLink;
+    const ctx = contextRequests.find((r) => r.id === invitation.id);
+    const token = invitation.token ?? ctx?.token;
+    if (token) return `${window.location.origin}/review/request/${token}`;
+    return `${window.location.origin}/review/${invitation.id}`;
+  };
+
+  const resendInvitationFromList = async (invitation: ReviewInvitation) => {
+    if (!isApiEnabled()) {
+      toast({
+        title: "Backend required",
+        description: "Start the backend (npm run dev in backend/) and ensure VITE_API_BASE_URL is configured.",
+        variant: "destructive",
+>>>>>>> 68d4572 (peer review update)
       });
       return;
     }
 
+<<<<<<< HEAD
     setSendingInviteId(c.id);
     try {
       if (isApiEnabled()) {
@@ -498,6 +524,38 @@ export default function PeerReviewsPage() {
     } finally {
       setSendingInviteId(null);
     }
+=======
+    const source = invitation.recordSource ?? "peer";
+    if (source === "legacy") {
+      const link = resolveInvitationLink(invitation);
+      await navigator.clipboard.writeText(link);
+      toast({
+        title: "Link copied",
+        description: "Older invitations must be shared manually. Link copied to clipboard.",
+      });
+      return;
+    }
+
+    let apiError = "";
+    const result = await resendPeerReviewInvitationApi(invitation.id, source, (msg) => {
+      apiError = msg;
+    });
+
+    if (!result) {
+      toast({
+        title: "Resend failed",
+        description: apiError || "Could not resend the review invitation.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    await reload();
+    toast({
+      title: "Invitation resent",
+      description: `Review link emailed again to ${invitation.contributorEmail}.`,
+    });
+>>>>>>> 68d4572 (peer review update)
   };
 
   const sendInvite = async () => {
@@ -522,6 +580,40 @@ export default function PeerReviewsPage() {
     const inviteTargetName = inviteContrib.name;
     const { skillId, skillName: inviteSkillName } = resolveInviteSkill(selectedProject, inviteSkill);
 
+<<<<<<< HEAD
+=======
+    if (inviteResend && inviteResendId) {
+      let apiError = "";
+      const result = await resendPeerReviewInvitationApi(
+        inviteResendId,
+        inviteResendSource,
+        (msg) => { apiError = msg; },
+      );
+
+      if (!result) {
+        toast({
+          title: "Resend failed",
+          description: apiError || "Could not resend the review invitation.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      setGeneratedLink(result.reviewLink);
+      await reload();
+      toast({
+        title: "Invitation resent",
+        description: `Review link emailed again to ${normalizedEmail}.`,
+      });
+      return;
+    }
+
+    const skillLink = selectedProject.skillLinks.find((s) => s.skillName === inviteSkill)
+      ?? selectedProject.skillLinks[0];
+    const declaredSkill = declaredSkills.find((s) => s.name === inviteSkill)
+      ?? declaredSkills.find((s) => s.name === skillForProject);
+    const skillId = skillLink?.skillId ?? declaredSkill?.id;
+>>>>>>> 68d4572 (peer review update)
     if (!skillId) {
       toast({
         title: "Skill required",
@@ -855,19 +947,12 @@ export default function PeerReviewsPage() {
                   <div className="flex items-center gap-2">
                     <StatusBadge variant={i.status === "Completed" ? "verified" : "warning"}>{i.status}</StatusBadge>
                     <Button size="sm" variant="outline" onClick={() => {
-                      const contributor = selectedProject.contributors.find((c) => c.id === i.contributorId);
-                      if (contributor && i.status !== "Completed") {
-                        openResendInvite(contributor);
+                      if (i.status !== "Completed") {
+                        void resendInvitationFromList(i);
                         return;
                       }
-                      const ctx = contextRequests.find((r) => r.id === i.id);
-                      const link = i.reviewLink
-                        ?? (ctx
-                          ? `${window.location.origin}/review/request/${ctx.token}`
-                          : i.token
-                            ? `${window.location.origin}/review/invite/${i.token}`
-                            : `${window.location.origin}/review/${i.id}`);
-                      navigator.clipboard.writeText(link);
+                      const link = resolveInvitationLink(i);
+                      void navigator.clipboard.writeText(link);
                       toast({ title: "Link copied", description: link });
                     }}>
                       {i.status === "Completed" ? (

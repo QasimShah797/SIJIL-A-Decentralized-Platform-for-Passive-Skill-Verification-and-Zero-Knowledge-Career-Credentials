@@ -766,6 +766,8 @@ export type ReviewInvitation = {
   completedReviewId?: string;
   reviewLink?: string;
   token?: string;
+  skillId?: string;
+  recordSource?: "peer" | "request" | "legacy";
   expiresAt?: string;
 };
 

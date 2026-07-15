@@ -1110,9 +1110,21 @@ function parseNum(v: unknown): number | null {
 
 /** Moodle uses -1 when no grade is released yet. */
 function parseMoodleGrade(v: unknown): number | null {
+  if (typeof v === "string") {
+    const trimmed = v.trim();
+    if (!trimmed || trimmed === "—" || trimmed === "-") return null;
+    const fraction = trimmed.match(/^([\d.]+)\s*(?:\/\s*([\d.]+))?$/);
+    if (fraction) return parseMoodleGrade(fraction[1]);
+  }
   const n = parseNum(v);
   if (n === null || n < 0) return null;
   return n;
+}
+
+function parseGradeFromFormatted(value: string | null | undefined): number | null {
+  if (!value?.trim() || value === "—" || value === "-") return null;
+  const match = value.trim().match(/^([\d.]+)/);
+  return match ? parseMoodleGrade(match[1]) : null;
 }
 
 function tsToIso(ts: unknown): string | null {
@@ -1209,8 +1221,19 @@ function extractFromSubmissionStatusResponse(
   const submissionFound = Boolean(lastAttempt);
 
   const gradeBlock = lastAttempt?.grade as Record<string, unknown> | undefined;
-  const grade = parseMoodleGrade(gradeBlock?.value ?? gradeBlock?.grade);
-  const gradeMax = parseNum(gradeBlock?.max ?? gradeBlock?.grademax);
+  const grade = parseMoodleGrade(
+    gradeBlock?.value
+    ?? gradeBlock?.grade
+    ?? gradeBlock?.graderaw
+    ?? gradeBlock?.rawgrade
+    ?? gradeBlock?.strgrade
+    ?? gradeBlock?.formatted,
+  );
+  const gradeMax = parseNum(
+    gradeBlock?.max
+    ?? gradeBlock?.grademax
+    ?? gradeBlock?.grademaxformatted,
+  );
 
   const feedbackPlugins = (lastAttempt?.feedbackplugins as unknown[]) ?? [];
   const feedbackText = extractFeedbackFromFeedbackPlugins(feedbackPlugins);
@@ -1845,7 +1868,7 @@ function resolveAssignmentStatus(
   if (assignApiAccessDenied && grade === null && !reportItem?.grade) return "Grade access denied";
   return submissionStatusLabel(
     String(submission?.status ?? ""),
-    String(submission?.gradingstatus ?? (gradeRow ? "graded" : "")),
+    String(submission?.gradingstatus ?? gradeRow?.gradingstatus ?? ""),
     grade,
     gradeReleased,
   );
@@ -1995,8 +2018,15 @@ async function fetchAssignmentSubmissionAndGrade(
 
       if (fallbackGradeRow) {
         gradeRow = { ...fallbackGradeRow, _source: "mod_assign_get_grades" };
-        grade = parseMoodleGrade(fallbackGradeRow.grade ?? fallbackGradeRow.graderaw);
-        if (gradeMax === null) gradeMax = parseNum(fallbackGradeRow.grademax);
+        grade = parseMoodleGrade(
+          fallbackGradeRow.grade
+          ?? fallbackGradeRow.graderaw
+          ?? fallbackGradeRow.rawgrade
+          ?? fallbackGradeRow.strgrade,
+        );
+        if (gradeMax === null) {
+          gradeMax = parseNum(fallbackGradeRow.grademax ?? fallbackGradeRow.grademaxformatted);
+        }
         if (gradedAt === null) gradedAt = tsToIso(fallbackGradeRow.timemodified ?? fallbackGradeRow.timecreated);
       }
 
@@ -2339,6 +2369,9 @@ export async function syncLearnerMoodleActivities(
       if (gradeMax === null && reportItem?.gradeMax !== null) {
         gradeMax = reportItem.gradeMax;
       }
+      if (grade === null && reportItem?.gradeFormatted) {
+        grade = parseGradeFromFormatted(reportItem.gradeFormatted);
+      }
 
       const gradeReleased =
         grade !== null ||
@@ -2384,7 +2417,9 @@ export async function syncLearnerMoodleActivities(
       const { submissionText, submissionFiles } = extractStudentSubmission(submission);
       const gradeFormatted = grade !== null
         ? gradeDisplay(grade, gradeMax)
-        : (reportItem?.gradeFormatted ?? gradeDisplay(null, gradeMax));
+        : (reportItem?.gradeFormatted && reportItem.gradeFormatted !== "—"
+          ? reportItem.gradeFormatted
+          : gradeDisplay(null, gradeMax));
 
       if (grade === null && submissionStatus === "Submitted") {
         warnings.push(`Grade not released yet for "${name}" in ${courseName}`);
@@ -2407,7 +2442,7 @@ export async function syncLearnerMoodleActivities(
         grade,
         gradeMax,
         gradeFormatted,
-        gradeReleased,
+        gradeReleased: grade !== null ? true : gradeReleased,
         statusFeedback,
         submissionText,
         submissionFiles,

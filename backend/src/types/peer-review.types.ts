@@ -65,6 +65,7 @@ export interface CreatePeerReviewInviteInput {
   skillId: string;
   contributorEmail: string;
   resend?: boolean;
+  inviteId?: string;
 }
 
 export interface SubmitPeerReviewInput {

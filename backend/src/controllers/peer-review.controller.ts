@@ -7,6 +7,7 @@ import { sendSuccess } from "../utils/apiResponse";
 import { paramString } from "../utils/params";
 import {
   createPeerReviewInviteSchema,
+  resendPeerReviewInvitationSchema,
   submitPeerReviewSchema,
 } from "../validators/peer-review.validator";
 
@@ -32,6 +33,13 @@ export async function createPeerReviewInvite(req: Request, res: Response): Promi
         ? "Review invite already pending"
         : "Review invitation created";
   return sendSuccess(res, result, message, result.alreadyReviewed ? 200 : 201);
+}
+
+export async function resendPeerReviewInvitation(req: Request, res: Response): Promise<Response> {
+  const invitationId = paramString(req.params.id, "id");
+  const { source } = resendPeerReviewInvitationSchema.parse(req.body);
+  const result = await peerReviewService.resendInvitation(req.user!.id, invitationId, source);
+  return sendSuccess(res, result, "Review invite resent by email");
 }
 
 export async function submitPeerReview(req: Request, res: Response): Promise<Response> {

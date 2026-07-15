@@ -503,6 +503,7 @@ function rowToInvitation(row: Record<string, unknown>): ReviewInvitation {
     completedReviewId: row.completed_review_id as string | undefined,
     reviewLink: row.review_link as string | undefined,
     token: row.token as string | undefined,
+    recordSource: "legacy",
     expiresAt: row.expires_at as string | undefined,
   };
 }

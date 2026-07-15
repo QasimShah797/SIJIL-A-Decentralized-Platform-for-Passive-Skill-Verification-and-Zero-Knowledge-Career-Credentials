@@ -18,7 +18,7 @@ import {
   trustScoreForRelationship,
   displayRoleForRelationship,
 } from "../constants/peer-review";
-import { REVIEW_TYPE } from "../constants/reviews";
+import { REVIEW_TYPE, REVIEW_REQUEST_STATUS, REVIEW_TOKEN_TTL_DAYS } from "../constants/reviews";
 import {
   fetchDeclaredSkillRefs,
   filterInvitationsForDeclaredSkills,
@@ -153,19 +153,37 @@ function rowToPeerReview(row: Record<string, unknown>): PeerReviewRecordView {
   };
 }
 
+function contributorMatchesReview(
+  review: PeerReviewRecordView,
+  contributor: { id: string; name: string; handle?: string },
+): boolean {
+  const handle = normalizeText(contributor.handle);
+  const name = normalizeText(contributor.name);
+  const reviewer = normalizeText(review.reviewerName);
+  if (!reviewer) return false;
+  if (handle && (reviewer === handle || reviewer === `@${handle}`)) return true;
+  if (name && reviewer === name) return true;
+  return false;
+}
+
+function reviewBelongsToProject(
+  review: PeerReviewRecordView,
+  project: ResolvedProject,
+): boolean {
+  if (review.projectId === project.projectId) return true;
+  // Legacy rows may lack project_id; rowToPeerReview falls back to ev-{evidenceRecordId}.
+  if (project.evidenceRecordId && review.projectId === `ev-${project.evidenceRecordId}`) {
+    return true;
+  }
+  return false;
+}
+
 function reviewMatchesContributor(
   review: PeerReviewRecordView,
   project: ResolvedProject,
   contributor: { id: string; name: string; handle?: string },
 ): boolean {
-  const nameMatch =
-    review.reviewerName === contributor.handle
-    || review.reviewerName === contributor.name
-    || review.reviewerName === `@${contributor.handle}`;
-  const projectMatch =
-    review.projectId === project.projectId
-    || review.projectName === project.name;
-  return nameMatch && projectMatch;
+  return contributorMatchesReview(review, contributor) && reviewBelongsToProject(review, project);
 }
 
 async function getSkillLinksForUser(userId: string): Promise<Map<string, { skillId: string; skillName: string }[]>> {
@@ -445,28 +463,142 @@ async function getLearnerName(userId: string): Promise<string> {
     : "Learner";
 }
 
+async function findPendingPeerReviewInvite(
+  userId: string,
+  projectId: string,
+  opts: { contributorId?: string; contributorEmail?: string; inviteId?: string },
+): Promise<Record<string, unknown> | null> {
+  const select = "id, token, status, expires_at, contributor_id, contributor_name, contributor_email, skill_id, skill, project_id, project_name";
+
+  if (opts.inviteId) {
+    const { data } = await supabaseService.client
+      .from("peer_review_invites")
+      .select(select)
+      .eq("learner_user_id", userId)
+      .eq("id", opts.inviteId)
+      .in("status", [PEER_REVIEW_INVITE_STATUS.SENT])
+      .maybeSingle();
+    if (data) return data as Record<string, unknown>;
+  }
+
+  if (opts.contributorId) {
+    const { data } = await supabaseService.client
+      .from("peer_review_invites")
+      .select(select)
+      .eq("learner_user_id", userId)
+      .eq("project_id", projectId)
+      .eq("contributor_id", opts.contributorId)
+      .in("status", [PEER_REVIEW_INVITE_STATUS.SENT])
+      .maybeSingle();
+    if (data) return data as Record<string, unknown>;
+  }
+
+  if (opts.contributorEmail) {
+    const { data } = await supabaseService.client
+      .from("peer_review_invites")
+      .select(select)
+      .eq("learner_user_id", userId)
+      .eq("project_id", projectId)
+      .eq("contributor_email", opts.contributorEmail)
+      .in("status", [PEER_REVIEW_INVITE_STATUS.SENT])
+      .maybeSingle();
+    if (data) return data as Record<string, unknown>;
+  }
+
+  return null;
+}
+
+async function resendStoredInviteEmail(input: {
+  userId: string;
+  inviteId: string;
+  projectId: string;
+  projectName: string;
+  contributorName: string;
+  contributorEmail: string;
+  skillName: string;
+  token: string;
+  expiresAt: string;
+  table: "peer_review_invites" | "review_requests";
+  statusValue: string;
+}): Promise<PeerReviewInviteResult> {
+  let token = input.token;
+  let reviewLink = buildReviewLink(token);
+  const expiresAt = new Date();
+  expiresAt.setDate(expiresAt.getDate() + (
+    input.table === "peer_review_invites" ? PEER_REVIEW_TOKEN_TTL_DAYS : REVIEW_TOKEN_TTL_DAYS
+  ));
+  const isExpired = new Date(input.expiresAt) < new Date();
+
+  if (isExpired) {
+    token = generateToken();
+    reviewLink = buildReviewLink(token);
+  }
+
+  const { error: updateError } = await supabaseService.client
+    .from(input.table)
+    .update({
+      token,
+      expires_at: expiresAt.toISOString(),
+      status: input.statusValue,
+    })
+    .eq("id", input.inviteId)
+    .eq("learner_user_id", input.userId);
+
+  if (updateError) {
+    throw new AppError(updateError.message ?? "Failed to resend review invitation", 500);
+  }
+
+  const learnerName = await getLearnerName(input.userId);
+  await sendReviewRequestEmail(
+    normalizeEmail(input.contributorEmail),
+    learnerName,
+    input.projectName,
+    reviewLink,
+    {
+      reviewerName: input.contributorName,
+      skillName: input.skillName,
+    },
+  );
+
+  return {
+    inviteId: input.inviteId,
+    token,
+    reviewLink,
+    status: "resent",
+  };
+}
+
 async function findExistingReview(
   userId: string,
   project: ResolvedProject,
   contributor: PeerReviewContributorView,
 ): Promise<PeerReviewRecordView | null> {
-  let query = supabaseService.client
+  const { data: rows } = await supabaseService.client
     .from("peer_reviews")
     .select("*")
-    .eq("learner_user_id", userId);
+    .eq("learner_user_id", userId)
+    .eq("project_id", project.projectId)
+    .order("review_date", { ascending: false });
 
-  if (project.evidenceRecordId) {
-    query = query.eq("evidence_record_id", project.evidenceRecordId);
-  } else {
-    query = query.eq("project_id", project.projectId);
-  }
-
-  const { data: rows } = await query.order("review_date", { ascending: false });
-
-  const match = (rows ?? [])
+  const direct = (rows ?? [])
     .map((r) => rowToPeerReview(r as Record<string, unknown>))
-    .find((r) => reviewMatchesContributor(r, project, contributor));
-  return match ?? null;
+    .find((r) => contributorMatchesReview(r, contributor));
+  if (direct) return direct;
+
+  if (!project.evidenceRecordId) return null;
+
+  const { data: legacyRows } = await supabaseService.client
+    .from("peer_reviews")
+    .select("*")
+    .eq("learner_user_id", userId)
+    .eq("evidence_record_id", project.evidenceRecordId)
+    .is("project_id", null)
+    .order("review_date", { ascending: false });
+
+  const legacy = (legacyRows ?? [])
+    .map((r) => rowToPeerReview(r as Record<string, unknown>))
+    .find((r) => contributorMatchesReview(r, contributor));
+  return legacy ?? null;
 }
 
 function buildReviewInsertPayload(input: {
@@ -721,7 +853,38 @@ export class PeerReviewService {
     input: CreatePeerReviewInviteInput,
   ): Promise<PeerReviewInviteResult> {
     const project = await resolveProject(userId, input.projectId);
-    const contributor = await ensureContributorVerified(userId, project, input.contributorId);
+    const normalizedEmail = normalizeEmail(input.contributorEmail);
+
+    if (input.resend) {
+      const pendingForResend = await findPendingPeerReviewInvite(userId, input.projectId, {
+        inviteId: input.inviteId,
+        contributorId: input.contributorId,
+        contributorEmail: normalizedEmail,
+      });
+      if (pendingForResend) {
+        const projectName = (pendingForResend.project_name as string | undefined) ?? project.name;
+        return resendStoredInviteEmail({
+          userId,
+          inviteId: pendingForResend.id as string,
+          projectId: input.projectId,
+          projectName,
+          contributorName: pendingForResend.contributor_name as string,
+          contributorEmail: pendingForResend.contributor_email as string,
+          skillName: (pendingForResend.skill as string) ?? "Declared competency",
+          token: pendingForResend.token as string,
+          expiresAt: pendingForResend.expires_at as string,
+          table: "peer_review_invites",
+          statusValue: PEER_REVIEW_INVITE_STATUS.SENT,
+        });
+      }
+    }
+
+    const contributor = await ensureContributorVerified(
+      userId,
+      project,
+      input.contributorId,
+      normalizedEmail,
+    );
 
     const { data: skill } = await supabaseService.client
       .from("declared_skills")
@@ -747,81 +910,55 @@ export class PeerReviewService {
 
     const { data: pendingInvite } = await supabaseService.client
       .from("peer_review_invites")
-      .select("id, token, status, expires_at")
+      .select("id, token, status, expires_at, contributor_email")
       .eq("learner_user_id", userId)
       .eq("project_id", input.projectId)
       .eq("contributor_id", input.contributorId)
       .in("status", [PEER_REVIEW_INVITE_STATUS.SENT])
       .maybeSingle();
 
-    if (pendingInvite) {
-      const normalizedEmail = normalizeEmail(input.contributorEmail);
+    const pendingInviteByEmail = !pendingInvite && input.resend
+      ? await findPendingPeerReviewInvite(userId, input.projectId, { contributorEmail: normalizedEmail })
+      : null;
+    const resolvedPendingInvite = pendingInvite ?? pendingInviteByEmail;
+
+    if (resolvedPendingInvite) {
       assertContributorInviteEmail({
         contributorId: input.contributorId,
         contributorHandle: contributor.handle,
         contributorEmailOnFile: contributor.email,
         requestedEmail: normalizedEmail,
-        existingInviteEmail: pendingInvite.contributor_email as string,
+        existingInviteEmail: resolvedPendingInvite.contributor_email as string,
       });
-      let token = pendingInvite.token as string;
-      let reviewLink = buildReviewLink(token);
 
-      if (!input.resend) {
-        return {
-          inviteId: pendingInvite.id as string,
-          token,
-          reviewLink,
-          status: "already_invited",
-        };
+      if (input.resend) {
+        const projectName = (resolvedPendingInvite.project_name as string | undefined) ?? project.name;
+        return resendStoredInviteEmail({
+          userId,
+          inviteId: resolvedPendingInvite.id as string,
+          projectId: input.projectId,
+          projectName,
+          contributorName: (resolvedPendingInvite.contributor_name as string) ?? contributor.name,
+          contributorEmail: (resolvedPendingInvite.contributor_email as string) ?? normalizedEmail,
+          skillName: (resolvedPendingInvite.skill as string) ?? (skill.name as string),
+          token: resolvedPendingInvite.token as string,
+          expiresAt: resolvedPendingInvite.expires_at as string,
+          table: "peer_review_invites",
+          statusValue: PEER_REVIEW_INVITE_STATUS.SENT,
+        });
       }
-
-      const expiresAt = new Date();
-      expiresAt.setDate(expiresAt.getDate() + PEER_REVIEW_TOKEN_TTL_DAYS);
-      const isExpired = new Date(pendingInvite.expires_at as string) < new Date();
-
-      if (isExpired) {
-        token = generateToken();
-        reviewLink = buildReviewLink(token);
-      }
-
-      const { error: updateError } = await supabaseService.client
-        .from("peer_review_invites")
-        .update({
-          contributor_email: normalizedEmail,
-          token,
-          status: PEER_REVIEW_INVITE_STATUS.SENT,
-          expires_at: expiresAt.toISOString(),
-        })
-        .eq("id", pendingInvite.id);
-
-      if (updateError) {
-        throw new AppError(updateError.message ?? "Failed to resend peer review invite", 500);
-      }
-
-      const learnerName = await getLearnerName(userId);
-      await sendReviewRequestEmail(
-        normalizedEmail,
-        learnerName,
-        project.name,
-        reviewLink,
-        {
-          reviewerName: contributor.name,
-          skillName: skill.name as string,
-        },
-      );
 
       return {
-        inviteId: pendingInvite.id as string,
-        token,
-        reviewLink,
-        status: "resent",
+        inviteId: resolvedPendingInvite.id as string,
+        token: resolvedPendingInvite.token as string,
+        reviewLink: buildReviewLink(resolvedPendingInvite.token as string),
+        status: "already_invited",
       };
     }
 
     const token = generateToken();
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + PEER_REVIEW_TOKEN_TTL_DAYS);
-    const normalizedEmail = normalizeEmail(input.contributorEmail);
 
     assertContributorInviteEmail({
       contributorId: input.contributorId,
@@ -1094,6 +1231,91 @@ export class PeerReviewService {
       highTrust: reviews.filter((r) => r.trustWeight === "High Trust").length,
       pendingInvites: pendingPeerInvites + pendingLegacy + pendingRequests,
     };
+  }
+
+  async resendInvitation(
+    userId: string,
+    invitationId: string,
+    source: "peer" | "request" | "legacy",
+  ): Promise<PeerReviewInviteResult> {
+    if (source === "legacy") {
+      throw new AppError("This older invitation cannot be resent automatically. Copy the link instead.", 400);
+    }
+
+    if (source === "request") {
+      const { data: request, error } = await supabaseService.client
+        .from("review_requests")
+        .select(`
+          id,
+          token,
+          status,
+          expires_at,
+          reviewer_name,
+          reviewer_email,
+          skill_id,
+          evidence_record_id,
+          declared_skills(name),
+          evidence_records(repository_name)
+        `)
+        .eq("id", invitationId)
+        .eq("learner_user_id", userId)
+        .maybeSingle();
+
+      if (error) throw new AppError(error.message, 500);
+      if (!request) throw new AppError("Invitation not found", 404);
+      if ((request.status as string) === REVIEW_REQUEST_STATUS.COMPLETED) {
+        throw new AppError("This review is already completed", 409);
+      }
+
+      const skillData = request.declared_skills as { name?: string } | { name?: string }[] | null;
+      const skillName = Array.isArray(skillData)
+        ? skillData[0]?.name ?? "Declared competency"
+        : skillData?.name ?? "Declared competency";
+      const evidence = request.evidence_records as { repository_name?: string } | null;
+
+      return resendStoredInviteEmail({
+        userId,
+        inviteId: request.id as string,
+        projectId: request.evidence_record_id ? `ev-${request.evidence_record_id as string}` : invitationId,
+        projectName: evidence?.repository_name ?? "Project evidence",
+        contributorName: request.reviewer_name as string,
+        contributorEmail: request.reviewer_email as string,
+        skillName,
+        token: request.token as string,
+        expiresAt: request.expires_at as string,
+        table: "review_requests",
+        statusValue: (request.status as string) === REVIEW_REQUEST_STATUS.AWAITING
+          ? REVIEW_REQUEST_STATUS.AWAITING
+          : REVIEW_REQUEST_STATUS.SENT,
+      });
+    }
+
+    const { data: invite, error } = await supabaseService.client
+      .from("peer_review_invites")
+      .select("*")
+      .eq("id", invitationId)
+      .eq("learner_user_id", userId)
+      .maybeSingle();
+
+    if (error) throw new AppError(error.message, 500);
+    if (!invite) throw new AppError("Invitation not found", 404);
+    if (invite.status === PEER_REVIEW_INVITE_STATUS.COMPLETED) {
+      throw new AppError("This review is already completed", 409);
+    }
+
+    return resendStoredInviteEmail({
+      userId,
+      inviteId: invite.id as string,
+      projectId: invite.project_id as string,
+      projectName: invite.project_name as string,
+      contributorName: invite.contributor_name as string,
+      contributorEmail: invite.contributor_email as string,
+      skillName: (invite.skill as string) ?? "Declared competency",
+      token: invite.token as string,
+      expiresAt: invite.expires_at as string,
+      table: "peer_review_invites",
+      statusValue: PEER_REVIEW_INVITE_STATUS.SENT,
+    });
   }
 }
 

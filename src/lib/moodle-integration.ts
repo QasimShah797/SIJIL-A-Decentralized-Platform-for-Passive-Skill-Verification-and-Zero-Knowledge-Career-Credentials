@@ -533,6 +533,98 @@ function parseDueDate(raw: unknown): string | null {
   return new Date(n * 1000).toISOString();
 }
 
+function isMissingGradeDisplay(value: string | null | undefined): boolean {
+  if (!value?.trim()) return true;
+  const trimmed = value.trim();
+  return trimmed === "—" || trimmed === "-" || trimmed.toLowerCase() === "not graded";
+}
+
+function parseNumericGrade(value: unknown): string | null {
+  if (value === null || value === undefined || value === "") return null;
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return String(n);
+}
+
+function hydrateAssignmentGrade(row: Record<string, unknown>): {
+  grade: string | null;
+  gradeMax: string | null;
+  gradeFormatted: string | null;
+} {
+  let grade = parseNumericGrade(row.grade);
+  let gradeMax = parseNumericGrade(row.grade_max);
+  let gradeFormatted = typeof row.grade_formatted === "string" ? row.grade_formatted : null;
+
+  if (!grade && gradeFormatted && !isMissingGradeDisplay(gradeFormatted)) {
+    const match = gradeFormatted.match(/^([\d.]+)\s*(?:\/\s*([\d.]+))?/);
+    if (match) {
+      grade = match[1];
+      if (match[2]) gradeMax = match[2];
+    }
+  }
+
+  const raw = row.raw as Record<string, unknown> | undefined;
+  const report = raw?.gradeReport as Record<string, unknown> | undefined;
+  if (report) {
+    const reportFormatted = String(
+      report.gradeformatted ?? report.gradeFormatted ?? "",
+    ).trim();
+    if (!grade) {
+      grade = parseNumericGrade(report.grade ?? report.graderaw ?? report.finalgrade);
+    }
+    if (!gradeMax) {
+      gradeMax = parseNumericGrade(report.grademax ?? report.gradeMax);
+    }
+    if (!grade && reportFormatted && !isMissingGradeDisplay(reportFormatted)) {
+      const match = reportFormatted.match(/^([\d.]+)\s*(?:\/\s*([\d.]+))?/);
+      if (match) {
+        grade = match[1];
+        if (match[2]) gradeMax = match[2];
+      }
+    }
+    if (isMissingGradeDisplay(gradeFormatted) && reportFormatted && !isMissingGradeDisplay(reportFormatted)) {
+      gradeFormatted = reportFormatted;
+    }
+  }
+
+  const gradeRow = raw?.grade as Record<string, unknown> | undefined;
+  if (gradeRow) {
+    if (!grade) {
+      grade = parseNumericGrade(
+        gradeRow.value ?? gradeRow.grade ?? gradeRow.graderaw ?? gradeRow.rawgrade,
+      );
+    }
+    if (!gradeMax) {
+      gradeMax = parseNumericGrade(gradeRow.max ?? gradeRow.grademax);
+    }
+  }
+
+  const lastAttempt = raw?.lastAttempt as Record<string, unknown> | undefined;
+  const attemptGrade = lastAttempt?.grade as Record<string, unknown> | undefined;
+  if (attemptGrade) {
+    if (!grade) {
+      grade = parseNumericGrade(
+        attemptGrade.value ?? attemptGrade.grade ?? attemptGrade.graderaw,
+      );
+    }
+    if (!gradeMax) {
+      gradeMax = parseNumericGrade(attemptGrade.max ?? attemptGrade.grademax);
+    }
+  }
+
+  if (grade && gradeMax) {
+    gradeFormatted = `${grade} / ${gradeMax}`;
+  } else if (grade) {
+    gradeFormatted = grade;
+  }
+
+  return {
+    grade,
+    gradeMax,
+    gradeFormatted: isMissingGradeDisplay(gradeFormatted) ? null : gradeFormatted,
+  };
+}
+
 async function buildCourseActivitiesFromRows(
   userId: string,
   courses: Record<string, unknown>[],
@@ -625,6 +717,8 @@ async function buildCourseActivitiesFromRows(
         ? row.feedback.trim()
         : null;
 
+    const hydratedGrade = hydrateAssignmentGrade(row);
+
     list.push({
       id: row.id as string,
       moodleAssignmentId,
@@ -632,9 +726,9 @@ async function buildCourseActivitiesFromRows(
       moduleType: (row.module_type as string) ?? "assign",
       activityType: (row.module_type as string) === "assign" ? "Assignment" : (row.module_type as string),
       submissionStatus: formatSubmissionStatusLabel((row.submission_status as string) ?? "Pending"),
-      grade: row.grade !== null && row.grade !== undefined ? String(row.grade) : null,
-      gradeMax: row.grade_max !== null && row.grade_max !== undefined ? String(row.grade_max) : null,
-      gradeFormatted: (row.grade_formatted as string) ?? null,
+      grade: hydratedGrade.grade,
+      gradeMax: hydratedGrade.gradeMax,
+      gradeFormatted: hydratedGrade.gradeFormatted,
       feedback: rowFeedback ?? feedbackMap.get(moodleAssignmentId) ?? null,
       submissionText: (row.submission_text as string) ?? null,
       submissionFiles,
@@ -740,9 +834,10 @@ export function formatGradeDisplay(a: MoodleAssignmentActivity): string {
   if (status === "grade access denied" || status === "permission required") {
     return a.submissionStatus;
   }
-  if (a.gradeFormatted && a.gradeFormatted !== "—") return a.gradeFormatted;
+  if (a.gradeFormatted && !isMissingGradeDisplay(a.gradeFormatted)) return a.gradeFormatted;
   if (a.grade && a.gradeMax) return `${a.grade} / ${a.gradeMax}`;
   if (a.grade) return a.grade;
+  if (status === "graded") return "Grade not synced — refresh Moodle data";
   if (!a.gradeReleased && a.submissionStatus === "Submitted") return "Not graded";
   return "Not graded";
 }

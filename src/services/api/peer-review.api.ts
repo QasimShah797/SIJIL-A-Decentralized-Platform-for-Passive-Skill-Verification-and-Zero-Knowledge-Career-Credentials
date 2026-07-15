@@ -63,6 +63,7 @@ export async function createPeerReviewInviteApi(
     skillId: string;
     contributorEmail: string;
     resend?: boolean;
+    inviteId?: string;
   },
   onError?: (message: string) => void,
 ): Promise<{
@@ -92,6 +93,22 @@ export async function createPeerReviewInviteApi(
 
   if (onError) onError("Could not create review invitation");
   return null;
+}
+
+export async function resendPeerReviewInvitationApi(
+  invitationId: string,
+  source: "peer" | "request" | "legacy",
+  onError?: (message: string) => void,
+): Promise<{
+  inviteId: string;
+  token: string;
+  reviewLink: string;
+  status: string;
+} | null> {
+  return tryApiRequest(`/peer-review/invitations/${encodeURIComponent(invitationId)}/resend`, {
+    method: "POST",
+    body: JSON.stringify({ source }),
+  }, onError);
 }
 
 export async function submitPeerReviewApi(input: {

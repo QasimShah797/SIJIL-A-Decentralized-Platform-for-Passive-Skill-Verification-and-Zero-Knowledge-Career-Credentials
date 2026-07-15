@@ -32,6 +32,8 @@ export type PeerReviewProject = Project & {
   skillLinks: { skillId: string; skillName: string }[];
 };
 
+export type InvitationRecordSource = "peer" | "request" | "legacy";
+
 export type ContextReviewRequestDisplay = {
   id: string;
   token: string;
@@ -47,6 +49,7 @@ export type ContextReviewRequestDisplay = {
   status: "Sent" | "Completed" | "Expired";
   sentAt: string;
   completedReviewId?: string;
+  recordSource: InvitationRecordSource;
 };
 
 export type ContributorRow = {
@@ -234,6 +237,7 @@ function mapReviewRequestRow(row: Record<string, unknown>): ContextReviewRequest
     status,
     sentAt: row.created_at as string,
     completedReviewId: (row.completed_review_id as string) ?? undefined,
+    recordSource: "request",
   };
 }
 
@@ -409,6 +413,9 @@ export function contextRequestToInvitation(req: ContextReviewRequestDisplay): Re
     status: req.status,
     sentAt: req.sentAt,
     completedReviewId: req.completedReviewId,
+    token: req.token,
+    skillId: req.skillId ?? undefined,
+    recordSource: req.recordSource,
   };
 }
 
@@ -460,6 +467,7 @@ export async function fetchPeerReviewInvites(
       status,
       sentAt: row.created_at as string,
       completedReviewId: (row.completed_review_id as string) ?? undefined,
+      recordSource: "peer",
     };
   });
 }
