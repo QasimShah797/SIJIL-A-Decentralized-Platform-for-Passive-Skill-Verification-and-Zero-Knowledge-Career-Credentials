@@ -23,13 +23,16 @@ import {
 import { useAuth } from "@/hooks/useAuth";
 import { useDeclaredSkills } from "@/hooks/useLearnerData";
 import { fetchLearnerProfile } from "@/lib/db/learner-profile";
+import { fetchWalletCompetencyRecords } from "@/lib/db/wallet-competency-records";
 import {
   loadPeerReviewPageData,
   buildContributorRows,
   contextRequestToInvitation,
+  sendPeerReviewInvite,
   type PeerReviewProject,
   type ContextReviewRequestDisplay,
 } from "@/lib/db/peer-review-page";
+import { fetchGitHubPrReviewsForUser, type GitHubPrReviewRecord } from "@/lib/github-pr-reviews";
 import {
   importExternalReviewsApi,
 } from "@/services/api/reviews.api";
@@ -70,6 +73,51 @@ type InviteReviewer = {
   role: ProjectContributor["role"];
 };
 
+/** Contributor GitHub login only — never the repo owner / learner login. */
+function mapGitHubPrReviewToDisplay(
+  review: GitHubPrReviewRecord,
+  skill = "Declared competency",
+): PeerReview & Record<string, unknown> {
+  return {
+    id: review.id,
+    reviewerName: review.reviewer_name,
+    reviewer_name: review.reviewer_name,
+    reviewerRole: review.reviewer_role,
+    reviewer_role: review.reviewer_role,
+    comment: review.review_text,
+    review_text: review.review_text,
+    source: review.source,
+    skill,
+    date: review.created_at,
+    created_at: review.created_at,
+    repository_name: review.repository_name,
+    pull_request_number: review.pull_request_number,
+    pull_request_title: review.pull_request_title,
+    projectName: review.repository_name,
+    evidenceLabel: `${review.repository_name} — PR #${review.pull_request_number}`,
+    imported: true,
+    origin: "GitHub PR",
+    trustWeight: "Medium Trust",
+    contextStatus: "Context Verified",
+    contributorVerification: "Contributor Verified",
+  };
+}
+
+function mergeUniqueReviews(
+  ...groups: Array<Array<PeerReview | (PeerReview & Record<string, unknown>)>>
+): PeerReview[] {
+  const seen = new Set<string>();
+  const merged: PeerReview[] = [];
+  for (const group of groups) {
+    for (const review of group) {
+      const id = String(review.id ?? "");
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      merged.push(review);
+    }
+  }
+  return merged;
+}
 /** Contributor GitHub login only — never the repo owner / learner login. */
 function contributorToInviteReviewer(
   contributor: ProjectContributor,
@@ -131,12 +179,73 @@ export default function PeerReviewsPage() {
   const reload = async () => {
     if (!user?.id) return;
     try {
-      const [data, stats] = await Promise.all([
+      const [data, stats, githubPrResult] = await Promise.all([
         loadPeerReviewPageData(user.id),
         isApiEnabled() ? getPeerReviewStatsApi() : Promise.resolve(null),
+        fetchGitHubPrReviewsForUser(user.id),
       ]);
+      const evidenceReviews = await fetchWalletCompetencyRecords(user.id);
+      const walletReviews = evidenceReviews.flatMap((record) => [
+        ...(record.evidencePackage?.teacherFeedback ?? []).map((feedback: Record<string, unknown>, index: number) => ({
+          id: `teacher-${feedback.id ?? feedback.evidence_record_id ?? feedback.moodle_assignment_id ?? index}`,
+          reviewer_name: "Teacher",
+          reviewer_role: "LMS",
+          review_text:
+            feedback.feedback_text
+            ?? feedback.feedback
+            ?? "Teacher feedback",
+          source: "LMS",
+          skill: record.competencyName,
+          created_at:
+            feedback.reviewed_at
+            ?? feedback.synced_at
+            ?? new Date().toISOString(),
+        })),
+
+        ...(record.evidencePackage?.github?.reviews ?? []).map((review: Record<string, unknown>, index: number) => ({
+          id: `github-wallet-${review.id ?? index}`,
+          reviewer_name:
+            review.comment_author
+            ?? review.author
+            ?? review.reviewer_name
+            ?? "GitHub Reviewer",
+          reviewer_role:
+            review.pull_request_number != null || review.pull_request_title != null
+              ? "GitHub PR Review"
+              : "GitHub Review",
+          review_text:
+            review.comment_body
+            ?? review.body
+            ?? review.comment
+            ?? review.review_text
+            ?? "GitHub review",
+          source: "GitHub",
+          skill: record.competencyName,
+          repository_name: review.repository_name ?? review.repo_name,
+          pull_request_number: review.pull_request_number ?? review.pr_number,
+          pull_request_title: review.pull_request_title ?? review.pr_title,
+          created_at:
+            review.comment_created_at
+            ?? review.created_at
+            ?? new Date().toISOString(),
+        })),
+      ]);
+      const githubPrReviews = githubPrResult.reviews.map((review) => {
+        const linkedProject = data.projects.find(
+          (project) => project.name === review.repository_name
+            || project.url?.includes(review.repository_name),
+        );
+        return mapGitHubPrReviewToDisplay(
+          review,
+          linkedProject?.linkedSkills[0] ?? declaredSkills[0]?.name ?? "Declared competency",
+        );
+      });
       setProjects(data.projects);
-      setReviews(data.reviews);
+      setReviews(mergeUniqueReviews(
+        data.reviews,
+        walletReviews as PeerReview[],
+        githubPrReviews,
+      ));
       setLegacyInvitations(data.legacyInvitations);
       setContextRequests(data.contextRequests);
       if (stats) setApiStats(stats);
@@ -145,6 +254,23 @@ export default function PeerReviewsPage() {
         setSkillForProject(
           data.projects[0].linkedSkills[0] ?? declaredSkills[0]?.name ?? "",
         );
+      }
+      if (githubPrResult.errors.length) {
+        const tokenMissing = githubPrResult.errors.some((error) => error.type === "token_missing");
+        const repoErrors = githubPrResult.errors.filter((error) => error.type === "repo_unavailable");
+        if (tokenMissing) {
+          toast({
+            title: "GitHub access required",
+            description: "Connect GitHub on Integrations to load pull request reviews.",
+            variant: "destructive",
+          });
+        } else if (repoErrors.length) {
+          toast({
+            title: "Repository not accessible",
+            description: repoErrors.map((error) => error.repository).join(", "),
+            variant: "destructive",
+          });
+        }
       }
     } catch {
       throw new Error("load failed");
@@ -225,6 +351,7 @@ export default function PeerReviewsPage() {
   const [inviteEmail, setInviteEmail] = useState<string>("");
   const [generatedLink, setGeneratedLink] = useState<string | null>(null);
   const [learnerGithub, setLearnerGithub] = useState<string | null>(null);
+  const [sendingInviteId, setSendingInviteId] = useState<string | null>(null);
 
   const selectedReviewer = useMemo(
     () => (inviteContrib ? contributorToInviteReviewer(inviteContrib, learnerGithub) : null),
@@ -278,19 +405,106 @@ export default function PeerReviewsPage() {
     setInviteOpen(true);
   };
 
+  const resolveInviteSkill = (project: PeerReviewProject, skillName: string) => {
+    const skillLink = project.skillLinks.find((s) => s.skillName === skillName)
+      ?? project.skillLinks[0];
+    const declaredSkill = declaredSkills.find((s) => s.name === skillName)
+      ?? declaredSkills.find((s) => s.name === skillForProject);
+    return {
+      skillId: skillLink?.skillId ?? declaredSkill?.id ?? null,
+      skillName: skillLink?.skillName ?? declaredSkill?.name ?? skillName,
+    };
+  };
+
+  const quickSendInvite = async (c: ProjectContributor) => {
+    if (!selectedProject || !user?.id) return;
+
+    const email = (c.email ?? "").trim().toLowerCase();
+    if (!email) {
+      openInvite(c);
+      return;
+    }
+
+    const { skillId, skillName } = resolveInviteSkill(selectedProject, skillForProject);
+    if (!skillId) {
+      toast({
+        title: "Skill required",
+        description: "Select a declared skill or link this repository to a skill on Integrations.",
+      });
+      return;
+    }
+
+    setSendingInviteId(c.id);
+    try {
+      if (isApiEnabled()) {
+        let apiError = "";
+        const result = await createPeerReviewInviteApi({
+          projectId: selectedProject.id,
+          contributorId: c.id,
+          skillId,
+          contributorEmail: email,
+        }, (msg) => { apiError = msg; });
+
+        if (result?.alreadyReviewed) {
+          toast({
+            title: "Review already exists",
+            description: `${c.name} has already submitted a review for this project.`,
+          });
+          return;
+        }
+
+        if (result) {
+          await reload();
+          toast({ title: "Review invitation sent successfully" });
+          return;
+        }
+
+        if (apiError) {
+          toast({
+            title: "Request failed",
+            description: apiError,
+            variant: "destructive",
+          });
+        }
+      }
+
+      const result = await sendPeerReviewInvite({
+        userId: user.id,
+        project: selectedProject,
+        contributor: c,
+        skillName,
+        skillId,
+        contributorEmail: email,
+      });
+
+      if (!result.ok) {
+        toast({
+          title: "Could not send invitation",
+          description: result.error === "email_required"
+            ? "Contributor email is required before sending an invite."
+            : result.error ?? "Try again later.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      if (result.invite) {
+        setContextRequests((prev) => [
+          result.invite!,
+          ...prev.filter((item) => item.id !== result.invite!.id),
+        ]);
+      }
+      toast({ title: "Review invitation sent successfully" });
+    } finally {
+      setSendingInviteId(null);
+    }
+  };
+
   const sendInvite = async () => {
     if (!selectedProject) return;
     if (!inviteContrib) return;
     if (!inviteEmail.trim()) {
       toast({ title: "Email required", description: "We need a contact email to send the review invitation." });
-      return;
-    }
-    if (!isApiEnabled()) {
-      toast({
-        title: "Backend required",
-        description: "Start the backend (npm run dev in backend/) and ensure VITE_API_BASE_URL is configured.",
-        variant: "destructive",
-      });
       return;
     }
 
@@ -306,12 +520,8 @@ export default function PeerReviewsPage() {
 
     const contributorId = inviteContrib.id;
     const inviteTargetName = inviteContrib.name;
+    const { skillId, skillName: inviteSkillName } = resolveInviteSkill(selectedProject, inviteSkill);
 
-    const skillLink = selectedProject.skillLinks.find((s) => s.skillName === inviteSkill)
-      ?? selectedProject.skillLinks[0];
-    const declaredSkill = declaredSkills.find((s) => s.name === inviteSkill)
-      ?? declaredSkills.find((s) => s.name === skillForProject);
-    const skillId = skillLink?.skillId ?? declaredSkill?.id;
     if (!skillId) {
       toast({
         title: "Skill required",
@@ -320,46 +530,79 @@ export default function PeerReviewsPage() {
       return;
     }
 
-    let apiError = "";
-    const result = await createPeerReviewInviteApi({
-      projectId: selectedProject.id,
-      contributorId,
-      skillId,
-      contributorEmail: normalizedEmail,
-      resend: inviteResend,
-    }, (msg) => { apiError = msg; });
+    setSendingInviteId(contributorId);
+    try {
+      if (isApiEnabled()) {
+        let apiError = "";
+        const result = await createPeerReviewInviteApi({
+          projectId: selectedProject.id,
+          contributorId,
+          skillId,
+          contributorEmail: normalizedEmail,
+          resend: inviteResend,
+        }, (msg) => { apiError = msg; });
 
-    if (!result) {
-      toast({
-        title: "Request failed",
-        description: apiError || "Could not send review invitation. Check that the backend is running.",
-        variant: "destructive",
+        if (!result) {
+          toast({
+            title: "Request failed",
+            description: apiError || "Could not send review invitation. Check that the backend is running.",
+            variant: "destructive",
+          });
+          return;
+        }
+
+        if (result.alreadyReviewed) {
+          toast({
+            title: "Review already exists",
+            description: `${inviteTargetName} has already submitted a review for this project.`,
+          });
+          return;
+        }
+
+        setGeneratedLink(result.reviewLink);
+        await reload();
+        toast({
+          title: inviteResend
+            ? "Invitation resent"
+            : result.status === "already_invited"
+              ? "Invitation already pending"
+              : "Review invitation sent successfully",
+          description: inviteResend
+            ? `Review link emailed again to ${normalizedEmail}.`
+            : result.status === "already_invited"
+              ? `An invitation is already pending for ${normalizedEmail}. Use Resend if you need to email the link again.`
+              : `Review invitation emailed to ${normalizedEmail} for ${inviteSkillName} on ${selectedProject.name}.`,
+        });
+        return;
+      }
+
+      const result = await sendPeerReviewInvite({
+        userId: user!.id,
+        project: selectedProject,
+        contributor: inviteContrib,
+        skillName: inviteSkillName,
+        skillId,
+        contributorEmail: normalizedEmail,
       });
-      return;
-    }
 
-    if (result.alreadyReviewed) {
-      toast({
-        title: "Review already exists",
-        description: `${inviteTargetName} has already submitted a review for this project.`,
-      });
-      return;
-    }
+      if (!result.ok || !result.invite) {
+        toast({
+          title: "Could not send invitation",
+          description: result.error ?? "Try again later.",
+          variant: "destructive",
+        });
+        return;
+      }
 
-    setGeneratedLink(result.reviewLink);
-    await reload();
-    toast({
-      title: result.status === "resent"
-        ? "Invitation resent"
-        : result.status === "already_invited"
-          ? "Invitation already pending"
-          : "Review invitation sent",
-      description: result.status === "resent"
-        ? `Review link emailed again to ${normalizedEmail}.`
-        : result.status === "already_invited"
-          ? `An invitation is already pending for ${normalizedEmail}. Use Resend if you need to email the link again.`
-          : `Review invitation emailed to ${normalizedEmail} for ${inviteSkill} on ${selectedProject.name}.`,
-    });
+      setGeneratedLink(`${window.location.origin}/review/request/${result.invite.token}`);
+      setContextRequests((prev) => [
+        result.invite!,
+        ...prev.filter((item) => item.id !== result.invite!.id),
+      ]);
+      toast({ title: "Review invitation sent successfully" });
+    } finally {
+      setSendingInviteId(null);
+    }
   };
 
   const importExisting = async () => {
@@ -549,7 +792,12 @@ export default function PeerReviewsPage() {
                           </Button>
                         </>
                       ) : (
-                        <Button size="sm" variant="outline" onClick={() => openInvite(c)}>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={sendingInviteId === c.id}
+                          onClick={() => void quickSendInvite(c)}
+                        >
                           <Mail className="h-4 w-4 mr-1.5" />Send review invite
                         </Button>
                       )}
@@ -708,7 +956,12 @@ export default function PeerReviewsPage() {
                           </Button>
                         )}
                         {row.status === "Review Pending" && (
-                          <Button size="sm" variant="outline" onClick={() => openInvite(c)}>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={sendingInviteId === c.id}
+                            onClick={() => void quickSendInvite(c)}
+                          >
                             <Mail className="h-3 w-3 mr-1" />Send invite
                           </Button>
                         )}
@@ -841,7 +1094,7 @@ export default function PeerReviewsPage() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setInviteOpen(false)}>Close</Button>
             {!generatedLink && (
-              <Button onClick={() => void sendInvite()}>
+              <Button onClick={() => void sendInvite()} disabled={Boolean(sendingInviteId)}>
                 <Mail className="h-4 w-4 mr-1.5" />
                 {inviteResend ? "Resend invitation email" : "Create secure invitation"}
               </Button>
@@ -853,26 +1106,43 @@ export default function PeerReviewsPage() {
   );
 }
 
-export function ReviewCard({ r }: { r: PeerReview }) {
+export function ReviewCard({ r }: { r: PeerReview & Record<string, unknown> }) {
+  const reviewerName = r.reviewerName ?? (typeof r.reviewer_name === "string" ? r.reviewer_name : "Reviewer");
+  const reviewerRole = r.reviewerRole ?? (typeof r.reviewer_role === "string" ? r.reviewer_role : "Reviewer");
+  const comment = r.comment ?? (typeof r.review_text === "string" ? r.review_text : "");
+  const reviewDate = r.date ?? (typeof r.created_at === "string" ? r.created_at : new Date().toISOString());
+  const reviewSource = (r.source ?? (typeof r.source === "string" ? r.source : "GitHub")) as ContextSource;
+  const rating = typeof r.rating === "number" ? r.rating : 0;
   const originLabel = r.imported ? r.origin : (r.origin === "SIJIL Form Review" ? r.origin : "SIJIL Form Review");
-  const projectLabel = r.projectName || "GitHub project";
+  const repositoryName = typeof r.repository_name === "string"
+    ? r.repository_name
+    : (r.projectName || "GitHub project");
+  const projectLabel = repositoryName;
   const skillLabel = r.skill || "Declared competency";
+  const pullRequestNumber = typeof r.pull_request_number === "number" ? r.pull_request_number : null;
+  const pullRequestTitle = typeof r.pull_request_title === "string" ? r.pull_request_title : null;
 
   return (
     <div id={`review-${r.id}`} className="px-6 py-4 scroll-mt-24">
       <div className="flex flex-wrap items-start gap-3 justify-between">
         <div className="min-w-0">
           <div className="flex items-center flex-wrap gap-2">
-            <span className="font-medium">{r.reviewerName}</span>
-            <StatusBadge variant="outline">{r.reviewerRole}</StatusBadge>
-            <StatusBadge variant="neutral" icon={sourceIcon(r.source)}>{r.source}</StatusBadge>
+            <span className="font-medium">{reviewerName}</span>
+            <StatusBadge variant="outline">{reviewerRole}</StatusBadge>
+            <StatusBadge variant="neutral" icon={sourceIcon(reviewSource)}>{reviewSource}</StatusBadge>
             {r.imported
               ? <StatusBadge variant="info">Imported · {r.origin}</StatusBadge>
               : <StatusBadge variant="info">{originLabel}</StatusBadge>}
           </div>
           <div className="text-xs text-muted-foreground mt-1">
             Skill: <span className="font-medium text-foreground">{skillLabel}</span>
-            {" · "}Project: <span className="font-medium text-foreground">{projectLabel}</span>
+            {" · "}Repository: <span className="font-medium text-foreground">{projectLabel}</span>
+            {pullRequestNumber != null && (
+              <> · PR: <span className="font-medium text-foreground">#{pullRequestNumber}</span></>
+            )}
+            {pullRequestTitle && (
+              <> · <span className="font-medium text-foreground">{pullRequestTitle}</span></>
+            )}
             {r.evidenceLabel && r.evidenceLabel !== projectLabel && (
               <> · Evidence: <span className="font-medium text-foreground">{r.evidenceLabel}</span></>
             )}
@@ -904,13 +1174,13 @@ export function ReviewCard({ r }: { r: PeerReview }) {
           )}
           <div className="flex items-center text-amber-500 text-sm">
             {Array.from({ length: 5 }).map((_, i) => (
-              <Star key={i} className={`h-3.5 w-3.5 ${i < r.rating ? "fill-current" : "opacity-30"}`} />
+              <Star key={i} className={`h-3.5 w-3.5 ${i < rating ? "fill-current" : "opacity-30"}`} />
             ))}
           </div>
         </div>
       </div>
-      <p className="text-sm mt-3 whitespace-pre-line">{r.comment}</p>
-      <div className="text-[11px] text-muted-foreground mt-2">{new Date(r.date).toLocaleDateString()}</div>
+      <p className="text-sm mt-3 whitespace-pre-line">{comment}</p>
+      <div className="text-[11px] text-muted-foreground mt-2">{new Date(reviewDate).toLocaleDateString()}</div>
     </div>
   );
 }

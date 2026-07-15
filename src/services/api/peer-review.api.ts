@@ -1,7 +1,8 @@
 /**
  * Peer review API — projects, contributors, invites, stats.
  */
-import { tryApiRequest, apiRequest } from "./client";
+import { tryApiRequest, apiRequest, isApiEnabled, ApiUnavailableError } from "./client";
+import { createPeerReviewInviteLocal } from "@/lib/db/peer-review-page";
 import type { PeerReview, ProjectContributor } from "@/lib/sijil-data";
 import type { PeerReviewProject } from "@/lib/db/peer-review-page";
 
@@ -71,10 +72,25 @@ export async function createPeerReviewInviteApi(
   importedReviewId?: string;
   alreadyReviewed?: boolean;
 } | null> {
-  return tryApiRequest("/peer-review/invite", {
-    method: "POST",
-    body: JSON.stringify(input),
-  }, onError);
+  if (isApiEnabled()) {
+    try {
+      return await apiRequest("/peer-review/invite", {
+        method: "POST",
+        body: JSON.stringify(input),
+      });
+    } catch (err) {
+      const local = await createPeerReviewInviteLocal(input);
+      if (local) return local;
+      if (onError && err instanceof Error) onError(err.message);
+      return null;
+    }
+  }
+
+  const local = await createPeerReviewInviteLocal(input);
+  if (local) return local;
+
+  if (onError) onError("Could not create review invitation");
+  return null;
 }
 
 export async function submitPeerReviewApi(input: {

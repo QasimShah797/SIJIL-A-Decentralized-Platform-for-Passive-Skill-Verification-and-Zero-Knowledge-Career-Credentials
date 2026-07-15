@@ -60,27 +60,76 @@ export type ContributorRow = {
 };
 
 function reviewMatchesContributor(
-  review: PeerReview,
+  review: PeerReview & Record<string, unknown>,
   project: PeerReviewProject,
   contributor: ProjectContributor,
 ): boolean {
+  const reviewAuthor = String(
+    review?.reviewerName
+    ?? review?.reviewer_name
+    ?? review?.reviewer
+    ?? review?.comment_author
+    ?? review?.username
+    ?? "",
+  ).toLowerCase();
+
+  const contributorName = String(
+    contributor?.handle
+    ?? contributor?.username
+    ?? contributor?.login
+    ?? contributor?.name
+    ?? "",
+  ).toLowerCase().replace(/^@/, "");
+
+  if (!reviewAuthor || !contributorName) {
+    return false;
+  }
+
   const nameMatch =
-    review.reviewerName === contributor.handle
-    || review.reviewerName === contributor.name
-    || review.reviewerName === `@${contributor.handle}`;
+    reviewAuthor.includes(contributorName)
+    || contributorName.includes(reviewAuthor);
+
+  const projectName = String(project?.name ?? "").toLowerCase();
+  const evidenceLabel = String(review?.evidenceLabel ?? "").toLowerCase();
+  const repositoryName = String(review?.repository_name ?? "").toLowerCase();
+  const reviewProjectId = review?.projectId;
+  const reviewProjectName = review?.projectName;
+
+  const hasProjectContext = Boolean(
+    reviewProjectId || reviewProjectName || evidenceLabel || repositoryName,
+  );
+
+  if (!hasProjectContext) {
+    return false;
+  }
+
   const projectMatch =
-    review.projectId === project.id
-    || review.projectName === project.name
-    || review.evidenceLabel.toLowerCase().includes(project.name.toLowerCase());
+    (reviewProjectId != null && reviewProjectId === project.id)
+    || (reviewProjectName != null && reviewProjectName === project.name)
+    || (evidenceLabel && projectName && evidenceLabel.includes(projectName))
+    || (repositoryName && projectName && (
+      repositoryName.includes(projectName) || projectName.includes(repositoryName)
+    ));
+
   return nameMatch && projectMatch;
 }
 
 function reviewsForProject(project: PeerReviewProject, reviews: PeerReview[]): PeerReview[] {
-  return reviews.filter(
-    (r) => r.projectId === project.id
-      || r.projectName === project.name
-      || r.evidenceLabel.toLowerCase().includes(project.name.toLowerCase()),
-  );
+  if (!Array.isArray(reviews)) return [];
+
+  const projectName = String(project?.name ?? "").toLowerCase();
+  return reviews.filter((r) => {
+    const evidenceLabel = String(r?.evidenceLabel ?? "").toLowerCase();
+    const repositoryName = String(
+      (r as PeerReview & Record<string, unknown>)?.repository_name ?? "",
+    ).toLowerCase();
+    return (r.projectId != null && r.projectId === project.id)
+      || (r.projectName != null && r.projectName === project.name)
+      || (evidenceLabel && projectName && evidenceLabel.includes(projectName))
+      || (repositoryName && projectName && (
+        repositoryName.includes(projectName) || projectName.includes(repositoryName)
+      ));
+  });
 }
 
 export function buildContributorRows(
@@ -89,13 +138,18 @@ export function buildContributorRows(
   requests: ContextReviewRequestDisplay[],
   legacyInvitations: ReviewInvitation[],
 ): ContributorRow[] {
-  return project.contributors.map((c) => {
-    const review = reviews.find((r) => reviewMatchesContributor(r, project, c));
-    const ctxRequest = requests.find(
+  const contributors = Array.isArray(project?.contributors) ? project.contributors : [];
+  const safeReviews = Array.isArray(reviews) ? reviews : [];
+  const safeRequests = Array.isArray(requests) ? requests : [];
+  const safeInvitations = Array.isArray(legacyInvitations) ? legacyInvitations : [];
+
+  return contributors.map((c) => {
+    const review = safeReviews.find((r) => reviewMatchesContributor(r, project, c));
+    const ctxRequest = safeRequests.find(
       (r) => r.projectId === project.id
         && (r.contributorName === c.name || r.contributorName === c.handle),
     );
-    const legacyInv = legacyInvitations.find(
+    const legacyInv = safeInvitations.find(
       (i) => i.projectId === project.id && i.contributorId === c.id,
     );
 
@@ -195,6 +249,7 @@ async function fetchContributors(
     id: c.id as string,
     name: c.full_name as string,
     handle: c.contributor_login as string,
+    email: (c.contributor_email as string | null) ?? undefined,
     role: "Project Collaborator" as const,
     avatarUrl: c.contributor_avatar_url as string | undefined,
     repoId: c.repo_id as number,
@@ -407,6 +462,243 @@ export async function fetchPeerReviewInvites(
       completedReviewId: (row.completed_review_id as string) ?? undefined,
     };
   });
+}
+
+const PEER_REVIEW_INVITE_TTL_DAYS = 14;
+
+function generateInviteToken(): string {
+  return `${crypto.randomUUID().replace(/-/g, "")}${crypto.randomUUID().replace(/-/g, "")}`;
+}
+
+export async function sendPeerReviewInvite(input: {
+  userId: string;
+  project: PeerReviewProject;
+  contributor: ProjectContributor;
+  skillName: string;
+  skillId: string | null;
+  contributorEmail: string;
+}): Promise<{ ok: boolean; error?: string; invite?: ContextReviewRequestDisplay }> {
+  const normalizedEmail = input.contributorEmail.trim().toLowerCase();
+  if (!normalizedEmail) {
+    return { ok: false, error: "email_required" };
+  }
+
+  const { data: existing } = await supabase
+    .from("peer_review_invites")
+    .select("id, token, status, created_at")
+    .eq("learner_user_id", input.userId)
+    .eq("project_id", input.project.id)
+    .eq("contributor_id", input.contributor.id)
+    .neq("status", "completed")
+    .maybeSingle();
+
+  if (existing) {
+    return {
+      ok: true,
+      invite: {
+        id: existing.id as string,
+        token: existing.token as string,
+        projectId: input.project.id,
+        projectName: input.project.name,
+        source: input.project.source,
+        contributorId: input.contributor.id,
+        contributorName: input.contributor.name,
+        contributorEmail: normalizedEmail,
+        contributorRole: input.contributor.role,
+        skill: input.skillName,
+        skillId: input.skillId,
+        status: "Sent",
+        sentAt: existing.created_at as string,
+      },
+    };
+  }
+
+  const token = generateInviteToken();
+  const expiresAt = new Date();
+  expiresAt.setDate(expiresAt.getDate() + PEER_REVIEW_INVITE_TTL_DAYS);
+
+  const { data, error } = await supabase
+    .from("peer_review_invites")
+    .insert({
+      learner_user_id: input.userId,
+      evidence_record_id: input.project.evidenceRecordId ?? null,
+      project_id: input.project.id,
+      project_name: input.project.name,
+      source: input.project.source,
+      contributor_id: input.contributor.id,
+      contributor_name: input.contributor.name,
+      contributor_email: normalizedEmail,
+      contributor_role: input.contributor.role,
+      relationship: "contributor",
+      skill_id: input.skillId,
+      skill: input.skillName,
+      token,
+      status: "sent",
+      expires_at: expiresAt.toISOString(),
+    })
+    .select("*")
+    .single();
+
+  if (error || !data) {
+    return { ok: false, error: error?.message ?? "Could not create review invitation" };
+  }
+
+  return {
+    ok: true,
+    invite: {
+      id: data.id as string,
+      token: data.token as string,
+      projectId: data.project_id as string,
+      projectName: data.project_name as string,
+      source: data.source as Project["source"],
+      contributorId: data.contributor_id as string,
+      contributorName: data.contributor_name as string,
+      contributorEmail: data.contributor_email as string,
+      contributorRole: data.contributor_role as string,
+      skill: data.skill as string,
+      skillId: (data.skill_id as string) ?? null,
+      status: "Sent",
+      sentAt: data.created_at as string,
+    },
+  };
+}
+
+async function resolveProjectForInvite(
+  userId: string,
+  projectId: string,
+): Promise<PeerReviewProject | null> {
+  if (projectId.startsWith("gh-")) {
+    const repoId = Number(projectId.slice(3));
+    if (!repoId) return null;
+
+    const [{ data: repo }, { data: evidence }] = await Promise.all([
+      supabase
+        .from("github_repos")
+        .select("repo_id, repo_name, full_name, github_url, linked_skill_id, linked_skill_name")
+        .eq("user_id", userId)
+        .eq("repo_id", repoId)
+        .maybeSingle(),
+      supabase
+        .from("evidence_records")
+        .select("id, repository_name, repository_url")
+        .eq("user_id", userId)
+        .eq("github_repo_id", repoId)
+        .maybeSingle(),
+    ]);
+
+    if (!repo) return null;
+    return {
+      id: projectId,
+      name: repo.repo_name as string,
+      source: "GitHub",
+      url: repo.github_url as string,
+      evidenceLabel: `GitHub repo: ${repo.full_name as string}`,
+      linkedSkills: repo.linked_skill_name ? [repo.linked_skill_name as string] : [],
+      contributors: [],
+      evidenceRecordId: evidence?.id as string | undefined,
+      skillLinks: repo.linked_skill_id
+        ? [{
+          skillId: repo.linked_skill_id as string,
+          skillName: repo.linked_skill_name as string,
+        }]
+        : [],
+    };
+  }
+
+  const evidenceId = projectId.startsWith("ev-") ? projectId.slice(3) : projectId;
+  const { data: evidence } = await supabase
+    .from("evidence_records")
+    .select("id, repository_name, repository_url, github_repo_id")
+    .eq("user_id", userId)
+    .eq("id", evidenceId)
+    .maybeSingle();
+
+  if (!evidence) return null;
+
+  const githubRepoId = Number(evidence.github_repo_id ?? 0);
+  return {
+    id: githubRepoId ? `gh-${githubRepoId}` : `ev-${evidence.id}`,
+    name: evidence.repository_name as string,
+    source: "GitHub",
+    url: evidence.repository_url as string,
+    evidenceLabel: `GitHub evidence: ${evidence.repository_name as string}`,
+    linkedSkills: [],
+    contributors: [],
+    evidenceRecordId: evidence.id as string,
+    skillLinks: [],
+  };
+}
+
+async function resolveContributorForInvite(
+  userId: string,
+  contributorId: string,
+): Promise<ProjectContributor | null> {
+  const { data } = await supabase
+    .from("github_repo_contributors")
+    .select("id, full_name, contributor_login, contributor_email, contributor_avatar_url")
+    .eq("user_id", userId)
+    .eq("id", contributorId)
+    .maybeSingle();
+
+  if (!data) return null;
+
+  return {
+    id: data.id as string,
+    name: data.full_name as string,
+    handle: data.contributor_login as string,
+    email: (data.contributor_email as string | null) ?? undefined,
+    role: "Project Collaborator",
+    avatarUrl: data.contributor_avatar_url as string | undefined,
+  };
+}
+
+/** Supabase fallback when the custom backend API is unreachable. */
+export async function createPeerReviewInviteLocal(input: {
+  projectId: string;
+  contributorId: string;
+  skillId: string;
+  contributorEmail: string;
+}): Promise<{
+  inviteId: string;
+  token: string;
+  reviewLink: string;
+  status: string;
+} | null> {
+  const { data: { session } } = await supabase.auth.getSession();
+  const userId = session?.user?.id;
+  if (!userId) return null;
+
+  const [project, contributor, skillResult] = await Promise.all([
+    resolveProjectForInvite(userId, input.projectId),
+    resolveContributorForInvite(userId, input.contributorId),
+    supabase
+      .from("declared_skills")
+      .select("id, name")
+      .eq("user_id", userId)
+      .eq("id", input.skillId)
+      .maybeSingle(),
+  ]);
+
+  if (!project || !contributor) return null;
+
+  const skillName = (skillResult.data?.name as string | undefined) ?? "Declared competency";
+  const result = await sendPeerReviewInvite({
+    userId,
+    project,
+    contributor,
+    skillName,
+    skillId: input.skillId,
+    contributorEmail: input.contributorEmail,
+  });
+
+  if (!result.ok || !result.invite) return null;
+
+  return {
+    inviteId: result.invite.id,
+    token: result.invite.token,
+    reviewLink: `${window.location.origin}/review/request/${result.invite.token}`,
+    status: "sent",
+  };
 }
 
 export async function loadPeerReviewPageData(userId: string): Promise<{

@@ -14,6 +14,15 @@ export const createPeerReviewInviteSchema = z.object({
   resend: z.boolean().optional(),
 });
 
+/** Alternate invite payload used by some clients. */
+export const alternatePeerReviewInviteSchema = z.object({
+  reviewer_email: z.string().email(),
+  github_username: z.string().min(1),
+  skill_id: z.string().uuid(),
+  competency: z.string().min(1),
+  repository: z.string().min(1),
+});
+
 export const submitPeerReviewSchema = z.object({
   token: z.string().min(16),
   rating: z.number().int().min(1).max(5),

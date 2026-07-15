@@ -132,16 +132,224 @@ function metadataText(value: unknown): string | null {
   return null;
 }
 
-function formatGradeDisplay(
-  metadata: Record<string, unknown>,
-  item?: Record<string, unknown>,
-): string {
-  const grade = metadata.grade ?? item?.grade;
-  const gradeMax = metadata.grade_max ?? item?.grade_max;
-  const formatted = metadata.grade_formatted ?? item?.grade_formatted;
-  if (formatted != null && String(formatted).trim()) return String(formatted);
-  if (grade != null && gradeMax != null) return `${grade} / ${gradeMax}`;
-  if (grade != null) return String(grade);
+function asEvidenceArray(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is Record<string, unknown> => !!item && typeof item === "object")
+    : [];
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+type ModalEvidenceView = {
+  githubEvidence: Record<string, unknown>[];
+  lmsEvidence: Record<string, unknown>[];
+  assignments: Record<string, unknown>[];
+  teacherFeedback: Record<string, unknown>[];
+};
+
+type LmsDisplayItem = {
+  id: string;
+  course_name: string;
+  activity_name: string;
+  grade: string | null;
+  grade_max: string | null;
+  feedback: string | null;
+  title?: string;
+  meta?: string;
+  body?: string | null;
+};
+
+function isLmsSourceRow(row: Record<string, unknown>): boolean {
+  const source = typeof row.source === "string" ? row.source.trim().toUpperCase() : "";
+  return source === "LMS";
+}
+
+function resolveEvidencePackage(record: WalletCompetencyRecordView): WalletEvidenceSummary {
+  if (record.evidencePackage) return record.evidencePackage;
+  const legacy = asRecord((record as unknown as Record<string, unknown>).evidence_summary);
+  if (legacy) return legacy as unknown as WalletEvidenceSummary;
+  return record.evidencePackage;
+}
+
+function dedupeEvidenceRows(rows: Record<string, unknown>[]): Record<string, unknown>[] {
+  const seen = new Set<string>();
+  const deduped: Record<string, unknown>[] = [];
+
+  for (const row of rows) {
+    const key = String(row.id ?? row.external_id ?? row.moodle_assignment_id ?? "");
+    if (key) {
+      if (seen.has(key)) continue;
+      seen.add(key);
+    }
+    deduped.push(row);
+  }
+
+  return deduped;
+}
+
+function buildModalEvidenceView(record: WalletCompetencyRecordView): ModalEvidenceView {
+  const evidencePackage = resolveEvidencePackage(record);
+  const github = evidencePackage?.github ?? {
+    repos: [],
+    activities: [],
+    evidenceRecords: [],
+    reviews: [],
+  };
+  const lms = evidencePackage?.lms ?? {
+    evidence: [],
+    courses: [],
+    assignments: [],
+    grades: [],
+    importedEvidence: [],
+  };
+
+  const repos = asEvidenceArray(github.repos);
+  const activities = asEvidenceArray(github.activities);
+  const allEvidenceRecords = asEvidenceArray(github.evidenceRecords);
+  const evidenceRecords = allEvidenceRecords.filter((row) => !isLmsSourceRow(row));
+  const reviews = asEvidenceArray(github.reviews);
+  const primaryLmsEvidence = asEvidenceArray(lms.evidence);
+  const assignments = asEvidenceArray(lms.assignments);
+  const teacherFeedback = asEvidenceArray(evidencePackage?.teacherFeedback);
+  const lmsRowsFromGithub = allEvidenceRecords.filter(isLmsSourceRow);
+  const importedEvidence = asEvidenceArray(lms.importedEvidence);
+
+  return {
+    githubEvidence: [...repos, ...activities, ...evidenceRecords, ...reviews],
+    lmsEvidence: dedupeEvidenceRows([
+      ...primaryLmsEvidence,
+      ...lmsRowsFromGithub,
+      ...importedEvidence,
+    ]),
+    assignments,
+    teacherFeedback,
+  };
+}
+
+function feedbackFromTeacherRows(
+  itemId: string,
+  teacherFeedback: Record<string, unknown>[],
+  directFeedback: string | null,
+): string | null {
+  if (directFeedback) return directFeedback;
+
+  for (const row of teacherFeedback) {
+    const assignmentId = metadataText(row.moodle_assignment_id);
+    const evidenceId = metadataText(row.evidence_record_id);
+    const text = metadataText(row.feedback_text);
+    if (!text) continue;
+    if (itemId && (itemId === assignmentId || itemId === evidenceId)) return text;
+  }
+
+  return null;
+}
+
+function buildLmsDisplayItems(
+  modalEvidenceView: ModalEvidenceView,
+  courses: Record<string, unknown>[],
+): LmsDisplayItem[] {
+  const items: LmsDisplayItem[] = [];
+  const seen = new Set<string>();
+
+  const push = (item: LmsDisplayItem) => {
+    const key = item.id || `${item.course_name}:${item.activity_name}`;
+    if (!key.trim() || seen.has(key)) return;
+    seen.add(key);
+    items.push(item);
+  };
+
+  for (const row of modalEvidenceView.lmsEvidence) {
+    const metadata = parseEvidenceMetadata(row.metadata);
+    const id = String(row.id ?? row.external_id ?? "");
+    const directFeedback = metadataText(metadata.teacher_feedback)
+      ?? metadataText(row.feedback_preview)
+      ?? metadataText(row.feedback);
+
+    push({
+      id,
+      course_name: metadataText(metadata.course_name)
+        ?? metadataText(row.course_name)
+        ?? "N/A",
+      activity_name: metadataText(metadata.activity_name)
+        ?? metadataText(metadata.assignment_name)
+        ?? metadataText(row.activity_name)
+        ?? metadataText(row.assignment_name)
+        ?? metadataText(row.text_preview)
+        ?? "N/A",
+      grade: metadataText(metadata.grade) ?? metadataText(row.grade),
+      grade_max: metadataText(metadata.grade_max) ?? metadataText(row.grade_max),
+      feedback: feedbackFromTeacherRows(id, modalEvidenceView.teacherFeedback, directFeedback),
+      title: metadataText(metadata.assignment_name)
+        ?? metadataText(row.assignment_name)
+        ?? metadataText(row.activity_name)
+        ?? metadataText(row.text_preview)
+        ?? metadataText(metadata.course_name)
+        ?? metadataText(row.course_name)
+        ?? "LMS Evidence",
+      meta: `Course: ${metadataText(metadata.course_name) ?? metadataText(row.course_name) ?? "N/A"} · Grade: ${formatGradeLine(
+        metadataText(metadata.grade) ?? metadataText(row.grade),
+        metadataText(metadata.grade_max) ?? metadataText(row.grade_max),
+      )}`,
+    });
+  }
+
+  for (const row of modalEvidenceView.assignments) {
+    const metadata = parseEvidenceMetadata(row.metadata);
+    const id = String(row.moodle_assignment_id ?? row.id ?? "");
+    const directFeedback = metadataText(row.feedback_preview)
+      ?? metadataText(row.feedback)
+      ?? metadataText(metadata.teacher_feedback);
+
+    push({
+      id,
+      course_name: metadataText(metadata.course_name)
+        ?? metadataText(row.course_name)
+        ?? courseNameForAssignment(row, courses),
+      activity_name: metadataText(row.activity_name)
+        ?? metadataText(row.name)
+        ?? metadataText(metadata.assignment_name)
+        ?? "N/A",
+      grade: metadataText(row.grade) ?? metadataText(metadata.grade),
+      grade_max: metadataText(row.grade_max) ?? metadataText(metadata.grade_max),
+      feedback: feedbackFromTeacherRows(id, modalEvidenceView.teacherFeedback, directFeedback),
+      title: metadataText(row.name)
+        ?? metadataText(metadata.assignment_name)
+        ?? metadataText(row.activity_name)
+        ?? "LMS Evidence",
+      meta: `Course: ${metadataText(metadata.course_name) ?? metadataText(row.course_name) ?? courseNameForAssignment(row, courses)} · Grade: ${formatGradeLine(
+        metadataText(row.grade) ?? metadataText(metadata.grade),
+        metadataText(row.grade_max) ?? metadataText(metadata.grade_max),
+      )}`,
+    });
+  }
+
+  for (const row of modalEvidenceView.teacherFeedback) {
+    const text = metadataText(row.feedback_text);
+    if (!text) continue;
+    const id = String(row.moodle_assignment_id ?? row.evidence_record_id ?? text.slice(0, 24));
+    push({
+      id,
+      course_name: metadataText(row.course_name) ?? "LMS Course",
+      activity_name: metadataText(row.source) ?? metadataText(row.assignment_name) ?? "Teacher feedback",
+      grade: null,
+      grade_max: null,
+      feedback: text,
+      title: metadataText(row.source) ?? "Teacher feedback",
+      meta: metadataText(row.course_name) ?? "LMS Course",
+    });
+  }
+
+  return items;
+}
+
+function formatGradeLine(grade: string | null, gradeMax: string | null): string {
+  if (grade && gradeMax) return `${grade} / ${gradeMax}`;
+  if (grade) return grade;
+  if (gradeMax) return gradeMax;
   return "N/A";
 }
 
@@ -162,17 +370,9 @@ function courseNameForAssignment(
   return metadataText(course?.fullname) ?? metadataText(course?.shortname) ?? "N/A";
 }
 
-function LmsEvidenceItemCard({ item }: { item: Record<string, unknown> }) {
-  const metadata = parseEvidenceMetadata(item.metadata);
-  const courseName = metadataText(metadata.course_name) ?? metadataText(item.course_name) ?? "N/A";
-  const assignmentName = metadataText(metadata.assignment_name)
-    ?? metadataText(item.assignment_name)
-    ?? metadataText(item.text_preview)
-    ?? "N/A";
-  const grade = formatGradeDisplay(metadata, item);
-  const status = metadataText(item.status) ?? metadataText(item.completion_status) ?? "N/A";
-  const teacherFeedback = metadataText(metadata.teacher_feedback);
-  const title = courseName !== "N/A" ? courseName : assignmentName;
+function WalletLmsItemCard({ item }: { item: LmsDisplayItem }) {
+  const gradeLine = formatGradeLine(item.grade, item.grade_max);
+  const title = item.course_name !== "N/A" ? item.course_name : item.activity_name;
 
   return (
     <div className="rounded-xl border border-border/60 bg-card p-4">
@@ -180,69 +380,20 @@ function LmsEvidenceItemCard({ item }: { item: Record<string, unknown> }) {
       <div className="mt-3 space-y-2 text-sm">
         <div>
           <div className="text-[11px] text-muted-foreground">Course</div>
-          <div className="mt-0.5">{courseName}</div>
+          <div className="mt-0.5">{item.course_name}</div>
         </div>
         <div>
           <div className="text-[11px] text-muted-foreground">Assignment</div>
-          <div className="mt-0.5">{assignmentName}</div>
+          <div className="mt-0.5">{item.activity_name}</div>
         </div>
         <div>
           <div className="text-[11px] text-muted-foreground">Grade</div>
-          <div className="mt-0.5">{grade}</div>
+          <div className="mt-0.5">{gradeLine}</div>
         </div>
-        <div>
-          <div className="text-[11px] text-muted-foreground">Status</div>
-          <div className="mt-0.5">{status}</div>
-        </div>
-        {teacherFeedback && (
+        {item.feedback && (
           <div>
-            <div className="text-[11px] text-muted-foreground">Teacher Feedback</div>
-            <div className="mt-0.5 text-muted-foreground">{teacherFeedback}</div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function LmsAssignmentCard({
-  assignment,
-  courses,
-}: {
-  assignment: Record<string, unknown>;
-  courses: Record<string, unknown>[];
-}) {
-  const metadata = parseEvidenceMetadata(assignment.metadata);
-  const assignmentName = metadataText(assignment.name) ?? metadataText(metadata.assignment_name) ?? "N/A";
-  const courseName = courseNameForAssignment(assignment, courses);
-  const grade = formatGradeDisplay(metadata, assignment);
-  const submissionStatus = metadataText(assignment.submission_status) ?? metadataText(assignment.status) ?? "N/A";
-  const teacherFeedback = metadataText(metadata.teacher_feedback) ?? metadataText(assignment.feedback);
-
-  return (
-    <div className="rounded-xl border border-border/60 bg-card p-4">
-      <div className="text-sm font-medium">{assignmentName}</div>
-      <div className="mt-3 space-y-2 text-sm">
-        <div>
-          <div className="text-[11px] text-muted-foreground">Course</div>
-          <div className="mt-0.5">{courseName}</div>
-        </div>
-        <div>
-          <div className="text-[11px] text-muted-foreground">Assignment</div>
-          <div className="mt-0.5">{assignmentName}</div>
-        </div>
-        <div>
-          <div className="text-[11px] text-muted-foreground">Grade</div>
-          <div className="mt-0.5">{grade}</div>
-        </div>
-        <div>
-          <div className="text-[11px] text-muted-foreground">Submission status</div>
-          <div className="mt-0.5">{submissionStatus}</div>
-        </div>
-        {teacherFeedback && (
-          <div>
-            <div className="text-[11px] text-muted-foreground">Teacher Feedback</div>
-            <div className="mt-0.5 text-muted-foreground">{teacherFeedback}</div>
+            <div className="text-[11px] text-muted-foreground">Feedback</div>
+            <div className="mt-0.5 text-muted-foreground">{item.feedback}</div>
           </div>
         )}
       </div>
@@ -260,56 +411,103 @@ function WalletEvidenceDialog(props: {
 
   if (!record) return null;
 
-  const summary = record.evidencePackage;
+  const summary = resolveEvidencePackage(record);
+  const modalEvidenceView = buildModalEvidenceView(record);
+
   const githubRepos = Array.isArray(summary?.github?.repos) ? summary.github.repos : [];
   const githubActivities = Array.isArray(summary?.github?.activities) ? summary.github.activities : [];
-  const githubEvidenceRecords = Array.isArray(summary?.github?.evidenceRecords) ? summary.github.evidenceRecords : [];
+  const githubEvidenceRecords = Array.isArray(summary?.github?.evidenceRecords)
+    ? summary.github.evidenceRecords.filter((row) => !isLmsSourceRow(row))
+    : [];
   const githubReviews = Array.isArray(summary?.github?.reviews) ? summary.github.reviews : [];
-  const lmsEvidenceItems = Array.isArray(record?.evidencePackage?.lms?.evidence)
-    ? record.evidencePackage.lms.evidence
-    : [];
-  const lmsAssignments = Array.isArray(record?.evidencePackage?.lms?.assignments)
-    ? record.evidencePackage.lms.assignments
-    : [];
-  const lmsCourses = Array.isArray(record?.evidencePackage?.lms?.courses)
-    ? record.evidencePackage.lms.courses
-    : [];
-  const peerReviews = Array.isArray(summary?.peerReviews) ? summary.peerReviews : [];
+  const lmsItems = [
+    ...(record?.evidencePackage?.lms?.evidence ?? []),
+    ...(record?.evidencePackage?.lms?.assignments ?? []),
+  ];
   const teacherFeedback = Array.isArray(summary?.teacherFeedback) ? summary.teacherFeedback : [];
+  const peerReviews = [
+    ...(Array.isArray(summary?.peerReviews)
+      ? summary.peerReviews
+      : []),
+
+    ...(Array.isArray(summary?.github?.reviews)
+      ? summary.github.reviews.map((review) => ({
+        reviewer_name:
+          review.comment_author
+          ?? review.author
+          ?? "GitHub Reviewer",
+
+        reviewer_role:
+          "GitHub Review",
+
+        review_text:
+          review.comment_body
+          ?? review.body
+          ?? review.comment
+          ?? "GitHub contribution review",
+
+        source:
+          "GitHub",
+
+        reviewed_at:
+          review.comment_created_at
+          ?? review.created_at
+          ?? null,
+      }))
+      : []),
+
+    ...(Array.isArray(summary?.teacherFeedback)
+      ? summary.teacherFeedback.map((feedback) => ({
+        reviewer_name:
+          "Teacher Feedback",
+
+        reviewer_role:
+          "LMS",
+
+        review_text:
+          feedback.feedback_text
+          ?? feedback.feedback
+          ?? "No feedback",
+
+        source:
+          "LMS",
+
+        reviewed_at:
+          feedback.reviewed_at
+          ?? feedback.synced_at
+          ?? null,
+      }))
+      : []),
+  ] as Record<string, unknown>[];
   const attemptHistory = Array.isArray(summary?.practicalTask?.attemptHistory)
     ? summary.practicalTask.attemptHistory
     : [];
 
-  const githubItems = [
-    ...githubRepos,
-    ...githubActivities,
-    ...githubEvidenceRecords,
-    ...githubReviews,
-  ];
-  const hasLmsContent = lmsEvidenceItems.length > 0 || lmsAssignments.length > 0;
+  const githubItems = modalEvidenceView.githubEvidence;
   const did = summary?.learner?.did ?? fallbackDid;
   const attempt = latestAttempt(summary);
-  const shownFeedback = new Set<string>();
-  for (const item of lmsEvidenceItems) {
-    const metadata = parseEvidenceMetadata(item.metadata);
-    const text = metadataText(metadata.teacher_feedback);
-    if (text) shownFeedback.add(text);
-  }
-  for (const assignment of lmsAssignments) {
-    const metadata = parseEvidenceMetadata(assignment.metadata);
-    const text = metadataText(metadata.teacher_feedback) ?? metadataText(assignment.feedback);
-    if (text) shownFeedback.add(text);
-  }
+  const shownFeedback = new Set(
+    lmsItems
+      .map((item) => {
+        const metadata = item.metadata && typeof item.metadata === "object" && !Array.isArray(item.metadata)
+          ? item.metadata as Record<string, unknown>
+          : {};
+        return formatOptional(item.feedback_preview)
+          ?? formatOptional(metadata.teacher_feedback)
+          ?? formatOptional(item.feedback)
+          ?? formatOptional(item.text_preview);
+      })
+      .filter((value): value is string => Boolean(value)),
+  );
+  const peerReviewTexts = new Set(
+    peerReviews
+      .map((review) => formatOptional(review.review_text))
+      .filter((value): value is string => Boolean(value)),
+  );
   const standaloneTeacherFeedback = teacherFeedback.filter((feedback) => {
     const text = formatOptional(feedback.feedback_text);
     if (!text) return false;
-    return !shownFeedback.has(text);
-  });
-
-  console.log("LMS WALLET DATA", {
-    lmsEvidence: lmsEvidenceItems,
-    assignments: lmsAssignments,
-    evidencePackage: record?.evidencePackage,
+    return !shownFeedback.has(text) && !peerReviewTexts.has(text);
   });
 
   return (
@@ -322,7 +520,7 @@ function WalletEvidenceDialog(props: {
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-6 overflow-y-auto pr-2">
+        <div className="max-h-[75vh] space-y-6 overflow-y-auto pr-2">
           <Card>
             <CardContent className="grid gap-4 p-5 md:grid-cols-2">
               <div>
@@ -423,26 +621,45 @@ function WalletEvidenceDialog(props: {
           </Section>
 
           <Section title="LMS Evidence">
-            {hasLmsContent ? (
-              <>
-                {lmsEvidenceItems.map((item, index) => (
-                  <LmsEvidenceItemCard
-                    key={String(item.id ?? item.external_id ?? `lms-evidence-${index}`)}
-                    item={item}
+            {lmsItems.length > 0 ? (
+              lmsItems.map((item: Record<string, unknown>, index: number) => {
+                const metadata = item.metadata && typeof item.metadata === "object" && !Array.isArray(item.metadata)
+                  ? item.metadata as Record<string, unknown>
+                  : {};
+
+                return (
+                  <ItemCard
+                    key={`lms-${index}`}
+                    title={
+                      formatOptional(item.course_name)
+                      ?? formatOptional(item.assignment_name)
+                      ?? formatOptional(item.activity_name)
+                      ?? formatOptional(item.name)
+                      ?? "LMS Evidence"
+                    }
+                    meta={[
+                      item.grade
+                        ? `Grade: ${item.grade}`
+                        : metadata.grade != null
+                          ? `Grade: ${metadata.grade}/${metadata.grade_max ?? ""}`
+                          : null,
+                      formatOptional(item.completion_status),
+                    ].filter(Boolean).join(" · ")}
+                    body={
+                      formatOptional(item.feedback_preview)
+                      ?? formatOptional(metadata.teacher_feedback)
+                      ?? formatOptional(item.feedback)
+                      ?? formatOptional(item.text_preview)
+                      ?? "No feedback available"
+                    }
                   />
-                ))}
-                {lmsAssignments.map((assignment, index) => (
-                  <LmsAssignmentCard
-                    key={String(assignment.moodle_assignment_id ?? assignment.id ?? `lms-assignment-${index}`)}
-                    assignment={assignment}
-                    courses={lmsCourses}
-                  />
-                ))}
-              </>
+                );
+              })
             ) : (
               <EmptyEvidenceNote message="No LMS evidence available" />
             )}
           </Section>
+
           {attemptHistory.length > 0 && (
             <Section title="Practical Task">
               {attempt && (
@@ -506,7 +723,7 @@ function WalletEvidenceDialog(props: {
                     formatOptional(review.source),
                     formatDate(formatOptional(review.reviewed_at) ?? formatOptional(review.review_date) ?? formatOptional(review.date)),
                   ].filter(Boolean).join(" · ")}
-                  body={formatOptional(review.review_text) ?? formatOptional(review.comment)}
+                  body={formatOptional(review.review_text) ?? formatOptional(review.comment) ?? formatOptional(review.body)}
                 />
               ))}
             </Section>
@@ -730,13 +947,17 @@ export default function WalletPage() {
       </Card>
 
       <WalletEvidenceDialog
-        record={selectedRecord}
-        fallbackDid={profile?.did ?? null}
-        open={!!selectedRecord}
-        onOpenChange={(open) => {
-          if (!open) setSelectedRecord(null);
-        }}
-      />
+  record={
+    selectedRecord
+      ? (derivedRecordsById.get(selectedRecord.competencyId) ?? selectedRecord)
+      : null
+  }
+  fallbackDid={profile?.did ?? null}
+  open={!!selectedRecord}
+  onOpenChange={(open) => {
+    if (!open) setSelectedRecord(null);
+  }}
+/>
 
       <CompetencyShareDialog
         record={shareRecord}

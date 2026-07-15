@@ -39,10 +39,16 @@ export async function apiRequest<T>(
   if (!BASE_URL) throw new ApiUnavailableError("VITE_API_BASE_URL not configured");
 
   const headers = await getAuthHeaders();
-  const res = await fetch(`${BASE_URL}${path}`, {
-    ...options,
-    headers: { ...headers, ...(options.headers as Record<string, string> | undefined) },
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${BASE_URL}${path}`, {
+      ...options,
+      headers: { ...headers, ...(options.headers as Record<string, string> | undefined) },
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Network error";
+    throw new ApiUnavailableError(message);
+  }
 
   if (!res.ok) {
     let detail = res.statusText;

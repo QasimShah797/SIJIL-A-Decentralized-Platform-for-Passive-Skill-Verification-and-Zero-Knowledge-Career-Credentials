@@ -30,7 +30,7 @@ export async function createPeerReviewInvite(req: Request, res: Response): Promi
       ? "Review invite resent by email"
       : result.status === "already_invited"
         ? "Review invite already pending"
-        : "Peer review invite sent";
+        : "Review invitation created";
   return sendSuccess(res, result, message, result.alreadyReviewed ? 200 : 201);
 }
 
