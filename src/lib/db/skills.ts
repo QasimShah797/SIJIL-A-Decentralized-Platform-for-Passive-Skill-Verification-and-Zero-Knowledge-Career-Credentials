@@ -27,7 +27,109 @@ function rowToSkill(row: {
   };
 }
 
+const SKILL_STATUSES_PRESERVED = new Set([
+  "Wallet Ready",
+  "Credential Issued",
+  "Review Available",
+  "Attestation Pending",
+]);
+
+/** Align declared_skills badges with linked GitHub/LMS/uploaded evidence. */
+export async function syncDeclaredSkillEvidenceStatuses(userId: string): Promise<void> {
+  const { data: skills, error: skillsError } = await supabase
+    .from("declared_skills")
+    .select("id, status")
+    .eq("user_id", userId);
+  if (skillsError) throw skillsError;
+  if (!skills?.length) return;
+
+  const [
+    { data: githubRepos },
+    { data: evidenceLinks },
+    { data: lmsEvidence },
+    { data: supportingRecords },
+    { data: evidenceRecords },
+  ] = await Promise.all([
+    supabase
+      .from("github_repos")
+      .select("linked_skill_id")
+      .eq("user_id", userId)
+      .not("linked_skill_id", "is", null),
+    supabase
+      .from("skill_evidence_links")
+      .select("skill_id")
+      .eq("user_id", userId),
+    supabase
+      .from("lms_evidence")
+      .select("linked_skill_id")
+      .eq("user_id", userId)
+      .not("linked_skill_id", "is", null),
+    supabase
+      .from("supporting_records")
+      .select("skill_id")
+      .eq("user_id", userId),
+    supabase
+      .from("evidence_records")
+      .select("mapped_skill_id")
+      .eq("user_id", userId)
+      .not("mapped_skill_id", "is", null),
+  ]);
+
+  const linkedSkillIds = new Set<string>();
+  for (const row of githubRepos ?? []) {
+    if (row.linked_skill_id) linkedSkillIds.add(row.linked_skill_id as string);
+  }
+  for (const row of evidenceLinks ?? []) {
+    if (row.skill_id) linkedSkillIds.add(row.skill_id as string);
+  }
+  for (const row of lmsEvidence ?? []) {
+    if (row.linked_skill_id) linkedSkillIds.add(row.linked_skill_id as string);
+  }
+  for (const row of supportingRecords ?? []) {
+    if (row.skill_id) linkedSkillIds.add(row.skill_id as string);
+  }
+  for (const row of evidenceRecords ?? []) {
+    if (row.mapped_skill_id) linkedSkillIds.add(row.mapped_skill_id as string);
+  }
+
+  const now = new Date().toISOString();
+  await Promise.all(
+    skills.map(async (skill) => {
+      const status = skill.status as string;
+      if (SKILL_STATUSES_PRESERVED.has(status)) return;
+
+      const hasEvidence = linkedSkillIds.has(skill.id as string);
+      if (hasEvidence && status === "Skill Claimed") {
+        const { error } = await supabase
+          .from("declared_skills")
+          .update({
+            status: "Evidence Linked",
+            pipeline_stage: "evidence_linked",
+            last_related_activity_at: now,
+          })
+          .eq("user_id", userId)
+          .eq("id", skill.id);
+        if (error) throw error;
+        return;
+      }
+
+      if (!hasEvidence && status === "Evidence Linked") {
+        const { error } = await supabase
+          .from("declared_skills")
+          .update({
+            status: "Skill Claimed",
+            pipeline_stage: "declared",
+          })
+          .eq("user_id", userId)
+          .eq("id", skill.id);
+        if (error) throw error;
+      }
+    }),
+  );
+}
+
 export async function fetchDeclaredSkills(userId: string): Promise<DeclaredSkill[]> {
+  await syncDeclaredSkillEvidenceStatuses(userId);
   const { data, error } = await supabase
     .from("declared_skills")
     .select("*")
@@ -95,7 +197,15 @@ export async function insertDeclaredSkill(
   await syncGitHubAfterSkillDeclare(
     skillsForSync.map((s) => ({ id: s.id, name: s.name, domain: s.domain })),
   );
-  return declared;
+  await syncDeclaredSkillEvidenceStatuses(userId);
+  const { data: refreshed, error: refreshError } = await supabase
+    .from("declared_skills")
+    .select("*")
+    .eq("user_id", userId)
+    .eq("id", declared.id)
+    .maybeSingle();
+  if (refreshError) throw refreshError;
+  return refreshed ? rowToSkill(refreshed) : declared;
 }
 
 export async function fetchSkillRelatedEvidence(

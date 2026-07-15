@@ -313,6 +313,29 @@ export async function runGitHubSync(
     .update({ last_synced_at: new Date().toISOString() })
     .eq("user_id", userId);
 
+  const linkedSkillIds = new Set<string>();
+  for (const row of repoRows) {
+    const skillId = row.linked_skill_id as string | null | undefined;
+    if (skillId) linkedSkillIds.add(skillId);
+  }
+  if (linkedSkillIds.size) {
+    const now = new Date().toISOString();
+    await Promise.all(
+      [...linkedSkillIds].map((skillId) =>
+        admin
+          .from("declared_skills")
+          .update({
+            status: "Evidence Linked",
+            pipeline_stage: "evidence_linked",
+            last_related_activity_at: now,
+          })
+          .eq("user_id", userId)
+          .eq("id", skillId)
+          .eq("status", "Skill Claimed")
+      ),
+    );
+  }
+
   return {
     synced: rows.length,
     upserted: inserted,

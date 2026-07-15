@@ -41,6 +41,7 @@ import { toast } from "@/hooks/use-toast";
 
 function displayStatus(status: string): string {
   if (status === "Skill Claimed") return "Competency Claimed";
+  if (status === "Evidence Linked") return "Evidence Linked";
   return status;
 }
 
@@ -55,7 +56,7 @@ export default function LearnerProfile() {
   const navigate = useNavigate();
   const location = useLocation();
   const { profile, loading: profileLoading } = useLearnerProfile();
-  const { skills, loading: skillsLoading, addSkill, removeSkill, updateSkill } = useDeclaredSkills();
+  const { skills, loading: skillsLoading, addSkill, removeSkill, updateSkill, refresh: refreshSkills } = useDeclaredSkills();
   const { reviews, refresh: refreshReviews } = usePeerReviews();
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -79,6 +80,10 @@ export default function LearnerProfile() {
   useEffect(() => {
     void refreshReviews();
   }, [skillSyncKey, refreshReviews]);
+
+  useEffect(() => {
+    void refreshSkills();
+  }, [refreshSkills]);
   const notifPanelOpen = location.hash === "#notifications";
   const isEditing = editingId !== null;
 
@@ -291,6 +296,7 @@ export default function LearnerProfile() {
             <div className="flex items-center gap-4 min-w-0">
               {profile.avatarUrl ? (
                 <img
+                  key={profile.avatarUrl}
                   src={profile.avatarUrl}
                   alt={profile.name}
                   className="h-16 w-16 shrink-0 rounded-full border object-cover"

@@ -431,10 +431,23 @@ export async function createLearnerProfileStub(userId: string, username: string)
 export async function uploadLearnerAvatar(userId: string, file: File): Promise<string> {
   const ext = file.name.split(".").pop()?.toLowerCase() || "jpg";
   const path = `${userId}/avatar.${ext}`;
-  const { error } = await supabase.storage.from("profile-avatars").upload(path, file, { upsert: true });
+
+  const stalePaths = ["jpg", "jpeg", "png", "webp", "gif"]
+    .filter((candidate) => candidate !== ext)
+    .map((candidate) => `${userId}/avatar.${candidate}`);
+  if (stalePaths.length) {
+    await supabase.storage.from("profile-avatars").remove(stalePaths);
+  }
+
+  const { error } = await supabase.storage.from("profile-avatars").upload(path, file, {
+    upsert: true,
+    cacheControl: "0",
+  });
   if (error) throw error;
+
   const { data } = supabase.storage.from("profile-avatars").getPublicUrl(path);
-  return data.publicUrl;
+  const separator = data.publicUrl.includes("?") ? "&" : "?";
+  return `${data.publicUrl}${separator}v=${Date.now()}`;
 }
 
 export async function saveLearnerOnboarding(userId: string, data: LearnerOnboardingData): Promise<LearnerProfileDbRow> {

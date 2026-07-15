@@ -20,6 +20,7 @@ import {
   type PeerReview, type ContextSource, type ProjectContributor,
   type ReviewInvitation, type ContributorVerification,
 } from "@/lib/sijil-data";
+import { formatPeerReviewDate } from "@/lib/peer-review-date";
 import { useAuth } from "@/hooks/useAuth";
 import { useDeclaredSkills } from "@/hooks/useLearnerData";
 import { fetchLearnerProfile } from "@/lib/db/learner-profile";
@@ -910,7 +911,7 @@ export function ReviewCard({ r }: { r: PeerReview }) {
         </div>
       </div>
       <p className="text-sm mt-3 whitespace-pre-line">{r.comment}</p>
-      <div className="text-[11px] text-muted-foreground mt-2">{new Date(r.date).toLocaleDateString()}</div>
+      <div className="text-[11px] text-muted-foreground mt-2">{formatPeerReviewDate(r.date)}</div>
     </div>
   );
 }

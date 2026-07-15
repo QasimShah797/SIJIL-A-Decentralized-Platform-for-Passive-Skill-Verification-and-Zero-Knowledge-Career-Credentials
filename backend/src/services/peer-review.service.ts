@@ -37,6 +37,7 @@ import type {
 } from "../types/peer-review.types";
 import type { Relationship } from "../constants/peer-review";
 import { withPeerReviewUserColumns } from "../utils/peerReviewInsert";
+import { resolvePeerReviewDate } from "../utils/peerReviewDate";
 import {
   getGitHubConnection,
   persistContributorEmail,
@@ -142,7 +143,7 @@ function rowToPeerReview(row: Record<string, unknown>): PeerReviewRecordView {
     rating: row.rating as number,
     comment: row.comment as string,
     recommendation: (row.recommendation as string) ?? undefined,
-    date: row.review_date as string,
+    date: resolvePeerReviewDate(row),
     contextStatus: (row.context_status as string) ?? CONTEXT_STATUS.VERIFIED,
     contributorVerification: (row.contributor_verification as string) ?? undefined,
     trustWeight: (row.trust_weight as string) ?? categoricalTrustWeight(score),
@@ -274,10 +275,67 @@ async function getEvidenceForUser(userId: string, evidenceId: string): Promise<E
   return data as EvidenceRow;
 }
 
+function contributorsSamePerson(
+  a: Pick<PeerReviewContributorView, "id" | "handle" | "email">,
+  b: Pick<PeerReviewContributorView, "id" | "handle" | "email">,
+): boolean {
+  const aLogin = normalizeText(a.handle);
+  const bLogin = normalizeText(b.handle);
+  if (aLogin && bLogin && aLogin === bLogin) return true;
+
+  const aEmail = normalizeText(a.email);
+  const bEmail = normalizeText(b.email);
+  if (aEmail && bEmail && aEmail === bEmail) return true;
+
+  return normalizeText(a.id) === normalizeText(b.id);
+}
+
+function mergeContributorEntries(
+  existing: PeerReviewContributorView,
+  incoming: PeerReviewContributorView,
+  preferIncomingId: boolean,
+): PeerReviewContributorView {
+  return {
+    ...existing,
+    id: preferIncomingId ? incoming.id : existing.id,
+    name: incoming.name?.trim() ? incoming.name : existing.name,
+    handle: incoming.handle ?? existing.handle,
+    email: incoming.email ?? existing.email,
+    avatarUrl: incoming.avatarUrl ?? existing.avatarUrl,
+    role: incoming.relationship !== RELATIONSHIP.CONTRIBUTOR
+      ? incoming.role
+      : existing.role,
+    relationship: incoming.relationship !== RELATIONSHIP.CONTRIBUTOR
+      ? incoming.relationship
+      : existing.relationship,
+    verified: true,
+    reviewStatus: existing.reviewStatus ?? incoming.reviewStatus ?? "Review Pending",
+  };
+}
+
+function dedupeContributors(contributors: PeerReviewContributorView[]): PeerReviewContributorView[] {
+  const result: PeerReviewContributorView[] = [];
+
+  for (const incoming of contributors) {
+    const matchIdx = result.findIndex((existing) => contributorsSamePerson(existing, incoming));
+    if (matchIdx < 0) {
+      result.push(incoming);
+      continue;
+    }
+
+    const preferIncomingId = Boolean(incoming.handle && (incoming.email || incoming.avatarUrl));
+    result[matchIdx] = mergeContributorEntries(result[matchIdx], incoming, preferIncomingId);
+  }
+
+  return result;
+}
+
 async function fetchContributorsForProject(
   userId: string,
   project: ResolvedProject,
 ): Promise<PeerReviewContributorView[]> {
+  const contributors: PeerReviewContributorView[] = [];
+
   if (project.evidenceRecordId) {
     const { data: contexts } = await supabaseService.client
       .from("reviewer_contexts")
@@ -285,44 +343,44 @@ async function fetchContributorsForProject(
       .eq("evidence_record_id", project.evidenceRecordId)
       .eq("user_id", userId);
 
-    if (contexts?.length) {
-      return contexts.map((c) => {
-        const relationship = relationshipFromRole(c.context_role as string);
-        return {
-          id: c.id as string,
-          name: c.reviewer_name as string,
-          handle: (c.reviewer_login as string) ?? undefined,
-          email: (c.reviewer_email as string) ?? undefined,
-          role: displayRoleForRelationship(relationship),
-          relationship,
-          verified: true,
-          reviewStatus: "Review Pending" as const,
-        };
+    for (const c of contexts ?? []) {
+      const relationship = relationshipFromRole(c.context_role as string);
+      contributors.push({
+        id: c.id as string,
+        name: c.reviewer_name as string,
+        handle: (c.reviewer_login as string) ?? undefined,
+        email: (c.reviewer_email as string) ?? undefined,
+        role: displayRoleForRelationship(relationship),
+        relationship,
+        verified: true,
+        reviewStatus: "Review Pending",
       });
     }
   }
 
   if (project.githubRepoId != null) {
-    const { data: contributors } = await supabaseService.client
+    const { data: ghContributors } = await supabaseService.client
       .from("github_repo_contributors")
       .select("*")
       .eq("user_id", userId)
       .eq("repo_id", project.githubRepoId);
 
-    return (contributors ?? []).map((c) => ({
-      id: c.id as string,
-      name: c.full_name as string,
-      handle: c.contributor_login as string,
-      email: (c.contributor_email as string) ?? undefined,
-      role: displayRoleForRelationship(RELATIONSHIP.CONTRIBUTOR),
-      relationship: RELATIONSHIP.CONTRIBUTOR,
-      avatarUrl: (c.contributor_avatar_url as string) ?? undefined,
-      verified: true,
-      reviewStatus: "Review Pending" as const,
-    }));
+    for (const c of ghContributors ?? []) {
+      contributors.push({
+        id: c.id as string,
+        name: c.full_name as string,
+        handle: c.contributor_login as string,
+        email: (c.contributor_email as string) ?? undefined,
+        role: displayRoleForRelationship(RELATIONSHIP.CONTRIBUTOR),
+        relationship: RELATIONSHIP.CONTRIBUTOR,
+        avatarUrl: (c.contributor_avatar_url as string) ?? undefined,
+        verified: true,
+        reviewStatus: "Review Pending",
+      });
+    }
   }
 
-  return [];
+  return dedupeContributors(contributors);
 }
 
 async function enrichContributorEmails(
@@ -367,7 +425,8 @@ async function ensureContributorVerified(
   contributorId: string,
   contributorEmail?: string,
 ): Promise<PeerReviewContributorView> {
-  const contributors = await fetchContributorsForProject(userId, project);
+  let contributors = await fetchContributorsForProject(userId, project);
+  contributors = await enrichContributorEmails(userId, project, contributors);
   const contributor = contributors.find((c) => contributorIdentityMatches(c, contributorId, contributorEmail));
   if (!contributor) {
     throw new AppError("Only verified contributors of the same project can submit reviews", 403);
@@ -431,6 +490,7 @@ function buildReviewInsertPayload(input: {
   const relationship = input.contributor.relationship;
   const score = trustScoreForRelationship(relationship, true);
   const trustWeight = categoricalTrustWeight(score);
+  const reviewedAt = new Date().toISOString();
 
   return withPeerReviewUserColumns({
     learner_user_id: input.learnerUserId,
@@ -447,6 +507,8 @@ function buildReviewInsertPayload(input: {
     rating: input.rating,
     comment: input.comment,
     recommendation: input.recommendation,
+    review_date: reviewedAt,
+    reviewed_at: reviewedAt,
     review_type: input.reviewType,
     evidence_record_id: input.project.evidenceRecordId ?? null,
     skill_id: input.skillId,
