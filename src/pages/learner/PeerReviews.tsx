@@ -413,7 +413,6 @@ export default function PeerReviewsPage() {
     setInviteOpen(true);
   };
 
-<<<<<<< HEAD
   const resolveInviteSkill = (project: PeerReviewProject, skillName: string) => {
     const skillLink = project.skillLinks.find((s) => s.skillName === skillName)
       ?? project.skillLinks[0];
@@ -423,6 +422,56 @@ export default function PeerReviewsPage() {
       skillId: skillLink?.skillId ?? declaredSkill?.id ?? null,
       skillName: skillLink?.skillName ?? declaredSkill?.name ?? skillName,
     };
+  };
+
+  const resolveInvitationLink = (invitation: ReviewInvitation) => {
+    if (invitation.reviewLink) return invitation.reviewLink;
+    const ctx = contextRequests.find((r) => r.id === invitation.id);
+    const token = invitation.token ?? ctx?.token;
+    if (token) return `${window.location.origin}/review/request/${token}`;
+    return `${window.location.origin}/review/${invitation.id}`;
+  };
+
+  const resendInvitationFromList = async (invitation: ReviewInvitation) => {
+    if (!isApiEnabled()) {
+      toast({
+        title: "Backend required",
+        description: "Start the backend (npm run dev in backend/) and ensure VITE_API_BASE_URL is configured.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const source = invitation.recordSource ?? "peer";
+    if (source === "legacy") {
+      const link = resolveInvitationLink(invitation);
+      await navigator.clipboard.writeText(link);
+      toast({
+        title: "Link copied",
+        description: "Older invitations must be shared manually. Link copied to clipboard.",
+      });
+      return;
+    }
+
+    let apiError = "";
+    const result = await resendPeerReviewInvitationApi(invitation.id, source, (msg) => {
+      apiError = msg;
+    });
+
+    if (!result) {
+      toast({
+        title: "Resend failed",
+        description: apiError || "Could not resend the review invitation.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    await reload();
+    toast({
+      title: "Invitation resent",
+      description: `Review link emailed again to ${invitation.contributorEmail}.`,
+    });
   };
 
   const quickSendInvite = async (c: ProjectContributor) => {
@@ -439,27 +488,10 @@ export default function PeerReviewsPage() {
       toast({
         title: "Skill required",
         description: "Select a declared skill or link this repository to a skill on Integrations.",
-=======
-  const resolveInvitationLink = (invitation: ReviewInvitation) => {
-    if (invitation.reviewLink) return invitation.reviewLink;
-    const ctx = contextRequests.find((r) => r.id === invitation.id);
-    const token = invitation.token ?? ctx?.token;
-    if (token) return `${window.location.origin}/review/request/${token}`;
-    return `${window.location.origin}/review/${invitation.id}`;
-  };
-
-  const resendInvitationFromList = async (invitation: ReviewInvitation) => {
-    if (!isApiEnabled()) {
-      toast({
-        title: "Backend required",
-        description: "Start the backend (npm run dev in backend/) and ensure VITE_API_BASE_URL is configured.",
-        variant: "destructive",
->>>>>>> 68d4572 (peer review update)
       });
       return;
     }
 
-<<<<<<< HEAD
     setSendingInviteId(c.id);
     try {
       if (isApiEnabled()) {
@@ -524,38 +556,6 @@ export default function PeerReviewsPage() {
     } finally {
       setSendingInviteId(null);
     }
-=======
-    const source = invitation.recordSource ?? "peer";
-    if (source === "legacy") {
-      const link = resolveInvitationLink(invitation);
-      await navigator.clipboard.writeText(link);
-      toast({
-        title: "Link copied",
-        description: "Older invitations must be shared manually. Link copied to clipboard.",
-      });
-      return;
-    }
-
-    let apiError = "";
-    const result = await resendPeerReviewInvitationApi(invitation.id, source, (msg) => {
-      apiError = msg;
-    });
-
-    if (!result) {
-      toast({
-        title: "Resend failed",
-        description: apiError || "Could not resend the review invitation.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    await reload();
-    toast({
-      title: "Invitation resent",
-      description: `Review link emailed again to ${invitation.contributorEmail}.`,
-    });
->>>>>>> 68d4572 (peer review update)
   };
 
   const sendInvite = async () => {
@@ -580,8 +580,6 @@ export default function PeerReviewsPage() {
     const inviteTargetName = inviteContrib.name;
     const { skillId, skillName: inviteSkillName } = resolveInviteSkill(selectedProject, inviteSkill);
 
-<<<<<<< HEAD
-=======
     if (inviteResend && inviteResendId) {
       let apiError = "";
       const result = await resendPeerReviewInvitationApi(
@@ -608,12 +606,6 @@ export default function PeerReviewsPage() {
       return;
     }
 
-    const skillLink = selectedProject.skillLinks.find((s) => s.skillName === inviteSkill)
-      ?? selectedProject.skillLinks[0];
-    const declaredSkill = declaredSkills.find((s) => s.name === inviteSkill)
-      ?? declaredSkills.find((s) => s.name === skillForProject);
-    const skillId = skillLink?.skillId ?? declaredSkill?.id;
->>>>>>> 68d4572 (peer review update)
     if (!skillId) {
       toast({
         title: "Skill required",
