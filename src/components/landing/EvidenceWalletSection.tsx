@@ -8,8 +8,6 @@ import {
 import { SectionHeading } from "@/components/landing/SectionHeading";
 import { ScrollReveal } from "@/components/landing/ScrollReveal";
 import {
-  landingBtnPrimary,
-  landingBtnSecondary,
   landingCard,
   landingContainer,
   landingSection,
@@ -80,11 +78,11 @@ export function EvidenceWalletSection() {
 
           <ScrollReveal delay={80}>
             <div id="wallet" className="scroll-mt-[4.25rem]">
-              <div className={`${landingCard} p-6 sm:p-7`}>
-                <div className="border-b border-border/50 pb-4">
-                  <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Competency</p>
+              <div className={`${landingCard} credential-foil overflow-hidden p-6 text-primary-foreground sm:p-7`}>
+                <div className="border-b border-white/15 pb-4">
+                  <p className="text-xs font-medium uppercase tracking-wider text-primary-foreground/70">Digital credential</p>
                   <p className="mt-1 text-xl font-semibold">TypeScript</p>
-                  <p className="text-sm text-muted-foreground">Software Development</p>
+                  <p className="text-sm text-primary-foreground/75">Software Development</p>
                 </div>
 
                 <dl className="mt-4 space-y-2.5 text-sm">
@@ -93,22 +91,22 @@ export function EvidenceWalletSection() {
                     ["Practical task", "Submitted"],
                     ["Task score", "80%"],
                     ["Context reviews", "4"],
-                    ["Latest activity", "Recent"],
-                    ["Record status", "Evidence package updated"],
+                    ["Verification", "Passed"],
+                    ["Record status", "Wallet-ready"],
                   ].map(([label, value]) => (
                     <div key={label} className="flex items-center justify-between gap-4">
-                      <dt className="text-muted-foreground">{label}</dt>
+                      <dt className="text-primary-foreground/75">{label}</dt>
                       <dd className="font-medium">{value}</dd>
                     </div>
                   ))}
                 </dl>
 
                 <div className="mt-5 flex flex-col gap-2 sm:flex-row">
-                  <span className={`${landingBtnSecondary} pointer-events-none opacity-80`} aria-hidden="true">
-                    View Evidence
+                  <span className="inline-flex h-10 items-center justify-center rounded-xl border border-white/20 bg-white/10 px-4 text-xs font-medium backdrop-blur-sm" aria-hidden="true">
+                    View evidence
                   </span>
-                  <span className={`${landingBtnPrimary} pointer-events-none opacity-80`} aria-hidden="true">
-                    Share Selectively
+                  <span className="inline-flex h-10 items-center justify-center rounded-xl bg-white/95 px-4 text-xs font-medium text-primary" aria-hidden="true">
+                    Share selectively
                   </span>
                 </div>
               </div>

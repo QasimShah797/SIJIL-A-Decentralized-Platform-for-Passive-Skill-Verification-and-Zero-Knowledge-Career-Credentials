@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AppShell } from "@/components/sijil/AppShell";
 import { PageHeader } from "@/components/sijil/PageHeader";
+import { ConfirmDestructiveDialog } from "@/components/sijil/ConfirmDestructiveDialog";
 import { Button } from "@/components/ui/button";
 import { RefreshCw, Github, BookOpen, FileUp, FolderSync } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
@@ -120,6 +121,9 @@ export default function Integrations() {
   const [repoSearch, setRepoSearch] = useState("");
   const [languageFilter, setLanguageFilter] = useState<LanguageFilter>("all");
   const [showAllRepos, setShowAllRepos] = useState(false);
+
+  const [disconnectTarget, setDisconnectTarget] = useState<"github" | "moodle" | null>(null);
+  const [disconnecting, setDisconnecting] = useState(false);
 
   const linkedProjects = useMemo(() => ghProjects.filter(isProjectLinked), [ghProjects]);
   const linkedRepoCount = linkedProjects.length;
@@ -310,11 +314,12 @@ export default function Integrations() {
 
   const disconnectGithub = async () => {
     if (!user) return;
-    if (!confirm("Disconnect GitHub and remove all synced GitHub activities and repositories?")) return;
     await disconnectGitHub(user.id);
     clearGitHubState();
     toast({ title: "GitHub disconnected" });
   };
+
+  const handleDisconnectGithub = () => setDisconnectTarget("github");
 
   const handleLinkRepo = async (repoId: string, skillId: string | null, skillName: string | null) => {
     if (!user) return;
@@ -410,7 +415,6 @@ export default function Integrations() {
   const syncMoodle = refreshMoodle;
 
   const disconnectMoodle = async () => {
-    if (!confirm("Disconnect Moodle? Imported activity will remain in your evidence history.")) return;
     try {
       await disconnectMoodleDb();
       setLmsConnected(false);
@@ -426,6 +430,23 @@ export default function Integrations() {
         description: e instanceof Error ? e.message : String(e),
         variant: "destructive",
       });
+    }
+  };
+
+  const handleDisconnectMoodle = () => setDisconnectTarget("moodle");
+
+  const confirmDisconnect = async () => {
+    if (!disconnectTarget) return;
+    setDisconnecting(true);
+    try {
+      if (disconnectTarget === "github") {
+        await disconnectGithub();
+      } else {
+        await disconnectMoodle();
+      }
+      setDisconnectTarget(null);
+    } finally {
+      setDisconnecting(false);
     }
   };
 
@@ -488,7 +509,7 @@ export default function Integrations() {
             primaryLoading={lmsSyncing}
             onConnect={connectMoodle}
             onSync={syncMoodle}
-            onDisconnect={disconnectMoodle}
+            onDisconnect={handleDisconnectMoodle}
             connectLoading={lmsSyncing}
             syncLoading={lmsSyncing}
           />
@@ -512,7 +533,7 @@ export default function Integrations() {
             primaryLoading={syncing}
             onConnect={connectGithub}
             onSync={() => void syncGithub()}
-            onDisconnect={disconnectGithub}
+            onDisconnect={handleDisconnectGithub}
             connectLoading={connecting}
             syncLoading={syncing}
             connectLabel="Connect GitHub"
@@ -573,6 +594,25 @@ export default function Integrations() {
 
         <CertificatesPanel onUpload={uploadCertificate} />
       </div>
+
+      <ConfirmDestructiveDialog
+        open={disconnectTarget === "github"}
+        onOpenChange={(open) => { if (!open) setDisconnectTarget(null); }}
+        title="Disconnect GitHub?"
+        description="This removes your GitHub connection and clears synced repositories and activities from this view. You can reconnect anytime."
+        confirmLabel="Disconnect GitHub"
+        onConfirm={confirmDisconnect}
+        loading={disconnecting}
+      />
+      <ConfirmDestructiveDialog
+        open={disconnectTarget === "moodle"}
+        onOpenChange={(open) => { if (!open) setDisconnectTarget(null); }}
+        title="Disconnect Moodle?"
+        description="Your Moodle connection will be removed. Previously imported LMS activity stays in your evidence history."
+        confirmLabel="Disconnect Moodle"
+        onConfirm={confirmDisconnect}
+        loading={disconnecting}
+      />
     </AppShell>
   );
 }

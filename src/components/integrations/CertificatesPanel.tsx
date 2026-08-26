@@ -1,13 +1,14 @@
 import { FileUp } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { StubControl } from "@/components/sijil/StubControl";
 import { IntegrationEmptyState } from "./IntegrationEmptyState";
+import { Link } from "react-router-dom";
 
 export type CertificatesPanelProps = {
   onUpload: () => void;
 };
 
-export function CertificatesPanel({ onUpload }: CertificatesPanelProps) {
+export function CertificatesPanel({ onUpload: _onUpload }: CertificatesPanelProps) {
   return (
     <Card>
       <CardHeader className="pb-3">
@@ -16,19 +17,26 @@ export function CertificatesPanel({ onUpload }: CertificatesPanelProps) {
           Imported Certificates
         </CardTitle>
       </CardHeader>
-      <CardContent className="pt-0">
+      <CardContent className="space-y-4 pt-0">
         <IntegrationEmptyState
           compact
           icon={FileUp}
           title="No external certificates uploaded"
-          hint="Upload a third-party certificate to include it as supporting evidence."
+          hint="Certificate evidence is coming soon. Connect GitHub or Moodle for verified evidence today."
           action={
-            <Button size="sm" variant="outline" onClick={onUpload}>
-              <FileUp className="h-3.5 w-3.5 mr-1.5" />
-              Upload certificate
-            </Button>
+            <StubControl
+              label="Certificate evidence — coming soon"
+              reason="Certificate upload will be available in a future release. Use GitHub or Moodle integrations as verified evidence sources."
+            />
           }
         />
+        <p className="text-xs text-muted-foreground">
+          Meanwhile, add evidence via{" "}
+          <Link to="/learner/integrations" className="text-primary underline-offset-2 hover:underline">
+            Integrations
+          </Link>
+          .
+        </p>
       </CardContent>
     </Card>
   );

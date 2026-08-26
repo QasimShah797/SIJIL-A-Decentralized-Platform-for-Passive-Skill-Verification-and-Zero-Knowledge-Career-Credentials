@@ -1,10 +1,35 @@
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { AppShell } from "@/components/sijil/AppShell";
 import { PageHeader } from "@/components/sijil/PageHeader";
 import { StatusBadge } from "@/components/sijil/StatusBadge";
+import { ScoreboardStrip } from "@/components/sijil/ScoreboardStrip";
+import { PageSkeleton } from "@/components/sijil/SkeletonLoader";
+import { CardSurface } from "@/components/sijil/CardSurface";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ChevronRight, ClipboardCheck, CheckCircle2, XCircle, BadgeCheck, Check, X } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  ChevronRight,
+  ClipboardCheck,
+  CheckCircle2,
+  XCircle,
+  BadgeCheck,
+  Check,
+  X,
+  Github,
+  BookOpen,
+  Award,
+  Users,
+} from "lucide-react";
 import { useInstitutionAttestationRequests } from "@/hooks/useInstitutionAttestationRequests";
 import { toast } from "@/hooks/use-toast";
 import {
@@ -27,6 +52,10 @@ export default function InstitutionDashboard() {
     rejectRequest,
   } = useInstitutionAttestationRequests();
 
+  const [rejectTarget, setRejectTarget] = useState<InstitutionAttestationRequest | null>(null);
+  const [rejectFeedback, setRejectFeedback] = useState("");
+  const [rejectBusy, setRejectBusy] = useState(false);
+
   const pending = requests.filter((r) => r.status === "pending");
   const approved = requests.filter((r) => r.status === "approved");
   const rejected = requests.filter((r) => r.status === "rejected");
@@ -34,13 +63,14 @@ export default function InstitutionDashboard() {
   const decide = async (
     record: InstitutionAttestationRequest,
     next: "approved" | "rejected",
+    feedback?: string,
   ) => {
     try {
       if (next === "approved") {
         await approveRequest(record.id);
         toast({ title: "Attestation approved", description: "Credential issued to learner wallet." });
       } else {
-        await rejectRequest(record.id, "Rejected by institution reviewer.");
+        await rejectRequest(record.id, feedback?.trim() || undefined);
         toast({ title: "Attestation rejected", description: "Learner has been notified." });
       }
     } catch (e) {
@@ -52,6 +82,34 @@ export default function InstitutionDashboard() {
     }
   };
 
+  const confirmReject = async () => {
+    if (!rejectTarget) return;
+    if (!rejectFeedback.trim()) {
+      toast({
+        title: "Feedback required",
+        description: "Add institution feedback before rejecting.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setRejectBusy(true);
+    try {
+      await decide(rejectTarget, "rejected", rejectFeedback);
+      setRejectTarget(null);
+      setRejectFeedback("");
+    } finally {
+      setRejectBusy(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <AppShell role="institution">
+        <PageSkeleton rows={4} />
+      </AppShell>
+    );
+  }
+
   return (
     <AppShell role="institution">
       <PageHeader
@@ -60,14 +118,15 @@ export default function InstitutionDashboard() {
         actions={<Button onClick={() => navigate("/institution/queue")}>Open Attestation Queue</Button>}
       />
 
-      {loading && <div className="text-sm text-muted-foreground mb-4">Loading…</div>}
-
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-        <SummaryCard icon={<ClipboardCheck className="h-4 w-4" />} label="Pending" value={pending.length} tone="info" />
-        <SummaryCard icon={<CheckCircle2 className="h-4 w-4" />} label="Approved" value={approved.length} tone="verified" />
-        <SummaryCard icon={<XCircle className="h-4 w-4" />} label="Rejected" value={rejected.length} tone="destructive" />
-        <SummaryCard icon={<BadgeCheck className="h-4 w-4" />} label="Institution" value={institutionName} tone="verified" isText />
-      </div>
+      <ScoreboardStrip
+        className="mb-6"
+        items={[
+          { icon: ClipboardCheck, value: pending.length, label: "Pending", accent: "info" },
+          { icon: CheckCircle2, value: approved.length, label: "Approved", accent: "success" },
+          { icon: XCircle, value: rejected.length, label: "Rejected", accent: "warning" },
+          { icon: BadgeCheck, value: institutionName, label: "Institution", accent: "neutral" },
+        ]}
+      />
 
       <Card className="mb-6">
         <CardHeader>
@@ -101,15 +160,13 @@ export default function InstitutionDashboard() {
                       </span>
                     </div>
 
-                    <div className="text-xs text-muted-foreground">
-                      GitHub: {safeEvidenceCount(r.githubEvidence)} · Moodle: {safeEvidenceCount(r.moodleEvidence)} · Certificates: {safeEvidenceCount(r.certificateEvidence)} · Peer reviews: {safeEvidenceCount(r.peerReviewEvidence)}
-                    </div>
+                    <EvidenceChipCluster request={r} />
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     <Button size="sm" onClick={() => decide(r, "approved")}>
                       <Check className="h-3.5 w-3.5 mr-1" />Approve
                     </Button>
-                    <Button size="sm" variant="destructive" onClick={() => decide(r, "rejected")}>
+                    <Button size="sm" variant="destructive" onClick={() => setRejectTarget(r)}>
                       <X className="h-3.5 w-3.5 mr-1" />Reject
                     </Button>
                     <Button size="sm" variant="outline" onClick={() => navigate(`/institution/attestation-request/${r.id}`)}>
@@ -127,7 +184,63 @@ export default function InstitutionDashboard() {
         <ListCard title="Recently Approved" empty="No approvals yet." rows={approved} onOpen={(id) => navigate(`/institution/attestation-request/${id}`)} statusVariant="verified" />
         <ListCard title="Recently Rejected" empty="No rejections yet." rows={rejected} onOpen={(id) => navigate(`/institution/attestation-request/${id}`)} statusVariant="destructive" />
       </div>
+
+      <Dialog
+        open={!!rejectTarget}
+        onOpenChange={(open) => {
+          if (!open) {
+            setRejectTarget(null);
+            setRejectFeedback("");
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reject attestation request</DialogTitle>
+            <DialogDescription>
+              Provide feedback for {rejectTarget ? resolveLearnerName(rejectTarget) : "the learner"}. This is required before rejection.
+            </DialogDescription>
+          </DialogHeader>
+          <Textarea
+            value={rejectFeedback}
+            onChange={(e) => setRejectFeedback(e.target.value)}
+            placeholder="Institution feedback (required for rejection)"
+            rows={4}
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRejectTarget(null)} disabled={rejectBusy}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={() => void confirmReject()} disabled={rejectBusy}>
+              {rejectBusy ? "Please wait…" : "Reject attestation"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AppShell>
+  );
+}
+
+function EvidenceChipCluster({ request }: { request: InstitutionAttestationRequest }) {
+  const chips = [
+    { icon: Github, label: "GitHub", count: safeEvidenceCount(request.githubEvidence) },
+    { icon: BookOpen, label: "Moodle", count: safeEvidenceCount(request.moodleEvidence) },
+    { icon: Award, label: "Certificates", count: safeEvidenceCount(request.certificateEvidence) },
+    { icon: Users, label: "Peer reviews", count: safeEvidenceCount(request.peerReviewEvidence) },
+  ];
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      {chips.map(({ icon: Icon, label, count }) => (
+        <span
+          key={label}
+          className="inline-flex items-center gap-1.5 rounded-full border border-border/70 bg-muted/40 px-2.5 py-1 text-xs text-muted-foreground"
+        >
+          <Icon className="h-3 w-3 shrink-0" aria-hidden />
+          {label}: <span className="font-medium text-foreground tabular-nums">{count}</span>
+        </span>
+      ))}
+    </div>
   );
 }
 
@@ -143,29 +256,6 @@ function CompetencyBlock({ request }: { request: InstitutionAttestationRequest }
   );
 }
 
-function SummaryCard({
-  icon, label, value, tone, isText,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: number | string;
-  tone: "info" | "verified" | "destructive" | "warning";
-  isText?: boolean;
-}) {
-  const toneClass =
-    tone === "verified" ? "text-success" :
-    tone === "destructive" ? "text-destructive" :
-    tone === "warning" ? "text-warning-foreground" : "text-info";
-  return (
-    <Card>
-      <CardContent className="p-4">
-        <div className={`flex items-center gap-2 text-xs ${toneClass}`}>{icon}<span className="text-muted-foreground">{label}</span></div>
-        <div className={`${isText ? "text-sm" : "text-2xl"} font-semibold mt-1 truncate`}>{value}</div>
-      </CardContent>
-    </Card>
-  );
-}
-
 function ListCard({
   title, rows, empty, onOpen, statusVariant,
 }: {
@@ -176,8 +266,10 @@ function ListCard({
   statusVariant: "info" | "verified" | "warning" | "destructive";
 }) {
   return (
-    <Card>
-      <CardHeader><CardTitle className="text-base">{title}</CardTitle></CardHeader>
+    <CardSurface variant="flat" padding="compact" className="overflow-hidden p-0">
+      <CardHeader className="px-5 pt-5 pb-3">
+        <CardTitle className="text-base">{title}</CardTitle>
+      </CardHeader>
       <CardContent className="p-0">
         {rows.length === 0 ? (
           <div className="px-5 py-6 text-sm text-muted-foreground">{empty}</div>
@@ -200,7 +292,6 @@ function ListCard({
           </div>
         )}
       </CardContent>
-    </Card>
+    </CardSurface>
   );
 }
-

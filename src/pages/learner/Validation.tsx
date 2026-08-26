@@ -3,15 +3,19 @@ import { useNavigate, useParams } from "react-router-dom";
 import { AppShell } from "@/components/sijil/AppShell";
 import { PageHeader } from "@/components/sijil/PageHeader";
 import { StatusBadge } from "@/components/sijil/StatusBadge";
+import { PageSkeleton } from "@/components/sijil/SkeletonLoader";
+import { EmptyState } from "@/components/sijil/EmptyState";
+import { PipelineStepper, type PipelineStage as StepperStage } from "@/components/sijil/PipelineStepper";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ArrowRight, ShieldCheck, RefreshCw, Github, ExternalLink, ChevronRight } from "lucide-react";
+import { ArrowRight, ShieldCheck, RefreshCw, Github, ExternalLink, ChevronRight, GitBranch } from "lucide-react";
 import { useDeclaredSkills } from "@/hooks/useLearnerData";
 import { buildAllValidationSummaries, buildValidationSummary, createFallbackValidationSummary, type ValidationSummary } from "@/lib/db/validation";
 import { issueCredentialForSkill } from "@/lib/db/credentials";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
-import { PIPELINE_STAGES, pipelineStageIndex } from "@/lib/competency-pipeline";
+import { PIPELINE_STAGES, pipelineStageIndex, VERIFICATION_STAGE_TOOLTIP } from "@/lib/competency-pipeline";
+import { InfoHint } from "@/components/sijil/InfoHint";
 
 type LinkedRepo = {
   id: string;
@@ -87,7 +91,7 @@ export default function Validation() {
   if (skillsLoading || loading) {
     return (
       <AppShell role="learner">
-        <div className="text-sm text-muted-foreground">Loading validation trail…</div>
+        <PageSkeleton rows={4} />
       </AppShell>
     );
   }
@@ -100,14 +104,12 @@ export default function Validation() {
           description="Current location of each declared competency in the verification pipeline."
         />
         {skills.length === 0 ? (
-          <Card>
-            <CardContent className="py-10 text-center text-sm text-muted-foreground">
-              No declared competencies yet. Declare a skill on your profile first.
-              <div className="mt-4">
-                <Button onClick={() => navigate("/learner/profile")}>Go to profile</Button>
-              </div>
-            </CardContent>
-          </Card>
+          <EmptyState
+            icon={GitBranch}
+            title="No declared competencies yet"
+            description="Declare a skill on your profile first to track its verification pipeline."
+            action={{ label: "Go to profile", onClick: () => navigate("/learner/profile") }}
+          />
         ) : (
           <div className="grid md:grid-cols-2 gap-4">
             {(allSummaries.length > 0 ? allSummaries : skills.map(createFallbackValidationSummary)).map((summary) => (
@@ -144,11 +146,26 @@ export default function Validation() {
   const walletReady = summary.pipelineStage === "wallet_ready" || summary.pipelineStage === "in_wallet";
   const stageIdx = pipelineStageIndex(summary.pipelineStage);
 
+  const pipelineStages: StepperStage[] = [
+    ...PIPELINE_STAGES.map((stage, i) => ({
+      id: stage.key,
+      label: stage.label,
+      status: (i < stageIdx ? "complete" : i === stageIdx ? "current" : "upcoming") as StepperStage["status"],
+    })),
+    ...(summary.pipelineStage === "in_wallet"
+      ? [{ id: "in_wallet", label: "In Wallet", status: "complete" as const }]
+      : []),
+  ];
+
   return (
     <AppShell role="learner">
       <PageHeader
         title="Validation Trail & Supporting Evidence"
         description="An evidence-driven view of what supports this skill. SIJIL surfaces the trail — it does not declare a final expertise label."
+        breadcrumbs={[
+          { label: "Validation", href: "/learner/validation" },
+          { label: summary.skill },
+        ]}
         actions={
           <>
             {walletReady && (
@@ -171,21 +188,15 @@ export default function Validation() {
       <PipelineCard summary={summary} showStages className="mb-6" />
 
       <Card className="mb-6">
-        <CardHeader><CardTitle className="text-base">Pipeline stages</CardTitle></CardHeader>
+        <CardHeader><CardTitle className="text-base">Pipeline progress</CardTitle></CardHeader>
         <CardContent>
-          <div className="flex flex-wrap gap-2">
-            {PIPELINE_STAGES.map((stage, i) => (
-              <StatusBadge
-                key={stage.key}
-                variant={i <= stageIdx ? "verified" : "neutral"}
-              >
-                {stage.label}
-              </StatusBadge>
-            ))}
-            {summary.pipelineStage === "in_wallet" && (
-              <StatusBadge variant="verified">In Wallet</StatusBadge>
-            )}
-          </div>
+          <PipelineStepper stages={pipelineStages} />
+          <p className="mt-4 flex items-start gap-2 text-xs text-muted-foreground">
+            <InfoHint text={VERIFICATION_STAGE_TOOLTIP} />
+            <span>
+              <strong className="text-foreground">Verification</strong> — {VERIFICATION_STAGE_TOOLTIP}
+            </span>
+          </p>
         </CardContent>
       </Card>
 
@@ -218,9 +229,13 @@ export default function Validation() {
         </CardHeader>
         <CardContent className="p-0">
           {summary.rows.length === 0 ? (
-            <div className="px-6 py-10 text-sm text-muted-foreground text-center">
-              No evidence linked yet. Connect GitHub or LMS and sync your portfolio.
-            </div>
+            <EmptyState
+              icon={Github}
+              title="No evidence linked yet"
+              description="Connect GitHub or LMS and sync your portfolio to populate supporting records."
+              action={{ label: "Open integrations", onClick: () => navigate("/learner/integrations") }}
+              className="mx-6 my-6 border-0 bg-transparent"
+            />
           ) : (
             <div className="divide-y">
               {summary.rows.map((row, i) => (

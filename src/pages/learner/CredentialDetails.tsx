@@ -4,9 +4,12 @@ import { AppShell } from "@/components/sijil/AppShell";
 import { PageHeader } from "@/components/sijil/PageHeader";
 import { StatusBadge } from "@/components/sijil/StatusBadge";
 import { FieldRow } from "@/components/sijil/FieldRow";
+import { PageSkeleton } from "@/components/sijil/SkeletonLoader";
+import { EmptyState } from "@/components/sijil/EmptyState";
+import { StubControl } from "@/components/sijil/StubControl";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Share2, ShieldCheck, Download, FileText, Github, BookOpen, FileUp, MessageSquare, ExternalLink } from "lucide-react";
+import { ArrowLeft, Share2, ShieldCheck, FileText, Github, BookOpen, FileUp, MessageSquare, ExternalLink } from "lucide-react";
 import { useCredentials } from "@/hooks/useLearnerData";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -56,7 +59,7 @@ export default function CredentialDetails() {
   if (loading) {
     return (
       <AppShell role="learner">
-        <div className="text-sm text-muted-foreground">Loading credential…</div>
+        <PageSkeleton rows={4} />
       </AppShell>
     );
   }
@@ -121,9 +124,12 @@ export default function CredentialDetails() {
 
           <Section title="Supporting records">
             {repoEvidence.length === 0 ? (
-              <div className="py-6 text-sm text-muted-foreground text-center">
-                No linked evidence yet. Sync GitHub to link repositories matching {c.skill}.
-              </div>
+              <EmptyState
+                icon={Github}
+                title="No linked evidence yet"
+                description={`Sync GitHub to link repositories matching ${c.skill}.`}
+                className="border-0 bg-transparent py-4"
+              />
             ) : (
               <div>
                 <div className="text-[11px] uppercase tracking-wider text-muted-foreground mb-1">
@@ -152,9 +158,11 @@ export default function CredentialDetails() {
           </Section>
 
           <Section title="Reviews & endorsements">
-            <Endorsement who="Dr. S. Aslam" role="Mentor" text={`Demonstrated solid grasp of ${c.skill} concepts and applied practice.`} />
-            <Endorsement who="A. Raza" role="Teacher" text="Consistently strong submissions across the module." />
-            <div className="text-xs text-muted-foreground pt-1">Review count = 3</div>
+            <div className="sample-preview-watermark space-y-0">
+              <Endorsement who="Dr. S. Aslam" role="Mentor" text={`Demonstrated solid grasp of ${c.skill} concepts and applied practice.`} />
+              <Endorsement who="A. Raza" role="Teacher" text="Consistently strong submissions across the module." />
+            </div>
+            <div className="text-xs text-muted-foreground pt-1">Review count = 3 · sample preview data</div>
           </Section>
 
           <Section title="Linked assessment records">
@@ -175,7 +183,11 @@ export default function CredentialDetails() {
 
           <Card>
             <CardContent className="p-4 space-y-2">
-              <Button variant="outline" className="w-full justify-start"><Download className="h-4 w-4 mr-2" />Export as VC JSON-LD</Button>
+              <StubControl
+                label="Export as VC JSON-LD"
+                reason="Verifiable Credential export will be available in a future wallet release."
+                className="w-full justify-start"
+              />
               <Button variant="outline" className="w-full justify-start" onClick={() => navigate(`/learner/credential/${encodeURIComponent(c.id)}/proof`)}>
                 <ShieldCheck className="h-4 w-4 mr-2" />View proof
               </Button>

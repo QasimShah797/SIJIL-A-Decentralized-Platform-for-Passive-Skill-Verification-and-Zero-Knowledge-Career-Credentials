@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { DotProgress } from "@/components/sijil/DotProgress";
+import { PublicSurfaceLayout } from "@/components/sijil/PublicSurfaceLayout";
 import { toast } from "@/hooks/use-toast";
 import { getGitHubOAuthReturnTo, loadGitHubOAuthContext } from "@/lib/github-env";
 import {
@@ -15,6 +17,7 @@ export default function GitHubCallback() {
   const navigate = useNavigate();
   const ran = useRef(false);
   const [msg, setMsg] = useState("Completing GitHub connection…");
+  const [step, setStep] = useState<0 | 1 | 2>(0);
 
   useEffect(() => {
     if (ran.current) return;
@@ -37,6 +40,7 @@ export default function GitHubCallback() {
         const { data: sessionData } = await supabase.auth.getSession();
         if (!sessionData.session) throw new Error("You must be signed in to connect GitHub");
 
+        setStep(1);
         setMsg("Exchanging authorization code…");
         const result = await completeGitHubOAuth(code, state);
 
@@ -47,6 +51,7 @@ export default function GitHubCallback() {
           !skipPortfolioSync &&
           (!sync || (sync.repos === 0 && sync.synced === 0))
         ) {
+          setStep(2);
           setMsg("Syncing repositories and activity from GitHub…");
           const [skills, credentials] = await Promise.all([
             fetchDeclaredSkills(userId),
@@ -57,6 +62,9 @@ export default function GitHubCallback() {
             credentials.map((c) => ({ skill: c.skill })),
           );
           sync = await syncGitHubPortfolio(allSkills);
+        } else {
+          setStep(2);
+          setMsg("Finalizing connection…");
         }
 
         const syncNote =
@@ -80,11 +88,12 @@ export default function GitHubCallback() {
   }, [navigate]);
 
   return (
-    <div className="min-h-screen grid place-items-center text-muted-foreground">
-      <div className="text-center">
+    <PublicSurfaceLayout className="grid place-items-center px-6">
+      <div className="text-center text-muted-foreground">
+        <DotProgress step={step} className="mb-6" />
         <div className="animate-pulse text-foreground font-medium mb-1">SIJIL</div>
         <div className="text-sm">{msg}</div>
       </div>
-    </div>
+    </PublicSurfaceLayout>
   );
 }

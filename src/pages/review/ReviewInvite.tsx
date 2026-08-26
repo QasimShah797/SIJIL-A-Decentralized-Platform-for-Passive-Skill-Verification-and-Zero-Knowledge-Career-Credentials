@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/select";
 import { ShieldCheck, MessageSquare, Star } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
+import { ReviewFlowStepper, RATING_LABELS, type ReviewFlowStep } from "@/components/sijil/ReviewFlowStepper";
 import { useAuth } from "@/hooks/useAuth";
 import {
   findInvitationByToken,
@@ -252,6 +253,7 @@ export default function ReviewInvite() {
   if (state === "submitted") {
     return (
       <Shell>
+        <ReviewFlowStepper step="done" className="mb-6" />
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -268,6 +270,9 @@ export default function ReviewInvite() {
 
   if (!invitation) return null;
 
+  const flowStep: ReviewFlowStep =
+    state === "submitted" ? "done" : state === "review_form" ? "review" : "identity";
+
   const skillLabel = invitation.competency_name ?? "Skill claim";
   const projectLabel = invitation.project_name
     ? `${invitation.project_name}${invitation.source ? ` (${invitation.source})` : ""}`
@@ -275,6 +280,8 @@ export default function ReviewInvite() {
 
   return (
     <Shell>
+      <ReviewFlowStepper step={flowStep} className="mb-6" />
+
       <Card className="mb-4">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -347,12 +354,17 @@ export default function ReviewInvite() {
           <CardContent className="space-y-4">
             <div className="grid sm:grid-cols-2 gap-3">
               <div>
-                <Label>Confidence (1–5)</Label>
+                <Label className="text-sm font-medium">Confidence (1–5)</Label>
                 <Select value={String(confidence)} onValueChange={(v) => setConfidence(Number(v))}>
-                  <SelectTrigger className="mt-1.5"><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="mt-1.5 h-11">
+                    <SelectValue />
+                  </SelectTrigger>
                   <SelectContent>
                     {[1, 2, 3, 4, 5].map((n) => (
-                      <SelectItem key={n} value={String(n)}>{n} ★</SelectItem>
+                      <SelectItem key={n} value={String(n)} className="py-2.5 text-sm">
+                        <span className="font-medium">{n} ★</span>
+                        <span className="ml-2 text-muted-foreground">{RATING_LABELS[n]}</span>
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -380,10 +392,13 @@ export default function ReviewInvite() {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <div className="flex items-center text-amber-500 text-sm">
-                {Array.from({ length: 5 }).map((_, i) => (
-                  <Star key={i} className={`h-4 w-4 ${i < confidence ? "fill-current" : "opacity-30"}`} />
-                ))}
+              <div className="flex flex-col gap-1">
+                <div className="flex items-center text-amber-500">
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <Star key={i} className={`h-5 w-5 ${i < confidence ? "fill-current" : "opacity-30"}`} />
+                  ))}
+                </div>
+                <span className="text-sm font-medium text-foreground">{RATING_LABELS[confidence]}</span>
               </div>
               <Button className="ml-auto" onClick={() => void submitReview()} disabled={submitting}>
                 {submitting ? "Submitting…" : "Submit review"}

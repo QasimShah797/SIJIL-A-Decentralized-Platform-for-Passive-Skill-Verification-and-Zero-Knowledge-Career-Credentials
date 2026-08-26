@@ -1,7 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { AppShell } from "@/components/sijil/AppShell";
 import { PageHeader } from "@/components/sijil/PageHeader";
 import { StatusBadge } from "@/components/sijil/StatusBadge";
+import { PageSkeleton } from "@/components/sijil/SkeletonLoader";
+import { EmptyState } from "@/components/sijil/EmptyState";
+import { ScoreboardStrip } from "@/components/sijil/ScoreboardStrip";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,7 +17,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import {
   Github, GraduationCap, Sparkles, Users, ShieldCheck, AlertTriangle, CircleSlash,
   Star, Mail, Download, MessageSquare, Copy, Link as LinkIcon, ExternalLink,
-  RefreshCw, Eye, Inbox,
+  RefreshCw, Eye, Inbox, Award, Clock,
 } from "lucide-react";
 import {
   computeTrustSignals,
@@ -140,6 +144,7 @@ function contributorToInviteReviewer(
 }
 
 export default function PeerReviewsPage() {
+  const navigate = useNavigate();
   const { user } = useAuth();
   const { skills: declaredSkills } = useDeclaredSkills();
   const [loading, setLoading] = useState(true);
@@ -746,27 +751,38 @@ export default function PeerReviewsPage() {
       />
 
       {loading ? (
-        <div className="text-sm text-muted-foreground mb-6">Loading your reviews…</div>
+        <div className="mb-6"><PageSkeleton rows={4} /></div>
       ) : declaredSkills.length === 0 ? (
-        <div className="rounded-md border p-6 text-sm text-muted-foreground mb-6">
-          No declared competencies yet. Add a competency on <strong>My Profile</strong> and link GitHub evidence on <strong>Integrations</strong> before requesting peer reviews.
-        </div>
+        <EmptyState
+          icon={Award}
+          title="No declared competencies"
+          description="Add a competency on My Profile and link GitHub evidence on Integrations before requesting peer reviews."
+          className="mb-6"
+        />
       ) : projects.length === 0 ? (
-        <div className="rounded-md border p-6 text-sm text-muted-foreground mb-6">
-          No project evidence is linked to your declared competencies yet. Open <strong>Integrations</strong>, connect GitHub, and sync repositories against an active competency.
-        </div>
+        <EmptyState
+          icon={Github}
+          title="No linked project evidence"
+          description="Connect GitHub on Integrations and sync repositories against an active competency."
+          action={{ label: "Open integrations", onClick: () => navigate("/learner/integrations") }}
+          className="mb-6"
+        />
       ) : null}
 
       {/* Trust signals summary */}
       {declaredSkills.length > 0 && (
       <>
-      <div className="grid grid-cols-2 md:grid-cols-6 gap-3 mb-6">
-        <Stat label="Total reviews" value={signals.total} />
-        <Stat label="Context verified" value={signals.verifiedContext} />
-        <Stat label="Imported" value={signals.imported} />
-        <Stat label="From SIJIL form" value={signals.sijil} />
-        <Stat label="High trust" value={signals.highTrust} />
-        <Stat label="Pending invites" value={apiStats?.pendingInvites ?? invitations.filter((i) => i.status !== "Completed").length} />
+      <div className="mb-6">
+        <ScoreboardStrip
+          items={[
+            { icon: MessageSquare, value: signals.total, label: "Total reviews" },
+            { icon: ShieldCheck, value: signals.verifiedContext, label: "Context verified", accent: "success" },
+            { icon: Download, value: signals.imported, label: "Imported" },
+            { icon: Sparkles, value: signals.sijil, label: "From SIJIL form", accent: "info" },
+            { icon: Award, value: signals.highTrust, label: "High trust", accent: "success" },
+            { icon: Clock, value: apiStats?.pendingInvites ?? invitations.filter((i) => i.status !== "Completed").length, label: "Pending invites", accent: "warning" },
+          ]}
+        />
       </div>
 
       <div className="grid lg:grid-cols-3 gap-6 mb-6">
@@ -1074,7 +1090,12 @@ export default function PeerReviewsPage() {
           <div className="divide-y">
             {reviews.map((r) => <ReviewCard key={r.id} r={r} />)}
             {reviews.length === 0 && (
-              <div className="p-6 text-sm text-muted-foreground">No peer reviews yet.</div>
+              <EmptyState
+                icon={MessageSquare}
+                title="No peer reviews yet"
+                description="Invite verified project contributors to submit context-verified reviews."
+                className="m-6 border-0 bg-transparent"
+              />
             )}
           </div>
         </CardContent>
@@ -1264,13 +1285,4 @@ export function ReviewCard({ r }: { r: PeerReview & Record<string, unknown> }) {
 
 function contactEmailForDisplay(email: string): boolean {
   return Boolean(email.trim());
-}
-
-function Stat({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="rounded-md border bg-card p-3">
-      <div className="text-[11px] text-muted-foreground">{label}</div>
-      <div className="text-base font-semibold mt-0.5">{value}</div>
-    </div>
-  );
 }

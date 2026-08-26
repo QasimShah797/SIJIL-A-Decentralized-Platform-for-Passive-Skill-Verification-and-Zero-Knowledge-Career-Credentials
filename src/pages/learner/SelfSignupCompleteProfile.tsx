@@ -24,6 +24,8 @@ import {
 import { toast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { Field } from "@/components/sijil/Field";
+import { PageSkeleton } from "@/components/sijil/SkeletonLoader";
+import { PipelineStepper } from "@/components/sijil/PipelineStepper";
 import { VerifiedProfessionalAccounts } from "@/components/profile/VerifiedProfessionalAccounts";
 import {
   fetchLearnerProfileRow,
@@ -133,7 +135,7 @@ export default function SelfSignupCompleteProfile() {
         const row = await fetchLearnerProfileRow(user.id);
         if (cancelled) return;
 
-        if (!row || row.institution_id) {
+        if (!row) {
           navigate("/login/learner", { replace: true });
           return;
         }
@@ -317,14 +319,20 @@ export default function SelfSignupCompleteProfile() {
 
   if (authLoading || checking) {
     return (
-      <div className="min-h-screen grid place-items-center text-muted-foreground">
-        <div className="text-center">
-          <div className="animate-pulse text-foreground font-medium mb-1">SIJIL</div>
-          <div className="text-sm">Loading…</div>
+      <div className="min-h-screen px-4 py-10">
+        <div className="mx-auto max-w-2xl">
+          <PageSkeleton rows={5} />
         </div>
       </div>
     );
   }
+
+  const stepperStages = [
+    { id: "personal", label: "Personal", status: progress >= 25 ? "complete" as const : "current" as const },
+    { id: "education", label: "Education", status: progress >= 50 ? "complete" as const : progress >= 25 ? "current" as const : "upcoming" as const },
+    { id: "professional", label: "Links", status: progress >= 75 ? "complete" as const : progress >= 50 ? "current" as const : "upcoming" as const },
+    { id: "about", label: "About", status: progress >= 100 ? "complete" as const : progress >= 75 ? "current" as const : "upcoming" as const },
+  ];
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-secondary/40 px-4 py-10">
@@ -334,12 +342,15 @@ export default function SelfSignupCompleteProfile() {
           Finish your professional learner profile before accessing the dashboard.
         </p>
 
-        <div className="mb-6 space-y-2">
-          <div className="flex items-center justify-between text-xs text-muted-foreground">
-            <span>Profile progress</span>
-            <span>{progress}%</span>
+        <div className="mb-6 space-y-4">
+          <PipelineStepper stages={stepperStages} />
+          <div className="space-y-2">
+            <div className="flex items-center justify-between text-xs text-muted-foreground">
+              <span>Profile progress</span>
+              <span>{progress}%</span>
+            </div>
+            <Progress value={progress} className="h-2" />
           </div>
-          <Progress value={progress} className="h-2" />
         </div>
 
         <form onSubmit={finish} className="space-y-6">

@@ -4,6 +4,7 @@ import { ShieldCheck, Lock, Mail, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PublicSurfaceLayout } from "@/components/sijil/PublicSurfaceLayout";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -85,12 +86,7 @@ export default function InstitutionLogin() {
   };
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-gradient-to-br from-background via-background to-secondary/40 px-4 py-10">
-      <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="absolute -top-32 -left-32 h-96 w-96 rounded-full bg-primary/10 blur-3xl" />
-        <div className="absolute -bottom-32 -right-32 h-[28rem] w-[28rem] rounded-full bg-info/10 blur-3xl" />
-      </div>
-
+    <PublicSurfaceLayout className="flex items-center justify-center px-4 py-10">
       <div className="relative w-full max-w-md">
         <Link to="/" className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
           <ArrowLeft className="h-4 w-4" /> Back to home
@@ -104,7 +100,7 @@ export default function InstitutionLogin() {
           <div className="mt-1 text-sm text-muted-foreground">Institution sign in</div>
         </div>
 
-        <div className="rounded-2xl border border-border/70 bg-card/95 p-6 shadow-[0_2px_4px_hsl(222_47%_11%/0.04),0_24px_64px_-24px_hsl(222_47%_11%/0.18)] backdrop-blur sm:p-8">
+        <div className="elevated-panel rounded-2xl border border-border/70 bg-card p-6 sm:p-8">
           <h2 className="text-2xl font-semibold tracking-tight">Welcome back</h2>
           <p className="mt-1 text-sm text-muted-foreground">
             Sign in with the institution credentials provided by SIJIL.
@@ -120,7 +116,7 @@ export default function InstitutionLogin() {
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="pl-9"
+                  className="rounded-xl pl-9"
                   placeholder="institution@university.edu"
                   autoComplete="email"
                 />
@@ -135,14 +131,14 @@ export default function InstitutionLogin() {
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="pl-9"
+                  className="rounded-xl pl-9"
                   placeholder="••••••••"
                   autoComplete="current-password"
                 />
               </div>
             </div>
 
-            <Button type="submit" disabled={busy} className="w-full shadow-md transition-all hover:-translate-y-0.5 hover:shadow-lg">
+            <Button type="submit" disabled={busy} className="w-full rounded-xl shadow-md transition-all hover:-translate-y-0.5 hover:shadow-lg">
               <ShieldCheck className="mr-2 h-4 w-4" /> Sign in as Institution
             </Button>
           </form>
@@ -152,6 +148,6 @@ export default function InstitutionLogin() {
           </p>
         </div>
       </div>
-    </div>
+    </PublicSurfaceLayout>
   );
 }

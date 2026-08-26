@@ -71,6 +71,10 @@ export default {
           border: "hsl(var(--sidebar-border))",
           ring: "hsl(var(--sidebar-ring))",
         },
+        "neutral-muted": {
+          DEFAULT: "hsl(var(--neutral-muted))",
+          foreground: "hsl(var(--neutral-muted-foreground))",
+        },
       },
       borderRadius: {
         lg: "var(--radius)",

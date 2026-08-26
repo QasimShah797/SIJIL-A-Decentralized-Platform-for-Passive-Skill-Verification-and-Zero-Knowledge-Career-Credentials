@@ -1,5 +1,5 @@
 // SIJIL - shared mock data using W3C VC / DID / Open Badges 3.0 style fields
-export type Role = "learner" | "institution" | "recruiter";
+export type Role = "learner" | "recruiter";
 
 export const learnerProfile = {
   name: "Syed Qasim Ali Shah Kazmi",

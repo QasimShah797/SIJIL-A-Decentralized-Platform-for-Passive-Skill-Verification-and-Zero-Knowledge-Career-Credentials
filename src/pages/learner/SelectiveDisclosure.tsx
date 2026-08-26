@@ -3,10 +3,12 @@ import { useEffect, useMemo, useState } from "react";
 import { AppShell } from "@/components/sijil/AppShell";
 import { PageHeader } from "@/components/sijil/PageHeader";
 import { StatusBadge } from "@/components/sijil/StatusBadge";
+import { PageSkeleton } from "@/components/sijil/SkeletonLoader";
+import { StubControl } from "@/components/sijil/StubControl";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
-import { ArrowLeft, Copy, QrCode, Ban, EyeOff, Eye, ExternalLink } from "lucide-react";
+import { ArrowLeft, Copy, Ban, EyeOff, Eye, ExternalLink } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useCredentials, useLearnerProfile } from "@/hooks/useLearnerData";
 import { getCredentialDbId } from "@/lib/db/credentials";
@@ -54,8 +56,21 @@ export default function SelectiveDisclosure() {
   );
   const shareUrl = `${window.location.origin}/recruiter/verify/${encodeURIComponent(token)}`;
 
+  const safeFieldIds = new Set(["credentialName", "skill", "verification", "issuer", "validFrom"]);
+  const safeFields = allFields.filter((f) => safeFieldIds.has(f.id));
+  const sensitiveFields = allFields.filter((f) => !safeFieldIds.has(f.id));
   const visible = allFields.filter((f) => selected[f.id]);
   const hidden = allFields.filter((f) => !selected[f.id]);
+
+  const renderFieldToggle = (f: (typeof allFields)[number]) => (
+    <div key={f.id} className="flex items-center justify-between gap-3 rounded-md border p-3">
+      <div className="min-w-0">
+        <div className="text-sm font-medium">{f.label}</div>
+        <div className="text-xs text-muted-foreground truncate">{f.value}</div>
+      </div>
+      <Switch checked={!!selected[f.id]} onCheckedChange={() => toggle(f.id)} />
+    </div>
+  );
 
   const persist = async () => {
     if (!user || !c || !profile) return;
@@ -93,7 +108,11 @@ export default function SelectiveDisclosure() {
   };
 
   if (loading) {
-    return <AppShell role="learner"><div className="text-sm text-muted-foreground">Loading…</div></AppShell>;
+    return (
+      <AppShell role="learner">
+        <PageSkeleton rows={3} />
+      </AppShell>
+    );
   }
 
   if (!c) {
@@ -105,11 +124,18 @@ export default function SelectiveDisclosure() {
     );
   }
 
+  const encodedId = encodeURIComponent(c.id);
+
   return (
     <AppShell role="learner">
       <PageHeader
         title="Selective Disclosure"
         description="Choose exactly what a verifier sees. Hidden fields remain bound to the credential but are not revealed."
+        breadcrumbs={[
+          { label: "Wallet", href: "/learner/wallet" },
+          { label: c.name, href: `/learner/credential/${encodedId}` },
+          { label: "Share" },
+        ]}
         actions={
           <Button variant="outline" onClick={() => navigate(`/learner/credential/${encodeURIComponent(c.id)}`)}>
             <ArrowLeft className="h-4 w-4 mr-1.5" />Back to details
@@ -120,16 +146,16 @@ export default function SelectiveDisclosure() {
       <div className="grid lg:grid-cols-2 gap-6">
         <Card>
           <CardHeader><CardTitle className="text-base">Fields to disclose</CardTitle></CardHeader>
-          <CardContent className="space-y-3">
-            {allFields.map((f) => (
-              <div key={f.id} className="flex items-center justify-between gap-3 rounded-md border p-3">
-                <div className="min-w-0">
-                  <div className="text-sm font-medium">{f.label}</div>
-                  <div className="text-xs text-muted-foreground truncate">{f.value}</div>
-                </div>
-                <Switch checked={!!selected[f.id]} onCheckedChange={() => toggle(f.id)} />
-              </div>
-            ))}
+          <CardContent className="space-y-4">
+            <div>
+              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Safe to share</h3>
+              <div className="space-y-2">{safeFields.map(renderFieldToggle)}</div>
+            </div>
+            <div>
+              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Sensitive fields</h3>
+              <p className="mb-2 text-xs text-muted-foreground">These may reveal internal metadata or full evidence history.</p>
+              <div className="space-y-2">{sensitiveFields.map(renderFieldToggle)}</div>
+            </div>
           </CardContent>
         </Card>
 
@@ -162,7 +188,10 @@ export default function SelectiveDisclosure() {
 
             <div className="flex flex-wrap gap-2">
               <Button onClick={persist} disabled={isRevoked}><ExternalLink className="h-4 w-4 mr-1.5" />Save & share</Button>
-              <Button variant="outline" onClick={() => toast({ title: "QR code", description: "QR generation coming soon" })}><QrCode className="h-4 w-4 mr-1.5" />QR</Button>
+              <StubControl
+                label="QR code"
+                reason="QR presentation sharing is planned for a future release."
+              />
               <Button variant="destructive" onClick={revoke} disabled={isRevoked}><Ban className="h-4 w-4 mr-1.5" />Revoke</Button>
             </div>
             {isRevoked && <StatusBadge variant="destructive" className="mt-3">Revoked</StatusBadge>}

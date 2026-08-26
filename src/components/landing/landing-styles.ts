@@ -4,7 +4,7 @@ export const landingContainer = "landing-container mx-auto w-full max-w-[1220px]
 
 export const landingSection = "landing-section scroll-mt-[4.25rem]";
 
-export const landingSectionAlt = "bg-muted/35 dark:bg-muted/20";
+export const landingSectionAlt = "bg-secondary/50 dark:bg-secondary/25";
 
 export const landingCard =
   "rounded-[1.125rem] border border-border/60 bg-card shadow-sm transition-shadow duration-200 hover:shadow-md";

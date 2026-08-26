@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/select";
 import { ShieldCheck, MessageSquare, Star, AlertTriangle } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
+import { ReviewFlowStepper, RATING_LABELS, type ReviewFlowStep } from "@/components/sijil/ReviewFlowStepper";
 import {
   getReviewRequestByTokenApi,
   submitContextReviewApi,
@@ -154,6 +155,7 @@ export default function ContextReviewRequest() {
   if (pageState === "submitted") {
     return (
       <Shell>
+        <ReviewFlowStepper step="done" className="mb-6" />
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -205,8 +207,13 @@ export default function ContextReviewRequest() {
     }
   };
 
+  const flowStep: ReviewFlowStep =
+    pageState === "review_form" ? "review" : pageState === "submitted" ? "done" : "identity";
+
   return (
     <Shell>
+      <ReviewFlowStepper step={flowStep} className="mb-6" />
+
       <Card className="mb-4">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -274,13 +281,21 @@ export default function ContextReviewRequest() {
             </div>
             <div className="grid sm:grid-cols-2 gap-3">
               <div>
-                <Label>Rating (1–5)</Label>
+                <Label className="text-sm font-medium">Rating (1–5)</Label>
                 <Select value={String(rating)} onValueChange={(v) => setRating(Number(v))}>
-                  <SelectTrigger className="mt-1.5"><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="mt-1.5 h-11">
+                    <SelectValue />
+                  </SelectTrigger>
                   <SelectContent>
-                    {[1, 2, 3, 4, 5].map((n) => <SelectItem key={n} value={String(n)}>{n} ★</SelectItem>)}
+                    {[1, 2, 3, 4, 5].map((n) => (
+                      <SelectItem key={n} value={String(n)} className="py-2.5 text-sm">
+                        <span className="font-medium">{n} ★</span>
+                        <span className="ml-2 text-muted-foreground">{RATING_LABELS[n]}</span>
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
+                <p className="mt-2 text-sm font-medium text-foreground">{RATING_LABELS[rating]}</p>
               </div>
               <div>
                 <Label>Recommendation</Label>

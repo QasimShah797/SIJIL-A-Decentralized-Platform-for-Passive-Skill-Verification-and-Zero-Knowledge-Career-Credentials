@@ -4,6 +4,10 @@ import { ShieldCheck, Lock, ArrowLeft, GraduationCap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PublicSurfaceLayout } from "@/components/sijil/PublicSurfaceLayout";
+import { FieldRow } from "@/components/sijil/FieldRow";
+import { PasswordRequirements } from "@/components/sijil/PasswordRequirements";
+import { CardSurface } from "@/components/sijil/CardSurface";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { isApiEnabled } from "@/services/api/client";
@@ -82,7 +86,7 @@ export default function ActivateAccount() {
   };
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-gradient-to-br from-background via-background to-secondary/40 px-4 py-10">
+    <PublicSurfaceLayout className="flex items-center justify-center px-4 py-10">
       <div className="relative w-full max-w-lg">
         <Link to="/" className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
           <ArrowLeft className="h-4 w-4" /> Back to home
@@ -94,7 +98,7 @@ export default function ActivateAccount() {
           <div className="mt-1 text-sm text-muted-foreground">First-time account activation</div>
         </div>
 
-        <div className="rounded-2xl border border-border/70 bg-card/95 p-6 shadow-lg sm:p-8">
+        <CardSurface variant="elevated" className="sm:p-8">
           <h1 className="text-2xl font-semibold tracking-tight">Activate Your SIJIL Account</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Set your password to activate the account created by your institution. This is not normal login.
@@ -110,41 +114,20 @@ export default function ActivateAccount() {
 
           {preview && (
             <>
-              <div className="mt-6 space-y-3 rounded-lg border bg-muted/30 p-4 text-sm">
-                <div className="flex items-center gap-2 font-medium text-foreground">
+              <div className="mt-6">
+                <div className="mb-3 flex items-center gap-2 text-sm font-medium text-foreground">
                   <GraduationCap className="h-4 w-4 text-primary" />
                   Verified student details
                 </div>
-                <dl className="grid gap-2 sm:grid-cols-2">
-                  <div>
-                    <dt className="text-xs text-muted-foreground">Full name</dt>
-                    <dd className="font-medium">{preview.fullName}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs text-muted-foreground">University email</dt>
-                    <dd className="font-medium break-all">{preview.universityEmail}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs text-muted-foreground">Registration number</dt>
-                    <dd className="font-medium">{preview.registrationNumber}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs text-muted-foreground">Institution</dt>
-                    <dd className="font-medium">{preview.institutionName}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs text-muted-foreground">Department</dt>
-                    <dd className="font-medium">{preview.department}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs text-muted-foreground">Program</dt>
-                    <dd className="font-medium">{preview.program}</dd>
-                  </div>
-                  <div className="sm:col-span-2">
-                    <dt className="text-xs text-muted-foreground">Batch / semester</dt>
-                    <dd className="font-medium">{preview.batchSemester}</dd>
-                  </div>
-                </dl>
+                <div className="rounded-xl border border-border/60 bg-muted/20 px-4">
+                  <FieldRow label="Full name" value={preview.fullName} />
+                  <FieldRow label="University email" value={preview.universityEmail} />
+                  <FieldRow label="Registration number" value={preview.registrationNumber} />
+                  <FieldRow label="Institution" value={preview.institutionName} />
+                  <FieldRow label="Department" value={preview.department} />
+                  <FieldRow label="Program" value={preview.program} />
+                  <FieldRow label="Batch / semester" value={preview.batchSemester} className="border-0" />
+                </div>
               </div>
 
               <form onSubmit={submit} className="mt-6 space-y-4">
@@ -157,14 +140,12 @@ export default function ActivateAccount() {
                       type="password"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      className="pl-9"
+                      className="rounded-xl pl-9"
                       autoComplete="new-password"
                       placeholder="••••••••"
                     />
                   </div>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    At least 8 characters with uppercase, lowercase, number, and special character.
-                  </p>
+                  <PasswordRequirements password={password} />
                 </div>
                 <div>
                   <Label htmlFor="confirmPassword">Confirm password</Label>
@@ -175,21 +156,21 @@ export default function ActivateAccount() {
                       type="password"
                       value={confirmPassword}
                       onChange={(e) => setConfirmPassword(e.target.value)}
-                      className="pl-9"
+                      className="rounded-xl pl-9"
                       autoComplete="new-password"
                       placeholder="••••••••"
                     />
                   </div>
                 </div>
-                <Button type="submit" disabled={busy} className="w-full">
+                <Button type="submit" disabled={busy} className="w-full rounded-xl">
                   <ShieldCheck className="mr-2 h-4 w-4" />
                   {busy ? "Activating…" : "Activate account"}
                 </Button>
               </form>
             </>
           )}
-        </div>
+        </CardSurface>
       </div>
-    </div>
+    </PublicSurfaceLayout>
   );
 }

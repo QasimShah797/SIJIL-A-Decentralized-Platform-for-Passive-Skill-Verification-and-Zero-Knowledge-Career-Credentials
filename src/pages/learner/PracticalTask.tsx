@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { AppShell } from "@/components/sijil/AppShell";
 import { PageHeader } from "@/components/sijil/PageHeader";
 import { StatusBadge } from "@/components/sijil/StatusBadge";
+import { PageSkeleton, CardSkeleton } from "@/components/sijil/SkeletonLoader";
+import { EmptyState } from "@/components/sijil/EmptyState";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -10,7 +13,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
 import {
-  Play, Timer, Lock, Send, RefreshCcw, ChevronRight, ChevronLeft,
+  Play, Timer, Lock, Send, RefreshCcw, ChevronRight, ChevronLeft, Shield,
 } from "lucide-react";
 import { daysSince, type DeclaredSkill, type AttemptRecord } from "@/lib/sijil-data";
 import { useDeclaredSkills } from "@/hooks/useLearnerData";
@@ -85,6 +88,31 @@ function fmt(ms: number) {
   const m = Math.floor(s / 60);
   const r = s % 60;
   return `${String(m).padStart(2, "0")}:${String(r).padStart(2, "0")}`;
+}
+
+function TimerProgressRing({ remainingMs, totalMs }: { remainingMs: number; totalMs: number }) {
+  const radius = 16;
+  const circumference = 2 * Math.PI * radius;
+  const progress = Math.max(0, Math.min(1, remainingMs / totalMs));
+  const offset = circumference * (1 - progress);
+  const urgent = remainingMs <= 10_000;
+
+  return (
+    <svg className="h-9 w-9 shrink-0 -rotate-90" viewBox="0 0 40 40" aria-hidden>
+      <circle cx="20" cy="20" r={radius} fill="none" strokeWidth="3" className="stroke-muted/40" />
+      <circle
+        cx="20"
+        cy="20"
+        r={radius}
+        fill="none"
+        strokeWidth="3"
+        strokeLinecap="round"
+        strokeDasharray={circumference}
+        strokeDashoffset={offset}
+        className={urgent ? "stroke-destructive" : "stroke-primary"}
+      />
+    </svg>
+  );
 }
 
 async function invokeRapidTask(body: Record<string, unknown>) {
@@ -162,6 +190,7 @@ function formatAttemptHistoryLabel(row: McqAttemptResultRow): string {
 }
 
 export default function PracticalTask() {
+  const navigate = useNavigate();
   const { user } = useAuth();
   const userId = user?.id;
   const { skills, loading: skillsLoading } = useDeclaredSkills();
@@ -761,7 +790,11 @@ export default function PracticalTask() {
   };
 
   if (skillsLoading) {
-    return <AppShell role="learner"><div className="text-sm text-muted-foreground">Loading skills…</div></AppShell>;
+    return (
+      <AppShell role="learner">
+        <PageSkeleton rows={3} />
+      </AppShell>
+    );
   }
 
   return (
@@ -776,6 +809,15 @@ export default function PracticalTask() {
           <CardTitle className="text-base">Skill-bound practical checks</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
+          {skills.length === 0 ? (
+            <EmptyState
+              icon={Play}
+              title="No declared competencies"
+              description="Declare a competency on your profile before starting a practical task."
+              action={{ label: "Go to profile", onClick: () => navigate("/learner/profile") }}
+              className="m-6 border-0 bg-transparent"
+            />
+          ) : (
           <div className="divide-y">
             {skills.map((s) => {
               const a = getAttempt(s.id);
@@ -784,7 +826,12 @@ export default function PracticalTask() {
               const taskState = getTaskState(s.id);
               const display = getSkillMcqDisplay(s.id, attemptsMap, mcqResultsMap);
               return (
-                <div key={s.id} className="flex flex-col md:flex-row md:items-center gap-3 px-6 py-4">
+                <div key={s.id} className="relative flex flex-col md:flex-row md:items-center gap-3 px-6 py-4">
+                  {taskState === "COMPLETED" && (
+                    <div className="absolute top-0 right-0 rounded-bl-lg border-b border-l border-border/60 bg-muted px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                      View only
+                    </div>
+                  )}
                   <div className="flex-1 min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-medium">{s.name}</span>
@@ -834,22 +881,22 @@ export default function PracticalTask() {
               );
             })}
           </div>
+          )}
         </CardContent>
       </Card>
 
-      <p className="text-xs text-muted-foreground mt-4 flex items-center gap-1.5">
-        <RefreshCcw className="h-3.5 w-3.5" />
-        MCQ content cannot be copied. Percentage results are shown after submission; answer keys are never shown to learners.
+      <p className="text-xs text-muted-foreground mt-4 flex items-start gap-1.5 rounded-lg border border-border/60 bg-muted/20 px-3 py-2">
+        <Shield className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+        <span>
+          Anti-cheat: MCQ content cannot be copied or inspected. Percentage results appear after submission; answer keys are never shown to learners.
+        </span>
       </p>
 
       <Dialog open={!!activeSkill} onOpenChange={(o) => { if (!o) closePanel(); }}>
         <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col overflow-hidden gap-4" {...NO_COPY_PROPS}>
           {activeSkill && (
             taskLoading ? (
-              <div className="flex flex-1 flex-col items-center justify-center py-16 gap-3 min-h-0">
-                <RefreshCcw className="h-6 w-6 animate-spin text-muted-foreground" />
-                <span className="text-sm text-muted-foreground">Loading attempt…</span>
-              </div>
+              <CardSkeleton />
             ) : panelMode === "result" ? (
               <>
                 <DialogHeader className="shrink-0 pr-8">
@@ -945,13 +992,31 @@ export default function PracticalTask() {
             ) : task && attempt ? (
               <>
                 <DialogHeader className="shrink-0 pr-8">
-                  <DialogTitle className="flex items-center gap-2">
-                    {task.title}
-                    <span className="text-xs text-muted-foreground font-normal">· {activeSkill.name}</span>
-                  </DialogTitle>
-                  <DialogDescription>
-                    {task.questions.length} MCQs · {MCQ_SECONDS_PER_QUESTION}s per question · one at a time
-                  </DialogDescription>
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="min-w-0 flex-1">
+                      <DialogTitle className="flex items-center gap-2">
+                        {task.title}
+                        <span className="text-xs text-muted-foreground font-normal">· {activeSkill.name}</span>
+                      </DialogTitle>
+                      <DialogDescription>
+                        {task.questions.length} MCQs · {MCQ_SECONDS_PER_QUESTION}s per question · one at a time
+                      </DialogDescription>
+                    </div>
+                    {attempt.status === "in_progress" && (
+                      <div className="flex items-center gap-2 shrink-0">
+                        <TimerProgressRing
+                          remainingMs={questionRemainingMs}
+                          totalMs={MCQ_SECONDS_PER_QUESTION * 1000}
+                        />
+                        <div className="text-right">
+                          <div className={`mono text-sm font-medium ${questionRemainingMs <= 10000 ? "text-destructive" : ""}`}>
+                            {fmt(questionRemainingMs)}
+                          </div>
+                          <div className="text-[10px] text-muted-foreground">remaining</div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </DialogHeader>
 
                 <div className="flex-1 min-h-0 overflow-y-auto pr-2 -mr-2" {...NO_COPY_PROPS}>
@@ -996,13 +1061,7 @@ export default function PracticalTask() {
                           <span className="font-medium">{currentQuestionIndex + 1} / {task.questions.length}</span>
                           <span className="text-xs capitalize text-muted-foreground">{currentQuestion.difficulty}</span>
                         </div>
-                        <div className="flex items-center gap-1.5">
-                          <Timer className="h-3.5 w-3.5 text-muted-foreground" />
-                          <span className={`mono ${questionRemainingMs <= 10000 ? "text-destructive font-semibold" : ""}`}>
-                            {fmt(questionRemainingMs)}
-                          </span>
-                          <StatusBadge variant="info">In Progress</StatusBadge>
-                        </div>
+                        <StatusBadge variant="info">In Progress</StatusBadge>
                       </div>
 
                       <div className="rounded-md border p-5 space-y-4" {...NO_COPY_PROPS}>

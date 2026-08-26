@@ -3,11 +3,12 @@ import { useMemo, useState } from "react";
 import { AppShell } from "@/components/sijil/AppShell";
 import { PageHeader } from "@/components/sijil/PageHeader";
 import { StatusBadge } from "@/components/sijil/StatusBadge";
+import { FilterBar } from "@/components/sijil/FilterBar";
+import { PageSkeleton } from "@/components/sijil/SkeletonLoader";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Search, GitCompare, ArrowRight, ShieldCheck, X } from "lucide-react";
+import { GitCompare, ArrowRight, ShieldCheck, X } from "lucide-react";
 import { useCandidates } from "@/hooks/useCandidates";
 
 export default function RecruiterSearch() {
@@ -26,7 +27,7 @@ export default function RecruiterSearch() {
         return matched ? { ...c, matchedSkill: matched } : null;
       })
       .filter(Boolean) as any[];
-  }, [q]);
+  }, [q, candidates, candidateSkills]);
 
   const toggleSelect = (id: string) =>
     setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : s.length >= 4 ? s : [...s, id]));
@@ -36,61 +37,44 @@ export default function RecruiterSearch() {
     navigate(`/recruiter/compare?ids=${selected.join(",")}${q ? `&skill=${encodeURIComponent(q)}` : ""}`);
   };
 
+  if (loading) {
+    return (
+      <AppShell role="recruiter">
+        <PageSkeleton rows={4} />
+      </AppShell>
+    );
+  }
+
   return (
     <AppShell role="recruiter">
       <PageHeader
         title="Search candidates"
         description="Find candidates by skill. Results are backed by verifiable credentials, attestations and supporting evidence."
-        actions={
-          selected.length >= 2 && (
-            <Button onClick={goCompare}>
-              <GitCompare className="h-4 w-4 mr-1.5" /> Compare ({selected.length})
-            </Button>
-          )
-        }
       />
 
-      {loading && <div className="text-sm text-muted-foreground mb-4">Loading candidates…</div>}
+      <FilterBar
+        className="mb-4"
+        searchValue={q}
+        onSearchChange={setQ}
+        searchPlaceholder="Search by skill (e.g. React.js, Node.js, PostgreSQL, Python)"
+      >
+        {["React", "Node", "Python", "PostgreSQL", "Docker"].map((s) => (
+          <button
+            key={s}
+            type="button"
+            onClick={() => setQ(s)}
+            className="rounded-full border border-border bg-background px-3 py-1 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+          >
+            {s}
+          </button>
+        ))}
+      </FilterBar>
 
-      <Card className="mb-6">
-        <CardContent className="p-5">
-          <div className="flex gap-3">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                className="pl-9"
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                placeholder="Search by skill (e.g. React.js, Node.js, PostgreSQL, Python)"
-              />
-            </div>
-            <Button onClick={() => { /* live search */ }}>Search</Button>
-          </div>
-          <div className="mt-4 flex flex-wrap gap-2 text-xs">
-            {["React", "Node", "Python", "PostgreSQL", "Docker"].map((s) => (
-              <button
-                key={s}
-                onClick={() => setQ(s)}
-                className="px-2.5 py-1 rounded-full bg-secondary text-secondary-foreground hover:bg-secondary/80 transition-colors"
-              >
-                {s}
-              </button>
-            ))}
-            <span className="px-2.5 py-1 rounded-full bg-secondary text-secondary-foreground">Verification: Verified</span>
-            <span className="px-2.5 py-1 rounded-full bg-secondary text-secondary-foreground">Has credential: Yes</span>
-          </div>
-          {selected.length > 0 && (
-            <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
-              <span>{selected.length} selected for comparison</span>
-              <button onClick={() => setSelected([])} className="inline-flex items-center gap-1 text-foreground hover:underline">
-                <X className="h-3 w-3" /> clear
-              </button>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      <p className="mb-4 text-xs text-muted-foreground">
+        Verification: Verified · Has credential: Yes
+      </p>
 
-      <div className="grid md:grid-cols-2 gap-4">
+      <div className="grid md:grid-cols-2 gap-4 pb-24">
         {results.length === 0 && (
           <div className="md:col-span-2 text-center text-sm text-muted-foreground py-12">
             No candidates match this skill yet.
@@ -135,6 +119,28 @@ export default function RecruiterSearch() {
           </Card>
         ))}
       </div>
+
+      {selected.length > 0 && (
+        <div className="fixed bottom-6 left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 rounded-2xl border border-border/70 bg-card/95 px-4 py-3 shadow-lg backdrop-blur-md">
+          <span className="text-sm text-muted-foreground">
+            {selected.length} selected {selected.length === 1 ? "candidate" : "candidates"}
+          </span>
+          <button
+            type="button"
+            onClick={() => setSelected([])}
+            className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <X className="h-3 w-3" aria-hidden />
+            Clear
+          </button>
+          {selected.length >= 2 && (
+            <Button size="sm" onClick={goCompare}>
+              <GitCompare className="h-4 w-4 mr-1.5" />
+              Compare ({selected.length})
+            </Button>
+          )}
+        </div>
+      )}
     </AppShell>
   );
 }

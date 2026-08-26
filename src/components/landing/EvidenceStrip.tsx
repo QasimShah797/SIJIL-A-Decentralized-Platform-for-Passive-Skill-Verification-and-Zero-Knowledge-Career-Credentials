@@ -11,7 +11,7 @@ const sources = [
 
 export function EvidenceStrip() {
   return (
-    <section className="border-y border-border/40 bg-muted/30 py-5 sm:py-6" aria-label="Evidence sources">
+    <section className="border-y border-border/50 bg-secondary/40 py-5 sm:py-6" aria-label="Evidence sources">
       <div className={landingContainer}>
         <ScrollReveal>
           <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-6">

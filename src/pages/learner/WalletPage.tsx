@@ -1,11 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { AppShell } from "@/components/sijil/AppShell";
 import { CompetencyShareDialog } from "@/components/wallet/CompetencyShareDialog";
 import { InfoHint } from "@/components/sijil/InfoHint";
 import { PageHeader } from "@/components/sijil/PageHeader";
 import { StatusBadge } from "@/components/sijil/StatusBadge";
+import { PageSkeleton } from "@/components/sijil/SkeletonLoader";
+import { EmptyState } from "@/components/sijil/EmptyState";
+import { StubControl } from "@/components/sijil/StubControl";
+import { CardSurface } from "@/components/sijil/CardSurface";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog,
   DialogContent,
@@ -27,14 +33,17 @@ import type {
 } from "@/lib/wallet-competency-shared";
 import {
   Eye,
-  Fingerprint,
   Github,
   KeyRound,
   Link2,
   MessageSquare,
   RefreshCw,
   Wallet,
+  FileText,
+  GraduationCap,
+  ClipboardList,
 } from "lucide-react";
+import { useCredentials } from "@/hooks/useLearnerData";
 import { getWalletCompetenciesApi } from "@/services/api/wallet.api";
 import { parseEvidenceMetadata } from "@/lib/wallet-evidence-mapping";
 
@@ -72,21 +81,6 @@ function latestAttempt(summary: WalletEvidenceSummary): WalletAttemptHistoryItem
   return practicalTask.latestAttempt
     ?? (Array.isArray(practicalTask.attemptHistory) ? practicalTask.attemptHistory[0] : null)
     ?? null;
-}
-
-function Section({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="space-y-3">
-      <h3 className="text-sm font-semibold">{title}</h3>
-      <div className="space-y-3">{children}</div>
-    </section>
-  );
 }
 
 function ItemCard({
@@ -520,7 +514,7 @@ function WalletEvidenceDialog(props: {
           </DialogDescription>
         </DialogHeader>
 
-        <div className="max-h-[75vh] space-y-6 overflow-y-auto pr-2">
+        <div className="max-h-[75vh] space-y-4 overflow-y-auto pr-2">
           <Card>
             <CardContent className="grid gap-4 p-5 md:grid-cols-2">
               <div>
@@ -560,190 +554,194 @@ function WalletEvidenceDialog(props: {
             </CardContent>
           </Card>
 
-          <Section title="GitHub Evidence">
-            {githubItems.length > 0 ? (
-              <>
-                {Array.isArray(githubRepos) && githubRepos.map((repo, index) => (
-                  <ItemCard
-                    key={`repo-${index}`}
-                    title={formatOptional(repo.full_name) ?? formatOptional(repo.repo_name) ?? "Repository"}
-                    meta={[
-                      formatOptional(repo.primary_language),
-                      typeof repo.commit_count === "number" ? `${repo.commit_count} commits` : null,
-                      formatDate(formatOptional(repo.last_updated) ?? formatOptional(repo.synced_at)),
-                    ].filter(Boolean).join(" · ")}
-                    body={formatOptional(repo.description)}
-                    href={formatOptional(repo.github_url)}
-                  />
-                ))}
-                {Array.isArray(githubActivities) && githubActivities.map((activity, index) => (
-                  <ItemCard
-                    key={`activity-${index}`}
-                    title={formatOptional(activity.activity_title) ?? "GitHub activity"}
-                    meta={[
-                      formatOptional(activity.activity_type),
-                      formatOptional(activity.repo_name),
-                      formatDate(formatOptional(activity.occurred_at) ?? formatOptional(activity.synced_at)),
-                    ].filter(Boolean).join(" · ")}
-                    body={formatOptional(activity.commit_hash)}
-                    href={formatOptional(activity.activity_url)}
-                  />
-                ))}
-                {Array.isArray(githubEvidenceRecords) && githubEvidenceRecords.map((item, index) => (
-                  <ItemCard
-                    key={`evidence-${index}`}
-                    title={formatOptional(item.repository_name) ?? "Evidence record"}
-                    meta={[
-                      formatOptional(item.status),
-                      formatOptional(item.language),
-                      formatDate(formatOptional(item.sync_date)),
-                    ].filter(Boolean).join(" · ")}
-                    href={formatOptional(item.repository_url)}
-                  />
-                ))}
-                {Array.isArray(githubReviews) && githubReviews.map((review, index) => (
-                  <ItemCard
-                    key={`review-${index}`}
-                    title={formatOptional(review.discussion_title) ?? "GitHub review"}
-                    meta={[
-                      formatOptional(review.review_type),
-                      formatOptional(review.comment_author),
-                      formatDate(formatOptional(review.comment_created_at)),
-                    ].filter(Boolean).join(" · ")}
-                    body={formatOptional(review.comment_body)}
-                    href={formatOptional(review.discussion_url)}
-                  />
-                ))}
-              </>
-            ) : (
-              <EmptyEvidenceNote message="No GitHub evidence available" />
-            )}
-          </Section>
+          <Tabs defaultValue="github" className="w-full">
+            <TabsList className="w-full justify-start overflow-x-auto">
+              <TabsTrigger value="github" className="gap-1.5">
+                <Github className="h-3.5 w-3.5" /> GitHub
+              </TabsTrigger>
+              <TabsTrigger value="lms" className="gap-1.5">
+                <GraduationCap className="h-3.5 w-3.5" /> LMS
+              </TabsTrigger>
+              {(attemptHistory.length > 0 || attempt) && (
+                <TabsTrigger value="task" className="gap-1.5">
+                  <ClipboardList className="h-3.5 w-3.5" /> Practical Task
+                </TabsTrigger>
+              )}
+              {peerReviews.length > 0 && (
+                <TabsTrigger value="reviews" className="gap-1.5">
+                  <MessageSquare className="h-3.5 w-3.5" /> Reviews
+                </TabsTrigger>
+              )}
+            </TabsList>
 
-          <Section title="LMS Evidence">
-            {lmsItems.length > 0 ? (
-              lmsItems.map((item: Record<string, unknown>, index: number) => {
-                const metadata = item.metadata && typeof item.metadata === "object" && !Array.isArray(item.metadata)
-                  ? item.metadata as Record<string, unknown>
-                  : {};
+            <TabsContent value="github" className="mt-4 space-y-3">
+              {githubItems.length > 0 ? (
+                <>
+                  {Array.isArray(githubRepos) && githubRepos.map((repo, index) => (
+                    <ItemCard
+                      key={`repo-${index}`}
+                      title={formatOptional(repo.full_name) ?? formatOptional(repo.repo_name) ?? "Repository"}
+                      meta={[
+                        formatOptional(repo.primary_language),
+                        typeof repo.commit_count === "number" ? `${repo.commit_count} commits` : null,
+                        formatDate(formatOptional(repo.last_updated) ?? formatOptional(repo.synced_at)),
+                      ].filter(Boolean).join(" · ")}
+                      body={formatOptional(repo.description)}
+                      href={formatOptional(repo.github_url)}
+                    />
+                  ))}
+                  {Array.isArray(githubActivities) && githubActivities.map((activity, index) => (
+                    <ItemCard
+                      key={`activity-${index}`}
+                      title={formatOptional(activity.activity_title) ?? "GitHub activity"}
+                      meta={[
+                        formatOptional(activity.activity_type),
+                        formatOptional(activity.repo_name),
+                        formatDate(formatOptional(activity.occurred_at) ?? formatOptional(activity.synced_at)),
+                      ].filter(Boolean).join(" · ")}
+                      body={formatOptional(activity.commit_hash)}
+                      href={formatOptional(activity.activity_url)}
+                    />
+                  ))}
+                  {Array.isArray(githubEvidenceRecords) && githubEvidenceRecords.map((item, index) => (
+                    <ItemCard
+                      key={`evidence-${index}`}
+                      title={formatOptional(item.repository_name) ?? "Evidence record"}
+                      meta={[
+                        formatOptional(item.status),
+                        formatOptional(item.language),
+                        formatDate(formatOptional(item.sync_date)),
+                      ].filter(Boolean).join(" · ")}
+                      href={formatOptional(item.repository_url)}
+                    />
+                  ))}
+                  {Array.isArray(githubReviews) && githubReviews.map((review, index) => (
+                    <ItemCard
+                      key={`review-${index}`}
+                      title={formatOptional(review.discussion_title) ?? "GitHub review"}
+                      meta={[
+                        formatOptional(review.review_type),
+                        formatOptional(review.comment_author),
+                        formatDate(formatOptional(review.comment_created_at)),
+                      ].filter(Boolean).join(" · ")}
+                      body={formatOptional(review.comment_body)}
+                      href={formatOptional(review.discussion_url)}
+                    />
+                  ))}
+                </>
+              ) : (
+                <EmptyEvidenceNote message="No GitHub evidence available" />
+              )}
+            </TabsContent>
 
-                return (
-                  <ItemCard
-                    key={`lms-${index}`}
-                    title={
-                      formatOptional(item.course_name)
-                      ?? formatOptional(item.assignment_name)
-                      ?? formatOptional(item.activity_name)
-                      ?? formatOptional(item.name)
-                      ?? "LMS Evidence"
-                    }
-                    meta={[
-                      item.grade
-                        ? `Grade: ${item.grade}`
-                        : metadata.grade != null
-                          ? `Grade: ${metadata.grade}/${metadata.grade_max ?? ""}`
-                          : null,
-                      formatOptional(item.completion_status),
-                    ].filter(Boolean).join(" · ")}
-                    body={
-                      formatOptional(item.feedback_preview)
-                      ?? formatOptional(metadata.teacher_feedback)
-                      ?? formatOptional(item.feedback)
-                      ?? formatOptional(item.text_preview)
-                      ?? "No feedback available"
-                    }
-                  />
-                );
-              })
-            ) : (
-              <EmptyEvidenceNote message="No LMS evidence available" />
-            )}
-          </Section>
+            <TabsContent value="lms" className="mt-4 space-y-3">
+              {lmsItems.length > 0 ? (
+                lmsItems.map((item: Record<string, unknown>, index: number) => {
+                  const metadata = item.metadata && typeof item.metadata === "object" && !Array.isArray(item.metadata)
+                    ? item.metadata as Record<string, unknown>
+                    : {};
 
-          {attemptHistory.length > 0 && (
-            <Section title="Practical Task">
-              {attempt && (
-                <Card>
-                  <CardContent className="grid gap-4 p-4 md:grid-cols-2">
-                    <div>
-                      <div className="text-[11px] text-muted-foreground">Latest attempt</div>
-                      <div className="mt-1 font-medium">{attempt.title}</div>
-                    </div>
-                    <div>
-                      <div className="text-[11px] text-muted-foreground">Status</div>
-                      <div className="mt-1">
-                        <StatusBadge variant={statusVariant(attempt.status)}>{attempt.status}</StatusBadge>
-                      </div>
-                    </div>
-                    {attempt.scorePercent != null && (
+                  return (
+                    <ItemCard
+                      key={`lms-${index}`}
+                      title={
+                        formatOptional(item.course_name)
+                        ?? formatOptional(item.assignment_name)
+                        ?? formatOptional(item.activity_name)
+                        ?? formatOptional(item.name)
+                        ?? "LMS Evidence"
+                      }
+                      meta={[
+                        item.grade
+                          ? `Grade: ${item.grade}`
+                          : metadata.grade != null
+                            ? `Grade: ${metadata.grade}/${metadata.grade_max ?? ""}`
+                            : null,
+                        formatOptional(item.completion_status),
+                      ].filter(Boolean).join(" · ")}
+                      body={
+                        formatOptional(item.feedback_preview)
+                        ?? formatOptional(metadata.teacher_feedback)
+                        ?? formatOptional(item.feedback)
+                        ?? formatOptional(item.text_preview)
+                        ?? "No feedback available"
+                      }
+                    />
+                  );
+                })
+              ) : (
+                <EmptyEvidenceNote message="No LMS evidence available" />
+              )}
+            </TabsContent>
+
+            {(attemptHistory.length > 0 || attempt) && (
+              <TabsContent value="task" className="mt-4 space-y-3">
+                {attempt && (
+                  <Card>
+                    <CardContent className="grid gap-4 p-4 md:grid-cols-2">
                       <div>
-                        <div className="text-[11px] text-muted-foreground">Score</div>
-                        <div className="mt-1 text-sm font-medium">{attempt.scorePercent}%</div>
+                        <div className="text-[11px] text-muted-foreground">Latest attempt</div>
+                        <div className="mt-1 font-medium">{attempt.title}</div>
                       </div>
-                    )}
-                    {attempt.correctCount != null && attempt.totalQuestions != null && (
                       <div>
-                        <div className="text-[11px] text-muted-foreground">Correct answers</div>
-                        <div className="mt-1 text-sm font-medium">
-                          {attempt.correctCount} / {attempt.totalQuestions}
+                        <div className="text-[11px] text-muted-foreground">Status</div>
+                        <div className="mt-1">
+                          <StatusBadge variant={statusVariant(attempt.status)}>{attempt.status}</StatusBadge>
                         </div>
                       </div>
-                    )}
-                    <div>
-                      <div className="text-[11px] text-muted-foreground">Submitted</div>
-                      <div className="mt-1 text-sm font-medium">{formatDate(attempt.submittedAt)}</div>
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
+                      {attempt.scorePercent != null && (
+                        <div>
+                          <div className="text-[11px] text-muted-foreground">Score</div>
+                          <div className="mt-1 text-sm font-medium">{attempt.scorePercent}%</div>
+                        </div>
+                      )}
+                      {attempt.correctCount != null && attempt.totalQuestions != null && (
+                        <div>
+                          <div className="text-[11px] text-muted-foreground">Correct answers</div>
+                          <div className="mt-1 text-sm font-medium">
+                            {attempt.correctCount} / {attempt.totalQuestions}
+                          </div>
+                        </div>
+                      )}
+                      <div>
+                        <div className="text-[11px] text-muted-foreground">Submitted</div>
+                        <div className="mt-1 text-sm font-medium">{formatDate(attempt.submittedAt)}</div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+                {Array.isArray(attemptHistory) && attemptHistory.map((item) => (
+                  <ItemCard
+                    key={item.attemptId}
+                    title={item.title}
+                    meta={[
+                      item.status,
+                      item.scorePercent != null ? `${item.scorePercent}%` : null,
+                      formatDate(item.submittedAt),
+                    ].filter(Boolean).join(" · ")}
+                    body={item.attemptId}
+                  />
+                ))}
+              </TabsContent>
+            )}
 
-              {Array.isArray(attemptHistory) && attemptHistory.map((item) => (
-                <ItemCard
-                  key={item.attemptId}
-                  title={item.title}
-                  meta={[
-                    item.status,
-                    item.scorePercent != null ? `${item.scorePercent}%` : null,
-                    formatDate(item.submittedAt),
-                  ].filter(Boolean).join(" · ")}
-                  body={item.attemptId}
-                />
-              ))}
-            </Section>
-          )}
-
-          {peerReviews.length > 0 && (
-            <Section title="Peer Reviews">
-              {Array.isArray(peerReviews) && peerReviews.map((review, index) => (
-                <ItemCard
-                  key={`peer-${index}`}
-                  title={formatOptional(review.reviewer_name) ?? formatOptional(review.reviewerName) ?? "Peer review"}
-                  meta={[
-                    formatOptional(review.reviewer_role) ?? formatOptional(review.reviewerRole),
-                    formatOptional(review.source),
-                    formatDate(formatOptional(review.reviewed_at) ?? formatOptional(review.review_date) ?? formatOptional(review.date)),
-                  ].filter(Boolean).join(" · ")}
-                  body={formatOptional(review.review_text) ?? formatOptional(review.comment) ?? formatOptional(review.body)}
-                />
-              ))}
-            </Section>
-          )}
-
-          {standaloneTeacherFeedback.length > 0 && (
-            <Section title="Teacher Feedback">
-              {Array.isArray(standaloneTeacherFeedback) && standaloneTeacherFeedback.map((feedback, index) => (
-                <ItemCard
-                  key={`teacher-${index}`}
-                  title={formatOptional(feedback.source) ?? "Teacher feedback"}
-                  meta={[
-                    formatOptional(feedback.status),
-                    formatDate(formatOptional(feedback.reviewed_at) ?? formatOptional(feedback.synced_at)),
-                  ].filter(Boolean).join(" · ")}
-                  body={formatOptional(feedback.feedback_text)}
-                />
-              ))}
-            </Section>
-          )}
+            {peerReviews.length > 0 && (
+              <TabsContent value="reviews" className="mt-4 space-y-3">
+                {Array.isArray(peerReviews) && peerReviews.map((review, index) => (
+                  <ItemCard
+                    key={`peer-${index}`}
+                    title={formatOptional(review.reviewer_name) ?? formatOptional(review.reviewerName) ?? "Peer review"}
+                    meta={[
+                      formatOptional(review.reviewer_role) ?? formatOptional(review.reviewerRole),
+                      formatOptional(review.source),
+                      formatDate(formatOptional(review.reviewed_at) ?? formatOptional(review.review_date) ?? formatOptional(review.date)),
+                    ].filter(Boolean).join(" · ")}
+                    body={formatOptional(review.review_text) ?? formatOptional(review.comment) ?? formatOptional(review.body)}
+                  />
+                ))}
+              </TabsContent>
+            )}
+          </Tabs>
         </div>
       </DialogContent>
     </Dialog>
@@ -751,8 +749,10 @@ function WalletEvidenceDialog(props: {
 }
 
 export default function WalletPage() {
+  const navigate = useNavigate();
   const { user } = useAuth();
   const { profile, loading: profileLoading } = useLearnerProfile();
+  const { credentials } = useCredentials();
   const [records, setRecords] = useState<WalletCompetencyRecordView[]>([]);
   const [derivedRecordsById, setDerivedRecordsById] = useState<Map<string, WalletCompetencyRecordView>>(new Map());
   const [loading, setLoading] = useState(true);
@@ -812,10 +812,17 @@ export default function WalletPage() {
     evidence: records.reduce((total, record) => total + record.evidenceCount, 0),
   }), [records]);
 
+  const credentialIdForRecord = (record: WalletCompetencyRecordView) => {
+    const match = credentials.find(
+      (c) => c.skill === record.competencyName || c.name === record.competencyName,
+    );
+    return match?.id ?? record.id;
+  };
+
   if (profileLoading || loading) {
     return (
       <AppShell role="learner">
-        <div className="text-sm text-muted-foreground">Loading wallet…</div>
+        <PageSkeleton rows={4} />
       </AppShell>
     );
   }
@@ -834,29 +841,27 @@ export default function WalletPage() {
       />
 
       <div className="mb-6 grid gap-6 lg:grid-cols-3">
-        <Card className="overflow-hidden lg:col-span-2">
-          <div className="credential-card p-6 text-primary-foreground">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Wallet className="h-5 w-5" />
-                <span className="font-medium">SIJIL Wallet</span>
-              </div>
-              <StatusBadge variant="verified">Learner-controlled</StatusBadge>
+        <CardSurface variant="flat" padding="hero" className="lg:col-span-2">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Wallet className="h-5 w-5 text-primary" />
+              <span className="font-semibold">SIJIL Wallet</span>
             </div>
-            <div className="mt-6">
-              <div className="flex items-center gap-1.5 text-xs opacity-70">
-                Holder DID
-                <InfoHint text="Decentralized Identifier — your competency wallet records remain bound to your learner identity." />
-              </div>
-              <div className="mono mt-1 break-all text-sm">{profile?.did ?? "—"}</div>
-            </div>
-            <div className="mt-6 grid grid-cols-3 gap-4">
-              <Stat dark label="Wallet records" value={summary.total} />
-              <Stat dark label="Passed tasks" value={summary.passed} />
-              <Stat dark label="Evidence items" value={summary.evidence} />
-            </div>
+            <StatusBadge variant="verified">Learner-controlled</StatusBadge>
           </div>
-        </Card>
+          <div className="mt-4">
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              Holder DID
+              <InfoHint text="Decentralized Identifier — your competency wallet records remain bound to your learner identity." />
+            </div>
+            <div className="mono mt-1 break-all text-sm">{profile?.did ?? "—"}</div>
+          </div>
+          <div className="mt-5 grid grid-cols-3 gap-4 border-t border-border/60 pt-4">
+            <Stat label="Wallet records" value={summary.total} />
+            <Stat label="Passed tasks" value={summary.passed} />
+            <Stat label="Evidence items" value={summary.evidence} />
+          </div>
+        </CardSurface>
 
         <Card>
           <CardContent className="p-5">
@@ -872,6 +877,13 @@ export default function WalletPage() {
               <Row k="Suite" v="DataIntegrityProof" />
               <Row k="Wallet mode" v="Competency record" />
             </div>
+            <div className="mt-4">
+              <StubControl
+                label="Export key backup"
+                reason="Local key export is planned for a future release. Keys remain device-bound for now."
+                className="w-full justify-center"
+              />
+            </div>
           </CardContent>
         </Card>
       </div>
@@ -886,9 +898,13 @@ export default function WalletPage() {
               {error}
             </div>
           ) : records.length === 0 ? (
-            <div className="px-6 py-10 text-center text-sm text-muted-foreground">
-              No competency wallet records yet. Submit a practical task to create your first wallet record.
-            </div>
+            <EmptyState
+              icon={Wallet}
+              title="No wallet records yet"
+              description="Submit a practical task to create your first competency wallet record."
+              action={{ label: "Start practical task", onClick: () => navigate("/learner/task") }}
+              className="m-6 border-0 bg-transparent"
+            />
           ) : (
             <div className="grid gap-5 p-6 md:grid-cols-2">
               {records.map((record) => (
@@ -938,6 +954,12 @@ export default function WalletPage() {
                         Share with Recruiter
                       </Button>
                     </div>
+                    <Button variant="ghost" size="sm" className="w-full text-muted-foreground" asChild>
+                      <Link to={`/learner/credential/${encodeURIComponent(credentialIdForRecord(record))}`}>
+                        <FileText className="mr-1.5 h-4 w-4" />
+                        View full credential
+                      </Link>
+                    </Button>
                   </CardContent>
                 </Card>
               ))}
@@ -975,10 +997,10 @@ export default function WalletPage() {
   );
 }
 
-function Stat({ label, value, dark }: { label: string; value: number; dark?: boolean }) {
+function Stat({ label, value }: { label: string; value: number }) {
   return (
     <div>
-      <div className={`text-[11px] ${dark ? "opacity-70" : "text-muted-foreground"}`}>{label}</div>
+      <div className="text-[11px] text-muted-foreground">{label}</div>
       <div className="mt-0.5 text-xl font-semibold">{value}</div>
     </div>
   );

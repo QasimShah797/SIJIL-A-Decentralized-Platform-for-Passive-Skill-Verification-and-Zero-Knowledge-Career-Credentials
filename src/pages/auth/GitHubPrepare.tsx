@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { DotProgress } from "@/components/sijil/DotProgress";
+import { PublicSurfaceLayout } from "@/components/sijil/PublicSurfaceLayout";
 import { loadGitHubOAuthContext } from "@/lib/github-env";
 import { buildGitHubAuthorizeUrl } from "@/lib/github-integration";
 
@@ -12,6 +14,7 @@ const GITHUB_LOGOUT_MS = 2000;
 export default function GitHubPrepare() {
   const navigate = useNavigate();
   const [msg, setMsg] = useState("Preparing GitHub connection…");
+  const [step, setStep] = useState<0 | 1 | 2>(0);
 
   useEffect(() => {
     const ctx = loadGitHubOAuthContext();
@@ -22,6 +25,7 @@ export default function GitHubPrepare() {
 
     const authorizeUrl = buildGitHubAuthorizeUrl(ctx);
 
+    setStep(1);
     setMsg("Signing out any previous GitHub login on this browser…");
 
     const iframe = document.createElement("iframe");
@@ -33,6 +37,7 @@ export default function GitHubPrepare() {
 
     const timer = window.setTimeout(() => {
       iframe.remove();
+      setStep(2);
       setMsg("Redirecting — choose YOUR GitHub account…");
       window.location.replace(authorizeUrl);
     }, GITHUB_LOGOUT_MS);
@@ -44,8 +49,9 @@ export default function GitHubPrepare() {
   }, [navigate]);
 
   return (
-    <div className="min-h-screen grid place-items-center text-muted-foreground">
-      <div className="text-center max-w-md px-6">
+    <PublicSurfaceLayout className="grid place-items-center px-6">
+      <div className="max-w-md text-center text-muted-foreground">
+        <DotProgress step={step} className="mb-6" />
         <div className="text-foreground font-medium mb-2">Connect GitHub</div>
         <div className="text-sm">{msg}</div>
         <p className="text-xs mt-4 leading-relaxed">
@@ -53,6 +59,6 @@ export default function GitHubPrepare() {
           with your own GitHub account.
         </p>
       </div>
-    </div>
+    </PublicSurfaceLayout>
   );
 }

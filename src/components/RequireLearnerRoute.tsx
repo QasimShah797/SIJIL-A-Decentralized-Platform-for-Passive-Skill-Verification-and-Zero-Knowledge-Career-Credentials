@@ -69,7 +69,7 @@ export function RequireLearnerRoute({
   const userId = user?.id;
   const loc = useLocation();
   const [access, setAccess] = useState<
-    "pending" | "allowed" | "wrong_role" | "no_profile" | "not_activated" | "incomplete_profile"
+    "pending" | "allowed" | "wrong_role" | "no_profile" | "incomplete_profile"
   >("pending");
 
   useEffect(() => {
@@ -121,16 +121,6 @@ export function RequireLearnerRoute({
       <LearnerAccessDenied
         title="Learner profile not found"
         description="Your account is missing a learner profile. Please sign up again or contact support."
-      />
-    );
-  }
-
-  if (access === "not_activated") {
-    return (
-      <LearnerAccessDenied
-        title="Account not activated"
-        description="Please activate your account using the activation link provided by your institution."
-        showLearnerLogin
       />
     );
   }

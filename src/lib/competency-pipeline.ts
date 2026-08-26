@@ -3,50 +3,60 @@ export type PipelineStage =
   | "evidence_linked"
   | "practical_task"
   | "peer_review"
+  | "verification_pending"
+  | "verification_failed"
   | "institution_attestation_pending"
   | "institution_attestation_rejected"
   | "institution_rejected"
   | "wallet_ready"
   | "in_wallet";
 
-export const PIPELINE_STAGES: { key: PipelineStage; label: string }[] = [
+/** UI pipeline stages shown in Validation Trail stepper */
+export const PIPELINE_STAGES: { key: string; label: string }[] = [
   { key: "declared", label: "Declared" },
-  { key: "evidence_linked", label: "Evidence Linked" },
-  { key: "practical_task", label: "Practical Task" },
-  { key: "peer_review", label: "Peer Review" },
+  { key: "evidence_linked", label: "Evidence" },
+  { key: "practical_task", label: "Assessment" },
+  { key: "verification", label: "Verification" },
   { key: "wallet_ready", label: "Wallet" },
 ];
+
+export const VERIFICATION_STAGE_TOOLTIP =
+  "Verified automatically once your evidence and assessment score meet SIJIL's threshold.";
 
 export function pipelineStageLabel(stage: string): string {
   const map: Record<string, string> = {
     declared: "Declared",
     evidence_linked: "Evidence Linked",
-    practical_task: "Practical Task",
+    practical_task: "Assessment",
     peer_review: "Peer Review",
-    institution_attestation_pending: "Institution Attestation Pending",
-    institution_attestation_rejected: "Institution Attestation Rejected",
-    institution_rejected: "Institution Rejected",
+    verification_pending: "Verification Pending",
+    verification_failed: "Verification Failed",
+    institution_attestation_pending: "Verification Pending",
+    institution_attestation_rejected: "Verification Failed",
+    institution_rejected: "Verification Failed",
     wallet_ready: "Wallet Ready",
     in_wallet: "In Wallet",
   };
   return map[stage] ?? stage;
 }
 
-export function nextStepForStage(stage: string, institution?: string): string {
+export function nextStepForStage(stage: string): string {
   switch (stage) {
     case "declared":
       return "Link GitHub, Moodle, or certificate evidence";
     case "evidence_linked":
-      return "Complete the practical task for this skill";
+      return "Complete the practical task for this competency";
     case "practical_task":
       return "Submit your practical task attempt";
     case "peer_review":
       return "Collect peer reviews (optional)";
+    case "verification_pending":
     case "institution_attestation_pending":
-      return `Waiting for ${institution || "your institution"} approval`;
+      return "Awaiting automated verification — evidence and assessment score are being evaluated";
+    case "verification_failed":
     case "institution_attestation_rejected":
     case "institution_rejected":
-      return "Review institution feedback and re-attempt";
+      return "Review verification requirements and re-attempt";
     case "wallet_ready":
       return "Mint or add credential to wallet";
     case "in_wallet":
@@ -58,8 +68,9 @@ export function nextStepForStage(stage: string, institution?: string): string {
 
 export function evidenceLabelForStage(stage: string): string {
   switch (stage) {
+    case "verification_pending":
     case "institution_attestation_pending":
-      return "Practical Task Passed";
+      return "Awaiting verification";
     case "wallet_ready":
     case "in_wallet":
       return "Practical Task Passed";
@@ -67,9 +78,10 @@ export function evidenceLabelForStage(stage: string): string {
       return "External evidence linked";
     case "practical_task":
       return "Practical task in progress";
+    case "verification_failed":
     case "institution_attestation_rejected":
     case "institution_rejected":
-      return "Institution rejected attestation";
+      return "Verification requirements not met";
     case "peer_review":
       return "Peer reviews collected";
     default:
@@ -94,14 +106,10 @@ export function evidenceLabelForAttempt(stage: string, attempt: AttemptContext):
   return evidenceLabelForStage(stage);
 }
 
-export function nextStepForAttempt(
-  stage: string,
-  attempt: AttemptContext,
-  institution?: string,
-): string {
+export function nextStepForAttempt(stage: string, attempt: AttemptContext): string {
   if (stage === "practical_task" && attempt) {
     if (attempt.status === "passed" || attempt.passed) {
-      return nextStepForStage("wallet_ready", institution);
+      return nextStepForStage("wallet_ready");
     }
     if (attempt.status === "submitted" || attempt.status === "auto_submitted") {
       return "Awaiting practical task evaluation";
@@ -110,25 +118,25 @@ export function nextStepForAttempt(
       return "Complete and submit your practical task";
     }
   }
-  return nextStepForStage(stage, institution);
+  return nextStepForStage(stage);
 }
 
 export function pipelineStageIndex(stage: string): number {
-  const order: PipelineStage[] = [
-    "declared",
-    "evidence_linked",
-    "practical_task",
-    "peer_review",
-    "wallet_ready",
-    "in_wallet",
-  ];
-  const idx = order.indexOf(stage as PipelineStage);
-  if (idx >= 0) return idx;
-  if (stage === "institution_attestation_pending") return order.indexOf("wallet_ready");
-  if (stage === "institution_attestation_rejected" || stage === "institution_rejected") {
-    return order.indexOf("practical_task");
-  }
-  return 0;
+  const uiOrder = ["declared", "evidence_linked", "practical_task", "verification", "wallet_ready", "in_wallet"];
+  const normalized =
+    stage === "institution_attestation_pending" || stage === "verification_pending"
+      ? "verification"
+      : stage === "institution_attestation_rejected" ||
+          stage === "institution_rejected" ||
+          stage === "verification_failed"
+        ? "practical_task"
+        : stage === "peer_review"
+          ? "verification"
+          : stage === "wallet_ready" || stage === "in_wallet"
+            ? "wallet_ready"
+            : stage;
+  const idx = uiOrder.indexOf(normalized);
+  return idx >= 0 ? idx : 0;
 }
 
 export function resolveEffectivePipelineStage(
@@ -146,10 +154,14 @@ export function resolveEffectivePipelineStage(
 
   if (opts.inWallet || stored === "in_wallet") return "in_wallet";
   if (stored === "wallet_ready") return "wallet_ready";
-  if (stored === "institution_attestation_rejected" || stored === "institution_rejected") {
+  if (
+    stored === "institution_attestation_rejected" ||
+    stored === "institution_rejected" ||
+    stored === "verification_failed"
+  ) {
     return "practical_task";
   }
-  if (stored === "institution_attestation_pending") {
+  if (stored === "institution_attestation_pending" || stored === "verification_pending") {
     return opts.attemptPassed ? "wallet_ready" : "peer_review";
   }
 
@@ -163,4 +175,18 @@ export function resolveEffectivePipelineStage(
   if (opts.hasEvidence || stored === "evidence_linked") return "evidence_linked";
 
   return "declared";
+}
+
+/** Build PipelineStepper stages for UI from effective stage */
+export function buildPipelineStepperStages(effectiveStage: string): {
+  id: string;
+  label: string;
+  status: "complete" | "current" | "upcoming";
+}[] {
+  const currentIdx = pipelineStageIndex(effectiveStage);
+  return PIPELINE_STAGES.map((s, i) => ({
+    id: s.key,
+    label: s.label,
+    status: i < currentIdx ? "complete" : i === currentIdx ? "current" : "upcoming",
+  }));
 }

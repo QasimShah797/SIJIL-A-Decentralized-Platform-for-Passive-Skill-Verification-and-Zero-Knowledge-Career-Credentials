@@ -3,18 +3,36 @@ import { GraduationCap, RefreshCw } from "lucide-react";
 import { AppShell } from "@/components/sijil/AppShell";
 import { PageHeader } from "@/components/sijil/PageHeader";
 import { StatusBadge } from "@/components/sijil/StatusBadge";
+import { EmptyState } from "@/components/sijil/EmptyState";
+import { PageSkeleton } from "@/components/sijil/SkeletonLoader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { useInstitutionAttestationRequests } from "@/hooks/useInstitutionAttestationRequests";
 import {
   deriveInstitutionStudents,
   formatMcqPercentageLabel,
 } from "@/lib/db/institution-attestation-requests";
 
+const borderAccentFor = (status: string) =>
+  status === "approved"
+    ? "border-l-success"
+    : status === "rejected"
+      ? "border-l-destructive"
+      : "border-l-info";
+
 export default function StudentManagement() {
   const { requests, loading, refresh, institutionName } = useInstitutionAttestationRequests();
 
   const students = useMemo(() => deriveInstitutionStudents(requests), [requests]);
+
+  if (loading) {
+    return (
+      <AppShell role="institution">
+        <PageSkeleton rows={5} />
+      </AppShell>
+    );
+  }
 
   return (
     <AppShell role="institution">
@@ -44,10 +62,12 @@ export default function StudentManagement() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {loading ? (
-            <p className="text-sm text-muted-foreground">Loading learners…</p>
-          ) : students.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No learner attestation submissions yet.</p>
+          {students.length === 0 ? (
+            <EmptyState
+              icon={GraduationCap}
+              title="No learner submissions yet"
+              description="Learners will appear here once they submit MCQ practical tasks for institutional attestation."
+            />
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -64,7 +84,10 @@ export default function StudentManagement() {
                 </thead>
                 <tbody>
                   {students.map((s) => (
-                    <tr key={s.id} className="border-b border-border/50 last:border-0">
+                    <tr
+                      key={s.id}
+                      className={cn("border-b border-border/50 last:border-0 border-l-4", borderAccentFor(s.status))}
+                    >
                       <td className="py-3 pr-3 font-medium">{s.name}</td>
                       <td className="py-3 pr-3 text-muted-foreground">{s.email}</td>
                       <td className="py-3 pr-3">{s.competency}</td>

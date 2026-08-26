@@ -3,9 +3,11 @@ import { useMemo } from "react";
 import { AppShell } from "@/components/sijil/AppShell";
 import { PageHeader } from "@/components/sijil/PageHeader";
 import { StatusBadge } from "@/components/sijil/StatusBadge";
+import { EmptyState } from "@/components/sijil/EmptyState";
+import { PageSkeleton } from "@/components/sijil/SkeletonLoader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, ArrowRight, ShieldCheck } from "lucide-react";
+import { ArrowLeft, ArrowRight, GitCompare, ShieldCheck } from "lucide-react";
 import { useCandidates } from "@/hooks/useCandidates";
 
 export default function RecruiterCompare() {
@@ -15,24 +17,39 @@ export default function RecruiterCompare() {
   const ids = (params.get("ids") || "").split(",").filter(Boolean);
   const skillFilter = params.get("skill") || "";
 
-  const selected = useMemo(() => candidates.filter((c) => ids.includes(c.id)), [ids]);
+  const selected = useMemo(() => candidates.filter((c) => ids.includes(c.id)), [candidates, ids]);
 
-  // Build matrix of candidates × skills, optionally filtered to a queried skill
   const skillSet = useMemo(() => {
     const all = new Set<string>();
     selected.forEach((c) => (candidateSkills[c.id] || []).forEach((s) => {
       if (!skillFilter || s.skill.toLowerCase().includes(skillFilter.toLowerCase())) all.add(s.skill);
     }));
     return Array.from(all);
-  }, [selected, skillFilter]);
+  }, [selected, candidateSkills, skillFilter]);
+
+  if (loading) {
+    return (
+      <AppShell role="recruiter">
+        <PageSkeleton rows={5} />
+      </AppShell>
+    );
+  }
 
   if (selected.length < 2) {
     return (
       <AppShell role="recruiter">
         <PageHeader
           title="Compare candidates"
+          breadcrumbs={[
+            { label: "Search", href: "/recruiter/search" },
+            { label: "Compare" },
+          ]}
+        />
+        <EmptyState
+          icon={GitCompare}
+          title="Select candidates to compare"
           description="Pick at least 2 candidates from search to compare evidence-backed skill levels."
-          actions={<Button variant="outline" onClick={() => navigate("/recruiter/search")}><ArrowLeft className="h-4 w-4 mr-1.5" />Back to search</Button>}
+          action={{ label: "Back to Search", onClick: () => navigate("/recruiter/search") }}
         />
       </AppShell>
     );
@@ -43,7 +60,15 @@ export default function RecruiterCompare() {
       <PageHeader
         title="Compare candidates"
         description={`Side-by-side comparison of evidence and attestation for ${selected.length} candidate(s)${skillFilter ? ` · skill filter: ${skillFilter}` : ""}.`}
-        actions={<Button variant="outline" onClick={() => navigate("/recruiter/search")}><ArrowLeft className="h-4 w-4 mr-1.5" />Back to search</Button>}
+        breadcrumbs={[
+          { label: "Search", href: "/recruiter/search" },
+          { label: "Compare" },
+        ]}
+        actions={
+          <Button variant="outline" onClick={() => navigate("/recruiter/search")}>
+            <ArrowLeft className="h-4 w-4 mr-1.5" />Back to search
+          </Button>
+        }
       />
 
       <Card className="mb-6">
@@ -52,7 +77,7 @@ export default function RecruiterCompare() {
           <table className="w-full text-sm">
             <thead className="bg-muted/40 text-xs uppercase text-muted-foreground">
               <tr>
-                <th className="text-left px-4 py-2">Candidate</th>
+                <th className="sticky left-0 z-10 bg-muted/40 text-left px-4 py-2">Candidate</th>
                 <th className="text-left px-4 py-2">Institution</th>
                 <th className="text-left px-4 py-2">Credentials</th>
                 <th className="text-left px-4 py-2">Total evidence</th>
@@ -64,7 +89,7 @@ export default function RecruiterCompare() {
             <tbody>
               {selected.map((c) => (
                 <tr key={c.id} className="border-t">
-                  <td className="px-4 py-3 font-medium">{c.name}</td>
+                  <td className="sticky left-0 z-10 bg-card px-4 py-3 font-medium shadow-[2px_0_4px_-2px_rgba(0,0,0,0.08)]">{c.name}</td>
                   <td className="px-4 py-3">{c.institution}</td>
                   <td className="px-4 py-3">{c.credentialCount}</td>
                   <td className="px-4 py-3">{c.evidence}</td>
@@ -95,7 +120,7 @@ export default function RecruiterCompare() {
           <table className="w-full text-sm">
             <thead className="bg-muted/40 text-xs uppercase text-muted-foreground">
               <tr>
-                <th className="text-left px-4 py-2">Skill</th>
+                <th className="sticky left-0 z-10 bg-muted/40 text-left px-4 py-2 min-w-[140px]">Skill</th>
                 {selected.map((c) => (
                   <th key={c.id} className="text-left px-4 py-2 min-w-[180px]">{c.name}</th>
                 ))}
@@ -107,7 +132,7 @@ export default function RecruiterCompare() {
               )}
               {skillSet.map((skill) => (
                 <tr key={skill} className="border-t align-top">
-                  <td className="px-4 py-3 font-medium">{skill}</td>
+                  <td className="sticky left-0 z-10 bg-card px-4 py-3 font-medium shadow-[2px_0_4px_-2px_rgba(0,0,0,0.08)]">{skill}</td>
                   {selected.map((c) => {
                     const s = (candidateSkills[c.id] || []).find((x) => x.skill === skill);
                     if (!s) return <td key={c.id} className="px-4 py-3 text-xs text-muted-foreground">—</td>;

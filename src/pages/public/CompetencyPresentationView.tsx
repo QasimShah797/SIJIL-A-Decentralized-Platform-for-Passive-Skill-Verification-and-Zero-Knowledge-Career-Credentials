@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Copy, ShieldAlert, ShieldCheck } from "lucide-react";
+import { ArrowLeft, Copy, Info, ShieldAlert, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageHeader } from "@/components/sijil/PageHeader";
+import { PublicSurfaceLayout } from "@/components/sijil/PublicSurfaceLayout";
 import { StatusBadge } from "@/components/sijil/StatusBadge";
 import { FieldRow } from "@/components/sijil/FieldRow";
 import { toast } from "@/hooks/use-toast";
@@ -191,16 +192,52 @@ export default function CompetencyPresentationView() {
   };
 
   return (
-    <div className="min-h-screen bg-background">
-      <div className="mx-auto max-w-6xl px-6 py-10 lg:px-8">
+    <PublicSurfaceLayout accent="strong" className="verify-surface">
+      <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8 lg:py-10">
+        <div className="mb-8 rounded-2xl border border-border/60 bg-card p-6 shadow-sm sm:p-8">
+          <p className="text-xs font-semibold uppercase tracking-wider text-primary">Credential verification</p>
+          <h1 className="mt-2 text-2xl font-semibold tracking-tight sm:text-3xl">
+            Verify credentials. Build trust instantly.
+          </h1>
+          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">
+            This page shows only what the learner chose to disclose — with signed proof metadata.
+            Full wallet access is never granted from a presentation link.
+          </p>
+        </div>
+
+        <div className="mb-6 flex items-start gap-3 rounded-xl border border-info/20 bg-info/5 px-4 py-3 text-sm text-muted-foreground">
+          <Info className="mt-0.5 h-4 w-4 shrink-0 text-info" aria-hidden />
+          <div>
+            <span className="font-medium text-foreground">Selective disclosure.</span>{" "}
+            Recruiters receive verified claims via a time-limited link — not the learner&apos;s complete evidence package.
+          </div>
+        </div>
+
         <PageHeader
-          title="Selective Disclosure Presentation"
-          description="Recruiters only see the attributes the learner explicitly disclosed. This page verifies a signed selective disclosure presentation, not a full zero-knowledge proof."
+          title="Presentation viewer"
+          description="Cryptographic verification of disclosed competency attributes."
           actions={(
-            <Button variant="outline" onClick={() => navigate(-1)}>
-              <ArrowLeft className="mr-1.5 h-4 w-4" />
-              Back
-            </Button>
+            <div className="flex items-center gap-2">
+              {!loading && presentation && (
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="outline"
+                  className="rounded-xl"
+                  aria-label="Copy presentation link"
+                  onClick={() => {
+                    void navigator.clipboard.writeText(window.location.href);
+                    toast({ title: "Presentation link copied" });
+                  }}
+                >
+                  <Copy className="h-4 w-4" />
+                </Button>
+              )}
+              <Button variant="outline" className="rounded-xl" onClick={() => navigate(-1)}>
+                <ArrowLeft className="mr-1.5 h-4 w-4" />
+                Back
+              </Button>
+            </div>
           )}
         />
 
@@ -214,27 +251,46 @@ export default function CompetencyPresentationView() {
           </Card>
         ) : (
           <div className="space-y-6">
-            <Card>
+            <Card className="overflow-hidden border-primary/15 shadow-md">
+              <div className="credential-foil px-5 py-4 text-primary-foreground sm:px-6">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-medium uppercase tracking-wider text-primary-foreground/70">
+                      Verification result
+                    </p>
+                    <p className="mt-1 text-lg font-semibold">{presentation.verification.result}</p>
+                  </div>
+                  <StatusBadge variant={proofVariant(presentation.verification.result)} className="bg-white/15 text-primary-foreground">
+                    {presentation.proofType}
+                  </StatusBadge>
+                </div>
+              </div>
               <CardContent className="flex flex-wrap items-center justify-between gap-3 p-5">
                 <div>
-                  <div className="text-sm font-medium">Proof result</div>
+                  <div className="text-sm font-medium">Proof metadata</div>
                   <div className="mt-1 text-xs text-muted-foreground">
                     Issued {formatDate(presentation.createdAt)} · Expires {formatDate(presentation.expiresAt)}
                   </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
-                  <StatusBadge variant={proofVariant(presentation.verification.result)}>
-                    {presentation.verification.result}
-                  </StatusBadge>
-                  <StatusBadge variant="info">
-                    {presentation.proofType}
-                  </StatusBadge>
                   {presentation.verification.revoked && (
                     <StatusBadge variant="destructive">Revoked</StatusBadge>
                   )}
                   {!presentation.verification.revoked && presentation.verification.expired && (
                     <StatusBadge variant="warning">Expired</StatusBadge>
                   )}
+                  <Button
+                    className="rounded-xl"
+                    onClick={() => void runVerification()}
+                    disabled={verifying}
+                  >
+                    {presentation.verification.result === "Valid Proof" ? (
+                      <ShieldCheck className="mr-1.5 h-4 w-4" />
+                    ) : (
+                      <ShieldAlert className="mr-1.5 h-4 w-4" />
+                    )}
+                    {verifying ? "Verifying…" : "Run verification"}
+                  </Button>
                 </div>
               </CardContent>
             </Card>
@@ -273,16 +329,6 @@ export default function CompetencyPresentationView() {
                       value={presentation.verificationMethod ?? "Not disclosed"}
                       mono
                     />
-                    <div className="pt-3">
-                      <Button onClick={() => void runVerification()} disabled={verifying}>
-                        {presentation.verification.result === "Valid Proof" ? (
-                          <ShieldCheck className="mr-1.5 h-4 w-4" />
-                        ) : (
-                          <ShieldAlert className="mr-1.5 h-4 w-4" />
-                        )}
-                        Run Verification
-                      </Button>
-                    </div>
                   </CardContent>
                 </Card>
 
@@ -306,19 +352,6 @@ export default function CompetencyPresentationView() {
                   <CardContent className="space-y-3 text-sm text-muted-foreground">
                     <p>Only the disclosed payload shown on this page was shared.</p>
                     <p>The learner's full wallet is not accessible from this presentation link.</p>
-                    <div className="flex flex-wrap gap-2">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => {
-                          void navigator.clipboard.writeText(window.location.href);
-                          toast({ title: "Presentation link copied" });
-                        }}
-                      >
-                        <Copy className="mr-1.5 h-4 w-4" />
-                        Copy Link
-                      </Button>
-                    </div>
                   </CardContent>
                 </Card>
               </div>
@@ -326,6 +359,6 @@ export default function CompetencyPresentationView() {
           </div>
         )}
       </div>
-    </div>
+    </PublicSurfaceLayout>
   );
 }

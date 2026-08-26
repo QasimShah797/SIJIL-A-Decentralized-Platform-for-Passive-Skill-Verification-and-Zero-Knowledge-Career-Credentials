@@ -19,7 +19,7 @@ const features = [
 
 export function RecruiterLeftPanel() {
   return (
-    <div className="relative flex min-h-[280px] flex-col justify-between overflow-hidden bg-gradient-to-br from-[hsl(222_47%_14%)] via-primary to-[hsl(217_91%_28%)] px-8 py-10 text-primary-foreground lg:min-h-screen lg:px-12 lg:py-12">
+    <div className="auth-panel-gradient relative flex min-h-[280px] flex-col justify-between overflow-hidden px-8 py-10 text-primary-foreground lg:min-h-screen lg:px-12 lg:py-12">
       <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
         <div className="absolute -right-20 -top-20 h-72 w-72 rounded-full bg-white/10 blur-3xl" />
         <div className="absolute -bottom-24 -left-16 h-80 w-80 rounded-full bg-info/20 blur-3xl" />
@@ -64,7 +64,7 @@ export function RecruiterLeftPanel() {
                 <p className="text-sm font-medium">Shared competency record</p>
                 <p className="text-xs text-primary-foreground/70">TypeScript · Software Development</p>
               </div>
-              <BadgeCheck className="h-8 w-8 text-[hsl(152_65%_56%)]" aria-hidden="true" />
+              <BadgeCheck className="h-8 w-8 text-success" aria-hidden="true" />
             </div>
 
             <div className="mt-5 grid grid-cols-2 gap-3">
@@ -92,7 +92,7 @@ export function RecruiterLeftPanel() {
                   <span
                     className={
                       row.value === "Disclosed"
-                        ? "font-medium text-[hsl(152_65%_56%)]"
+                        ? "font-medium text-success"
                         : "text-primary-foreground/50"
                     }
                   >

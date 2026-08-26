@@ -3,6 +3,8 @@ import { useNavigate, useParams } from "react-router-dom";
 import { AppShell } from "@/components/sijil/AppShell";
 import { PageHeader } from "@/components/sijil/PageHeader";
 import { StatusBadge } from "@/components/sijil/StatusBadge";
+import { StubControl } from "@/components/sijil/StubControl";
+import { PageSkeleton } from "@/components/sijil/SkeletonLoader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, RefreshCw, FileText } from "lucide-react";
@@ -55,7 +57,7 @@ export default function InstitutionValidationTrail() {
   if (requestLoading || validationLoading) {
     return (
       <AppShell role="institution">
-        <div className="text-sm text-muted-foreground">Loading validation trail…</div>
+        <PageSkeleton rows={4} />
       </AppShell>
     );
   }
@@ -76,6 +78,11 @@ export default function InstitutionValidationTrail() {
       <PageHeader
         title="Validation Trail & Supporting Evidence"
         description="Read-only evidence trail used to support the institutional attestation decision."
+        breadcrumbs={[
+          { label: "Dashboard", href: "/institution/dashboard" },
+          { label: "Attestation Request", href: `/institution/attestation-request/${request.id}` },
+          { label: "Validation Trail" },
+        ]}
         actions={
           <Button variant="outline" onClick={() => navigate(`/institution/attestation-request/${request.id}`)}>
             <ArrowLeft className="h-4 w-4 mr-1.5" /> Back to Attestation
@@ -131,9 +138,10 @@ export default function InstitutionValidationTrail() {
             <CardTitle className="text-base flex items-center gap-2">
               <FileText className="h-4 w-4" /> Evidence records
             </CardTitle>
-            <Button variant="outline" size="sm" disabled>
-              <RefreshCw className="h-3.5 w-3.5 mr-1.5" />Refresh
-            </Button>
+            <StubControl label="Refresh" reason="Live evidence refresh is not yet available for institution validation trails.">
+              <RefreshCw className="h-3.5 w-3.5" aria-hidden />
+              Refresh
+            </StubControl>
           </CardHeader>
           <CardContent className="p-0">
             {v.rows.length === 0 ? (

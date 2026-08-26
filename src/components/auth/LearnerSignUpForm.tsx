@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/auth/PasswordInput";
 import { Field } from "@/components/sijil/Field";
+import { PasswordRequirements } from "@/components/sijil/PasswordRequirements";
 import { toast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { signupLearner, LearnerSignupError } from "@/lib/learner-signup";
@@ -166,6 +167,7 @@ export function LearnerSignUpForm({ onSwitchToSignin, showSigninLink = true }: L
             invalid={!!errors.password}
           />
           {errors.password && <p className="mt-1 text-xs text-destructive">{errors.password}</p>}
+          <PasswordRequirements password={password} />
         </Field>
 
         <Field label="Confirm password" required>

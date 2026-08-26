@@ -4,6 +4,7 @@ import { AppShell } from "@/components/sijil/AppShell";
 import { PageHeader } from "@/components/sijil/PageHeader";
 import { StatusBadge } from "@/components/sijil/StatusBadge";
 import { FieldRow } from "@/components/sijil/FieldRow";
+import { PageSkeleton } from "@/components/sijil/SkeletonLoader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, Copy, ShieldCheck, CheckCircle2, Lock } from "lucide-react";
@@ -18,14 +19,27 @@ export default function CredentialProof() {
   const [verified, setVerified] = useState(false);
   const proofHash = (c?.proof?.proofValue as string) ?? "—";
 
-  if (loading) return <AppShell role="learner"><div className="text-sm text-muted-foreground">Loading…</div></AppShell>;
+  if (loading) {
+    return (
+      <AppShell role="learner">
+        <PageSkeleton rows={3} />
+      </AppShell>
+    );
+  }
   if (!c) return <AppShell role="learner"><PageHeader title="Credential not found" /><Button onClick={() => navigate("/learner/wallet")}>Back</Button></AppShell>;
+
+  const encodedId = encodeURIComponent(c.id);
 
   return (
     <AppShell role="learner">
       <PageHeader
         title="Credential Proof"
         description="Cryptographic proof object attached to this credential. Use this to independently verify integrity and issuer."
+        breadcrumbs={[
+          { label: "Wallet", href: "/learner/wallet" },
+          { label: c.name, href: `/learner/credential/${encodedId}` },
+          { label: "Proof" },
+        ]}
         actions={
           <Button variant="outline" onClick={() => navigate(`/learner/credential/${encodeURIComponent(c.id)}`)}>
             <ArrowLeft className="h-4 w-4 mr-1.5" />Back to details
@@ -40,7 +54,7 @@ export default function CredentialProof() {
               <div className="flex items-center justify-between">
                 <CardTitle className="text-base">Proof object</CardTitle>
                 <div className="flex flex-wrap gap-1.5">
-                  <StatusBadge variant="verified" icon={<ShieldCheck className="h-3 w-3" />}>Verified</StatusBadge>
+                  <StatusBadge variant="info" icon={<ShieldCheck className="h-3 w-3" />}>Verified</StatusBadge>
                   <StatusBadge variant="info">Tamper-Proof</StatusBadge>
                   <StatusBadge variant="info">Cryptographically Secured</StatusBadge>
                   <StatusBadge variant="neutral">Privacy-Preserving</StatusBadge>
@@ -89,6 +103,9 @@ export default function CredentialProof() {
               </div>
               <p className="text-xs text-muted-foreground">
                 Resolves the issuer DID, fetches the verification key, and re-canonicalizes the credential before verifying the signature.
+              </p>
+              <p className="text-[11px] text-muted-foreground mt-2 italic">
+                Simulated verification — demonstrates the proof flow without a live verifier network.
               </p>
               <Button
                 className="w-full mt-4"

@@ -62,7 +62,10 @@ export default function CandidateSummary() {
             <div className="flex items-center gap-2 flex-wrap">
               <h2 className="text-xl font-semibold">{c.name}</h2>
               <StatusBadge variant={c.attestation === "Approved" ? "verified" : "warning"}>Attestation: {c.attestation}</StatusBadge>
-              <StatusBadge variant="neutral"><Lock className="h-3 w-3" /> Wallet not accessible</StatusBadge>
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/50 px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
+                <Lock className="h-3 w-3 shrink-0" aria-hidden />
+                Wallet not accessible
+              </span>
             </div>
             <div className="text-sm text-muted-foreground">{c.institution}</div>
             <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mt-4">
@@ -165,16 +168,16 @@ export default function CandidateSummary() {
 
         <div className="space-y-4">
           <Card>
-            <CardHeader><CardTitle className="text-base">Attestation source</CardTitle></CardHeader>
+            <CardHeader><CardTitle className="text-base">Verification source</CardTitle></CardHeader>
             <CardContent className="text-sm">
               <div className="flex items-center gap-2">
                 <Building2 className="h-4 w-4 text-muted-foreground" />
-                <span className="font-medium">{c.institution}</span>
+                <span className="font-medium">SIJIL evidence-based verification</span>
               </div>
-              <div className="text-xs text-muted-foreground mono mt-1">{skills[0]?.attestationDid || "did:web:issuer"}</div>
-              <StatusBadge variant="verified" className="mt-3">Approved</StatusBadge>
+              <div className="text-xs text-muted-foreground mono mt-1">{skills[0]?.attestationDid || "did:web:issuer.sijil.app"}</div>
+              <StatusBadge variant="verified" className="mt-3">Verified</StatusBadge>
               <p className="text-xs text-muted-foreground mt-3">
-                The institution issued and attested this learner's credentials — not a self-claim.
+                Credentials are verified automatically from connected evidence and assessment scores — not self-claimed.
               </p>
             </CardContent>
           </Card>

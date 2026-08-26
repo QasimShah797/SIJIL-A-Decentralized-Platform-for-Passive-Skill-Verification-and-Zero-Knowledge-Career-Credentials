@@ -1,4 +1,5 @@
 import {
+  BadgeCheck,
   ClipboardCheck,
   GraduationCap,
   Link2,
@@ -37,8 +38,14 @@ const steps: Step[] = [
   },
   {
     step: 4,
+    title: "Automated verification",
+    description: "Evidence is checked against connected sources before wallet issuance.",
+    icon: BadgeCheck,
+  },
+  {
+    step: 5,
     title: "Store and share",
-    description: "Keep the structured record in your wallet and disclose selected fields.",
+    description: "Keep credentials in your wallet and disclose selected fields.",
     icon: Share2,
   },
 ];
@@ -50,14 +57,14 @@ export function ProcessSection() {
         <ScrollReveal>
           <SectionHeading
             eyebrow="How It Works"
-            title="From competency claim to shareable evidence."
-            description="A focused workflow that keeps learning activity, practical validation, and reviewer context connected."
+            title="From competency claim to verifiable credential."
+            description="A focused pipeline — declare, connect evidence, validate, verify automatically, then share with cryptographic proof."
           />
         </ScrollReveal>
 
-        <ol className="relative grid gap-4 sm:grid-cols-2 lg:grid-cols-4 lg:gap-5">
+        <ol className="relative grid gap-4 sm:grid-cols-2 lg:grid-cols-5 lg:gap-4">
           <div
-            className="pointer-events-none absolute left-[12.5%] right-[12.5%] top-10 hidden h-px bg-border/80 lg:block"
+            className="pointer-events-none absolute left-[10%] right-[10%] top-10 hidden h-px bg-border/80 lg:block"
             aria-hidden="true"
           />
           {steps.map((item, index) => (

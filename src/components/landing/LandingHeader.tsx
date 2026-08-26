@@ -24,7 +24,7 @@ export function LandingHeader() {
   };
 
   return (
-    <header className="sticky top-0 z-50 border-b border-border/50 bg-background/80 backdrop-blur-md">
+    <header className="sticky top-0 z-50 border-b border-border/60 bg-background/85 backdrop-blur-md">
       <div className={cn(landingContainer, "flex h-[4.25rem] items-center justify-between gap-4")}>
         <button
           type="button"
@@ -44,10 +44,17 @@ export function LandingHeader() {
                 key={item.href}
                 type="button"
                 onClick={() => handleNavClick(item.href)}
-                className={cn(landingNavLink(isActive), isActive && "underline decoration-primary/40 underline-offset-8")}
+                className={cn(landingNavLink(isActive), "relative pb-1")}
                 aria-current={isActive ? "page" : undefined}
               >
                 {item.label}
+                <span
+                  className={cn(
+                    "absolute -bottom-0.5 left-3 right-3 h-0.5 rounded-full bg-primary transition-all duration-300 ease-out",
+                    isActive ? "scale-x-100 opacity-100" : "scale-x-0 opacity-0",
+                  )}
+                  aria-hidden
+                />
               </button>
             );
           })}
@@ -55,12 +62,12 @@ export function LandingHeader() {
 
         <div className="hidden items-center gap-2 lg:flex">
           <ThemeToggle />
-          <Link to="/">
+          <Link to="/login/learner">
             <Button variant="ghost" size="sm" className="rounded-xl text-sm font-medium">
               Sign In
             </Button>
           </Link>
-          <Link to="/">
+          <Link to="/signup/learner">
             <Button size="sm" className="rounded-xl bg-primary px-5 text-primary-foreground hover:bg-primary/90">
               Get Started
             </Button>
@@ -103,12 +110,12 @@ export function LandingHeader() {
             })}
           </nav>
           <div className="mt-4 flex flex-col gap-2 border-t border-border/50 pt-4">
-            <Link to="/" onClick={() => setMobileOpen(false)}>
+            <Link to="/login/learner" onClick={() => setMobileOpen(false)}>
               <Button variant="outline" className="w-full rounded-xl">
                 Sign In
               </Button>
             </Link>
-            <Link to="/" onClick={() => setMobileOpen(false)}>
+            <Link to="/signup/learner" onClick={() => setMobileOpen(false)}>
               <Button className="w-full rounded-xl bg-primary hover:bg-primary/90">Get Started</Button>
             </Link>
           </div>

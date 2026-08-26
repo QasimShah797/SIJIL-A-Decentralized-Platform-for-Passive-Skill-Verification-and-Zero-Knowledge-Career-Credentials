@@ -3,11 +3,13 @@ import { useNavigate } from "react-router-dom";
 import { AppShell } from "@/components/sijil/AppShell";
 import { PageHeader } from "@/components/sijil/PageHeader";
 import { StatusBadge } from "@/components/sijil/StatusBadge";
+import { FilterBar } from "@/components/sijil/FilterBar";
+import { PageSkeleton } from "@/components/sijil/SkeletonLoader";
 import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { ChevronRight, Search } from "lucide-react";
+import { ChevronRight } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { useInstitutionAttestationRequests } from "@/hooks/useInstitutionAttestationRequests";
 import {
   formatMcqPercentageLabel,
@@ -19,18 +21,30 @@ import {
   type InstitutionAttestationRequest,
 } from "@/lib/db/institution-attestation-requests";
 
-const FILTERS = ["All", "pending", "approved", "rejected"] as const;
+const FILTERS = [
+  { id: "All", label: "All" },
+  { id: "pending", label: "Pending" },
+  { id: "approved", label: "Approved" },
+  { id: "rejected", label: "Rejected" },
+] as const;
 
 const variantFor = (status: InstitutionAttestationRequest["status"]) =>
   status === "approved" ? "verified"
     : status === "rejected" ? "destructive"
       : "info";
 
+const borderAccentFor = (status: InstitutionAttestationRequest["status"]) =>
+  status === "approved"
+    ? "border-l-success"
+    : status === "rejected"
+      ? "border-l-destructive"
+      : "border-l-info";
+
 export default function AttestationQueue() {
   const navigate = useNavigate();
   const { requests, loading } = useInstitutionAttestationRequests();
   const [q, setQ] = useState("");
-  const [filter, setFilter] = useState<(typeof FILTERS)[number]>("All");
+  const [filter, setFilter] = useState<(typeof FILTERS)[number]["id"]>("All");
 
   const filtered = useMemo(() => {
     return requests
@@ -53,6 +67,14 @@ export default function AttestationQueue() {
       });
   }, [requests, q, filter]);
 
+  if (loading) {
+    return (
+      <AppShell role="institution">
+        <PageSkeleton rows={5} />
+      </AppShell>
+    );
+  }
+
   return (
     <AppShell role="institution">
       <PageHeader
@@ -60,33 +82,15 @@ export default function AttestationQueue() {
         description="MCQ practical task submissions waiting for institutional review."
       />
 
-      {loading && <div className="text-sm text-muted-foreground mb-4">Loading attestation requests…</div>}
-
-      <Card className="mb-4">
-        <CardContent className="p-3 flex flex-col md:flex-row gap-3 md:items-center">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Search learner, email, competency, or domain"
-              className="pl-9"
-            />
-          </div>
-          <div className="flex flex-wrap gap-1.5">
-            {FILTERS.map((f) => (
-              <Button
-                key={f}
-                size="sm"
-                variant={filter === f ? "default" : "outline"}
-                onClick={() => setFilter(f)}
-              >
-                {f === "All" ? "All" : f.charAt(0).toUpperCase() + f.slice(1)}
-              </Button>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
+      <FilterBar
+        className="mb-4"
+        searchValue={q}
+        onSearchChange={setQ}
+        searchPlaceholder="Search learner, email, competency, or domain"
+        filters={FILTERS.map((f) => ({ id: f.id, label: f.label }))}
+        activeFilter={filter}
+        onFilterChange={setFilter}
+      />
 
       <Card>
         <CardContent className="p-0">
@@ -108,7 +112,7 @@ export default function AttestationQueue() {
               {filtered.map((r) => (
                 <TableRow
                   key={r.id}
-                  className="cursor-pointer"
+                  className={cn("cursor-pointer border-l-4", borderAccentFor(r.status))}
                   onClick={() => navigate(`/institution/attestation-request/${r.id}`)}
                 >
                   <TableCell className="font-medium">{resolveLearnerName(r)}</TableCell>

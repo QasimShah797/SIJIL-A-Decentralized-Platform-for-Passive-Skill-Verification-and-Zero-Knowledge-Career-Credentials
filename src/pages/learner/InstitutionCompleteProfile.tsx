@@ -10,6 +10,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { Field } from "@/components/sijil/Field";
+import { PageSkeleton } from "@/components/sijil/SkeletonLoader";
+import { PipelineStepper } from "@/components/sijil/PipelineStepper";
 import { StatusBadge } from "@/components/sijil/StatusBadge";
 import { VerifiedProfessionalAccounts } from "@/components/profile/VerifiedProfessionalAccounts";
 import {
@@ -258,14 +260,20 @@ export default function InstitutionCompleteProfile() {
 
   if (authLoading || checking) {
     return (
-      <div className="min-h-screen grid place-items-center text-muted-foreground">
-        <div className="text-center">
-          <div className="animate-pulse text-foreground font-medium mb-1">SIJIL</div>
-          <div className="text-sm">Loading…</div>
+      <div className="min-h-screen px-4 py-10">
+        <div className="mx-auto max-w-2xl">
+          <PageSkeleton rows={5} />
         </div>
       </div>
     );
   }
+
+  const institutionStepperStages = [
+    { id: "personal", label: "Personal", status: "current" as const },
+    { id: "university", label: "University", status: "upcoming" as const },
+    { id: "professional", label: "Links", status: "upcoming" as const },
+    { id: "about", label: "About", status: "upcoming" as const },
+  ];
 
   const readOnlyClass = "bg-muted/50 cursor-not-allowed";
 
@@ -280,6 +288,9 @@ export default function InstitutionCompleteProfile() {
         <p className="mt-1 text-sm text-muted-foreground mb-6">
           Finish your compulsory learner profile before accessing the dashboard.
         </p>
+      <div className="mb-6">
+        <PipelineStepper stages={institutionStepperStages} />
+      </div>
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <StatusBadge variant="verified" icon={<ShieldCheck className="h-3 w-3" />}>
           Verified Student

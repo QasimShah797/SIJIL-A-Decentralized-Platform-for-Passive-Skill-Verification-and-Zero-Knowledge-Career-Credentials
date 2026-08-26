@@ -6,10 +6,10 @@ import sijilLogo from "@/assets/sijil-logo.png";
 
 export function AuthLeftPanel() {
   return (
-    <div className="relative flex min-h-[280px] flex-col justify-between overflow-hidden bg-gradient-to-br from-primary via-primary to-[hsl(217_91%_28%)] px-8 py-10 text-primary-foreground lg:min-h-screen lg:px-12 lg:py-12">
+    <div className="auth-panel-gradient relative flex min-h-[280px] flex-col justify-between overflow-hidden px-8 py-10 text-primary-foreground lg:min-h-screen lg:px-12 lg:py-12">
       <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
         <div className="absolute -right-20 -top-20 h-72 w-72 rounded-full bg-white/10 blur-3xl" />
-        <div className="absolute -bottom-24 -left-16 h-80 w-80 rounded-full bg-[hsl(152_65%_36%/0.25)] blur-3xl" />
+        <div className="absolute -bottom-24 -left-16 h-80 w-80 rounded-full bg-success/25 blur-3xl" />
         <div className="absolute right-1/4 top-1/3 h-40 w-40 rounded-full bg-info/20 blur-2xl" />
       </div>
 
@@ -22,15 +22,18 @@ export function AuthLeftPanel() {
       </div>
 
       <div className="relative z-10 my-8 max-w-lg">
+        <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-primary-foreground/70">
+          Verification-first platform
+        </p>
         <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl lg:text-[2.5rem] lg:leading-tight">
-          Welcome to SIJIL
+          Trusted evidence. Credentials you control.
         </h1>
         <p className="mt-4 text-sm leading-relaxed text-primary-foreground/85 sm:text-base">
-          Decentralized competency verification powered by GitHub activity, LMS transcripts, peer
-          reviews, and practical tasks — building learner-owned credentials you can trust and share.
+          Connect GitHub, LMS, practical tasks, and peer reviews into verifiable competency records —
+          then share only what recruiters need to see.
         </p>
 
-        <div className="mt-8 flex items-center gap-3">
+        <div className="mt-8 flex flex-wrap items-center gap-3">
           <Button
             asChild
             variant="secondary"
@@ -38,6 +41,10 @@ export function AuthLeftPanel() {
           >
             <Link to="/about">Learn more</Link>
           </Button>
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs font-medium backdrop-blur-sm">
+            <Shield className="h-3.5 w-3.5" aria-hidden />
+            Enterprise-grade security
+          </span>
         </div>
       </div>
 
@@ -51,18 +58,18 @@ export function AuthLeftPanel() {
                   <Fingerprint className="h-6 w-6" />
                 </div>
                 <div>
-                  <p className="text-sm font-medium">Digital identity</p>
-                  <p className="text-xs text-primary-foreground/70">Learner-owned credentials</p>
+                  <p className="text-sm font-medium">Verifiable credential</p>
+                  <p className="text-xs text-primary-foreground/70">Learner-owned wallet</p>
                 </div>
               </div>
-              <BadgeCheck className="h-8 w-8 text-[hsl(152_65%_56%)]" />
+              <BadgeCheck className="h-8 w-8 text-success" />
             </div>
 
             <div className="mt-6 grid grid-cols-3 gap-3">
               {[
-                { icon: GraduationCap, label: "LMS" },
-                { icon: Shield, label: "Peer review" },
-                { icon: Sparkles, label: "ZK proofs" },
+                { icon: GraduationCap, label: "Evidence" },
+                { icon: Shield, label: "Verification" },
+                { icon: Sparkles, label: "Selective share" },
               ].map(({ icon: Icon, label }) => (
                 <div
                   key={label}
@@ -75,15 +82,22 @@ export function AuthLeftPanel() {
             </div>
 
             <div className="mt-6 space-y-2">
-              {[88, 72, 94].map((width, i) => (
-                <div key={i} className="flex items-center gap-3">
-                  <div className="h-2 flex-1 overflow-hidden rounded-full bg-white/10">
+              {[
+                { label: "Evidence linked", width: 88 },
+                { label: "Validation complete", width: 72 },
+                { label: "Verification passed", width: 94 },
+              ].map(({ label, width }) => (
+                <div key={label}>
+                  <div className="mb-1 flex justify-between text-[10px] text-primary-foreground/60">
+                    <span>{label}</span>
+                    <span className="tabular-nums">{width}%</span>
+                  </div>
+                  <div className="h-2 overflow-hidden rounded-full bg-white/10">
                     <div
-                      className="h-full rounded-full bg-gradient-to-r from-[hsl(152_65%_56%)] to-info transition-all duration-700"
+                      className="h-full rounded-full bg-gradient-to-r from-success to-info transition-all duration-700"
                       style={{ width: `${width}%` }}
                     />
                   </div>
-                  <span className="text-[10px] tabular-nums text-primary-foreground/60">{width}%</span>
                 </div>
               ))}
             </div>

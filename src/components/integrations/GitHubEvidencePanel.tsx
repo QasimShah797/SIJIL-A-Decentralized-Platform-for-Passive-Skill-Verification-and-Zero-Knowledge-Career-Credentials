@@ -1,12 +1,12 @@
 import {
   Github,
   RefreshCw,
-  Search,
   Code2,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { FilterBar } from "@/components/sijil/FilterBar";
+import { CardSkeleton } from "@/components/sijil/SkeletonLoader";
 import type { ProjectEvidenceApiView } from "@/lib/db/github-evidence";
 import { IntegrationEmptyState } from "./IntegrationEmptyState";
 import { GitHubEvidenceRow } from "./GitHubEvidenceRow";
@@ -91,31 +91,22 @@ export function GitHubEvidencePanel(props: GitHubEvidencePanelProps) {
         </div>
 
         {connected && projects.length > 0 && (
-          <div className="flex flex-col sm:flex-row gap-2">
-            <div className="relative flex-1">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" aria-hidden />
-              <Input
-                className="pl-8 h-9"
-                placeholder="Search repositories…"
-                value={repoSearch}
-                onChange={(e) => onRepoSearchChange(e.target.value)}
-                aria-label="Search repositories"
-              />
-            </div>
-            <select
-              className="h-9 rounded-md border border-input bg-background px-2 text-sm min-w-[140px]"
-              value={languageFilter}
-              onChange={(e) => onLanguageFilterChange(e.target.value as LanguageFilter)}
-              aria-label="Filter by language"
-            >
-              <option value="all">All languages</option>
-              <option value="javascript">JavaScript</option>
-              <option value="typescript">TypeScript</option>
-              <option value="java">Java</option>
-              <option value="python">Python</option>
-              <option value="other">Other</option>
-            </select>
-          </div>
+          <FilterBar
+            searchValue={repoSearch}
+            onSearchChange={onRepoSearchChange}
+            searchPlaceholder="Search repositories…"
+            filters={[
+              { id: "all", label: "All languages" },
+              { id: "javascript", label: "JavaScript" },
+              { id: "typescript", label: "TypeScript" },
+              { id: "java", label: "Java" },
+              { id: "python", label: "Python" },
+              { id: "other", label: "Other" },
+            ]}
+            activeFilter={languageFilter}
+            onFilterChange={(id) => onLanguageFilterChange(id as LanguageFilter)}
+            className="border-0 bg-transparent p-0 shadow-none"
+          />
         )}
       </CardHeader>
 
@@ -132,7 +123,7 @@ export function GitHubEvidencePanel(props: GitHubEvidencePanelProps) {
             }
           />
         ) : loading ? (
-          <p className="py-6 text-sm text-muted-foreground px-1">Loading…</p>
+          <CardSkeleton />
         ) : projects.length === 0 ? (
           <IntegrationEmptyState
             icon={Github}

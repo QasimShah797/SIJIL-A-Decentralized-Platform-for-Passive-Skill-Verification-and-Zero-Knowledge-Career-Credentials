@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Mail, ShieldCheck } from "lucide-react";
+import { Mail, ShieldCheck, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -29,14 +29,23 @@ export function LearnerSignInForm({ onSwitchToSignup, showSignupLink = true }: L
   const [rememberMe, setRememberMe] = useState(true);
   const [busy, setBusy] = useState(false);
   const [forgotOpen, setForgotOpen] = useState(false);
+  const [rememberedEmail, setRememberedEmail] = useState<string | null>(null);
 
   useEffect(() => {
     const saved = localStorage.getItem(REMEMBER_EMAIL_KEY);
     if (saved) {
       setEmail(saved);
       setRememberMe(true);
+      setRememberedEmail(saved);
     }
   }, []);
+
+  const dismissRememberedEmail = () => {
+    localStorage.removeItem(REMEMBER_EMAIL_KEY);
+    setRememberedEmail(null);
+    setEmail("");
+    setRememberMe(false);
+  };
 
   useEffect(() => {
     if (loading || !user || !rolesReady) return;
@@ -85,13 +94,6 @@ export function LearnerSignInForm({ onSwitchToSignup, showSignupLink = true }: L
             description: "This account is not a learner account.",
             variant: "destructive",
           });
-        } else if (access.reason === "not_activated") {
-          toast({
-            title: "Account not activated",
-            description:
-              "Please activate your account using the activation link provided by your institution.",
-            variant: "destructive",
-          });
         } else if (access.reason === "no_profile") {
           toast({
             title: "Profile setup required",
@@ -110,8 +112,10 @@ export function LearnerSignInForm({ onSwitchToSignup, showSignupLink = true }: L
 
       if (rememberMe) {
         localStorage.setItem(REMEMBER_EMAIL_KEY, trimmedEmail);
+        setRememberedEmail(trimmedEmail);
       } else {
         localStorage.removeItem(REMEMBER_EMAIL_KEY);
+        setRememberedEmail(null);
       }
 
       toast({ title: "Signed in" });
@@ -132,6 +136,25 @@ export function LearnerSignInForm({ onSwitchToSignup, showSignupLink = true }: L
   return (
     <>
       <form onSubmit={submit} className="space-y-4">
+        {rememberedEmail && (
+          <div className="flex items-center justify-between gap-2 rounded-xl border border-primary/20 bg-primary/5 px-3 py-2">
+            <div className="flex min-w-0 items-center gap-2 text-sm">
+              <Mail className="h-4 w-4 shrink-0 text-primary" aria-hidden />
+              <span className="truncate text-foreground">
+                Signing in as <span className="font-medium">{rememberedEmail}</span>
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={dismissRememberedEmail}
+              className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              aria-label="Clear remembered email"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        )}
+
         <div>
           <Label htmlFor="learner-signin-email">Email</Label>
           <div className="relative mt-1.5">
