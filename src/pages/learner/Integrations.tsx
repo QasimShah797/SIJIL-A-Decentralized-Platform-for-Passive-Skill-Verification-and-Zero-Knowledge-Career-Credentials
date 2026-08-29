@@ -1,14 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AppShell } from "@/components/sijil/AppShell";
-import { PageHeader } from "@/components/sijil/PageHeader";
+import { LearnerWorkspaceShell } from "@/components/sijil/LearnerWorkspaceShell";
 import { ConfirmDestructiveDialog } from "@/components/sijil/ConfirmDestructiveDialog";
-import { Button } from "@/components/ui/button";
-import { RefreshCw, Github, BookOpen, FileUp, FolderSync } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useNavigate } from "react-router-dom";
-import { useDeclaredSkills, useCredentials } from "@/hooks/useLearnerData";
+import { useDeclaredSkills, useCredentials, useLearnerProfile } from "@/hooks/useLearnerData";
+import { Github, BookOpen, FileUp } from "lucide-react";
 import {
   fetchLmsEvidence,
   toCardEvidence,
@@ -43,6 +41,13 @@ import {
 } from "@/components/integrations/GitHubEvidencePanel";
 import { LMSActivityPanel } from "@/components/integrations/LMSActivityPanel";
 import { CertificatesPanel } from "@/components/integrations/CertificatesPanel";
+import {
+  ConnectedSourcesHeader,
+  IntegrationsBreadcrumbBar,
+  IntegrationsFooter,
+  IntegrationsHero,
+} from "@/components/integrations/IntegrationsPagePanels";
+import { shortDid } from "@/components/learner/ProfilePagePanels";
 
 function buildAllSkills(
   declared: { id: string; name: string }[],
@@ -96,6 +101,7 @@ function formatPortfolioSyncTime(
 export default function Integrations() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const { profile } = useLearnerProfile();
   const { skills: declaredSkills } = useDeclaredSkills();
   const { credentials } = useCredentials();
   const allSkills = buildAllSkills(declaredSkills, credentials);
@@ -469,32 +475,47 @@ export default function Integrations() {
     toast({ title: "Upload coming soon" });
   };
 
+  const scrollToSources = () => {
+    document.getElementById("connected-sources")?.scrollIntoView({ behavior: "smooth" });
+  };
+
   const portfolioBusy = portfolioSyncing || syncing || lmsSyncing;
+  const mappedEvidence = linkedRepoCount + lmsImportedCount + certificateCount;
+  const evidenceSlots = 10;
+  const didShort = profile?.did ? shortDid(profile.did) : undefined;
 
   return (
-    <AppShell role="learner">
-      <PageHeader
-        title="External Integrations"
-        description="Connect external platforms, synchronize supporting records, and map imported evidence to your declared competencies."
-        className="mb-8"
-        actions={
-          <Button onClick={syncPortfolio} disabled={portfolioBusy}>
-            <FolderSync className={"h-4 w-4 mr-1.5 " + (portfolioBusy ? "animate-spin" : "")} />
-            {portfolioBusy ? "Syncing…" : "Sync Portfolio"}
-          </Button>
+    <LearnerWorkspaceShell variant="dashboard">
+      <IntegrationsBreadcrumbBar didShort={didShort} allSynced={connectedSources > 0} />
+
+      <IntegrationsHero
+        portfolioSyncing={portfolioBusy}
+        onSyncPortfolio={() => void syncPortfolio()}
+        onAddIntegration={scrollToSources}
+        onViewSyncLog={() => toast({ title: "Sync log coming soon" })}
+        coverage={{
+          mappedCount: mappedEvidence,
+          totalSlots: evidenceSlots,
+          githubCount: linkedRepoCount,
+          lmsCount: lmsImportedCount,
+          certCount: certificateCount,
+        }}
+        summary={
+          <IntegrationSummary
+            variant="embedded"
+            connectedSources={connectedSources}
+            githubEvidence={linkedRepoCount}
+            lmsRecords={lmsImportedCount}
+            certificates={certificateCount}
+            lastPortfolioSync={lastPortfolioSync}
+          />
         }
       />
 
-      <div className="space-y-6">
-        <IntegrationSummary
-          connectedSources={connectedSources}
-          githubEvidence={linkedRepoCount}
-          lmsRecords={lmsImportedCount}
-          certificates={certificateCount}
-          lastPortfolioSync={lastPortfolioSync}
-        />
-
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="mt-8 space-y-8">
+        <div id="connected-sources">
+          <ConnectedSourcesHeader onManageAll={scrollToSources} />
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <IntegrationConnectionCard
             icon={BookOpen}
             name="Moodle LMS"
@@ -519,6 +540,7 @@ export default function Integrations() {
             name="GitHub"
             status={ghConn ? "connected" : "disconnected"}
             account={ghConn ? `@${ghConn.github_username}` : undefined}
+            subtitle={ghConn ? ghConn.scopes ?? "Public repositories" : undefined}
             lastSync={
               ghConn?.last_synced_at
                 ? new Date(ghConn.last_synced_at).toLocaleString()
@@ -550,6 +572,7 @@ export default function Integrations() {
             onPrimary={uploadCertificate}
             showPrimary
           />
+          </div>
         </div>
 
         <GitHubEvidencePanel
@@ -595,6 +618,8 @@ export default function Integrations() {
         <CertificatesPanel onUpload={uploadCertificate} />
       </div>
 
+      <IntegrationsFooter />
+
       <ConfirmDestructiveDialog
         open={disconnectTarget === "github"}
         onOpenChange={(open) => { if (!open) setDisconnectTarget(null); }}
@@ -613,6 +638,6 @@ export default function Integrations() {
         onConfirm={confirmDisconnect}
         loading={disconnecting}
       />
-    </AppShell>
+    </LearnerWorkspaceShell>
   );
 }

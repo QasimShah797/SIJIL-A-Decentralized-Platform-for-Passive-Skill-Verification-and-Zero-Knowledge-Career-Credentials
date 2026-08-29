@@ -25,6 +25,33 @@ import {
 import { isApiEnabled } from "@/services/api/client";
 import { cn } from "@/lib/utils";
 
+function languageDot(lang: string) {
+  const key = lang.toLowerCase();
+  if (key.includes("typescript")) return "bg-[#3178c6]";
+  if (key.includes("javascript")) return "bg-[#f7df1e]";
+  if (key.includes("java")) return "bg-[#ea2d2e]";
+  if (key.includes("python")) return "bg-[#3776ab]";
+  return "bg-[#64748b]";
+}
+
+function CommitBars({ count }: { count: number | null | undefined }) {
+  const total = 10;
+  const filled = Math.min(total, Math.max(1, Math.round((count ?? 0) / 8) || 1));
+  const heights = [8, 12, 10, 16, 14, 18, 12, 20, 16, 22];
+
+  return (
+    <div className="flex items-end gap-0.5" aria-hidden>
+      {Array.from({ length: total }).map((_, i) => (
+        <div
+          key={i}
+          className={cn("w-1 rounded-sm", i < filled ? "bg-[#023E8A]" : "bg-[#e2e8f0]")}
+          style={{ height: `${heights[i % heights.length]}px` }}
+        />
+      ))}
+    </div>
+  );
+}
+
 function isProjectLinked(project: ProjectEvidenceApiView): boolean {
   return project.skillLinks.length > 0;
 }
@@ -115,11 +142,11 @@ export function GitHubEvidenceRow({
     typeof project.commitCount === "number" ? `${project.commitCount} commits` : "—";
 
   return (
-    <div className="group hover:bg-muted/30 transition-colors">
+    <div className="group transition-colors hover:bg-[#f8fafc]">
       <div
         className={cn(
-          "px-4 py-4 md:py-3.5",
-          "md:grid md:grid-cols-[minmax(0,2fr)_minmax(0,0.75fr)_minmax(0,0.75fr)_minmax(0,1fr)_minmax(0,0.75fr)_48px] md:gap-3 md:items-center",
+          "px-5 py-4 md:py-3.5",
+          "md:grid md:grid-cols-[minmax(0,2fr)_minmax(0,0.85fr)_minmax(0,0.85fr)_minmax(0,1.1fr)_minmax(0,0.9fr)_48px] md:gap-3 md:items-center",
         )}
       >
         {/* Repository */}
@@ -132,7 +159,7 @@ export function GitHubEvidenceRow({
                     href={project.repositoryUrl}
                     target="_blank"
                     rel="noreferrer"
-                    className="font-medium text-sm truncate hover:underline text-foreground"
+                    className="font-semibold text-sm truncate hover:underline text-[#023E8A]"
                   >
                     {project.repositoryName}
                   </a>
@@ -160,12 +187,16 @@ export function GitHubEvidenceRow({
         </div>
 
         {/* Language — desktop */}
-        <div className="hidden md:block">
-          <StatusBadge variant="neutral">{languageLabel}</StatusBadge>
+        <div className="hidden md:flex md:items-center md:gap-1.5">
+          <span className={cn("h-2 w-2 shrink-0 rounded-full", languageDot(languageLabel))} aria-hidden />
+          <span className="text-sm font-medium text-[#334155]">{languageLabel}</span>
         </div>
 
         {/* Commits — desktop */}
-        <div className="hidden md:block text-sm text-muted-foreground">{commitLabel}</div>
+        <div className="hidden md:block">
+          <CommitBars count={project.commitCount} />
+          <p className="mt-1 text-[10px] text-[#64748b]">{commitLabel}</p>
+        </div>
 
         {/* Linked competency */}
         <div className="mb-3 md:mb-0">
@@ -203,7 +234,7 @@ export function GitHubEvidenceRow({
         {/* Status */}
         <div className="flex items-center gap-2 mb-3 md:mb-0">
           <StatusBadge variant={linked ? "verified" : "neutral"}>
-            {linked ? "Project Evidence" : "Unlinked"}
+            {linked ? "✓ Project Evidence" : "Unlinked"}
           </StatusBadge>
           {reviewSummary && linked && (
             <StatusBadge variant={reviewStatusVariant(reviewSummary.displayStatus)} className="hidden lg:inline-flex">

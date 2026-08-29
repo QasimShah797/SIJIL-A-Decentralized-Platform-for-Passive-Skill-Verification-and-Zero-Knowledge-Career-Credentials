@@ -1,7 +1,5 @@
 import { BookOpen, Link2, RefreshCw } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { StatusBadge } from "@/components/sijil/StatusBadge";
 import {
   activityStatusBadge,
   formatCompletionStatusLabel,
@@ -46,148 +44,131 @@ export function LMSActivityPanel({
   const totalAssignments = activities.reduce((n, c) => n + c.assignments.length, 0);
 
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between gap-3 pb-3">
-        <CardTitle className="text-lg font-semibold flex items-center gap-2">
-          <BookOpen className="h-4 w-4" aria-hidden />
-          Recent LMS Activity
-          {connected && totalAssignments > 0 && (
-            <span className="text-sm font-normal text-muted-foreground">
-              · {totalAssignments} {totalAssignments === 1 ? "record" : "records"}
-            </span>
-          )}
-        </CardTitle>
-        {connected && (
-          <Button size="sm" variant="outline" onClick={onSync} disabled={syncing} className="shrink-0">
-            <RefreshCw className={"h-3.5 w-3.5 mr-1.5 " + (syncing ? "animate-spin" : "")} />
+    <div className="learner-stat-card overflow-hidden">
+      <div className="flex flex-col gap-3 border-b border-[#e2e8f0] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 className="flex items-center gap-2 text-base font-semibold text-[#023E8A]">
+            <BookOpen className="h-4 w-4" aria-hidden />
+            Recent LMS Activity
+          </h2>
+          {connected && moodleEmail ? (
+            <p className="mt-0.5 text-xs text-[#64748b]">
+              {totalAssignments} records · connected as {moodleEmail}
+            </p>
+          ) : null}
+        </div>
+        {connected ? (
+          <Button
+            size="sm"
+            variant="outline"
+            className="shrink-0 rounded-xl border-[#e2e8f0]"
+            onClick={onSync}
+            disabled={syncing}
+          >
+            <RefreshCw className={"mr-1.5 h-3.5 w-3.5 " + (syncing ? "animate-spin" : "")} />
             {syncing ? "Syncing…" : "Sync Moodle Activities"}
           </Button>
-        )}
-      </CardHeader>
+        ) : null}
+      </div>
 
-      <CardContent className="pt-0">
+      <div className="p-5">
         {!connected ? (
           <IntegrationEmptyState
             icon={BookOpen}
             title="Connect Moodle to import recent activity"
             hint="Sync enrolled courses to import assignments and grades."
             action={
-              <Button size="sm" onClick={onConnect} disabled={syncing}>
-                <Link2 className="h-4 w-4 mr-1.5" />
+              <Button size="sm" className="rounded-xl bg-[#023E8A] hover:bg-[#012A5C]" onClick={onConnect} disabled={syncing}>
+                <Link2 className="mr-1.5 h-4 w-4" />
                 Connect Moodle
               </Button>
             }
           />
         ) : loading ? (
-          <p className="py-6 text-sm text-muted-foreground text-center">Loading Moodle activity…</p>
+          <p className="py-6 text-center text-sm text-[#64748b]">Loading Moodle activity…</p>
         ) : error ? (
           <IntegrationEmptyState
             icon={BookOpen}
             title="Could not sync Moodle data"
             hint={error}
             action={
-              <Button size="sm" variant="outline" onClick={onSync} disabled={syncing}>
-                <RefreshCw className={"h-3.5 w-3.5 mr-1.5 " + (syncing ? "animate-spin" : "")} />
+              <Button size="sm" variant="outline" className="rounded-xl" onClick={onSync} disabled={syncing}>
+                <RefreshCw className={"mr-1.5 h-3.5 w-3.5 " + (syncing ? "animate-spin" : "")} />
                 Sync Moodle Activities
               </Button>
             }
           />
         ) : (
           <div className="space-y-4">
-            <div className="rounded-lg border bg-muted/30 px-4 py-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
-              <StatusBadge variant="verified">Connected</StatusBadge>
-              {moodleEmail && (
-                <span className="text-muted-foreground">
-                  User: <span className="text-foreground">{moodleEmail}</span>
-                </span>
-              )}
-              <span className="text-muted-foreground">
-                Host: <span className="text-foreground">{moodleSiteHost}</span>
-              </span>
-              <span className="text-xs text-muted-foreground ml-auto">
-                Last sync: {lastSync ?? "—"} · {recordCount} imported
-              </span>
-            </div>
-
             {activities.length === 0 ? (
               <IntegrationEmptyState
                 compact
                 icon={BookOpen}
                 title="This Moodle account is connected but is not enrolled in any courses."
                 action={
-                  <Button size="sm" variant="outline" onClick={onSync} disabled={syncing}>
-                    <RefreshCw className={"h-3.5 w-3.5 mr-1.5 " + (syncing ? "animate-spin" : "")} />
+                  <Button size="sm" variant="outline" className="rounded-xl" onClick={onSync} disabled={syncing}>
+                    <RefreshCw className={"mr-1.5 h-3.5 w-3.5 " + (syncing ? "animate-spin" : "")} />
                     Sync Moodle Activities
                   </Button>
                 }
               />
             ) : (
-              <div className="space-y-4">
-                {activities.map((course) => (
-                  <div key={course.courseId} className="rounded-xl border overflow-hidden">
-                    <div className="border-b bg-muted/30 px-4 py-2.5 flex flex-wrap items-center justify-between gap-2">
-                      <div>
-                        <p className="font-medium text-sm">{course.courseName}</p>
-                        {course.shortname && (
-                          <p className="text-xs text-muted-foreground">{course.shortname}</p>
-                        )}
-                      </div>
-                      <div className="flex flex-wrap gap-1.5">
-                        <StatusBadge variant={activityStatusBadge(formatCompletionStatusLabel(course.completionStatus))}>
-                          {formatCompletionStatusLabel(course.completionStatus)}
-                        </StatusBadge>
-                        <span className="text-xs text-muted-foreground self-center">
-                          {course.assignments.length} assignment{course.assignments.length === 1 ? "" : "s"}
-                        </span>
-                      </div>
-                    </div>
-                    {course.assignments.length === 0 ? (
-                      <p className="px-4 py-3 text-xs text-muted-foreground">
-                        No assignments are currently available for this course.
-                      </p>
-                    ) : (
-                      <div className="divide-y">
-                        {course.assignments.map((a) => (
-                          <LMSActivityRow
-                            key={a.id}
-                            assignment={a}
-                            formatGrade={formatGradeDisplay}
-                            formatFeedback={formatMoodleFeedbackDisplay}
-                            formatSubmission={formatSubmissionStatusLabel}
-                            activityStatusBadge={activityStatusBadge}
-                          />
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                ))}
+              <div className="grid gap-4 lg:grid-cols-2">
+                {activities.flatMap((course) =>
+                  course.assignments.length === 0
+                    ? [
+                        <div key={`empty-${course.courseId}`} className="learner-stat-card border border-[#e2e8f0] p-5 lg:col-span-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="font-semibold text-[#023E8A]">{course.courseName}</p>
+                          </div>
+                          <p className="mt-2 text-sm text-[#64748b]">
+                            No assignments are currently available for this course.
+                          </p>
+                        </div>,
+                      ]
+                    : course.assignments.map((a) => (
+                        <LMSActivityRow
+                          key={a.id}
+                          courseName={course.courseName}
+                          courseShortname={course.shortname}
+                          completionStatus={course.completionStatus}
+                          assignment={a}
+                          formatGrade={formatGradeDisplay}
+                          formatFeedback={formatMoodleFeedbackDisplay}
+                          formatSubmission={formatSubmissionStatusLabel}
+                          activityStatusBadge={activityStatusBadge}
+                        />
+                      )),
+                )}
               </div>
             )}
 
-            {otherRecords.length > 0 && (
-              <div className="rounded-xl border overflow-hidden">
-                <div className="border-b bg-muted/30 px-4 py-2.5">
-                  <p className="text-sm font-medium">Other LMS evidence</p>
+            {otherRecords.length > 0 ? (
+              <div className="overflow-hidden rounded-xl border border-[#e2e8f0]">
+                <div className="border-b border-[#e2e8f0] bg-[#f8fafc] px-4 py-2.5">
+                  <p className="text-sm font-semibold text-[#023E8A]">Other LMS evidence</p>
                 </div>
-                <div className="divide-y">
+                <div className="divide-y divide-[#e2e8f0]">
                   {otherRecords.map((r) => (
-                    <div key={r.id} className="px-4 py-3 grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
-                      <div className="col-span-2 sm:col-span-1 min-w-0">
-                        <p className="font-medium truncate">{r.course_name}</p>
+                    <div key={r.id} className="grid grid-cols-2 gap-2 px-4 py-3 text-sm sm:grid-cols-4">
+                      <div className="col-span-2 min-w-0 sm:col-span-1">
+                        <p className="truncate font-medium text-[#334155]">{r.course_name}</p>
                       </div>
-                      <p className="text-muted-foreground text-xs">{r.grade ?? "—"}</p>
-                      <p className="text-muted-foreground text-xs">{r.completion_status ?? "—"}</p>
-                      <p className="text-muted-foreground text-xs">
-                        {new Date(r.fetched_at).toLocaleDateString()}
-                      </p>
+                      <p className="text-xs text-[#64748b]">{r.grade ?? "—"}</p>
+                      <p className="text-xs text-[#64748b]">{r.completion_status ?? "—"}</p>
+                      <p className="text-xs text-[#64748b]">{new Date(r.fetched_at).toLocaleDateString()}</p>
                     </div>
                   ))}
                 </div>
               </div>
-            )}
+            ) : null}
+
+            <p className="sr-only">
+              Host {moodleSiteHost} · Last sync {lastSync ?? "—"} · {recordCount} imported
+            </p>
           </div>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }

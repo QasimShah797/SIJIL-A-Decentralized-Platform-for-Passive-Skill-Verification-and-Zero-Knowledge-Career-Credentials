@@ -69,7 +69,7 @@ function dashboardNav(skillsCount: number): NavGroup[] {
     },
     {
       label: "Evidence",
-      items: [{ to: "/learner/integrations", icon: Plug, label: "Evidence" }],
+      items: [{ to: "/learner/integrations", icon: Plug, label: "Integrations" }],
     },
     {
       label: "Assessment",
@@ -494,61 +494,85 @@ export function LearnerWorkspaceShell({
             )}
 
             {isDark && profile && (
-              <div className="hidden items-center gap-2 rounded-xl border border-[#e2e8f0] bg-white py-1 pl-1 pr-2 sm:flex">
-                {profile.avatarUrl ? (
-                  <img src={profile.avatarUrl} alt="" className="h-8 w-8 rounded-full object-cover" />
-                ) : (
-                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#023E8A] text-xs font-semibold text-white">
-                    {profile.avatar}
-                  </div>
-                )}
-                <div className="min-w-0">
-                  <p className="truncate text-xs font-semibold text-[#023E8A]">{profile.name}</p>
-                  <p className="text-[10px] text-[#64748b]">Learner</p>
-                </div>
-                <span className="inline-flex items-center gap-0.5 rounded-full bg-[#ccfbf1] px-2 py-0.5 text-[10px] font-medium text-[#0f766e]">
-                  <CheckCircle2 className="h-3 w-3" />
-                  Verified
-                </span>
-              </div>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    className="hidden items-center gap-2 rounded-xl border border-[#e2e8f0] bg-white py-1 pl-1 pr-2 sm:flex focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#023E8A]"
+                    aria-label="Account menu"
+                  >
+                    {profile.avatarUrl ? (
+                      <img src={profile.avatarUrl} alt="" className="h-8 w-8 rounded-full object-cover" />
+                    ) : (
+                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#023E8A] text-xs font-semibold text-white">
+                        {profile.avatar}
+                      </div>
+                    )}
+                    <div className="min-w-0 text-left">
+                      <p className="truncate text-xs font-semibold text-[#023E8A]">{profile.name}</p>
+                      <p className="text-[10px] text-[#64748b]">Learner</p>
+                    </div>
+                    <span className="inline-flex items-center gap-0.5 rounded-full bg-[#ccfbf1] px-2 py-0.5 text-[10px] font-medium text-[#0f766e]">
+                      <CheckCircle2 className="h-3 w-3" />
+                      Verified
+                    </span>
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-48">
+                  <DropdownMenuItem onClick={() => navigate("/learner/my-profile")}>My Profile</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => navigate("/learner/profile")}>Dashboard</DropdownMenuItem>
+                  {decayCount > 0 && (
+                    <DropdownMenuItem onClick={() => navigate("/learner/profile#notifications")}>
+                      Notifications ({decayCount})
+                    </DropdownMenuItem>
+                  )}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={handleSignOut} className="text-destructive focus:text-destructive">
+                    <LogOut className="mr-2 h-4 w-4" />
+                    Sign out
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             )}
 
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  type="button"
-                  className="flex items-center gap-1 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#023E8A]"
-                  aria-label="Account menu"
-                >
-                  {profile?.avatarUrl ? (
-                    <img
-                      src={profile.avatarUrl}
-                      alt=""
-                      className="h-9 w-9 rounded-full border border-[#e2e8f0] object-cover"
-                    />
-                  ) : (
-                    <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#023E8A] text-xs font-semibold text-white">
-                      {profile?.avatar ?? user?.email?.slice(0, 2).toUpperCase() ?? "?"}
-                    </div>
+            {!isDark && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    className="flex items-center gap-1 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#023E8A]"
+                    aria-label="Account menu"
+                  >
+                    {profile?.avatarUrl ? (
+                      <img
+                        src={profile.avatarUrl}
+                        alt=""
+                        className="h-9 w-9 rounded-full border border-[#e2e8f0] object-cover"
+                      />
+                    ) : (
+                      <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#023E8A] text-xs font-semibold text-white">
+                        {profile?.avatar ?? user?.email?.slice(0, 2).toUpperCase() ?? "?"}
+                      </div>
+                    )}
+                    <ChevronDown className="h-4 w-4 text-[#64748b]" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-48">
+                  <DropdownMenuItem onClick={() => navigate("/learner/my-profile")}>My Profile</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => navigate("/learner/profile")}>Dashboard</DropdownMenuItem>
+                  {decayCount > 0 && (
+                    <DropdownMenuItem onClick={() => navigate("/learner/profile#notifications")}>
+                      Notifications ({decayCount})
+                    </DropdownMenuItem>
                   )}
-                  {!isDark && <ChevronDown className="h-4 w-4 text-[#64748b]" />}
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-48">
-                <DropdownMenuItem onClick={() => navigate("/learner/my-profile")}>My Profile</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => navigate("/learner/profile")}>Dashboard</DropdownMenuItem>
-                {decayCount > 0 && (
-                  <DropdownMenuItem onClick={() => navigate("/learner/profile#notifications")}>
-                    Notifications ({decayCount})
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={handleSignOut} className="text-destructive focus:text-destructive">
+                    <LogOut className="mr-2 h-4 w-4" />
+                    Sign out
                   </DropdownMenuItem>
-                )}
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={handleSignOut} className="text-destructive focus:text-destructive">
-                  <LogOut className="mr-2 h-4 w-4" />
-                  Sign out
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
           </div>
         </header>
 
