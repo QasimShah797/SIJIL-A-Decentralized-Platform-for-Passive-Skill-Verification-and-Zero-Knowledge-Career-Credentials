@@ -50,7 +50,7 @@ type NavItem = {
 
 type NavGroup = { label: string; items: NavItem[] };
 
-function dashboardNav(skillsCount: number): NavGroup[] {
+function dashboardNav(): NavGroup[] {
   return [
     {
       label: "Overview",
@@ -74,10 +74,8 @@ function dashboardNav(skillsCount: number): NavGroup[] {
     {
       label: "Assessment",
       items: [
-        { to: "/learner/task", icon: ClipboardCheck, label: "Practical Task" },
-        ...(skillsCount
-          ? [{ to: "/learner/validation", icon: ShieldCheck, label: "Validation Trail" }]
-          : []),
+        { to: "/learner/task", icon: ClipboardCheck, label: "Practical Tasks" },
+        { to: "/learner/validation", icon: ShieldCheck, label: "Validation Trail" },
       ],
     },
     {
@@ -90,7 +88,7 @@ function dashboardNav(skillsCount: number): NavGroup[] {
   ];
 }
 
-function profileNav(skillsCount: number): NavGroup[] {
+function profileNav(): NavGroup[] {
   return [
     {
       label: "Overview",
@@ -121,10 +119,8 @@ function profileNav(skillsCount: number): NavGroup[] {
     {
       label: "Assessment",
       items: [
-        { to: "/learner/task", icon: ClipboardCheck, label: "Practical Task" },
-        ...(skillsCount
-          ? [{ to: "/learner/validation", icon: ShieldCheck, label: "Validation Trail" }]
-          : []),
+        { to: "/learner/task", icon: ClipboardCheck, label: "Practical Tasks" },
+        { to: "/learner/validation", icon: ShieldCheck, label: "Validation Trail" },
       ],
     },
     {
@@ -377,7 +373,7 @@ export function LearnerWorkspaceShell({
   }, [sidebarCollapsed]);
 
   const isDark = variant === "dashboard";
-  const groups = isDark ? dashboardNav(skills.length) : profileNav(skills.length);
+  const groups = isDark ? dashboardNav() : profileNav();
   const decayCount = getDecayingSkills(skills).length;
   const didShort = profile?.did ? `${profile.did.slice(0, 12)}…${profile.did.slice(-4)}` : "";
 

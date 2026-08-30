@@ -1,24 +1,32 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { AppShell } from "@/components/sijil/AppShell";
-import { PageHeader } from "@/components/sijil/PageHeader";
-import { StatusBadge } from "@/components/sijil/StatusBadge";
+import { LearnerWorkspaceShell } from "@/components/sijil/LearnerWorkspaceShell";
 import { PageSkeleton, CardSkeleton } from "@/components/sijil/SkeletonLoader";
-import { EmptyState } from "@/components/sijil/EmptyState";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
-import {
-  Play, Timer, Lock, Send, RefreshCcw, ChevronRight, ChevronLeft, Shield,
-} from "lucide-react";
+import { Play, Lock, Send, RefreshCcw, ChevronRight, ChevronLeft } from "lucide-react";
 import { daysSince, type DeclaredSkill, type AttemptRecord } from "@/lib/sijil-data";
-import { useDeclaredSkills } from "@/hooks/useLearnerData";
+import { useDeclaredSkills, useLearnerProfile } from "@/hooks/useLearnerData";
 import { useAuth } from "@/hooks/useAuth";
 import { useGitHub } from "@/hooks/useGitHub";
+import { shortDid } from "@/components/learner/ProfilePagePanels";
+import {
+  AssessmentRulesPanel,
+  AttemptTimelinePanel,
+  EmptyTasksPanel,
+  McqOptionButton,
+  McqProgressSegments,
+  PracticalTasksBreadcrumbBar,
+  PracticalTasksFooter,
+  PracticalTasksHero,
+  PracticalTasksStatsGrid,
+  PracticalTaskCard,
+  TaskFilterTabs,
+  type TaskFilter,
+  type TimelineEvent,
+} from "@/components/practical-tasks/PracticalTasksPagePanels";
 import {
   loadAttemptsWithMcqResults,
   saveAttemptDb,
@@ -33,6 +41,7 @@ import {
   type PracticalTaskState,
 } from "@/lib/db/practical-attempts";
 import { toast } from "@/hooks/use-toast";
+import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import {
   createInitialMcqProgress,
@@ -98,8 +107,8 @@ function TimerProgressRing({ remainingMs, totalMs }: { remainingMs: number; tota
   const urgent = remainingMs <= 10_000;
 
   return (
-    <svg className="h-9 w-9 shrink-0 -rotate-90" viewBox="0 0 40 40" aria-hidden>
-      <circle cx="20" cy="20" r={radius} fill="none" strokeWidth="3" className="stroke-muted/40" />
+    <svg className="pt-mcq-timer-ring h-9 w-9 shrink-0 -rotate-90" viewBox="0 0 40 40" aria-hidden>
+      <circle cx="20" cy="20" r={radius} fill="none" strokeWidth="3" className="stroke-white/25" />
       <circle
         cx="20"
         cy="20"
@@ -109,7 +118,7 @@ function TimerProgressRing({ remainingMs, totalMs }: { remainingMs: number; tota
         strokeLinecap="round"
         strokeDasharray={circumference}
         strokeDashoffset={offset}
-        className={urgent ? "stroke-destructive" : "stroke-primary"}
+        className={urgent ? "stroke-red-400" : "stroke-cyan-300"}
       />
     </svg>
   );
@@ -194,7 +203,9 @@ export default function PracticalTask() {
   const { user } = useAuth();
   const userId = user?.id;
   const { skills, loading: skillsLoading } = useDeclaredSkills();
+  const { profile } = useLearnerProfile();
   const { repos } = useGitHub();
+  const [taskFilter, setTaskFilter] = useState<TaskFilter>("all");
   const [attemptsMap, setAttemptsMap] = useState<Record<string, AttemptRecord>>({});
   const [mcqResultsMap, setMcqResultsMap] = useState<Record<string, McqAttemptResultRow>>({});
   const [, force] = useState(0);
@@ -770,130 +781,175 @@ export default function PracticalTask() {
     );
   }, [attemptsMap, mcqResultsMap]);
 
-  const statusBadge = (skill: DeclaredSkill) => {
-    const a = getAttempt(skill.id);
-    const taskState = getTaskState(skill.id);
-    const display = getSkillMcqDisplay(skill.id, attemptsMap, mcqResultsMap);
-    const locked = isAttemptLocked(skill, a);
+  const pageStats = useMemo(() => {
+    let completed = 0;
+    let totalScore = 0;
+    let scoreCount = 0;
+    let lockedCount = 0;
 
-    if (taskState === "COMPLETED") {
-      return (
-        <StatusBadge variant={display.passed ? "verified" : "warning"}>
-          {display.percentage != null ? `${display.percentage}% · ${display.label}` : display.label ?? "Completed"}
-        </StatusBadge>
-      );
+    for (const s of skills) {
+      const a = getAttempt(s.id);
+      const state = getTaskState(s.id);
+      const locked = isAttemptLocked(s, a);
+      const display = getSkillMcqDisplay(s.id, attemptsMap, mcqResultsMap);
+
+      if (state === "COMPLETED") {
+        completed += 1;
+        if (display.percentage != null) {
+          totalScore += display.percentage;
+          scoreCount += 1;
+        }
+      } else if (locked || state === "NOT_STARTED") {
+        lockedCount += 1;
+      }
     }
-    if (taskState === "IN_PROGRESS") return <StatusBadge variant="info">In Progress</StatusBadge>;
-    if (!a) return <StatusBadge variant="neutral">No Attempt</StatusBadge>;
-    if (a.status === "expired_no_submission") return <StatusBadge variant="warning">No Submission</StatusBadge>;
-    return locked ? <StatusBadge variant="neutral">Locked</StatusBadge> : <StatusBadge variant="neutral">Available</StatusBadge>;
+
+    return {
+      available: skills.length,
+      completed,
+      avgScore: scoreCount > 0 ? Math.round(totalScore / scoreCount) : 0,
+      nextUnlock: lockedCount,
+    };
+  }, [skills, attemptsMap, mcqResultsMap, getAttempt, getTaskState]);
+
+  const timelineEvents = useMemo((): TimelineEvent[] => {
+    const events: TimelineEvent[] = [];
+    for (const s of skills) {
+      const state = getTaskState(s.id);
+      const display = getSkillMcqDisplay(s.id, attemptsMap, mcqResultsMap);
+      if (state === "IN_PROGRESS") {
+        events.push({
+          id: `${s.id}-progress`,
+          label: `${s.name} attempt started`,
+          tone: "blue",
+        });
+      }
+      if (state === "COMPLETED" && display.percentage != null) {
+        events.push({
+          id: `${s.id}-done`,
+          label: `${s.name} graded ${display.percentage}%`,
+          tone: display.passed ? "green" : "yellow",
+          time: display.submittedAt ? formatAttemptDate(display.submittedAt) : undefined,
+        });
+      }
+    }
+    return events.slice(0, 6);
+  }, [skills, attemptsMap, mcqResultsMap, getTaskState]);
+
+  const filteredSkills = useMemo(() => {
+    return skills.filter((s) => {
+      const a = getAttempt(s.id);
+      const state = getTaskState(s.id);
+      const locked = isAttemptLocked(s, a);
+      if (taskFilter === "all") return true;
+      if (taskFilter === "in_progress") return state === "IN_PROGRESS";
+      if (taskFilter === "graded") return state === "COMPLETED";
+      if (taskFilter === "locked") return locked && state !== "COMPLETED";
+      return true;
+    });
+  }, [skills, taskFilter, getAttempt, getTaskState]);
+
+  const hasNextTask = useMemo(
+    () => skills.some((s) => {
+      const a = getAttempt(s.id);
+      const state = getTaskState(s.id);
+      return state === "IN_PROGRESS" || (state !== "COMPLETED" && !isAttemptLocked(s, a));
+    }),
+    [skills, getAttempt, getTaskState],
+  );
+
+  const startNextTask = () => {
+    const inProgress = skills.find((s) => getTaskState(s.id) === "IN_PROGRESS");
+    if (inProgress) {
+      void openSkill(inProgress, "resume");
+      return;
+    }
+    const next = skills.find((s) => {
+      const a = getAttempt(s.id);
+      return getTaskState(s.id) !== "COMPLETED" && !isAttemptLocked(s, a);
+    });
+    if (next) void openSkill(next, "start");
   };
 
   if (skillsLoading) {
     return (
-      <AppShell role="learner">
+      <LearnerWorkspaceShell variant="dashboard">
         <PageSkeleton rows={3} />
-      </AppShell>
+      </LearnerWorkspaceShell>
     );
   }
 
+  const didShort = profile?.did ? shortDid(profile.did) : undefined;
+
   return (
-    <AppShell role="learner">
-      <PageHeader
-        title="Practical Tasks"
-        description="AI-generated MCQ tests based on your declared competency and linked evidence. Answers are evaluated securely on the server."
-      />
+    <LearnerWorkspaceShell variant="dashboard">
+      <PracticalTasksBreadcrumbBar didShort={didShort} />
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Skill-bound practical checks</CardTitle>
-        </CardHeader>
-        <CardContent className="p-0">
-          {skills.length === 0 ? (
-            <EmptyState
-              icon={Play}
-              title="No declared competencies"
-              description="Declare a competency on your profile before starting a practical task."
-              action={{ label: "Go to profile", onClick: () => navigate("/learner/profile") }}
-              className="m-6 border-0 bg-transparent"
-            />
-          ) : (
-          <div className="divide-y">
-            {skills.map((s) => {
-              const a = getAttempt(s.id);
-              const locked = isAttemptLocked(s, a);
-              const lastDays = daysSince(s.lastRelatedActivityAt);
-              const taskState = getTaskState(s.id);
-              const display = getSkillMcqDisplay(s.id, attemptsMap, mcqResultsMap);
-              return (
-                <div key={s.id} className="relative flex flex-col md:flex-row md:items-center gap-3 px-6 py-4">
-                  {taskState === "COMPLETED" && (
-                    <div className="absolute top-0 right-0 rounded-bl-lg border-b border-l border-border/60 bg-muted px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                      View only
-                    </div>
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-medium">{s.name}</span>
-                      <span className="text-xs text-muted-foreground">· {s.domain}</span>
-                      {statusBadge(s)}
-                    </div>
-                    <div className="text-xs text-muted-foreground mt-1">MCQ practical task · {s.domain}</div>
-                    <div className="text-[11px] text-muted-foreground mt-0.5">
-                      Last related sync: {lastDays === null ? "never" : `${lastDays}d ago`}
-                      {locked && <> · Locked until next credential sync</>}
-                    </div>
-                    {taskState === "COMPLETED" && (
-                      <div className="mt-3 rounded-md border bg-muted/30 p-3 text-sm space-y-2 max-w-lg">
-                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                          <span className="font-medium">Score: {display.percentage ?? "—"}%</span>
-                          {display.label && (
-                            <StatusBadge variant={display.passed ? "verified" : "warning"}>
-                              {display.label}
-                            </StatusBadge>
-                          )}
-                          <span className="text-xs text-muted-foreground">
-                            {formatAttemptDate(display.submittedAt)}
-                          </span>
-                        </div>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => void openSkill(s, "view")}
-                        >
-                          <Lock className="h-4 w-4 mr-1.5" />View Attempt
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {taskState === "COMPLETED" ? null : taskState === "IN_PROGRESS" ? (
-                      <Button onClick={() => void openSkill(s, "resume")}>
-                        <Timer className="h-4 w-4 mr-1.5" />Resume MCQ
-                      </Button>
-                    ) : (
-                      <Button onClick={() => void openSkill(s, "start")} disabled={locked && !a}>
-                        <Play className="h-4 w-4 mr-1.5" />Start task
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_300px]">
+        <div className="min-w-0">
+          <PracticalTasksHero
+            hasNextTask={hasNextTask}
+            onStartNext={startNextTask}
+          />
+
+          <PracticalTasksStatsGrid
+            available={pageStats.available}
+            completed={pageStats.completed}
+            avgScore={pageStats.avgScore}
+            nextUnlock={pageStats.nextUnlock}
+          />
+
+          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <h2 className="text-base font-semibold text-[#023E8A]">Skill-bound practical checks</h2>
+            <TaskFilterTabs value={taskFilter} onChange={setTaskFilter} />
           </div>
-          )}
-        </CardContent>
-      </Card>
 
-      <p className="text-xs text-muted-foreground mt-4 flex items-start gap-1.5 rounded-lg border border-border/60 bg-muted/20 px-3 py-2">
-        <Shield className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-        <span>
-          Anti-cheat: MCQ content cannot be copied or inspected. Percentage results appear after submission; answer keys are never shown to learners.
-        </span>
-      </p>
+          {skills.length === 0 ? (
+            <EmptyTasksPanel onGoProfile={() => navigate("/learner/profile")} />
+          ) : (
+            <div className="space-y-3">
+              {filteredSkills.map((s, index) => {
+                const a = getAttempt(s.id);
+                const taskState = getTaskState(s.id);
+                const locked = isAttemptLocked(s, a);
+                const display = getSkillMcqDisplay(s.id, attemptsMap, mcqResultsMap);
+                return (
+                  <PracticalTaskCard
+                    key={s.id}
+                    skill={s}
+                    index={index}
+                    taskState={taskState}
+                    display={display}
+                    locked={locked}
+                    lastDays={daysSince(s.lastRelatedActivityAt)}
+                    onStart={() => void openSkill(s, "start")}
+                    onResume={() => void openSkill(s, "resume")}
+                    onView={() => void openSkill(s, "view")}
+                  />
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <aside className="space-y-4 xl:sticky xl:top-6 xl:self-start">
+          <div id="pt-attempt-timeline">
+            <AttemptTimelinePanel events={timelineEvents} />
+          </div>
+          <AssessmentRulesPanel />
+        </aside>
+      </div>
+
+      <PracticalTasksFooter />
 
       <Dialog open={!!activeSkill} onOpenChange={(o) => { if (!o) closePanel(); }}>
-        <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col overflow-hidden gap-4" {...NO_COPY_PROPS}>
+        <DialogContent
+          className={cn(
+            "max-h-[90vh] flex flex-col overflow-hidden",
+            panelMode === "mcq" && task && attempt && !taskLoading ? "pt-mcq-dialog max-w-2xl" : "max-w-3xl gap-4",
+          )}
+          {...NO_COPY_PROPS}
+        >
           {activeSkill && (
             taskLoading ? (
               <CardSkeleton />
@@ -906,36 +962,36 @@ export default function PracticalTask() {
                   </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4">
-                  <div className="rounded-md border bg-muted/30 p-4 text-sm space-y-3">
-                    <p className="font-medium">
+                  <div className="rounded-xl border border-[#e2e8f0] bg-[#f8fafc] p-4 text-sm space-y-3">
+                    <p className="font-medium text-[#023E8A]">
                       Score: {resultPercentage ?? attempt?.score ?? "—"}%
                       {resultLabel && (
-                        <span className={passed ? " text-success" : " text-destructive"}>
+                        <span className={passed ? " text-[#059669]" : " text-[#CA8A04]"}>
                           {" "}· {resultLabel}
                         </span>
                       )}
                     </p>
                     {resultCorrectCount != null && resultTotalQuestions != null && (
-                      <p className="text-muted-foreground">
+                      <p className="text-[#64748b]">
                         Correct answers: {resultCorrectCount} / {resultTotalQuestions}
                       </p>
                     )}
-                    <p className="text-muted-foreground text-xs">
+                    <p className="text-[#94a3b8] text-xs">
                       Submitted: {formatAttemptDate(
                         mcqResultsMap[activeSkill.id]?.submitted_at ?? attempt?.endsAt,
                       )}
                     </p>
                     {attemptHistory.length > 0 && (
-                      <div className="space-y-2 pt-2 border-t">
-                        <p className="text-xs font-medium text-muted-foreground">Attempt history</p>
+                      <div className="space-y-2 pt-2 border-t border-[#e2e8f0]">
+                        <p className="text-xs font-medium text-[#64748b]">Attempt history</p>
                         <ul className="space-y-2">
                           {attemptHistory.map((row) => (
                             <li
                               key={row.id}
-                              className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-background px-3 py-2 text-xs"
+                              className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[#e2e8f0] bg-white px-3 py-2 text-xs"
                             >
                               <span>{row.title ?? `${activeSkill.name} MCQ`}</span>
-                              <span className="text-muted-foreground">
+                              <span className="text-[#64748b]">
                                 {formatAttemptHistoryLabel(row)}
                                 {row.submitted_at ? ` · ${formatAttemptDate(row.submitted_at)}` : ""}
                               </span>
@@ -947,7 +1003,7 @@ export default function PracticalTask() {
                   </div>
                 </div>
                 <DialogFooter className="shrink-0">
-                  <Button variant="outline" onClick={closePanel}>Close</Button>
+                  <Button variant="outline" className="rounded-xl" onClick={closePanel}>Close</Button>
                 </DialogFooter>
               </>
             ) : panelMode === "start" ? (
@@ -958,15 +1014,15 @@ export default function PracticalTask() {
                     MCQ tests are generated from your competency and linked GitHub/Moodle evidence.
                   </DialogDescription>
                 </DialogHeader>
-                <div className="rounded-lg border-2 border-dashed border-border p-6 text-center bg-muted/30">
-                  <Lock className="h-6 w-6 mx-auto text-muted-foreground mb-2" />
-                  <div className="text-sm font-medium">Generate AI MCQ Task</div>
-                  <div className="text-xs text-muted-foreground mt-1">
+                <div className="rounded-xl border-2 border-dashed border-[#e2e8f0] p-6 text-center bg-[#f8fafc]">
+                  <Lock className="h-6 w-6 mx-auto text-[#64748b] mb-2" />
+                  <div className="text-sm font-semibold text-[#0f172a]">Generate AI MCQ Task</div>
+                  <div className="text-xs text-[#64748b] mt-1">
                     10 questions · 4 easy, 4 medium, 2 hard · {MCQ_SECONDS_PER_QUESTION}s per question
                   </div>
                   {generateError && <p className="text-xs text-destructive mt-3">{generateError}</p>}
                   <Button
-                    className="mt-4"
+                    className="mt-4 rounded-xl bg-[#023E8A] hover:bg-[#012A5C]"
                     onClick={() => void startMcqAttempt()}
                     disabled={generatingMcqs}
                   >
@@ -986,133 +1042,144 @@ export default function PracticalTask() {
               </>
             ) : generatingMcqs && !task ? (
               <div className="flex flex-1 flex-col items-center justify-center py-16 gap-3 min-h-0">
-                <RefreshCcw className="h-6 w-6 animate-spin text-muted-foreground" />
-                <span className="text-sm text-muted-foreground">Generating MCQ task…</span>
+                <RefreshCcw className="h-6 w-6 animate-spin text-[#64748b]" />
+                <span className="text-sm text-[#64748b]">Generating MCQ task…</span>
               </div>
             ) : task && attempt ? (
               <>
-                <DialogHeader className="shrink-0 pr-8">
+                <div className="pt-mcq-header shrink-0">
                   <div className="flex items-start justify-between gap-4">
-                    <div className="min-w-0 flex-1">
-                      <DialogTitle className="flex items-center gap-2">
-                        {task.title}
-                        <span className="text-xs text-muted-foreground font-normal">· {activeSkill.name}</span>
-                      </DialogTitle>
-                      <DialogDescription>
-                        {task.questions.length} MCQs · {MCQ_SECONDS_PER_QUESTION}s per question · one at a time
-                      </DialogDescription>
+                    <div className="min-w-0">
+                      <h2 className="text-base font-semibold text-white">
+                        Evidence-based MCQ · {activeSkill.name}
+                      </h2>
+                      <p className="mt-1 text-xs text-white/70">
+                        {task.questions.length} questions · {MCQ_SECONDS_PER_QUESTION}s per question · one at a time
+                      </p>
                     </div>
                     {attempt.status === "in_progress" && (
-                      <div className="flex items-center gap-2 shrink-0">
+                      <div className="flex items-center gap-2 shrink-0 text-white">
                         <TimerProgressRing
                           remainingMs={questionRemainingMs}
                           totalMs={MCQ_SECONDS_PER_QUESTION * 1000}
                         />
-                        <div className="text-right">
-                          <div className={`mono text-sm font-medium ${questionRemainingMs <= 10000 ? "text-destructive" : ""}`}>
-                            {fmt(questionRemainingMs)}
-                          </div>
-                          <div className="text-[10px] text-muted-foreground">remaining</div>
-                        </div>
+                        <span className={`mono text-sm font-semibold ${questionRemainingMs <= 10000 ? "text-red-300" : ""}`}>
+                          {fmt(questionRemainingMs)}
+                        </span>
                       </div>
                     )}
                   </div>
-                </DialogHeader>
+                </div>
 
-                <div className="flex-1 min-h-0 overflow-y-auto pr-2 -mr-2" {...NO_COPY_PROPS}>
+                <div className="pt-mcq-body flex-1 min-h-0 overflow-y-auto" {...NO_COPY_PROPS}>
                   {isSubmitted ? (
-                    <div className="space-y-4">
-                      <div className="rounded-md border bg-muted/30 p-4 text-sm space-y-3">
-                        <p className="font-medium">Attempt history</p>
-                        {attemptHistory.length > 0 ? (
-                          <ul className="space-y-2">
-                            {attemptHistory.map((row) => (
-                              <li
-                                key={row.id}
-                                className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-background px-3 py-2"
-                              >
-                                <span>{row.title ?? `${activeSkill.name} MCQ`}</span>
-                                <span className="text-muted-foreground">
-                                  {formatAttemptHistoryLabel(row)}
-                                </span>
-                              </li>
-                            ))}
-                          </ul>
-                        ) : (
-                          <p className="text-muted-foreground">
-                            Submitted · Result: {resultPercentage ?? attempt.score ?? "—"}%
-                            {resultLabel && (
-                              <span className={passed ? " text-success" : " text-destructive"}>
-                                {" "}· {resultLabel}
-                              </span>
-                            )}
-                          </p>
-                        )}
-                        <p className="text-muted-foreground text-xs">
-                          Previous attempts stay in your evidence history. Result details appear only right after a new submission.
+                    <div className="space-y-4 text-sm">
+                      <p className="font-medium text-[#023E8A]">Attempt history</p>
+                      {attemptHistory.length > 0 ? (
+                        <ul className="space-y-2">
+                          {attemptHistory.map((row) => (
+                            <li
+                              key={row.id}
+                              className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[#e2e8f0] px-3 py-2"
+                            >
+                              <span>{row.title ?? `${activeSkill.name} MCQ`}</span>
+                              <span className="text-[#64748b]">{formatAttemptHistoryLabel(row)}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="text-[#64748b]">
+                          Submitted · Result: {resultPercentage ?? attempt.score ?? "—"}%
+                          {resultLabel && (
+                            <span className={passed ? " text-[#059669]" : " text-[#CA8A04]"}>
+                              {" "}· {resultLabel}
+                            </span>
+                          )}
                         </p>
-                      </div>
+                      )}
                     </div>
                   ) : currentQuestion ? (
                     <div className="space-y-4">
-                      <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/40 px-3 py-2 text-sm">
-                        <div className="flex items-center gap-3">
-                          <span className="text-muted-foreground">Question</span>
-                          <span className="font-medium">{currentQuestionIndex + 1} / {task.questions.length}</span>
-                          <span className="text-xs capitalize text-muted-foreground">{currentQuestion.difficulty}</span>
-                        </div>
-                        <StatusBadge variant="info">In Progress</StatusBadge>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="rounded-full bg-[#eff6ff] px-2.5 py-1 text-[10px] font-semibold text-[#023E8A]">
+                          Question {currentQuestionIndex + 1} of {task.questions.length}
+                        </span>
+                        <span className="rounded-full bg-[#f1f5f9] px-2.5 py-1 text-[10px] font-medium capitalize text-[#64748b]">
+                          {currentQuestion.difficulty}
+                        </span>
                       </div>
-
-                      <div className="rounded-md border p-5 space-y-4" {...NO_COPY_PROPS}>
-                        <div className="text-sm font-medium leading-relaxed">{currentQuestion.question}</div>
-                        <RadioGroup
-                          value={answers[currentQuestion.id] ?? ""}
-                          onValueChange={(value) => selectAnswer(currentQuestion.id, value as McqOptionId)}
-                        >
-                          {currentQuestion.options.map((option) => (
-                            <div key={option.id} className="flex items-center space-x-2">
-                              <RadioGroupItem value={option.id} id={`${currentQuestion.id}-${option.id}`} />
-                              <Label htmlFor={`${currentQuestion.id}-${option.id}`} className="text-sm font-normal cursor-pointer">
-                                <span className="font-medium mr-2">{option.id}.</span>
-                                {option.text}
-                              </Label>
-                            </div>
-                          ))}
-                        </RadioGroup>
+                      <McqProgressSegments
+                        total={task.questions.length}
+                        currentIndex={currentQuestionIndex}
+                      />
+                      <p className="text-sm font-semibold leading-relaxed text-[#0f172a]">
+                        {currentQuestion.question}
+                      </p>
+                      <div className="space-y-2">
+                        {currentQuestion.options.map((option) => (
+                          <McqOptionButton
+                            key={option.id}
+                            optionId={option.id}
+                            text={option.text}
+                            selected={answers[currentQuestion.id] === option.id}
+                            onSelect={() => selectAnswer(currentQuestion.id, option.id as McqOptionId)}
+                          />
+                        ))}
                       </div>
                     </div>
                   ) : null}
                 </div>
 
-                <DialogFooter className="shrink-0 flex-wrap gap-2">
+                <div className="pt-mcq-footer shrink-0">
                   {attempt.status === "in_progress" && currentQuestion ? (
                     <>
-                      <Button variant="outline" onClick={goToPreviousQuestion} disabled={isFirstQuestion || evaluating}>
-                        <ChevronLeft className="h-4 w-4 mr-1" />Previous
-                      </Button>
-                      {isLastQuestion ? (
-                        <Button onClick={goToNextQuestion} disabled={evaluating || !currentAnswerSelected}>
-                          <Send className="h-4 w-4 mr-1.5" />
-                          {evaluating ? "Submitting…" : "Submit MCQ"}
+                      <p className="max-w-xs text-[11px] text-[#94a3b8]">
+                        Answers are locked once the timer expires. Results appear after submission.
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          variant="outline"
+                          className="rounded-xl"
+                          onClick={goToPreviousQuestion}
+                          disabled={isFirstQuestion || evaluating}
+                        >
+                          <ChevronLeft className="h-4 w-4 mr-1" />
+                          Previous
                         </Button>
-                      ) : (
-                        <Button onClick={goToNextQuestion} disabled={evaluating || !currentAnswerSelected}>
-                          Next
-                          <ChevronRight className="h-4 w-4 ml-1" />
-                        </Button>
-                      )}
+                        {isLastQuestion ? (
+                          <Button
+                            className="rounded-xl bg-[#023E8A] hover:bg-[#012A5C]"
+                            onClick={goToNextQuestion}
+                            disabled={evaluating || !currentAnswerSelected}
+                          >
+                            {evaluating ? "Submitting…" : "Submit MCQ"}
+                            <Send className="h-4 w-4 ml-1" />
+                          </Button>
+                        ) : (
+                          <Button
+                            className="rounded-xl bg-[#023E8A] hover:bg-[#012A5C]"
+                            onClick={goToNextQuestion}
+                            disabled={evaluating || !currentAnswerSelected}
+                          >
+                            Next question
+                            <ChevronRight className="h-4 w-4 ml-1" />
+                          </Button>
+                        )}
+                      </div>
                     </>
                   ) : (
-                    <Button variant="outline" onClick={closePanel}>Close</Button>
+                    <Button variant="outline" className="rounded-xl ml-auto" onClick={closePanel}>
+                      Close
+                    </Button>
                   )}
-                </DialogFooter>
+                </div>
               </>
             ) : (
               <div className="flex flex-1 flex-col items-center justify-center py-16 gap-3 min-h-0">
-                <p className="text-sm text-center px-4 text-muted-foreground">Attempt data could not be loaded.</p>
-                <Button onClick={() => void openSkill(activeSkill)}>
-                  <RefreshCcw className="h-4 w-4 mr-1.5" />Reload
+                <p className="text-sm text-center px-4 text-[#64748b]">Attempt data could not be loaded.</p>
+                <Button className="rounded-xl bg-[#023E8A] hover:bg-[#012A5C]" onClick={() => void openSkill(activeSkill)}>
+                  <RefreshCcw className="h-4 w-4 mr-1.5" />
+                  Reload
                 </Button>
               </div>
             )
@@ -1132,25 +1199,27 @@ export default function PracticalTask() {
             <p className="font-medium">
               Result: {resultPercentage ?? "—"}%
               {resultLabel && (
-                <span className={passed ? " text-success" : " text-destructive"}>
+                <span className={passed ? " text-[#059669]" : " text-[#CA8A04]"}>
                   {" "}· {resultLabel}
                 </span>
               )}
             </p>
             {resultCorrectCount != null && resultTotalQuestions != null && (
-              <p className="text-muted-foreground">
+              <p className="text-[#64748b]">
                 Correct answers: {resultCorrectCount} / {resultTotalQuestions}
               </p>
             )}
             {resultMessage && (
-              <p className="text-muted-foreground text-xs">{resultMessage}</p>
+              <p className="text-[#64748b] text-xs">{resultMessage}</p>
             )}
           </div>
           <DialogFooter>
-            <Button onClick={() => setShowResultModal(false)}>Close</Button>
+            <Button className="rounded-xl bg-[#023E8A] hover:bg-[#012A5C]" onClick={() => setShowResultModal(false)}>
+              Close
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </AppShell>
+    </LearnerWorkspaceShell>
   );
 }

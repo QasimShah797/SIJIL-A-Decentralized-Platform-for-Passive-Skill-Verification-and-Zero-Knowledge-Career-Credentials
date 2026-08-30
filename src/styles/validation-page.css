@@ -1,0 +1,38 @@
+/* Validation Trail page */
+
+.vt-trail-card {
+  cursor: pointer;
+}
+
+.vt-trail-card:focus-visible {
+  outline: 2px solid var(--sijil-brand, #023e8a);
+  outline-offset: 2px;
+}
+
+.vt-pipeline-stepper [class*="border-primary"] {
+  border-color: var(--sijil-brand, #023e8a) !important;
+}
+
+.vt-pipeline-stepper [class*="bg-primary"] {
+  background-color: #eff6ff !important;
+}
+
+.vt-pipeline-stepper [class*="text-primary"] {
+  color: var(--sijil-brand, #023e8a) !important;
+}
+
+.vt-pipeline-stepper [class*="border-success"] {
+  border-color: #059669 !important;
+}
+
+.vt-pipeline-stepper [class*="bg-success"] {
+  background-color: #059669 !important;
+}
+
+.vt-pipeline-stepper [class*="bg-success/60"] {
+  background-color: rgba(5, 150, 105, 0.45) !important;
+}
+
+.vt-evidence-table tbody tr:last-child {
+  border-bottom: none;
+}

@@ -75,14 +75,29 @@ export function useLearnerProfile() {
   return { profile, loading, refresh };
 }
 
+let sharedDeclaredSkills: DeclaredSkill[] = [];
+let sharedDeclaredSkillsUserId: string | null = null;
+const declaredSkillsListeners = new Set<() => void>();
+
+function publishDeclaredSkills(userId: string | null, skills: DeclaredSkill[]) {
+  sharedDeclaredSkillsUserId = userId;
+  sharedDeclaredSkills = skills;
+  declaredSkillsListeners.forEach((listener) => listener());
+}
+
 export function useDeclaredSkills() {
   const { userId } = useStableUserIds();
-  const [skills, setSkills] = useState<DeclaredSkill[]>([]);
-  const [loading, setLoading] = useState(true);
-  const hasLoadedRef = useRef(false);
+  const [skills, setSkills] = useState<DeclaredSkill[]>(() =>
+    userId && sharedDeclaredSkillsUserId === userId ? sharedDeclaredSkills : [],
+  );
+  const [loading, setLoading] = useState(
+    () => !(userId && sharedDeclaredSkillsUserId === userId),
+  );
+  const hasLoadedRef = useRef(!!(userId && sharedDeclaredSkillsUserId === userId));
 
   const refresh = useCallback(async () => {
     if (!userId) {
+      publishDeclaredSkills(null, []);
       setSkills([]);
       setLoading(false);
       hasLoadedRef.current = false;
@@ -92,7 +107,9 @@ export function useDeclaredSkills() {
       setLoading(true);
     }
     try {
-      setSkills(await fetchDeclaredSkills(userId));
+      const next = await fetchDeclaredSkills(userId);
+      publishDeclaredSkills(userId, next);
+      setSkills(next);
       hasLoadedRef.current = true;
     } finally {
       setLoading(false);
@@ -100,7 +117,27 @@ export function useDeclaredSkills() {
   }, [userId]);
 
   useEffect(() => {
-    hasLoadedRef.current = false;
+    const syncFromShared = () => {
+      if (!userId) {
+        setSkills([]);
+        return;
+      }
+      if (sharedDeclaredSkillsUserId === userId) {
+        setSkills(sharedDeclaredSkills);
+      }
+    };
+    declaredSkillsListeners.add(syncFromShared);
+    return () => {
+      declaredSkillsListeners.delete(syncFromShared);
+    };
+  }, [userId]);
+
+  useEffect(() => {
+    if (userId && sharedDeclaredSkillsUserId === userId) {
+      hasLoadedRef.current = true;
+    } else {
+      hasLoadedRef.current = false;
+    }
     refresh();
   }, [refresh]);
 
@@ -109,12 +146,12 @@ export function useDeclaredSkills() {
     const created = await insertDeclaredSkill(userId, skill, skills);
     setSkills((s) => {
       const idx = s.findIndex((x) => x.id === created.id);
-      if (idx >= 0) {
-        const next = [...s];
-        next[idx] = created;
-        return next;
-      }
-      return [...s, created];
+      const next =
+        idx >= 0
+          ? s.map((x, i) => (i === idx ? created : x))
+          : [...s, created];
+      publishDeclaredSkills(userId, next);
+      return next;
     });
     return created;
   };
@@ -122,7 +159,11 @@ export function useDeclaredSkills() {
   const removeSkill = async (skillId: string) => {
     if (!userId) return;
     await deleteDeclaredSkill(userId, skillId);
-    setSkills((s) => s.filter((x) => x.id !== skillId));
+    setSkills((s) => {
+      const next = s.filter((x) => x.id !== skillId);
+      publishDeclaredSkills(userId, next);
+      return next;
+    });
   };
 
   const updateSkill = async (
@@ -131,7 +172,11 @@ export function useDeclaredSkills() {
   ) => {
     if (!userId) return;
     const updated = await updateDeclaredSkill(userId, skillId, skill);
-    setSkills((s) => s.map((x) => (x.id === skillId ? updated : x)));
+    setSkills((s) => {
+      const next = s.map((x) => (x.id === skillId ? updated : x));
+      publishDeclaredSkills(userId, next);
+      return next;
+    });
     return updated;
   };
 

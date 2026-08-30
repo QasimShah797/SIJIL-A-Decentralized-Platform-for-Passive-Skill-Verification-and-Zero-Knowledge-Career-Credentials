@@ -44,7 +44,7 @@ const recruiterNavGroups: NavGroup[] = [
   },
 ];
 
-function useLearnerNav(skillsCount: number): NavGroup[] {
+function useLearnerNav(): NavGroup[] {
   return [
     {
       label: "Overview",
@@ -62,9 +62,7 @@ function useLearnerNav(skillsCount: number): NavGroup[] {
       label: "Assessment",
       items: [
         { to: "/learner/task", icon: ClipboardCheck, label: "Practical Task", mobileTab: true },
-        ...(skillsCount
-          ? [{ to: "/learner/validation", icon: ShieldCheck, label: "Validation Trail", mobileTab: true }]
-          : []),
+        { to: "/learner/validation", icon: ShieldCheck, label: "Validation Trail", mobileTab: true },
       ],
     },
     {
@@ -179,7 +177,7 @@ export function AppShell({ role, children }: { role: Role; children: React.React
   const [drawerOpen, setDrawerOpen] = useState(false);
   const roleLabel = role === "learner" ? "Learner" : "Recruiter";
 
-  const learnerGroups = useLearnerNav(skills.length);
+  const learnerGroups = useLearnerNav();
   const recruiterGroups = recruiterNavGroups;
 
   const mobileTabItems: NavItem[] =
