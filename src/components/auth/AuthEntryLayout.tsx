@@ -1,6 +1,5 @@
 import { ReactNode } from "react";
 import { AuthLeftPanel } from "@/components/auth/AuthLeftPanel";
-import { PublicSurfaceLayout } from "@/components/sijil/PublicSurfaceLayout";
 
 type AuthEntryLayoutProps = {
   children: ReactNode;
@@ -8,13 +7,11 @@ type AuthEntryLayoutProps = {
 
 export function AuthEntryLayout({ children }: AuthEntryLayoutProps) {
   return (
-    <PublicSurfaceLayout className="min-h-screen bg-background">
-      <div className="grid min-h-screen lg:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
-        <AuthLeftPanel />
-        <div className="flex min-h-[calc(100vh-280px)] items-center justify-center px-4 py-10 sm:px-8 lg:min-h-screen lg:py-12">
-          <div className="w-full max-w-md animate-fade-in">{children}</div>
-        </div>
+    <div className="auth-page">
+      <AuthLeftPanel />
+      <div className="auth-page-right">
+        <div className="auth-page-card">{children}</div>
       </div>
-    </PublicSurfaceLayout>
+    </div>
   );
 }

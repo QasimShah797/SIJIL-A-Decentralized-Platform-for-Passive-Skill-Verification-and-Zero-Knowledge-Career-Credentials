@@ -34,7 +34,7 @@ export function PasswordInput({
         type={visible ? "text" : "password"}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className={cn("rounded-xl pl-9 pr-10", invalid && "border-destructive", className)}
+        className={cn("auth-input pl-9 pr-10", invalid && "border-destructive", className)}
         placeholder={placeholder}
         autoComplete={autoComplete}
         aria-invalid={invalid}

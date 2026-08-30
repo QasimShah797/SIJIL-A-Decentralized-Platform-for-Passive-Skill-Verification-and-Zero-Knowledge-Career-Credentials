@@ -1,61 +1,42 @@
-import { ArrowRight, BadgeCheck, Lock, Shield, Users } from "lucide-react";
-import { SectionHeading } from "@/components/landing/SectionHeading";
+import { ArrowRight, Check } from "lucide-react";
 import { ScrollReveal } from "@/components/landing/ScrollReveal";
-import {
-  landingContainer,
-  landingSection,
-  landingSectionAlt,
-} from "@/components/landing/landing-styles";
+import { BarChartMock } from "@/components/landing/LandingMocks";
 
-const trustNodes = [
-  { icon: Users, label: "Learners", sub: "Evidence-backed profiles" },
-  { icon: Shield, label: "Verification", sub: "Automated evidence checks" },
-  { icon: BadgeCheck, label: "Credentials", sub: "Wallet-ready records" },
-  { icon: Lock, label: "Selective share", sub: "Consent-first disclosure" },
-] as const;
+const bullets = [
+  "Issue badges tied to learning outcomes",
+  "Track completion and assessment data",
+  "Integrate via API and webhooks",
+];
 
 export function TrustLayerSection() {
   return (
-    <section className={`${landingSection} ${landingSectionAlt}`} id="trust-layer">
-      <div className={landingContainer}>
-        <ScrollReveal>
-          <SectionHeading
-            eyebrow="The trust layer"
-            title="Verification-first talent identity — built on evidence, not claims."
-            description="Like a connected talent marketplace, SIJIL separates self-reported skills from machine-verified evidence. Recruiters see what learners choose to disclose — with cryptographic proof when shared."
-          />
-        </ScrollReveal>
-
-        <ScrollReveal delay={60}>
-          <div className="mt-10 flex flex-col items-stretch gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-center lg:gap-2">
-            {trustNodes.map(({ icon: Icon, label, sub }, index) => (
-              <div key={label} className="flex items-center gap-2 sm:gap-3">
-                <div className="trust-layer-card flex min-w-0 flex-1 items-center gap-3 sm:min-w-[200px] sm:flex-none lg:min-w-[220px]">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                    <Icon className="h-5 w-5" aria-hidden />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold">{label}</p>
-                    <p className="truncate text-xs text-muted-foreground">{sub}</p>
-                  </div>
-                </div>
-                {index < trustNodes.length - 1 && (
-                  <ArrowRight
-                    className="hidden h-4 w-4 shrink-0 text-muted-foreground/60 sm:block"
-                    aria-hidden
-                  />
-                )}
-              </div>
-            ))}
-          </div>
-        </ScrollReveal>
-
-        <ScrollReveal delay={120}>
-          <p className="mx-auto mt-8 max-w-2xl text-center text-sm leading-relaxed text-muted-foreground">
-            Platform = your workspace · Verification = trust · Wallet = credentials you own ·
-            Marketplace = learners and recruiters connected through verified evidence.
-          </p>
-        </ScrollReveal>
+    <section id="evidence" className="landing-section bg-gray-50/80">
+      <div className="landing-container">
+        <div className="grid items-center gap-14 lg:grid-cols-2">
+          <ScrollReveal>
+            <BarChartMock />
+          </ScrollReveal>
+          <ScrollReveal delay={60}>
+            <h2 className="text-3xl font-extrabold tracking-tight text-gray-900 sm:text-4xl">
+              Make learning outcomes verifiable.
+            </h2>
+            <p className="mt-4 leading-relaxed text-gray-600">
+              Institutions map curricula to competencies and deliver credentials learners actually use in the job market.
+            </p>
+            <ul className="mt-6 space-y-3">
+              {bullets.map((b) => (
+                <li key={b} className="flex items-center gap-2.5 text-sm text-gray-700">
+                  <Check className="h-4 w-4 shrink-0 text-[#023E8A]" />
+                  {b}
+                </li>
+              ))}
+            </ul>
+            <button type="button" className="lp-btn-link mt-6">
+              Learn more
+              <ArrowRight className="h-4 w-4" />
+            </button>
+          </ScrollReveal>
+        </div>
       </div>
     </section>
   );

@@ -1,10 +1,9 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Mail, ShieldCheck, X } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { ArrowRight, Mail, X } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { AuthSocialLogin } from "@/components/auth/AuthSocialLogin";
 import { ForgotPasswordDialog } from "@/components/auth/ForgotPasswordDialog";
 import { PasswordInput } from "@/components/auth/PasswordInput";
 import { toast } from "@/hooks/use-toast";
@@ -19,9 +18,14 @@ const REMEMBER_EMAIL_KEY = "sijil.rememberedEmail";
 type LearnerSignInFormProps = {
   onSwitchToSignup?: () => void;
   showSignupLink?: boolean;
+  showSocialLogin?: boolean;
 };
 
-export function LearnerSignInForm({ onSwitchToSignup, showSignupLink = true }: LearnerSignInFormProps) {
+export function LearnerSignInForm({
+  onSwitchToSignup,
+  showSignupLink = true,
+  showSocialLogin = false,
+}: LearnerSignInFormProps) {
   const navigate = useNavigate();
   const { user, loading, rolesReady } = useAuth();
   const [email, setEmail] = useState("");
@@ -135,7 +139,7 @@ export function LearnerSignInForm({ onSwitchToSignup, showSignupLink = true }: L
 
   return (
     <>
-      <form onSubmit={submit} className="space-y-4">
+      <form onSubmit={submit} className="auth-form-stack">
         {rememberedEmail && (
           <div className="flex items-center justify-between gap-2 rounded-xl border border-primary/20 bg-primary/5 px-3 py-2">
             <div className="flex min-w-0 items-center gap-2 text-sm">
@@ -156,15 +160,17 @@ export function LearnerSignInForm({ onSwitchToSignup, showSignupLink = true }: L
         )}
 
         <div>
-          <Label htmlFor="learner-signin-email">Email</Label>
-          <div className="relative mt-1.5">
+          <label htmlFor="learner-signin-email" className="auth-field-label">
+            Email address
+          </label>
+          <div className="relative">
             <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               id="learner-signin-email"
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="rounded-xl pl-9"
+              className="auth-input pl-9"
               placeholder="you@example.com"
               autoComplete="email"
             />
@@ -172,19 +178,20 @@ export function LearnerSignInForm({ onSwitchToSignup, showSignupLink = true }: L
         </div>
 
         <div>
-          <Label htmlFor="learner-signin-password">Password</Label>
-          <div className="mt-1.5">
-            <PasswordInput
-              id="learner-signin-password"
-              value={password}
-              onChange={setPassword}
-              autoComplete="current-password"
-            />
-          </div>
+          <label htmlFor="learner-signin-password" className="auth-field-label">
+            Password
+          </label>
+          <PasswordInput
+            id="learner-signin-password"
+            value={password}
+            onChange={setPassword}
+            autoComplete="current-password"
+            className="auth-input"
+          />
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <label className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
             <Checkbox
               id="learner-remember"
               checked={rememberMe}
@@ -195,27 +202,25 @@ export function LearnerSignInForm({ onSwitchToSignup, showSignupLink = true }: L
           <button
             type="button"
             onClick={() => setForgotOpen(true)}
-            className="text-sm font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-sm"
+            className="auth-forgot-link focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-sm"
           >
             Forgot password?
           </button>
         </div>
 
-        <Button type="submit" disabled={busy} className="w-full rounded-xl shadow-md">
-          <ShieldCheck className="mr-2 h-4 w-4" />
-          {busy ? "Signing in…" : "Sign in"}
-        </Button>
+        <button type="submit" disabled={busy} className="auth-submit-btn">
+          {busy ? "Signing in…" : "Sign in securely"}
+          {!busy && <ArrowRight className="h-4 w-4" aria-hidden />}
+        </button>
       </form>
 
+      {showSocialLogin && <AuthSocialLogin />}
+
       {showSignupLink && onSwitchToSignup && (
-        <p className="mt-5 text-center text-sm text-muted-foreground">
-          Don&apos;t have an account?{" "}
-          <button
-            type="button"
-            onClick={onSwitchToSignup}
-            className="font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-sm"
-          >
-            Create account
+        <p className="auth-signup-link">
+          New to SIJIL?{" "}
+          <button type="button" onClick={onSwitchToSignup}>
+            Create your professional identity
           </button>
         </p>
       )}

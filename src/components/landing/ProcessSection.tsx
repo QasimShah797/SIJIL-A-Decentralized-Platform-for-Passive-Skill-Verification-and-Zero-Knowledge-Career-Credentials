@@ -1,89 +1,37 @@
-import {
-  BadgeCheck,
-  ClipboardCheck,
-  GraduationCap,
-  Link2,
-  Share2,
-  type LucideIcon,
-} from "lucide-react";
-import { SectionHeading } from "@/components/landing/SectionHeading";
+import { Award, Link2, Share2, ShieldCheck } from "lucide-react";
 import { ScrollReveal } from "@/components/landing/ScrollReveal";
-import { landingCard, landingContainer, landingSection, landingSectionAlt } from "@/components/landing/landing-styles";
 
-type Step = {
-  step: number;
-  title: string;
-  description: string;
-  icon: LucideIcon;
-};
-
-const steps: Step[] = [
-  {
-    step: 1,
-    title: "Declare a competency",
-    description: "Add the skill you want to support with evidence.",
-    icon: GraduationCap,
-  },
-  {
-    step: 2,
-    title: "Connect evidence",
-    description: "Sync relevant GitHub activity and Moodle learning records.",
-    icon: Link2,
-  },
-  {
-    step: 3,
-    title: "Complete validation",
-    description: "Submit a practical task and collect context-based reviews.",
-    icon: ClipboardCheck,
-  },
-  {
-    step: 4,
-    title: "Automated verification",
-    description: "Evidence is checked against connected sources before wallet issuance.",
-    icon: BadgeCheck,
-  },
-  {
-    step: 5,
-    title: "Store and share",
-    description: "Keep credentials in your wallet and disclose selected fields.",
-    icon: Share2,
-  },
+const pillars = [
+  { icon: Award, title: "Collect", body: "Gather skills from every learning source into one profile.", accent: false },
+  { icon: Link2, title: "Connect", body: "Sync GitHub, LMS, and certificates with one click.", accent: false },
+  { icon: ShieldCheck, title: "Verify", body: "Evidence-backed validation with practical tasks and reviews.", accent: false },
+  { icon: Share2, title: "Share", body: "Send proof to recruiters with selective disclosure.", accent: true },
 ];
 
 export function ProcessSection() {
   return (
-    <section id="how-it-works" className={`${landingSection} ${landingSectionAlt}`}>
-      <div className={landingContainer}>
+    <section id="product" className="landing-section bg-gray-50/80">
+      <div className="landing-container">
         <ScrollReveal>
-          <SectionHeading
-            eyebrow="How It Works"
-            title="From competency claim to verifiable credential."
-            description="A focused pipeline — declare, connect evidence, validate, verify automatically, then share with cryptographic proof."
-          />
+          <div className="mx-auto max-w-2xl text-center">
+            <h2 className="text-3xl font-extrabold tracking-tight text-gray-900 sm:text-4xl">One identity. Every proof.</h2>
+            <p className="mt-3 text-gray-600">Collect, connect, verify, and share — all from a single learner-owned wallet.</p>
+          </div>
         </ScrollReveal>
 
-        <ol className="relative grid gap-4 sm:grid-cols-2 lg:grid-cols-5 lg:gap-4">
-          <div
-            className="pointer-events-none absolute left-[10%] right-[10%] top-10 hidden h-px bg-border/80 lg:block"
-            aria-hidden="true"
-          />
-          {steps.map((item, index) => (
-            <ScrollReveal key={item.step} delay={index * 50}>
-              <li className={`${landingCard} flex h-full flex-col p-5`}>
-                <div className="mb-4 flex items-center gap-3">
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">
-                    {item.step}
-                  </span>
-                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-info/10 text-info">
-                    <item.icon className="h-4 w-4" aria-hidden="true" />
-                  </div>
+        <div className="mt-14 grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
+          {pillars.map(({ icon: Icon, title, body, accent }, i) => (
+            <ScrollReveal key={title} delay={i * 40}>
+              <div className="text-center">
+                <div className={`lp-pillar-icon ${accent ? "lp-pillar-icon-accent" : ""}`}>
+                  <Icon className="h-5 w-5" />
                 </div>
-                <h3 className="text-base font-semibold">{item.title}</h3>
-                <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{item.description}</p>
-              </li>
+                <h3 className="mt-4 text-base font-bold text-gray-900">{title}</h3>
+                <p className="mt-2 text-sm leading-relaxed text-gray-500">{body}</p>
+              </div>
             </ScrollReveal>
           ))}
-        </ol>
+        </div>
       </div>
     </section>
   );

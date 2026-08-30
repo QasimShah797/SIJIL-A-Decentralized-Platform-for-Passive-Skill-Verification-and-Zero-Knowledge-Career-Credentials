@@ -1,8 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { z } from "zod";
-import { Mail, User, UserPlus } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { ArrowRight, Mail, User } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/auth/PasswordInput";
 import { Field } from "@/components/sijil/Field";
@@ -117,7 +116,7 @@ export function LearnerSignUpForm({ onSwitchToSignin, showSigninLink = true }: L
 
   return (
     <>
-      <form onSubmit={submit} className="space-y-4">
+      <form onSubmit={submit} className="auth-form-stack">
         <Field label="Full name" required>
           <div className="relative">
             <User className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -127,7 +126,7 @@ export function LearnerSignUpForm({ onSwitchToSignin, showSigninLink = true }: L
                 setFullName(e.target.value);
                 clearError("fullName");
               }}
-              className={`rounded-xl pl-9 ${errors.fullName ? "border-destructive" : ""}`}
+              className={`auth-input pl-9 ${errors.fullName ? "border-destructive" : ""}`}
               placeholder="Your full name"
               autoComplete="name"
               aria-invalid={!!errors.fullName}
@@ -146,7 +145,7 @@ export function LearnerSignUpForm({ onSwitchToSignin, showSigninLink = true }: L
                 setEmail(e.target.value);
                 clearError("email");
               }}
-              className={`rounded-xl pl-9 ${errors.email ? "border-destructive" : ""}`}
+              className={`auth-input pl-9 ${errors.email ? "border-destructive" : ""}`}
               placeholder="you@example.com"
               autoComplete="email"
               aria-invalid={!!errors.email}
@@ -165,6 +164,7 @@ export function LearnerSignUpForm({ onSwitchToSignin, showSigninLink = true }: L
             }}
             autoComplete="new-password"
             invalid={!!errors.password}
+            className="auth-input"
           />
           {errors.password && <p className="mt-1 text-xs text-destructive">{errors.password}</p>}
           <PasswordRequirements password={password} />
@@ -180,16 +180,17 @@ export function LearnerSignUpForm({ onSwitchToSignin, showSigninLink = true }: L
             }}
             autoComplete="new-password"
             invalid={!!errors.confirmPassword}
+            className="auth-input"
           />
           {errors.confirmPassword && (
             <p className="mt-1 text-xs text-destructive">{errors.confirmPassword}</p>
           )}
         </Field>
 
-        <Button type="submit" disabled={busy} className="w-full rounded-xl shadow-md">
-          <UserPlus className="mr-2 h-4 w-4" />
-          {busy ? "Creating account…" : "Create account"}
-        </Button>
+        <button type="submit" disabled={busy} className="auth-submit-btn">
+          {busy ? "Creating account…" : "Create your identity"}
+          {!busy && <ArrowRight className="h-4 w-4" aria-hidden />}
+        </button>
       </form>
 
       {showSigninLink && onSwitchToSignin && (

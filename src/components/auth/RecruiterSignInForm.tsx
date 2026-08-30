@@ -1,10 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Briefcase, Mail, ShieldCheck } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { ArrowRight, LockKeyhole, Mail } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { ForgotPasswordDialog } from "@/components/auth/ForgotPasswordDialog";
 import { PasswordInput } from "@/components/auth/PasswordInput";
 import { toast } from "@/hooks/use-toast";
@@ -16,7 +14,11 @@ import { formatSupabaseError } from "@/lib/utils";
 
 const REMEMBER_EMAIL_KEY = "sijil.recruiterRememberedEmail";
 
-export function RecruiterSignInForm() {
+type RecruiterSignInFormProps = {
+  embedded?: boolean;
+};
+
+export function RecruiterSignInForm({ embedded = false }: RecruiterSignInFormProps) {
   const navigate = useNavigate();
   const { user, loading, rolesReady } = useAuth();
   const [email, setEmail] = useState("");
@@ -110,17 +112,26 @@ export function RecruiterSignInForm() {
 
   return (
     <>
-      <form onSubmit={submit} className="space-y-5">
+      <div className="auth-recruiter-note flex items-start gap-2">
+        <LockKeyhole className="mt-0.5 h-4 w-4 shrink-0 text-slate-600" aria-hidden />
+        <span>
+          Recruiter accounts are invitation-only and provisioned by SIJIL administrators.
+        </span>
+      </div>
+
+      <form onSubmit={submit} className="auth-form-stack">
         <div>
-          <Label htmlFor="recruiter-signin-email">Work email</Label>
-          <div className="relative mt-1.5">
+          <label htmlFor="recruiter-signin-email" className="auth-field-label">
+            Work email
+          </label>
+          <div className="relative">
             <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               id="recruiter-signin-email"
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="rounded-xl pl-9"
+              className="auth-input pl-9"
               placeholder="you@company.com"
               autoComplete="email"
             />
@@ -128,56 +139,50 @@ export function RecruiterSignInForm() {
         </div>
 
         <div>
-          <Label htmlFor="recruiter-signin-password">Password</Label>
-          <div className="mt-1.5">
-            <PasswordInput
-              id="recruiter-signin-password"
-              value={password}
-              onChange={setPassword}
-              autoComplete="current-password"
-            />
-          </div>
+          <label htmlFor="recruiter-signin-password" className="auth-field-label">
+            Password
+          </label>
+          <PasswordInput
+            id="recruiter-signin-password"
+            value={password}
+            onChange={setPassword}
+            autoComplete="current-password"
+            className="auth-input"
+          />
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <label className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
             <Checkbox
               id="recruiter-remember"
               checked={rememberMe}
               onCheckedChange={(checked) => setRememberMe(checked === true)}
             />
-            <span>Remember email</span>
+            <span>Remember me</span>
           </label>
           <button
             type="button"
             onClick={() => setForgotOpen(true)}
-            className="rounded-sm text-sm font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            className="auth-forgot-link focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-sm"
           >
             Forgot password?
           </button>
         </div>
 
-        <Button type="submit" disabled={busy} className="w-full rounded-xl shadow-md" size="lg">
-          <ShieldCheck className="mr-2 h-4 w-4" aria-hidden="true" />
-          {busy ? "Signing in…" : "Sign in to Recruiter Portal"}
-        </Button>
+        <button type="submit" disabled={busy} className="auth-submit-btn">
+          {busy ? "Signing in…" : "Sign in securely"}
+          {!busy && <ArrowRight className="h-4 w-4" aria-hidden />}
+        </button>
       </form>
 
-      <div className="mt-6 space-y-3 border-t border-border/60 pt-5">
-        <p className="text-center text-sm text-muted-foreground">
-          Not a recruiter?{" "}
-          <Link
-            to="/login/learner"
-            className="font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-sm"
-          >
-            Learner sign in
-          </Link>
-        </p>
-        <p className="flex items-center justify-center gap-1.5 text-center text-xs text-muted-foreground">
-          <Briefcase className="h-3.5 w-3.5" aria-hidden="true" />
-          Need access? Contact your SIJIL administrator.
-        </p>
-      </div>
+      {!embedded && (
+        <div className="mt-6 space-y-3 border-t border-border/60 pt-5">
+          <p className="auth-signup-link">
+            Not a recruiter?{" "}
+            <Link to="/login/learner">Learner sign in</Link>
+          </p>
+        </div>
+      )}
 
       <ForgotPasswordDialog open={forgotOpen} onOpenChange={setForgotOpen} defaultEmail={email} />
     </>

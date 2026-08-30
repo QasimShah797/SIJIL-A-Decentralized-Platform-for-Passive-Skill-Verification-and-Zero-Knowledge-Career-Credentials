@@ -1,33 +1,33 @@
 import { Link } from "react-router-dom";
 import { ScrollReveal } from "@/components/landing/ScrollReveal";
-import {
-  landingBtnPrimary,
-  landingBtnSecondary,
-  landingContainer,
-  landingSection,
-} from "@/components/landing/landing-styles";
 
 export function FinalCTA() {
   return (
-    <section className={landingSection}>
-      <div className={landingContainer}>
+    <section id="cta" className="landing-section bg-white">
+      <div className="landing-container">
         <ScrollReveal>
-          <div className="landing-cta rounded-[1.25rem] border border-border/50 px-6 py-10 text-center sm:px-10 sm:py-14">
-            <p className="text-xs font-semibold uppercase tracking-wider text-primary">Ready to get started?</p>
-            <h2 className="mt-3 text-2xl font-semibold tracking-tight sm:text-3xl">
-              Build a competency record backed by real evidence.
-            </h2>
-            <p className="mx-auto mt-3 max-w-lg text-base text-muted-foreground">
-              Join SIJIL — connect evidence, earn verifiable credentials, and share with recruiters
-              who need proof, not promises.
-            </p>
-            <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
-              <Link to="/signup/learner" className={landingBtnPrimary}>
-                Get started — free
-              </Link>
-              <Link to="/login/recruiter" className={landingBtnSecondary}>
-                Recruiter sign in
-              </Link>
+          <div className="lp-cta-banner px-8 py-12 sm:px-14 sm:py-16">
+            <div className="relative z-10 max-w-lg">
+              <h2 className="text-2xl font-extrabold leading-snug text-white sm:text-3xl">
+                Your skills deserve more than a line on a resume.
+              </h2>
+              <p className="mt-3 text-sm leading-relaxed text-gray-300">
+                Issue professional digital credentials with SIJIL — backed by evidence employers can verify instantly.
+              </p>
+              <div className="mt-8 flex flex-wrap gap-3">
+                <Link
+                  to="/signup/learner"
+                  className="inline-flex h-11 items-center rounded-lg bg-white px-6 text-sm font-semibold text-gray-900 hover:bg-gray-100"
+                >
+                  Get Started
+                </Link>
+                <button
+                  type="button"
+                  className="inline-flex h-11 items-center rounded-lg border border-white/30 px-6 text-sm font-semibold text-white hover:bg-white/10"
+                >
+                  Contact Us
+                </button>
+              </div>
             </div>
           </div>
         </ScrollReveal>

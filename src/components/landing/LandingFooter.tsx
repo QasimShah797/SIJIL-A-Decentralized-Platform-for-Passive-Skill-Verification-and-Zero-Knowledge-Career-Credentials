@@ -1,81 +1,94 @@
 import { Link } from "react-router-dom";
 import { Logo } from "@/components/landing/Logo";
-import { landingContainer } from "@/components/landing/landing-styles";
 import { scrollToSection } from "@/components/landing/useActiveSection";
 
-type FooterLink = { label: string; href?: string; section?: string };
-
-const productLinks: FooterLink[] = [
-  { label: "How It Works", section: "#how-it-works" },
-  { label: "Evidence", section: "#evidence" },
-  { label: "Wallet", section: "#wallet" },
+const columns = [
+  {
+    title: "Platform",
+    links: [
+      { label: "Wallet", section: "#wallet" },
+      { label: "Integrations", section: "#evidence" },
+      { label: "Verification", section: "#trust" },
+      { label: "Pricing", section: "#cta" },
+    ],
+  },
+  {
+    title: "Company",
+    links: [
+      { label: "About", section: "#home" },
+      { label: "Careers", href: "#" },
+      { label: "Contact", href: "#" },
+      { label: "Blog", href: "#" },
+    ],
+  },
+  {
+    title: "Resources",
+    links: [
+      { label: "Documentation", href: "#" },
+      { label: "API Reference", href: "#" },
+      { label: "Help Center", href: "#" },
+      { label: "Community", href: "#" },
+    ],
+  },
+  {
+    title: "Legal",
+    links: [
+      { label: "Privacy", href: "#" },
+      { label: "Terms", href: "#" },
+      { label: "Security", href: "#" },
+      { label: "Cookies", href: "#" },
+    ],
+  },
 ];
-
-const accessLinks: FooterLink[] = [
-  { label: "Get Started", href: "/" },
-  { label: "Sign In", href: "/" },
-];
-
-const projectLinks: FooterLink[] = [
-  { label: "For Recruiters", section: "#for-recruiters" },
-  { label: "About SIJIL", section: "#home" },
-];
-
-function FooterColumn({ title, links }: { title: string; links: FooterLink[] }) {
-  return (
-    <div>
-      <h3 className="text-sm font-semibold">{title}</h3>
-      <ul className="mt-3 space-y-2">
-        {links.map((link) => (
-          <li key={link.label}>
-            {link.href ? (
-              <Link
-                to={link.href}
-                className="text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-sm"
-              >
-                {link.label}
-              </Link>
-            ) : link.section ? (
-              <button
-                type="button"
-                onClick={() => scrollToSection(link.section!)}
-                className="text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-sm"
-              >
-                {link.label}
-              </button>
-            ) : null}
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
 
 export function LandingFooter() {
   return (
-    <footer className="border-t border-border/50 bg-background">
-      <div className={`${landingContainer} py-10 sm:py-12`}>
-        <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-4 lg:gap-10">
-          <div className="sm:col-span-2 lg:col-span-1">
-            <button
-              type="button"
-              onClick={() => scrollToSection("#home")}
-              className="rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-              aria-label="SIJIL home"
-            >
+    <footer className="border-t border-gray-100 bg-white">
+      <div className="landing-container py-14">
+        <div className="grid gap-10 sm:grid-cols-2 lg:grid-cols-5">
+          <div>
+            <button type="button" onClick={() => scrollToSection("#home")} aria-label="SIJIL home">
               <Logo />
             </button>
-            <p className="mt-3 max-w-xs text-sm text-muted-foreground">
-              Evidence-backed competency records for modern learners.
+            <p className="mt-4 max-w-xs text-sm leading-relaxed text-gray-500">
+              Decentralized professional skill verification for the modern workforce.
             </p>
           </div>
-          <FooterColumn title="Product" links={productLinks} />
-          <FooterColumn title="Access" links={accessLinks} />
-          <FooterColumn title="Project" links={projectLinks} />
+          {columns.map((col) => (
+            <div key={col.title}>
+              <h3 className="text-sm font-bold text-gray-900">{col.title}</h3>
+              <ul className="mt-4 space-y-2.5">
+                {col.links.map((link) => (
+                  <li key={link.label}>
+                    {"section" in link && link.section ? (
+                      <button
+                        type="button"
+                        onClick={() => scrollToSection(link.section!)}
+                        className="text-sm text-gray-500 hover:text-gray-900"
+                      >
+                        {link.label}
+                      </button>
+                    ) : (
+                      <span className="text-sm text-gray-500">{link.label}</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
         </div>
       </div>
-      <div className="border-t border-border/40 py-4 text-center text-sm text-muted-foreground">
-        SIJIL — Decentralized competency records
+      <div className="border-t border-gray-100 py-5">
+        <div className="landing-container flex flex-col items-center justify-between gap-4 text-sm text-gray-500 sm:flex-row">
+          <p>© {new Date().getFullYear()} SIJIL. All rights reserved.</p>
+          <div className="flex gap-5">
+            {["Twitter", "LinkedIn", "GitHub"].map((s) => (
+              <Link key={s} to="/login/learner" className="hover:text-gray-900">
+                {s}
+              </Link>
+            ))}
+          </div>
+        </div>
       </div>
     </footer>
   );
