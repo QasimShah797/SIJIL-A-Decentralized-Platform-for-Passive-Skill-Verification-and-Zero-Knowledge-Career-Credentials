@@ -46,9 +46,10 @@ export async function fetchGitHubPullRequests(
   token: string,
   owner: string,
   repo: string,
+  perPage = 30,
 ): Promise<{ ok: boolean; status: number; pulls: Array<Record<string, unknown>> }> {
   const res = await fetch(
-    `${GITHUB_API}/repos/${owner}/${repo}/pulls?state=all&per_page=30&sort=updated&direction=desc`,
+    `${GITHUB_API}/repos/${owner}/${repo}/pulls?state=all&per_page=${perPage}&sort=updated&direction=desc`,
     { headers: githubHeaders(token) },
   );
   if (!res.ok) {

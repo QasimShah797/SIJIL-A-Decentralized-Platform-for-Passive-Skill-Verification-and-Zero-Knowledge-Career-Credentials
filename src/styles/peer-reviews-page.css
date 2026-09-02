@@ -1,0 +1,102 @@
+/* Peer Reviews — learner identity workspace */
+
+.pr-invite-dialog {
+  max-width: min(32rem, 92vw);
+  gap: 0;
+  overflow: hidden;
+  border-radius: 1rem;
+  border: 1px solid #e2e8f0;
+  padding: 0;
+}
+
+.pr-review-card {
+  transition: box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+.pr-review-card:hover {
+  border-color: #c5d4eb;
+  box-shadow: 0 2px 10px rgba(2, 62, 138, 0.08);
+}
+
+.pr-stat-card {
+  cursor: pointer;
+}
+
+.pr-stat-card:focus-visible {
+  outline: 2px solid #023e8a;
+  outline-offset: 2px;
+}
+
+.pr-source-meter {
+  display: flex;
+  width: 100%;
+  cursor: pointer;
+  flex-direction: column;
+  gap: 0.45rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.85rem;
+  background: #fff;
+  padding: 0.7rem 0.8rem;
+  text-align: left;
+  color: #0f172a;
+  font-size: 12px;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease, transform 0.12s ease;
+}
+
+.pr-source-meter:hover {
+  border-color: #023e8a;
+  background: #f8fbff;
+  box-shadow: 0 6px 16px rgba(2, 62, 138, 0.08);
+}
+
+.pr-source-meter:active {
+  transform: scale(0.985);
+}
+
+.pr-source-meter.is-on {
+  border-color: #023e8a;
+  background: #023e8a;
+  color: #fff;
+  box-shadow: 0 8px 18px rgba(2, 62, 138, 0.22);
+}
+
+.pr-source-meter:focus-visible {
+  outline: 2px solid #023e8a;
+  outline-offset: 2px;
+}
+
+.pr-source-icon {
+  display: flex;
+  height: 1.5rem;
+  width: 1.5rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.45rem;
+  background: #e8eef7;
+  color: #023e8a;
+}
+
+.pr-source-icon.is-on {
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+}
+
+.pr-source-track {
+  display: block;
+  height: 0.4rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e2e8f0;
+}
+
+.pr-source-meter.is-on .pr-source-track {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.pr-source-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.35s ease;
+}

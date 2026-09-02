@@ -661,6 +661,68 @@ async function resolveContributorForInvite(
 }
 
 /** Supabase fallback when the custom backend API is unreachable. */
+export async function resendPeerReviewInviteLocal(
+  invitationId: string,
+  source: "peer" | "request" | "legacy",
+): Promise<{
+  inviteId: string;
+  token: string;
+  reviewLink: string;
+  status: string;
+  viaFallback: true;
+} | null> {
+  if (source === "legacy") return null;
+
+  const { data: { session } } = await supabase.auth.getSession();
+  const userId = session?.user?.id;
+  if (!userId) return null;
+
+  const table = source === "request" ? "review_requests" : "peer_review_invites";
+  const { data: row, error } = await supabase
+    .from(table)
+    .select("id, token, status, expires_at")
+    .eq("id", invitationId)
+    .eq("learner_user_id", userId)
+    .maybeSingle();
+
+  if (error || !row) return null;
+  if ((row.status as string) === "completed") return null;
+
+  let token = row.token as string;
+  const isExpired = new Date(row.expires_at as string) < new Date();
+  if (isExpired) {
+    token = generateInviteToken();
+  }
+
+  const expiresAt = new Date();
+  expiresAt.setDate(expiresAt.getDate() + PEER_REVIEW_INVITE_TTL_DAYS);
+
+  const statusValue = source === "request" && (row.status as string) === "awaiting_feedback"
+    ? "awaiting_feedback"
+    : "sent";
+
+  const { error: updateError } = await supabase
+    .from(table)
+    .update({
+      token,
+      expires_at: expiresAt.toISOString(),
+      status: statusValue,
+    })
+    .eq("id", invitationId)
+    .eq("learner_user_id", userId);
+
+  if (updateError) return null;
+
+  return {
+    inviteId: invitationId,
+    token,
+    reviewLink: `${window.location.origin}/review/request/${token}`,
+    status: "resent",
+    viaFallback: true,
+  };
+}
+
+/** Supabase fallback when the custom backend API is unreachable. */
 export async function createPeerReviewInviteLocal(input: {
   projectId: string;
   contributorId: string;

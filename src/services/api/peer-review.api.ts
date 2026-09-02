@@ -2,7 +2,7 @@
  * Peer review API — projects, contributors, invites, stats.
  */
 import { tryApiRequest, apiRequest, isApiEnabled, ApiUnavailableError } from "./client";
-import { createPeerReviewInviteLocal } from "@/lib/db/peer-review-page";
+import { createPeerReviewInviteLocal, resendPeerReviewInviteLocal } from "@/lib/db/peer-review-page";
 import type { PeerReview, ProjectContributor } from "@/lib/sijil-data";
 import type { PeerReviewProject } from "@/lib/db/peer-review-page";
 import { resolvePeerReviewDate } from "@/lib/peer-review-date";
@@ -104,11 +104,27 @@ export async function resendPeerReviewInvitationApi(
   token: string;
   reviewLink: string;
   status: string;
+  viaFallback?: boolean;
 } | null> {
-  return tryApiRequest(`/peer-review/invitations/${encodeURIComponent(invitationId)}/resend`, {
-    method: "POST",
-    body: JSON.stringify({ source }),
-  }, onError);
+  if (isApiEnabled()) {
+    try {
+      return await apiRequest(`/peer-review/invitations/${encodeURIComponent(invitationId)}/resend`, {
+        method: "POST",
+        body: JSON.stringify({ source }),
+      });
+    } catch (err) {
+      const local = await resendPeerReviewInviteLocal(invitationId, source);
+      if (local) return local;
+      if (onError && err instanceof Error) onError(err.message);
+      return null;
+    }
+  }
+
+  const local = await resendPeerReviewInviteLocal(invitationId, source);
+  if (local) return local;
+
+  if (onError) onError("Could not resend the review invitation");
+  return null;
 }
 
 export async function submitPeerReviewApi(input: {

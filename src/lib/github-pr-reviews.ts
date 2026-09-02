@@ -33,6 +33,7 @@ type GitHubRepoRow = {
   repo_id: number;
   repo_name: string;
   full_name: string;
+  linked_skill_id?: string | null;
 };
 
 function parseOwnerRepo(fullName: string): { owner: string; repo: string } | null {
@@ -109,45 +110,82 @@ async function loadContributorLogins(userId: string): Promise<Map<number, Set<st
   return byRepo;
 }
 
+type FetchGitHubPrReviewsOptions = {
+  maxRepos?: number;
+  maxPullsPerRepo?: number;
+  linkedOnly?: boolean;
+};
+
+async function mapPool<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let next = 0;
+  const workers = Array.from({ length: Math.min(Math.max(1, limit), items.length) }, async () => {
+    while (next < items.length) {
+      const index = next;
+      next += 1;
+      results[index] = await fn(items[index]);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
 export async function fetchGitHubPrReviewsForUser(
   userId: string,
+  options: FetchGitHubPrReviewsOptions = {},
 ): Promise<FetchGitHubPrReviewsResult> {
+  const maxRepos = options.maxRepos ?? 4;
+  const maxPullsPerRepo = options.maxPullsPerRepo ?? 5;
+  const linkedOnly = options.linkedOnly !== false;
   const errors: GitHubPrReviewFetchError[] = [];
   const reviews: GitHubPrReviewRecord[] = [];
   const seen = new Set<string>();
 
-  const { data: connection, error: connError } = await supabase
+  const { data: connection } = await supabase
     .from("github_connections")
     .select("access_token, github_username")
     .eq("user_id", userId)
     .maybeSingle();
 
-  if (connError || !connection?.access_token) {
-    return {
-      reviews: [],
-      errors: [{ type: "token_missing", message: "GitHub access required" }],
-    };
+  if (!connection?.access_token) {
+    return { reviews: [], errors: [] };
   }
 
   const token = connection.access_token as string;
   const learnerLogin = String(connection.github_username ?? "").toLowerCase();
 
-  const { data: repos } = await supabase
+  let repoQuery = supabase
     .from("github_repos")
-    .select("repo_id, repo_name, full_name")
+    .select("repo_id, repo_name, full_name, linked_skill_id")
     .eq("user_id", userId)
-    .order("last_updated", { ascending: false, nullsFirst: false });
+    .order("last_updated", { ascending: false, nullsFirst: false })
+    .limit(maxRepos);
+
+  if (linkedOnly) {
+    repoQuery = repoQuery.not("linked_skill_id", "is", null);
+  }
+
+  const { data: repos } = await repoQuery;
+  const repoRows = ((repos ?? []) as GitHubRepoRow[]).slice(0, maxRepos);
+  if (repoRows.length === 0) {
+    return { reviews: [], errors: [] };
+  }
 
   const contributorLoginsByRepo = await loadContributorLogins(userId);
 
-  for (const repo of (repos ?? []) as GitHubRepoRow[]) {
+  await mapPool(repoRows, 3, async (repo) => {
     const fullName = String(repo.full_name ?? "").trim();
     const repoName = String(repo.repo_name ?? fullName.split("/").pop() ?? "Repository");
     const parsed = parseOwnerRepo(fullName);
-    if (!parsed) continue;
+    if (!parsed) return;
 
     const contributorLogins = contributorLoginsByRepo.get(Number(repo.repo_id)) ?? new Set<string>();
-    const pullsResult = await fetchGitHubPullRequests(token, parsed.owner, parsed.repo);
+    const pullsResult = await fetchGitHubPullRequests(
+      token,
+      parsed.owner,
+      parsed.repo,
+      maxPullsPerRepo,
+    );
 
     if (!pullsResult.ok) {
       errors.push({
@@ -155,34 +193,35 @@ export async function fetchGitHubPrReviewsForUser(
         message: "Repository not accessible",
         repository: repoName,
       });
-      continue;
+      return;
     }
 
-    for (const pull of pullsResult.pulls) {
-      const prNumber = Number(pull.number);
-      const prTitle = String(pull.title ?? `Pull request #${prNumber}`);
-      if (!Number.isFinite(prNumber)) continue;
+    const pulls = pullsResult.pulls.slice(0, maxPullsPerRepo);
+    const pullBatches = await Promise.all(
+      pulls.map(async (pull) => {
+        const prNumber = Number(pull.number);
+        const prTitle = String(pull.title ?? `Pull request #${prNumber}`);
+        if (!Number.isFinite(prNumber)) return [] as GitHubPrReviewRecord[];
 
-      const [prReviews, prComments] = await Promise.all([
-        fetchGitHubPullReviews(token, parsed.owner, parsed.repo, prNumber),
-        fetchGitHubPullReviewComments(token, parsed.owner, parsed.repo, prNumber),
-      ]);
+        const [prReviews, prComments] = await Promise.all([
+          fetchGitHubPullReviews(token, parsed.owner, parsed.repo, prNumber),
+          fetchGitHubPullReviewComments(token, parsed.owner, parsed.repo, prNumber),
+        ]);
 
-      const candidates = [
-        ...prReviews.map((item) => mapPullReview(item, repoName, prNumber, prTitle, "review")),
-        ...prComments.map((item) => mapPullReview(item, repoName, prNumber, prTitle, "comment")),
-      ].filter((item): item is GitHubPrReviewRecord => item != null);
+        return [
+          ...prReviews.map((item) => mapPullReview(item, repoName, prNumber, prTitle, "review")),
+          ...prComments.map((item) => mapPullReview(item, repoName, prNumber, prTitle, "comment")),
+        ].filter((item): item is GitHubPrReviewRecord => item != null);
+      }),
+    );
 
-      for (const item of candidates) {
-        if (!isVerifiedContributor(item.reviewer_name, contributorLogins, learnerLogin)) {
-          continue;
-        }
-        if (seen.has(item.id)) continue;
-        seen.add(item.id);
-        reviews.push(item);
-      }
+    for (const item of pullBatches.flat()) {
+      if (!isVerifiedContributor(item.reviewer_name, contributorLogins, learnerLogin)) continue;
+      if (seen.has(item.id)) continue;
+      seen.add(item.id);
+      reviews.push(item);
     }
-  }
+  });
 
   return { reviews, errors };
 }
