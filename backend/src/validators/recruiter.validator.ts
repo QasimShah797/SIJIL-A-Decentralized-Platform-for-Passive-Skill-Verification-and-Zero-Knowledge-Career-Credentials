@@ -18,3 +18,7 @@ export const searchQuerySchema = z.object({
   page: z.coerce.number().int().positive().optional(),
   limit: z.coerce.number().int().positive().max(100).optional(),
 });
+
+export const profileFieldsQuerySchema = z.object({
+  ids: z.string().min(1),
+});

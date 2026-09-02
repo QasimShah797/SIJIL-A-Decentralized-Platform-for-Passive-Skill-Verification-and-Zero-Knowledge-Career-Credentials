@@ -9,7 +9,10 @@ import type { DeclaredSkill, PeerReview } from "@/lib/sijil-data";
 
 function useStableUserIds() {
   const { user } = useAuth();
-  return { userId: user?.id, userEmail: user?.email };
+  const fullName = typeof user?.user_metadata?.full_name === "string"
+    ? user.user_metadata.full_name
+    : null;
+  return { userId: user?.id, userEmail: user?.email, fullName };
 }
 
 let sharedLearnerProfile: LearnerProfileView | null = null;
@@ -23,7 +26,7 @@ function publishLearnerProfile(userId: string | null, profile: LearnerProfileVie
 }
 
 export function useLearnerProfile() {
-  const { userId, userEmail } = useStableUserIds();
+  const { userId, userEmail, fullName } = useStableUserIds();
   const [profile, setProfile] = useState<LearnerProfileView | null>(() =>
     userId && sharedLearnerProfileUserId === userId ? sharedLearnerProfile : null,
   );
@@ -42,14 +45,14 @@ export function useLearnerProfile() {
       setLoading(true);
     }
     try {
-      const next = await fetchLearnerProfile(userId, userEmail);
+      const next = await fetchLearnerProfile(userId, userEmail, fullName);
       publishLearnerProfile(userId, next);
       setProfile(next);
       hasLoadedRef.current = true;
     } finally {
       setLoading(false);
     }
-  }, [userId, userEmail]);
+  }, [userId, userEmail, fullName]);
 
   useEffect(() => {
     const syncFromShared = () => {

@@ -2,10 +2,20 @@
  * Environment variable loading and validation for the SIJIL backend.
  * Centralizes all process.env access so other modules stay config-free.
  */
+import path from "node:path";
 import dotenv from "dotenv";
 import { z } from "zod";
 
-dotenv.config();
+dotenv.config({ path: path.resolve(process.cwd(), ".env") });
+dotenv.config({ path: path.resolve(process.cwd(), "../.env.local") });
+
+function firstEnv(...keys: string[]): string | undefined {
+  for (const key of keys) {
+    const value = process.env[key]?.trim();
+    if (value) return value;
+  }
+  return undefined;
+}
 
 const envSchema = z.object({
   PORT: z.coerce.number().default(5000),
@@ -29,7 +39,15 @@ const envSchema = z.object({
   EMAIL_FROM: z.string().min(1).optional(),
 });
 
-const parsed = envSchema.safeParse(process.env);
+const parsed = envSchema.safeParse({
+  ...process.env,
+  SUPABASE_URL: firstEnv("SUPABASE_URL", "VITE_SUPABASE_URL"),
+  SUPABASE_ANON_KEY: firstEnv("SUPABASE_ANON_KEY", "VITE_SUPABASE_ANON_KEY"),
+  SUPABASE_SERVICE_ROLE_KEY: firstEnv(
+    "SUPABASE_SERVICE_ROLE_KEY",
+    "VITE_SUPABASE_ANON_KEY",
+  ),
+});
 
 if (!parsed.success) {
   console.error("Invalid environment variables:", parsed.error.flatten().fieldErrors);

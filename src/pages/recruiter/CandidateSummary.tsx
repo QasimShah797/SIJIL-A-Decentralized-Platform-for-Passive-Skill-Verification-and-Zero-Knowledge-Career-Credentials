@@ -1,215 +1,946 @@
 import { useNavigate, useParams } from "react-router-dom";
+
 import { AppShell } from "@/components/sijil/AppShell";
-import { PageHeader } from "@/components/sijil/PageHeader";
+
 import { StatusBadge } from "@/components/sijil/StatusBadge";
-import { FieldRow } from "@/components/sijil/FieldRow";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+
+import { EmptyState } from "@/components/sijil/EmptyState";
+
+import { PageSkeleton } from "@/components/sijil/SkeletonLoader";
+
+import { DisclosedPayloadView } from "@/components/recruiter/DisclosedPayloadView";
+
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
+
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, ShieldCheck, ArrowRight, Lock, Building2 } from "lucide-react";
-import { useCandidates } from "@/hooks/useCandidates";
+
+import { ArrowLeft, ArrowRight, ChevronDown, Lock, ShieldCheck, Wallet } from "lucide-react";
+
 import { fetchPeerReviews } from "@/lib/db/peer-reviews";
-import { fetchPresentationsForCandidate } from "@/lib/db/presentations";
+
+import { fetchCandidateDetail } from "@/lib/db/shared-credentials";
+
 import { computeTrustSignals } from "@/lib/sijil-data";
-import { useEffect, useState } from "react";
+
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+
 import type { PeerReview } from "@/lib/sijil-data";
-import { ReviewCard } from "@/pages/learner/PeerReviews";
+
+import type { CandidateDetailView, SharedCredentialView } from "@/lib/shared-presentation";
+
+
+
+const IDENTITY_FIELD_IDS = new Set([
+
+  "institution",
+
+  "institutionName",
+
+  "institution_name",
+
+  "issuer",
+
+  "program",
+
+  "department",
+
+  "careerGoal",
+
+  "career_goal",
+
+  "city",
+
+  "country",
+
+  "cityCountry",
+
+  "city_country",
+
+  "location",
+
+  "role",
+
+  "track",
+
+]);
+
+
+
+const EVIDENCE_PAYLOAD_KEYS = new Set([
+
+  "evidence",
+
+  "evidencePackage",
+
+  "github",
+
+  "lms",
+
+  "peer_reviews",
+
+  "peerReviews",
+
+  "teacher_feedback",
+
+  "teacherFeedback",
+
+  "status",
+
+  "timestamps",
+
+  "practical_task_result",
+
+  "practicalTaskResult",
+
+]);
+
+
 
 export default function CandidateSummary() {
+
   const { id } = useParams();
+
   const navigate = useNavigate();
-  const { candidates, candidateSkills, loading } = useCandidates();
-  const c = candidates.find((x) => x.id === id);
-  const skills = c ? (candidateSkills[c.id] || []) : [];
+
+  const [candidate, setCandidate] = useState<CandidateDetailView | null>(null);
+
   const [peerReviews, setPeerReviews] = useState<PeerReview[]>([]);
-  const [presentations, setPresentations] = useState<Awaited<ReturnType<typeof fetchPresentationsForCandidate>>>([]);
+
+  const [loading, setLoading] = useState(true);
+
+  const [error, setError] = useState<string | null>(null);
+
+
 
   useEffect(() => {
-    if (!id) return;
-    fetchPeerReviews(id).then(setPeerReviews);
-    fetchPresentationsForCandidate(id).then(setPresentations);
+
+    if (!id) {
+
+      setCandidate(null);
+
+      setLoading(false);
+
+      return;
+
+    }
+
+
+
+    let active = true;
+
+    setLoading(true);
+
+    setError(null);
+
+
+
+    Promise.all([fetchCandidateDetail(id), fetchPeerReviews(id)])
+
+      .then(([nextCandidate, reviews]) => {
+
+        if (!active) return;
+
+        setCandidate(nextCandidate);
+
+        setPeerReviews(reviews);
+
+      })
+
+      .catch((nextError: unknown) => {
+
+        if (!active) return;
+
+        setCandidate(null);
+
+        setError(nextError instanceof Error ? nextError.message : "Could not load candidate.");
+
+      })
+
+      .finally(() => {
+
+        if (active) setLoading(false);
+
+      });
+
+
+
+    return () => {
+
+      active = false;
+
+    };
+
   }, [id]);
 
+
+
   const trust = computeTrustSignals(peerReviews);
-  const presentation = presentations[0] ?? null;
+
+  const sharedCredentials = useMemo(
+
+    () => sortCredentialsByRecency(candidate?.sharedCredentials ?? []),
+
+    [candidate?.sharedCredentials],
+
+  );
+
+  const identityLine = useMemo(
+
+    () => buildDisclosedIdentityLine(sharedCredentials),
+
+    [sharedCredentials],
+
+  );
+
+
 
   if (loading) {
-    return <AppShell role="recruiter"><div className="text-sm text-muted-foreground">Loading…</div></AppShell>;
-  }
 
-  if (!c) {
     return (
+
       <AppShell role="recruiter">
-        <PageHeader title="Candidate not found" />
-        <Button onClick={() => navigate("/recruiter/search")}>Back to search</Button>
+
+        <PageSkeleton rows={4} />
+
       </AppShell>
+
     );
+
   }
 
+
+
+  if (error) {
+
+    return (
+
+      <AppShell role="recruiter">
+
+        <div className="mx-auto max-w-3xl px-4 py-10">
+
+          <p className="text-lg font-semibold">Could not load candidate</p>
+
+          <p className="mt-2 text-sm text-muted-foreground">{error}</p>
+
+          <Button className="mt-6" onClick={() => navigate("/recruiter/search")}>Back to search</Button>
+
+        </div>
+
+      </AppShell>
+
+    );
+
+  }
+
+
+
+  if (!candidate) {
+
+    return (
+
+      <AppShell role="recruiter">
+
+        <div className="mx-auto max-w-3xl px-4 py-10">
+
+          <p className="text-lg font-semibold">Candidate not found</p>
+
+          <Button className="mt-6" onClick={() => navigate("/recruiter/search")}>Back to search</Button>
+
+        </div>
+
+      </AppShell>
+
+    );
+
+  }
+
+
+
   return (
+
     <AppShell role="recruiter">
-      <PageHeader
-        title="Candidate Verification Summary"
-        description="Evidence-backed view. SIJIL aggregates trust signals — it does not assign expert/intermediate labels."
-        actions={<Button variant="outline" onClick={() => navigate("/recruiter/search")}><ArrowLeft className="h-4 w-4 mr-1.5" />Back to search</Button>}
-      />
 
-      <Card className="mb-6">
-        <CardContent className="p-6 flex items-start gap-5">
-          <div className="h-14 w-14 rounded-full bg-primary text-primary-foreground flex items-center justify-center font-semibold">
-            {c.name.split(" ").map((n) => n[0]).join("")}
-          </div>
-          <div className="flex-1">
-            <div className="flex items-center gap-2 flex-wrap">
-              <h2 className="text-xl font-semibold">{c.name}</h2>
-              <StatusBadge variant={c.attestation === "Approved" ? "verified" : "warning"}>Attestation: {c.attestation}</StatusBadge>
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/50 px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
-                <Lock className="h-3 w-3 shrink-0" aria-hidden />
-                Wallet not accessible
-              </span>
-            </div>
-            <div className="text-sm text-muted-foreground">{c.institution}</div>
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mt-4">
-              <Stat label="Verified skills" value={skills.length} />
-              <Stat label="Credentials" value={c.credentialCount} />
-              <Stat label="Evidence records" value={c.evidence} />
-              <Stat label="Reviews" value={c.reviews} />
-              <Stat label="Shared presentations" value={presentations.length} />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:py-10">
 
-      <div className="grid lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 space-y-6">
-          <Card>
-            <CardHeader><CardTitle className="text-base">Verified skills</CardTitle></CardHeader>
-            <CardContent className="p-0">
-              <div className="divide-y">
-                {skills.map((s) => (
-                  <div key={s.skill} className="px-6 py-4">
-                    <div className="flex items-center justify-between">
-                      <div className="font-medium">{s.skill}</div>
-                      <StatusBadge variant={s.attestation === "Approved" ? "verified" : "warning"}>
-                        {s.attestation === "Approved" ? "Fully attested" : "Partially verified"}
-                      </StatusBadge>
-                    </div>
-                    <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mt-3 text-xs">
-                      <Mini k="Reviews" v={s.reviews} />
-                      <Mini k="Evidence" v={s.evidence} />
-                      <Mini k="LMS" v={s.lmsRecords} />
-                      <Mini k="GitHub" v={s.githubRecords} />
-                      <Mini k="External cert" v={s.externalCert} />
-                    </div>
-                    <div className="text-[11px] text-muted-foreground mt-2 mono">
-                      Attested by {s.attestationSource} · {s.attestationDid}
-                    </div>
-                  </div>
-                ))}
-                {skills.length === 0 && (
-                  <div className="p-6 text-sm text-muted-foreground">No skills published.</div>
-                )}
-              </div>
-            </CardContent>
-          </Card>
+        <Button
 
-          <Card>
-            <CardHeader><CardTitle className="text-base">Verifiable presentation</CardTitle></CardHeader>
-            <CardContent>
-              {presentation ? (
-                <>
-                  <FieldRow label="Token" value={presentation.token} mono />
-                  <FieldRow label="Recipient" value={presentation.recipient} />
-                  <FieldRow label="Recipient DID" value={presentation.recipientDid} mono />
-                  <FieldRow label="Disclosed claims" value={`${presentation.disclosedFields.length} of ${presentation.disclosedFields.length + presentation.hiddenFields.length}`} />
-                  <FieldRow label="Status" value={<StatusBadge variant={presentation.revoked ? "destructive" : "verified"}>{presentation.revoked ? "Revoked" : "Active"}</StatusBadge>} />
-                  <FieldRow label="proof" value={<StatusBadge variant="verified" icon={<ShieldCheck className="h-3 w-3" />}>Verifiable proof present</StatusBadge>} />
-                  <div className="flex gap-2 pt-4">
-                    <Button onClick={() => navigate(`/recruiter/verify/${encodeURIComponent(presentation.token)}?from=${encodeURIComponent(`/recruiter/candidate/${c.id}`)}`)}>
-                      Open & verify presentation <ArrowRight className="h-4 w-4 ml-1.5" />
-                    </Button>
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-3">
-                    Verification happens on the recruiter side. You will see only fields the candidate disclosed — wallet contents remain private.
-                  </p>
-                </>
-              ) : (
-                <div className="text-sm text-muted-foreground">
-                  This candidate has not shared a verifiable presentation with you yet. Request one to verify their credential.
-                </div>
+          variant="ghost"
+
+          size="sm"
+
+          className="-ml-2 mb-6 text-muted-foreground hover:text-foreground"
+
+          onClick={() => navigate("/recruiter/search")}
+
+        >
+
+          <ArrowLeft className="mr-1.5 h-4 w-4" />
+
+          Back to search
+
+        </Button>
+
+
+
+        <div className="flex flex-col gap-10 lg:flex-row lg:items-start lg:gap-12">
+
+          {/* Main CV column */}
+
+          <article className="min-w-0 flex-1 space-y-10">
+
+            {/* Header block */}
+
+            <header className="border-b border-border/70 pb-8">
+
+              <h1 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
+
+                {candidate.name}
+
+              </h1>
+
+              {identityLine && (
+
+                <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
+
+                  {identityLine}
+
+                </p>
+
               )}
-            </CardContent>
-          </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Peer reviews & trust signals</CardTitle>
-              <p className="text-xs text-muted-foreground">
-                Reviews show reviewer relationship, context source, verification status, trust weight, linked evidence and comment. SIJIL does not assign a final skill level — interpret the evidence yourself.
+              <p className="mt-4 inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+
+                <Lock className="h-3 w-3 shrink-0" aria-hidden />
+
+                Selective disclosure — wallet not accessible
+
               </p>
-            </CardHeader>
-            <CardContent className="p-0">
-              <div className="grid grid-cols-2 md:grid-cols-6 gap-3 px-6 py-4 border-b">
-                <Mini k="Total" v={trust.total} />
-                <Mini k="Verified context" v={trust.verifiedContext} />
-                <Mini k="Imported" v={trust.imported} />
-                <Mini k="SIJIL" v={trust.sijil} />
-                <Mini k="High trust" v={trust.highTrust} />
-                <Mini k="Pending" v={trust.pending} />
-              </div>
-              <div className="divide-y">
-                {peerReviews.slice(0, 5).map((r) => <ReviewCard key={r.id} r={r} />)}
-                {peerReviews.length === 0 && (
-                  <div className="p-6 text-sm text-muted-foreground">No peer reviews available.</div>
-                )}
-              </div>
-            </CardContent>
-          </Card>
+
+            </header>
+
+
+
+            {/* Verified Skills */}
+
+            <CvSection title="Verified Skills">
+
+              {sharedCredentials.length === 0 ? (
+
+                <EmptyState
+
+                  icon={Wallet}
+
+                  title="No shared credentials"
+
+                  description="This candidate has not shared any active credentials with recruiters yet."
+
+                  className="border-0 bg-transparent px-0 py-6"
+
+                />
+
+              ) : (
+
+                <Accordion type="single" collapsible className="w-full">
+
+                  {sharedCredentials.map((credential) => (
+
+                    <VerifiedSkillAccordionItem
+
+                      key={credential.presentationId}
+
+                      credential={credential}
+
+                      candidateId={candidate.id}
+
+                    />
+
+                  ))}
+
+                </Accordion>
+
+              )}
+
+            </CvSection>
+
+          </article>
+
+
+
+          {/* Sidebar — trust & summary (CV skills-summary column) */}
+
+          <aside className="w-full shrink-0 space-y-8 lg:w-56 xl:w-64">
+
+            <SidebarBlock title="Verification summary">
+
+              <SidebarStat label="Attestation" value={candidate.attestation} highlight />
+
+              <SidebarStat label="Shared credentials" value={String(candidate.credentialCount)} />
+
+              <SidebarStat label="Disclosed evidence" value={String(candidate.evidence)} />
+
+              <SidebarStat label="Active presentations" value={String(sharedCredentials.length)} />
+
+            </SidebarBlock>
+
+
+
+            {peerReviews.length > 0 && (
+
+              <SidebarBlock title="Trust signals">
+
+                <SidebarStat label="Peer reviews" value={String(trust.total)} />
+
+                <SidebarStat label="Verified context" value={String(trust.verifiedContext)} />
+
+                <SidebarStat label="High trust" value={String(trust.highTrust)} />
+
+                <SidebarStat label="Pending" value={String(trust.pending)} />
+
+              </SidebarBlock>
+
+            )}
+
+
+
+            <SidebarBlock title="Privacy">
+
+              <ul className="space-y-2 text-xs leading-relaxed text-muted-foreground">
+
+                <li>Only disclosed fields are shown.</li>
+
+                <li>Revoked and expired shares are excluded.</li>
+
+                <li>Full wallet access is never granted.</li>
+
+              </ul>
+
+              <StatusBadge variant="verified" className="mt-4" icon={<ShieldCheck className="h-3 w-3" />}>
+
+                Shared presentations only
+
+              </StatusBadge>
+
+            </SidebarBlock>
+
+          </aside>
+
         </div>
 
-        <div className="space-y-4">
-          <Card>
-            <CardHeader><CardTitle className="text-base">Verification source</CardTitle></CardHeader>
-            <CardContent className="text-sm">
-              <div className="flex items-center gap-2">
-                <Building2 className="h-4 w-4 text-muted-foreground" />
-                <span className="font-medium">SIJIL evidence-based verification</span>
-              </div>
-              <div className="text-xs text-muted-foreground mono mt-1">{skills[0]?.attestationDid || "did:web:issuer.sijil.app"}</div>
-              <StatusBadge variant="verified" className="mt-3">Verified</StatusBadge>
-              <p className="text-xs text-muted-foreground mt-3">
-                Credentials are verified automatically from connected evidence and assessment scores — not self-claimed.
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader><CardTitle className="text-base">Privacy notice</CardTitle></CardHeader>
-            <CardContent className="text-sm text-muted-foreground space-y-2">
-              <p>· You only see fields the candidate explicitly disclosed.</p>
-              <p>· You cannot browse the candidate's wallet.</p>
-              <p>· Hidden fields stay hidden — no requests bypass selective disclosure.</p>
-              <p>· Verification runs locally against the issuer DID.</p>
-            </CardContent>
-          </Card>
-        </div>
       </div>
+
     </AppShell>
+
   );
+
 }
 
-function Stat({ label, value }: { label: string; value: any }) {
+
+
+function CvSection({ title, children }: { title: string; children: ReactNode }) {
+
   return (
-    <div className="rounded-md border bg-card p-3">
-      <div className="text-[11px] text-muted-foreground">{label}</div>
-      <div className="text-base font-semibold mt-0.5">{value}</div>
-    </div>
+
+    <section>
+
+      <h2 className="mb-5 text-xs font-semibold uppercase tracking-[0.14em] text-foreground/80">
+
+        {title}
+
+      </h2>
+
+      {children}
+
+    </section>
+
   );
+
 }
-function Mini({ k, v }: { k: string; v: any }) {
+
+
+
+function VerifiedSkillAccordionItem({
+
+  credential,
+
+  candidateId,
+
+}: {
+
+  credential: SharedCredentialView;
+
+  candidateId: string;
+
+}) {
+
+  const navigate = useNavigate();
+
+  const skillName = credential.skill ?? credential.title;
+
+  const track = getSkillTrack(credential);
+
+  const tiers = getEvidenceTierLabels(credential);
+
+  const evidencePayload = pickEvidencePayload(credential.disclosedPayload);
+
+  const hasEvidence = Object.keys(evidencePayload).length > 0;
+
+
+
   return (
-    <div className="rounded-md bg-muted/40 p-2">
-      <div className="text-[10px] uppercase text-muted-foreground">{k}</div>
-      <div className="text-xs font-medium mt-0.5">{v}</div>
-    </div>
+
+    <AccordionItem value={credential.presentationId} className="border-border/60">
+
+      <AccordionTrigger className="group py-4 hover:no-underline [&>svg:last-child]:hidden">
+
+        <div className="flex w-full min-w-0 items-start gap-3 text-left">
+
+          <div className="min-w-0 flex-1 space-y-1">
+
+            <p className="text-base font-semibold leading-snug text-foreground">{skillName}</p>
+
+            <p className="text-sm leading-relaxed text-muted-foreground">
+
+              {[
+
+                track,
+
+                `Issued ${formatShortDate(credential.createdAt)}`,
+
+                `Valid through ${formatValidityEnd(credential.expiresAt)}`,
+
+              ].filter(Boolean).join(" · ")}
+
+            </p>
+
+          </div>
+
+          <ChevronDown
+
+            className="mt-1 h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200 group-data-[state=open]:rotate-180"
+
+            aria-hidden
+
+          />
+
+        </div>
+
+      </AccordionTrigger>
+
+      <AccordionContent className="pb-4 pt-0">
+
+        {(tiers.length > 0 || credential.proofType) && (
+
+          <div className="mb-4 flex flex-wrap gap-1.5">
+
+            {tiers.map((tier) => (
+
+              <span
+
+                key={tier}
+
+                className="inline-flex rounded-full border border-border/70 bg-muted/40 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
+
+              >
+
+                {tier}
+
+              </span>
+
+            ))}
+
+            {tiers.length === 0 && credential.proofType && (
+
+              <span className="inline-flex rounded-full border border-border/70 bg-muted/40 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+
+                {credential.proofType}
+
+              </span>
+
+            )}
+
+          </div>
+
+        )}
+
+        <div className="border-l-2 border-border/60 pl-4 text-sm leading-relaxed [&_.text-sm]:leading-relaxed">
+
+          {hasEvidence ? (
+
+            <DisclosedPayloadView payload={evidencePayload} fields={credential.disclosedFields} />
+
+          ) : (
+
+            <DisclosedPayloadView payload={credential.disclosedPayload} fields={credential.disclosedFields} />
+
+          )}
+
+        </div>
+
+        {credential.token && (
+
+          <Button
+
+            variant="link"
+
+            size="sm"
+
+            className="mt-3 h-auto p-0 text-xs text-primary"
+
+            onClick={() => navigate(
+
+              `/recruiter/verify/${encodeURIComponent(credential.token!)}?from=${encodeURIComponent(`/recruiter/candidate/${candidateId}`)}`,
+
+            )}
+
+          >
+
+            Open signed presentation
+
+            <ArrowRight className="ml-1 h-3 w-3" />
+
+          </Button>
+
+        )}
+
+      </AccordionContent>
+
+    </AccordionItem>
+
   );
+
 }
+
+
+
+function SidebarBlock({ title, children }: { title: string; children: ReactNode }) {
+
+  return (
+
+    <div className="border-t border-border/60 pt-6 first:border-t-0 first:pt-0">
+
+      <h3 className="mb-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+
+        {title}
+
+      </h3>
+
+      {children}
+
+    </div>
+
+  );
+
+}
+
+
+
+function SidebarStat({
+
+  label,
+
+  value,
+
+  highlight = false,
+
+}: {
+
+  label: string;
+
+  value: string;
+
+  highlight?: boolean;
+
+}) {
+
+  return (
+
+    <div className="mb-3 last:mb-0">
+
+      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</p>
+
+      <p className={`mt-0.5 ${highlight ? "text-sm font-semibold text-foreground" : "text-sm text-foreground/90"}`}>
+
+        {value}
+
+      </p>
+
+    </div>
+
+  );
+
+}
+
+
+
+function sortCredentialsByRecency(credentials: SharedCredentialView[]): SharedCredentialView[] {
+
+  return [...credentials].sort(
+
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+
+  );
+
+}
+
+
+
+const TRACK_FIELD_IDS = new Set(["track", "role", "careerGoal", "career_goal"]);
+
+const INSTITUTION_FIELD_IDS = new Set(["institution", "institutionName", "institution_name", "issuer"]);
+
+const PROGRAM_FIELD_IDS = new Set(["program", "department"]);
+
+const LOCATION_FIELD_IDS = new Set(["city", "country", "cityCountry", "city_country", "location"]);
+
+
+
+function buildDisclosedIdentityLine(credentials: SharedCredentialView[]): string {
+
+  const tracks = new Set<string>();
+
+  const institutions = new Set<string>();
+
+  const programs = new Set<string>();
+
+  const locations = new Set<string>();
+
+
+
+  const collect = (bucket: Set<string>, value: string | null | undefined) => {
+
+    const trimmed = value?.trim();
+
+    if (!trimmed || trimmed === "—") return;
+
+    bucket.add(trimmed);
+
+  };
+
+
+
+  for (const credential of credentials) {
+
+    for (const field of credential.disclosedFields) {
+
+      if (!IDENTITY_FIELD_IDS.has(field.id)) continue;
+
+      if (TRACK_FIELD_IDS.has(field.id)) collect(tracks, field.value);
+
+      else if (INSTITUTION_FIELD_IDS.has(field.id)) collect(institutions, field.value);
+
+      else if (PROGRAM_FIELD_IDS.has(field.id)) collect(programs, field.value);
+
+      else if (LOCATION_FIELD_IDS.has(field.id)) collect(locations, field.value);
+
+    }
+
+
+
+    const payload = credential.disclosedPayload;
+
+    const competency = asRecord(payload.competency);
+
+    collect(tracks, asText(competency?.domain));
+
+
+
+    const learner = asRecord(payload.learner);
+
+    collect(institutions, asText(learner?.institution));
+
+    collect(programs, asText(learner?.program));
+
+    collect(locations, asText(learner?.cityCountry) ?? asText(learner?.location));
+
+  }
+
+
+
+  const parts: string[] = [];
+
+  if (tracks.size) parts.push(`Track: ${joinIdentityValues(tracks)}`);
+
+  if (institutions.size) parts.push(`Institution: ${joinIdentityValues(institutions)}`);
+
+  if (programs.size) parts.push(`Program: ${joinIdentityValues(programs)}`);
+
+  if (locations.size) parts.push(`Location: ${joinIdentityValues(locations)}`);
+
+
+
+  return parts.join(" · ");
+
+}
+
+
+
+function joinIdentityValues(values: Set<string>): string {
+
+  return [...values].join(", ");
+
+}
+
+
+
+function getSkillTrack(credential: SharedCredentialView): string | null {
+
+  const competency = asRecord(credential.disclosedPayload.competency);
+
+  const fromPayload = asText(competency?.domain);
+
+  if (fromPayload) return fromPayload;
+
+
+
+  const trackField = credential.disclosedFields.find((field) => TRACK_FIELD_IDS.has(field.id));
+
+  if (trackField?.value && trackField.value !== "—") return trackField.value;
+
+
+
+  if (credential.source === "wallet_share" && credential.subtitle) {
+
+    return credential.subtitle;
+
+  }
+
+
+
+  return null;
+
+}
+
+
+
+function getEvidenceTierLabels(credential: SharedCredentialView): string[] {
+
+  const labels: string[] = [];
+
+  const payload = credential.disclosedPayload;
+
+  const selected = new Set(credential.selectedFields);
+
+  const evidence = asRecord(payload.evidence);
+
+
+
+  if (selected.has("lms_evidence") || evidence?.lms || payload.lms) {
+
+    labels.push("Verified via LMS");
+
+  }
+
+  if (selected.has("github_evidence") || evidence?.github || payload.github) {
+
+    labels.push("GitHub evidence");
+
+  }
+
+  if (selected.has("peer_reviews") || evidence?.peerReviews || evidence?.peer_reviews || payload.peerReviews) {
+
+    labels.push("Peer reviewed");
+
+  }
+
+  if (selected.has("practical_task_result") || asRecord(payload.status)?.practicalTaskResult) {
+
+    labels.push("Practical task");
+
+  }
+
+  if (selected.has("complete_evidence_package") || payload.evidencePackage) {
+
+    labels.push("Evidence package");
+
+  }
+
+  if (selected.has("teacher_feedback") || payload.teacherFeedback || payload.teacher_feedback) {
+
+    labels.push("Teacher feedback");
+
+  }
+
+
+
+  return labels;
+
+}
+
+
+
+function pickEvidencePayload(payload: Record<string, unknown>): Record<string, unknown> {
+
+  const picked: Record<string, unknown> = {};
+
+  for (const [key, value] of Object.entries(payload)) {
+
+    if (value == null) continue;
+
+    if (key === "competency" || key === "learner") continue;
+
+    if (EVIDENCE_PAYLOAD_KEYS.has(key) || key.toLowerCase().includes("evidence")) {
+
+      picked[key] = value;
+
+    }
+
+  }
+
+  return picked;
+
+}
+
+
+
+function formatShortDate(value: string | null): string {
+
+  if (!value) return "—";
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) return value;
+
+  return date.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+
+}
+
+
+
+function formatValidityEnd(value: string | null): string {
+
+  if (!value) return "No expiry";
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) return value;
+
+  return date.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+
+}
+
+
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+
+  return value && typeof value === "object" && !Array.isArray(value)
+
+    ? (value as Record<string, unknown>)
+
+    : null;
+
+}
+
+
+
+function asText(value: unknown): string | null {
+
+  return typeof value === "string" && value.trim() ? value : null;
+
+}
+
+

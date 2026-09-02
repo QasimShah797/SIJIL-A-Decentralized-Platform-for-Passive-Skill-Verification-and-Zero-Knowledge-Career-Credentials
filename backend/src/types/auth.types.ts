@@ -13,6 +13,7 @@ declare global {
     interface Request {
       user?: AuthUser;
       userRoles?: AppRole[];
+      accessToken?: string;
     }
   }
 }

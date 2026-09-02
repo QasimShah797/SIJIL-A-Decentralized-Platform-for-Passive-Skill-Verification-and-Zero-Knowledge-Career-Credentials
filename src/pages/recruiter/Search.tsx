@@ -2,31 +2,49 @@ import { useNavigate } from "react-router-dom";
 import { useMemo, useState } from "react";
 import { AppShell } from "@/components/sijil/AppShell";
 import { PageHeader } from "@/components/sijil/PageHeader";
-import { StatusBadge } from "@/components/sijil/StatusBadge";
 import { FilterBar } from "@/components/sijil/FilterBar";
 import { PageSkeleton } from "@/components/sijil/SkeletonLoader";
-import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
-import { GitCompare, ArrowRight, ShieldCheck, X } from "lucide-react";
+import { GitCompare, Users, X } from "lucide-react";
+import { EmptyState } from "@/components/sijil/EmptyState";
+import { candidateMatchesSkillQuery } from "@/lib/shared-presentation";
+import { RecruiterCandidateCard } from "@/components/recruiter/RecruiterCandidateCard";
 import { useCandidates } from "@/hooks/useCandidates";
 
 export default function RecruiterSearch() {
   const navigate = useNavigate();
-  const { candidates, candidateSkills, loading } = useCandidates();
+  const { candidates, candidateSkills, loading, error, refresh } = useCandidates();
   const [q, setQ] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
 
   const results = useMemo(() => {
     const query = q.trim().toLowerCase();
-    if (!query) return candidates.map((c) => ({ ...c, matchedSkill: null as any }));
     return candidates
       .map((c) => {
         const skills = candidateSkills[c.id] || [];
-        const matched = skills.find((s) => s.skill.toLowerCase().includes(query) || s.domain.toLowerCase().includes(query));
-        return matched ? { ...c, matchedSkill: matched } : null;
+        if (!query) return { ...c, matchedSkill: null as (typeof skills)[number] | null };
+        const matched = skills.find((s) =>
+          s.skill.toLowerCase().includes(query) || s.domain.toLowerCase().includes(query),
+        ) ?? (c.searchableSkills ?? [])
+          .filter((skill) => skill.toLowerCase().includes(query))
+          .map((skill) => ({
+            skill,
+            domain: "Shared competency",
+            evidence: c.evidence,
+            reviews: c.reviews,
+            lmsRecords: 0,
+            githubRecords: 0,
+            practicalTask: "—" as const,
+            externalCert: "—" as const,
+            attestation: c.attestation,
+            attestationSource: c.institution,
+            attestationDid: "",
+            credentialId: null,
+          }))[0] ?? null;
+        if (!matched && !candidateMatchesSkillQuery(c, query)) return null;
+        return { ...c, matchedSkill: matched };
       })
-      .filter(Boolean) as any[];
+      .filter(Boolean) as Array<(typeof candidates)[number] & { matchedSkill: (typeof candidateSkills)[string][number] | null }>;
   }, [q, candidates, candidateSkills]);
 
   const toggleSelect = (id: string) =>
@@ -71,52 +89,44 @@ export default function RecruiterSearch() {
       </FilterBar>
 
       <p className="mb-4 text-xs text-muted-foreground">
-        Verification: Verified · Has credential: Yes
+        {candidates.length} candidate{candidates.length === 1 ? "" : "s"} in the directory
+        {q.trim() ? ` · ${results.length} matching “${q.trim()}”` : ""}
       </p>
 
       <div className="grid md:grid-cols-2 gap-4 pb-24">
-        {results.length === 0 && (
-          <div className="md:col-span-2 text-center text-sm text-muted-foreground py-12">
-            No candidates match this skill yet.
+        {error && (
+          <div className="md:col-span-2">
+            <EmptyState
+              icon={Users}
+              title="Could not load candidates"
+              description={error}
+              action={{ label: "Try again", onClick: () => void refresh() }}
+            />
           </div>
         )}
-        {results.map((c: any) => (
-          <Card key={c.id} className={selected.includes(c.id) ? "ring-2 ring-primary" : ""}>
-            <CardContent className="p-5">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <Checkbox
-                    checked={selected.includes(c.id)}
-                    onCheckedChange={() => toggleSelect(c.id)}
-                    aria-label="Select to compare"
-                  />
-                  <div className="h-10 w-10 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-sm font-semibold">
-                    {c.name.split(" ").map((n: string) => n[0]).join("")}
-                  </div>
-                  <div>
-                    <div className="font-medium">{c.name}</div>
-                    <div className="text-xs text-muted-foreground">{c.institution}</div>
-                  </div>
-                </div>
-                <StatusBadge variant={c.attestation === "Approved" ? "verified" : "warning"} icon={<ShieldCheck className="h-3 w-3" />}>
-                  {c.attestation}
-                </StatusBadge>
-              </div>
-
-              <div className="mt-4 grid grid-cols-3 gap-3 text-center">
-                <Stat label={c.matchedSkill ? "Matched skill" : "Top skill"} value={c.matchedSkill?.skill || c.topSkill} small />
-                <Stat label="Evidence" value={c.matchedSkill?.evidence ?? c.evidence} />
-                <Stat label="Reviews" value={c.matchedSkill?.reviews ?? c.reviews} />
-              </div>
-
-              <div className="mt-4 flex items-center justify-between">
-                <div className="text-xs text-muted-foreground">{c.credentialCount} verifiable credentials</div>
-                <Button size="sm" onClick={() => navigate(`/recruiter/candidate/${c.id}`)}>
-                  Open summary <ArrowRight className="h-3.5 w-3.5 ml-1" />
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+        {!error && results.length === 0 && (
+          <div className="md:col-span-2">
+            <EmptyState
+              icon={Users}
+              title={q.trim() ? "No candidates match this skill yet" : "No candidates yet"}
+              description={
+                q.trim()
+                  ? "Try another skill, or clear the search to see every learner in the directory."
+                  : "Learners appear here once they share credentials or complete a profile. Open a candidate to see only what they disclosed."
+              }
+              action={q.trim() ? { label: "Clear search", onClick: () => setQ("") } : undefined}
+            />
+          </div>
+        )}
+        {results.map((c) => (
+          <RecruiterCandidateCard
+            key={c.id}
+            candidate={c}
+            selected={selected.includes(c.id)}
+            onSelectedChange={() => toggleSelect(c.id)}
+            onOpenSummary={() => navigate(`/recruiter/candidate/${c.id}`)}
+            className={selected.includes(c.id) ? "ring-2 ring-primary" : ""}
+          />
         ))}
       </div>
 
@@ -142,14 +152,5 @@ export default function RecruiterSearch() {
         </div>
       )}
     </AppShell>
-  );
-}
-
-function Stat({ label, value, small }: { label: string; value: any; small?: boolean }) {
-  return (
-    <div className="rounded-md border bg-card p-2">
-      <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</div>
-      <div className={small ? "text-xs font-medium mt-0.5 truncate" : "text-base font-semibold mt-0.5"}>{value}</div>
-    </div>
   );
 }

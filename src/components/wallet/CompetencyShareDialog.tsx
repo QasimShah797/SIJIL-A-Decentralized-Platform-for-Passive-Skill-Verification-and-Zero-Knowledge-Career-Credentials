@@ -25,6 +25,7 @@ import {
   type ShareWalletCompetencyResult,
   type WalletCompetencyDetailView,
 } from "@/services/api/wallet.api";
+import { useLearnerProfile } from "@/hooks/useLearnerData";
 
 const SHARE_FIELD_OPTIONS: Array<{
   id: WalletShareFieldId;
@@ -41,6 +42,12 @@ const SHARE_FIELD_OPTIONS: Array<{
   { id: "peer_reviews", label: "Peer reviews", description: "Share peer review comments and related review metadata." },
   { id: "teacher_feedback", label: "Teacher feedback", description: "Share teacher or Moodle feedback when available." },
   { id: "complete_evidence_package", label: "Complete evidence package", description: "Share the structured competency evidence package only." },
+  { id: "learner_name", label: "Learner name", description: "Share your full name with the recruiter." },
+  { id: "learner_institution", label: "Institution", description: "Share your institution or university name." },
+  { id: "learner_program", label: "Program / track", description: "Share your degree program or study track." },
+  { id: "learner_location", label: "City & country", description: "Share your city and country from your profile." },
+  { id: "learner_skills_summary", label: "Academic interests / skills summary", description: "Share your skills summary from your profile." },
+  { id: "learner_career_goal", label: "Career goal", description: "Share your career goal from your profile." },
   { id: "learner_did", label: "Learner DID", description: "Share the wallet holder DID." },
   { id: "timestamps", label: "Timestamps", description: "Share evidence collection and update timestamps." },
   { id: "credential_metadata", label: "Credential metadata", description: "Share any linked credential metadata already stored in SIJIL." },
@@ -54,7 +61,7 @@ const PRESETS: Array<{
   {
     mode: "basic_summary",
     label: "Share Basic Summary",
-    fields: ["competency_name", "competency_domain"],
+    fields: ["competency_name", "competency_domain", "learner_name", "learner_skills_summary", "learner_career_goal"],
   },
   {
     mode: "verification_summary",
@@ -81,6 +88,12 @@ const PRESETS: Array<{
       "peer_reviews",
       "teacher_feedback",
       "complete_evidence_package",
+      "learner_name",
+      "learner_institution",
+      "learner_program",
+      "learner_location",
+      "learner_skills_summary",
+      "learner_career_goal",
       "timestamps",
       "credential_metadata",
     ],
@@ -106,7 +119,11 @@ function toggleField(fields: WalletShareFieldId[], fieldId: WalletShareFieldId):
     : [...fields, fieldId];
 }
 
-function buildPreview(record: WalletCompetencyRecordView, selectedFields: WalletShareFieldId[]) {
+function buildPreview(
+  record: WalletCompetencyRecordView,
+  selectedFields: WalletShareFieldId[],
+  profile?: { name: string; institution: string; program: string; cityCountry: string | null } | null,
+) {
   const previews: Array<{ label: string; value: string }> = [];
   if (selectedFields.includes("competency_name")) {
     previews.push({ label: "Competency", value: record.competencyName });
@@ -149,6 +166,18 @@ function buildPreview(record: WalletCompetencyRecordView, selectedFields: Wallet
   if (selectedFields.includes("complete_evidence_package")) {
     previews.push({ label: "Evidence package", value: `${record.evidenceCount} total evidence item(s)` });
   }
+  if (selectedFields.includes("learner_name") && profile?.name) {
+    previews.push({ label: "Learner name", value: profile.name });
+  }
+  if (selectedFields.includes("learner_institution") && profile?.institution && profile.institution !== "—") {
+    previews.push({ label: "Institution", value: profile.institution });
+  }
+  if (selectedFields.includes("learner_program") && profile?.program && profile.program !== "—") {
+    previews.push({ label: "Program", value: profile.program });
+  }
+  if (selectedFields.includes("learner_location") && profile?.cityCountry) {
+    previews.push({ label: "Location", value: profile.cityCountry });
+  }
   if (selectedFields.includes("learner_did") && record.learnerDid) {
     previews.push({ label: "Learner DID", value: record.learnerDid });
   }
@@ -175,6 +204,7 @@ export function CompetencyShareDialog({
   onOpenChange: (next: boolean) => void;
   onRecordSynced?: (record: WalletCompetencyRecordView) => void;
 }) {
+  const { profile: learnerProfile } = useLearnerProfile();
   const [detail, setDetail] = useState<WalletCompetencyDetailView | null>(null);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -216,8 +246,13 @@ export function CompetencyShareDialog({
   const activeRecord = detail?.record ?? record;
 
   const preview = useMemo(
-    () => (activeRecord ? buildPreview(activeRecord, selectedFields) : []),
-    [activeRecord, selectedFields],
+    () => (activeRecord ? buildPreview(activeRecord, selectedFields, learnerProfile ? {
+      name: learnerProfile.name,
+      institution: learnerProfile.institution,
+      program: learnerProfile.program,
+      cityCountry: learnerProfile.cityCountry,
+    } : null) : []),
+    [activeRecord, selectedFields, learnerProfile],
   );
 
   const applyPreset = (mode: WalletShareSelectionMode, fields: WalletShareFieldId[]) => {
@@ -284,20 +319,25 @@ export function CompetencyShareDialog({
     try {
       const ok = await revokeWalletShareApi(shareId);
       if (!ok) throw new Error("Presentation revocation failed.");
-      setDetail((current) => current
-        ? {
-            ...current,
-            shares: current.shares.map((share) => (
-              share.id === shareId
-                ? {
-                    ...share,
-                    shareStatus: "Revoked",
-                    revokedAt: new Date().toISOString(),
-                  }
-                : share
-            )),
-          }
-        : current);
+      if (record) {
+        const nextDetail = await getWalletCompetencyApi(record.competencyId);
+        if (nextDetail) setDetail(nextDetail);
+      } else {
+        setDetail((current) => current
+          ? {
+              ...current,
+              shares: current.shares.map((share) => (
+                share.id === shareId
+                  ? {
+                      ...share,
+                      shareStatus: "Revoked",
+                      revokedAt: new Date().toISOString(),
+                    }
+                  : share
+              )),
+            }
+          : current);
+      }
       toast({ title: "Share link revoked" });
     } catch (error) {
       toast({

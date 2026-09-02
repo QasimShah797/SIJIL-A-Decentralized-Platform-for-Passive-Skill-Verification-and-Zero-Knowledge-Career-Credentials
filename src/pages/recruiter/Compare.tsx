@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, ArrowRight, GitCompare, ShieldCheck } from "lucide-react";
 import { useCandidates } from "@/hooks/useCandidates";
+import { CandidateAvatar } from "@/components/recruiter/CandidateAvatar";
 
 export default function RecruiterCompare() {
   const navigate = useNavigate();
@@ -89,7 +90,12 @@ export default function RecruiterCompare() {
             <tbody>
               {selected.map((c) => (
                 <tr key={c.id} className="border-t">
-                  <td className="sticky left-0 z-10 bg-card px-4 py-3 font-medium shadow-[2px_0_4px_-2px_rgba(0,0,0,0.08)]">{c.name}</td>
+                  <td className="sticky left-0 z-10 bg-card px-4 py-3 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.08)]">
+                    <div className="flex items-center gap-3">
+                      <CandidateAvatar name={c.name} avatarUrl={c.avatarUrl} className="h-10 w-10" />
+                      <span className="font-medium">{c.name}</span>
+                    </div>
+                  </td>
                   <td className="px-4 py-3">{c.institution}</td>
                   <td className="px-4 py-3">{c.credentialCount}</td>
                   <td className="px-4 py-3">{c.evidence}</td>

@@ -43,6 +43,7 @@ export async function apiRequest<T>(
   try {
     res = await fetch(`${BASE_URL}${path}`, {
       ...options,
+      cache: "no-store",
       headers: { ...headers, ...(options.headers as Record<string, string> | undefined) },
     });
   } catch (err) {

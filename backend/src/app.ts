@@ -18,6 +18,16 @@ app.use(morgan(env.NODE_ENV === "development" ? "dev" : "combined"));
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
 
+app.get("/", (_req, res) => {
+  res.json({
+    success: true,
+    message: "SIJIL API is running. Open the app in the browser, not this URL.",
+    app: env.FRONTEND_URL,
+    api: `http://localhost:${env.PORT}/api`,
+    health: `http://localhost:${env.PORT}/api/health`,
+  });
+});
+
 app.use("/api", apiRoutes);
 
 app.use(notFoundMiddleware);

@@ -1,4 +1,4 @@
-import { apiRequest, tryApiRequest } from "./client";
+import { apiRequest, isApiEnabled, tryApiRequest } from "./client";
 import type { WalletCompetencyRecordView } from "@/lib/db/wallet-competency-records";
 import type {
   WalletShareFieldId,
@@ -100,11 +100,16 @@ export async function shareWalletCompetencyApi(input: {
 }
 
 export async function revokeWalletShareApi(shareId: string): Promise<boolean> {
-  const result = await tryApiRequest<null>(
-    `/wallet/shares/${encodeURIComponent(shareId)}/revoke`,
-    { method: "POST" },
-  );
-  return result !== null;
+  if (!isApiEnabled()) return false;
+  try {
+    await apiRequest<null>(
+      `/wallet/shares/${encodeURIComponent(shareId)}/revoke`,
+      { method: "POST" },
+    );
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export async function getPublicPresentationApi(

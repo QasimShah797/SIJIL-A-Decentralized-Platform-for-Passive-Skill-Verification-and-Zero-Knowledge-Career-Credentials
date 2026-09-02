@@ -71,10 +71,13 @@ export async function fetchPresentationsForCandidate(candidateUserId: string): P
     .eq("candidate_user_id", candidateUserId)
     .eq("revoked", false);
   if (error) throw error;
-  return (data ?? []).map((row) =>
-    rowToPresentation({
-      ...row,
-      credential_uri: (row.credentials as { credential_uri: string } | null)?.credential_uri ?? "",
-    }),
-  );
+  const now = Date.now();
+  return (data ?? [])
+    .map((row) =>
+      rowToPresentation({
+        ...row,
+        credential_uri: (row.credentials as { credential_uri: string } | null)?.credential_uri ?? "",
+      }),
+    )
+    .filter((presentation) => !presentation.revoked && new Date(presentation.expiresAt).getTime() > now);
 }

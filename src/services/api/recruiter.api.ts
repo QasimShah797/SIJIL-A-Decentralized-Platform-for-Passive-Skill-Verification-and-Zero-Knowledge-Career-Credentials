@@ -4,6 +4,7 @@
 import { tryApiRequest } from "./client";
 import type { CredentialView } from "@/lib/db/credentials";
 import type { CandidateView } from "@/lib/db/candidates";
+import type { CandidateDetailView } from "@/lib/shared-presentation";
 
 export interface VerifyCredentialResult {
   credential: Partial<CredentialView>;
@@ -20,8 +21,8 @@ export async function verifyCredentialApi(
   );
 }
 
-export async function getCandidateApi(candidateId: string): Promise<CandidateView | null> {
-  return tryApiRequest<CandidateView>(`/recruiter/candidate/${candidateId}`);
+export async function getCandidateApi(candidateId: string): Promise<CandidateDetailView | null> {
+  return tryApiRequest<CandidateDetailView>(`/recruiter/candidate/${candidateId}`);
 }
 
 export async function searchCandidatesApi(query?: {
@@ -35,4 +36,16 @@ export async function searchCandidatesApi(query?: {
   if (query?.institution) params.set("institution", query.institution);
   const qs = params.toString();
   return tryApiRequest<CandidateView[]>(`/recruiter/search${qs ? `?${qs}` : ""}`);
+}
+
+export type CandidateProfileFields = Pick<CandidateView, "avatarUrl" | "skillsSummary" | "careerGoal">;
+
+export async function getCandidateProfileFieldsApi(
+  ids: string[],
+): Promise<Record<string, CandidateProfileFields> | null> {
+  if (!ids.length) return {};
+  const params = new URLSearchParams({ ids: ids.join(",") });
+  return tryApiRequest<Record<string, CandidateProfileFields>>(
+    `/recruiter/candidates/profile-fields?${params.toString()}`,
+  );
 }

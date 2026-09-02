@@ -2,7 +2,7 @@
  * JWT authentication middleware — verifies Supabase access tokens from Authorization header.
  */
 import { Request, Response, NextFunction } from "express";
-import { getAnonSupabase, getServiceSupabase } from "../config/supabase";
+import { getAnonSupabase, getServiceSupabase, getUserSupabase } from "../config/supabase";
 import { AppError } from "../utils/AppError";
 import { AppRole } from "../constants/roles";
 
@@ -25,15 +25,25 @@ export async function authMiddleware(
   }
 
   const service = getServiceSupabase();
-  const { data: roleRows } = await service
+  let { data: roleRows } = await service
     .from("user_roles")
     .select("role")
     .eq("user_id", data.user.id);
+
+  if (!roleRows?.length) {
+    const scoped = getUserSupabase(token);
+    const scopedRoles = await scoped
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", data.user.id);
+    roleRows = scopedRoles.data;
+  }
 
   const roles = (roleRows ?? []).map((r) => r.role as AppRole);
 
   req.user = { ...data.user, roles };
   req.userRoles = roles;
+  req.accessToken = token;
   next();
 }
 

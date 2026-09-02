@@ -7,7 +7,8 @@ import {
   hashDisclosurePayload,
   verifySelectiveDisclosureProof,
 } from "./proof.service";
-import { supabaseService } from "./supabase.service";
+import { getRequestSupabase } from "../config/supabase";
+import { resolveLearnerDisplayName } from "../utils/learnerDisplayName";
 import {
   aggregateLmsEvidenceForCompetency,
   isLmsPeerReviewRow,
@@ -86,7 +87,7 @@ const DISCLOSURE_REDACT_KEYS = new Set([
 ]);
 
 function db() {
-  return supabaseService.client as unknown as {
+  return getRequestSupabase() as unknown as {
     from: (table: string) => {
       select: (columns?: string) => any;
       upsert: (payload: unknown, options?: unknown) => any;
@@ -369,6 +370,17 @@ function buildAttemptHistoryItem(row: DbRow): WalletAttemptHistoryItem | null {
   };
 }
 
+function throwDbError(error: { message?: string }, context: string): never {
+  const message = error.message ?? "Database error";
+  if (/schema cache|could not find the table/i.test(message)) {
+    throw new AppError(
+      `${context}: run supabase/scripts/apply-selective-disclosure-presentations.sql in the Supabase SQL Editor, then retry.`,
+      503,
+    );
+  }
+  throw new AppError(message, 500);
+}
+
 async function safeFetchRows(
   table: string,
   run: () => Promise<{ data: unknown[] | null; error: { message?: string } | null }>,
@@ -466,6 +478,14 @@ function rowToWalletRecord(row: PersistedWalletRow, summary: WalletEvidenceSumma
 function buildDisclosedPayload(
   record: WalletCompetencyRecordView,
   selectedFields: WalletShareFieldId[],
+  learnerContext?: {
+    displayName: string | null;
+    institution: string | null;
+    program: string | null;
+    cityCountry: string | null;
+    skillsSummary?: string | null;
+    careerGoal?: string | null;
+  },
 ): Record<string, unknown> {
   const hasField = (field: WalletShareFieldId) => selectedFields.includes(field);
   const payload: Record<string, unknown> = {};
@@ -476,9 +496,15 @@ function buildDisclosedPayload(
   if (hasField("competency_description") && record.description) competency.description = record.description;
   if (Object.keys(competency).length > 0) payload.competency = competency;
 
-  if (hasField("learner_did") && record.learnerDid) {
-    payload.learner = { did: record.learnerDid };
-  }
+  const learner: Record<string, unknown> = {};
+  if (hasField("learner_did") && record.learnerDid) learner.did = record.learnerDid;
+  if (hasField("learner_name") && learnerContext?.displayName) learner.name = learnerContext.displayName;
+  if (hasField("learner_institution") && learnerContext?.institution) learner.institution = learnerContext.institution;
+  if (hasField("learner_program") && learnerContext?.program) learner.program = learnerContext.program;
+  if (hasField("learner_location") && learnerContext?.cityCountry) learner.cityCountry = learnerContext.cityCountry;
+  if (hasField("learner_skills_summary") && learnerContext?.skillsSummary) learner.skillsSummary = learnerContext.skillsSummary;
+  if (hasField("learner_career_goal") && learnerContext?.careerGoal) learner.careerGoal = learnerContext.careerGoal;
+  if (Object.keys(learner).length > 0) payload.learner = learner;
 
   const status: Record<string, unknown> = {};
   if (hasField("verification_status")) status.verificationStatus = record.verificationStatus;
@@ -556,6 +582,43 @@ function buildDisclosedPayload(
   }
 
   return payload;
+}
+
+async function loadLearnerDisclosureContext(userId: string): Promise<{
+  displayName: string | null;
+  institution: string | null;
+  program: string | null;
+  cityCountry: string | null;
+  skillsSummary: string | null;
+  careerGoal: string | null;
+}> {
+  const { data, error } = await db()
+    .from("learner_profiles")
+    .select("first_name, last_name, username, university_email, institution_name, program, city_country, skills_summary, career_goal")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (error || !data) {
+    return {
+      displayName: null,
+      institution: null,
+      program: null,
+      cityCountry: null,
+      skillsSummary: null,
+      careerGoal: null,
+    };
+  }
+
+  const row = data as Record<string, unknown>;
+  const displayName = resolveLearnerDisplayName(row);
+  return {
+    displayName: displayName !== "Learner" ? displayName : null,
+    institution: asNullableText(row.institution_name),
+    program: asNullableText(row.program),
+    cityCountry: asNullableText(row.city_country),
+    skillsSummary: asNullableText(row.skills_summary),
+    careerGoal: asNullableText(row.career_goal),
+  };
 }
 
 async function listSharesForCompetency(
@@ -1208,7 +1271,8 @@ export class WalletService {
     input: ShareWalletCompetencyInput,
   ): Promise<ShareWalletCompetencyResult> {
     const record = await this.syncCompetency(userId, competencyId);
-    const disclosedPayload = buildDisclosedPayload(record, input.selectedFields);
+    const learnerContext = await loadLearnerDisclosureContext(userId);
+    const disclosedPayload = buildDisclosedPayload(record, input.selectedFields, learnerContext);
 
     if (Object.keys(disclosedPayload).length === 0) {
       throw new AppError("Selected fields did not produce a shareable payload", 400);
@@ -1248,7 +1312,7 @@ export class WalletService {
       .single();
 
     if (error) {
-      throw new AppError(error.message, 500);
+      throwDbError(error, "Could not create share link");
     }
 
     return {
@@ -1268,7 +1332,7 @@ export class WalletService {
       .eq("id", shareId)
       .eq("learner_id", userId);
 
-    if (error) throw new AppError(error.message, 500);
+    if (error) throwDbError(error, "Could not revoke share link");
   }
 
   async getPublicPresentation(token: string): Promise<PublicPresentationView> {

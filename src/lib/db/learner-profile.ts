@@ -1,8 +1,10 @@
 import { supabase } from "@/integrations/supabase/client";
 import { avatarInitials, holderDidFromUserId } from "@/lib/did";
+import { resolveLearnerDisplayName } from "@/lib/learner-display-name";
 import {
   buildInstitutionDbPayload,
   buildSelfSignupDbPayload,
+  combineCityCountry,
   LEARNER_PROFILE_SELECT,
   parseCityCountry,
   stripNonDbColumns,
@@ -141,16 +143,22 @@ export async function fetchLearnerProfileRow(userId: string): Promise<LearnerPro
   return data;
 }
 
-export async function fetchLearnerProfile(userId: string, email?: string | null): Promise<LearnerProfileView> {
+export async function fetchLearnerProfile(
+  userId: string,
+  email?: string | null,
+  fullName?: string | null,
+): Promise<LearnerProfileView> {
   const data = await fetchLearnerProfileRow(userId);
   const ui = loadProfileUiFields(userId);
 
-  const first = data?.first_name ?? "";
-  const last = data?.last_name ?? "";
-  const name = [first, last].filter(Boolean).join(" ") || email?.split("@")[0] || "Learner";
+  const name = data
+    ? resolveLearnerDisplayName(data)
+    : resolveLearnerDisplayName({ full_name: fullName ?? undefined, university_email: email ?? undefined });
   const institutionLinked = !!data?.institution_id;
   const location = parseCityCountry(data?.city_country);
   const gradYearRaw = ui.graduationYear?.trim();
+  const first = data?.first_name ?? "";
+  const last = data?.last_name ?? "";
 
   return {
     userId,
@@ -558,19 +566,31 @@ export async function updateLearnerEditableProfile(
 
   persistUiOnlyFields(userId, data);
 
-  const payload = buildSelfSignupDbPayload({
-    contactNumber: data.contactNumber,
-    city: data.city,
-    country: data.country,
-    cityCountry: data.cityCountry,
-    bio: data.bio,
-    skillsSummary: data.skillsSummary,
-    careerGoal: data.careerGoal,
-    avatarUrl: data.avatarUrl,
-    institutionName: !existing.institution_id ? data.institutionName : undefined,
-    program: !existing.institution_id ? data.program : undefined,
-    linkedinUrl: data.linkedinUrl,
-  });
+  const payload = existing.institution_id
+    ? {
+        ...buildInstitutionDbPayload({
+          contactNumber: data.contactNumber,
+          cityCountry: data.cityCountry ?? combineCityCountry(data.city ?? "", data.country ?? ""),
+          bio: data.bio,
+          skillsSummary: data.skillsSummary,
+          careerGoal: data.careerGoal,
+          avatarUrl: data.avatarUrl,
+          linkedinUrl: data.linkedinUrl,
+        }),
+      }
+    : buildSelfSignupDbPayload({
+        contactNumber: data.contactNumber,
+        city: data.city,
+        country: data.country,
+        cityCountry: data.cityCountry,
+        bio: data.bio,
+        skillsSummary: data.skillsSummary,
+        careerGoal: data.careerGoal,
+        avatarUrl: data.avatarUrl,
+        institutionName: data.institutionName,
+        program: data.program,
+        linkedinUrl: data.linkedinUrl,
+      });
 
   if (!existing.institution_id) {
     const merged: LearnerProfileDbRow = {
@@ -594,40 +614,47 @@ export async function updateLearnerEditableProfile(
   if (error) throw error;
 }
 
+function mapLearnerDirectoryRow(row: LearnerProfileDbRow): LearnerProfileView & { user_id: string } {
+  const location = parseCityCountry(row.city_country);
+  const name = resolveLearnerDisplayName(row);
+  return {
+    userId: row.user_id,
+    user_id: row.user_id,
+    name,
+    did: row.holder_did ?? holderDidFromUserId(row.user_id),
+    email: "",
+    universityEmail: row.university_email ?? null,
+    studentId: row.student_id ?? "—",
+    program: row.program ?? "—",
+    department: row.department ?? "—",
+    batch: row.batch ?? "—",
+    institution: row.institution_name ?? "—",
+    avatar: avatarInitials(row.first_name, row.last_name),
+    avatarUrl: row.avatar_url ?? null,
+    status: row.status ?? "email_pending",
+    isVerifiedStudent: !!row.institution_id && row.status === "verified",
+    institutionLinked: !!row.institution_id,
+    githubUrl: row.github_url ?? null,
+    linkedinUrl: row.linkedin_url ?? null,
+    portfolioUrl: row.portfolio_url ?? null,
+    bio: row.bio ?? null,
+    careerGoal: row.career_goal ?? null,
+    skillsSummary: row.skills_summary ?? null,
+    contactNumber: row.contact_number ?? null,
+    cityCountry: row.city_country ?? null,
+    city: location.city || null,
+    country: location.country || null,
+    dateOfBirth: null,
+    gender: null,
+    graduationYear: null,
+  };
+}
+
 export async function fetchAllLearnerProfiles(): Promise<(LearnerProfileView & { user_id: string })[]> {
-  const { data, error } = await supabase.from("learner_profiles").select(LEARNER_PROFILE_SELECT);
+  const { data, error } = await supabase
+    .from("learner_profiles")
+    .select(LEARNER_PROFILE_SELECT)
+    .abortSignal(AbortSignal.timeout(12_000));
   if (error) throw error;
-  return (data ?? []).map((row) => {
-    const location = parseCityCountry(row.city_country);
-    return {
-      userId: row.user_id,
-      user_id: row.user_id,
-      name: [row.first_name, row.last_name].filter(Boolean).join(" "),
-      did: row.holder_did ?? holderDidFromUserId(row.user_id),
-      email: "",
-      studentId: row.student_id ?? "—",
-      program: row.program ?? "—",
-      department: row.department ?? "—",
-      batch: row.batch ?? "—",
-      institution: row.institution_name ?? "—",
-      avatar: avatarInitials(row.first_name, row.last_name),
-      avatarUrl: row.avatar_url ?? null,
-      status: row.status ?? "email_pending",
-      isVerifiedStudent: !!row.institution_id && row.status === "verified",
-      institutionLinked: !!row.institution_id,
-      githubUrl: row.github_url ?? null,
-      linkedinUrl: row.linkedin_url ?? null,
-      portfolioUrl: row.portfolio_url ?? null,
-      bio: row.bio ?? null,
-      careerGoal: row.career_goal ?? null,
-      skillsSummary: row.skills_summary ?? null,
-      contactNumber: row.contact_number ?? null,
-      cityCountry: row.city_country ?? null,
-      city: location.city || null,
-      country: location.country || null,
-      dateOfBirth: null,
-      gender: null,
-      graduationYear: null,
-    };
-  });
+  return (data ?? []).map(mapLearnerDirectoryRow);
 }

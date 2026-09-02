@@ -21,6 +21,7 @@ export function sendSuccess<T>(
   message = "OK",
   statusCode = 200,
 ): Response<ApiSuccessResponse<T>> {
+  res.setHeader("Cache-Control", "no-store");
   return res.status(statusCode).json({ success: true, message, data });
 }
 
