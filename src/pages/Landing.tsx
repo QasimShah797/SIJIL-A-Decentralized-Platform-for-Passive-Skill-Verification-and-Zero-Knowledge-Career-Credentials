@@ -1,33 +1,35 @@
-import { LandingHeader } from "@/components/landing/LandingHeader";
-import { HeroSection } from "@/components/landing/HeroSection";
-import { EvidenceStrip } from "@/components/landing/EvidenceStrip";
-import { ProcessSection } from "@/components/landing/ProcessSection";
-import { EvidenceWalletSection } from "@/components/landing/EvidenceWalletSection";
-import { DualAudienceSection } from "@/components/landing/DualAudienceSection";
-import { TrustLayerSection } from "@/components/landing/TrustLayerSection";
-import { RecruiterSection } from "@/components/landing/RecruiterSection";
-import { ProofTrustSection } from "@/components/landing/ProofTrustSection";
-import { CredentialStackSection } from "@/components/landing/CredentialStackSection";
-import { FinalCTA } from "@/components/landing/FinalCTA";
-import { LandingFooter } from "@/components/landing/LandingFooter";
+import "@/styles/about-page.css";
+
+import { AboutNavbar } from "@/components/about/AboutNavbar";
+import { AboutHero } from "@/components/about/AboutHero";
+import { AboutTrust } from "@/components/about/AboutTrust";
+import { AboutProblem } from "@/components/about/AboutProblem";
+import { AboutHowItWorks } from "@/components/about/AboutHowItWorks";
+import { AboutVerification } from "@/components/about/AboutVerification";
+import { AboutProfessionalIdentity } from "@/components/about/AboutProfessionalIdentity";
+import { AboutProfessionals } from "@/components/about/AboutProfessionals";
+import { AboutOrganizations } from "@/components/about/AboutOrganizations";
+import { AboutSocialTrust } from "@/components/about/AboutSocialTrust";
+import { AboutFinalCTA } from "@/components/about/AboutFinalCTA";
+import { AboutFooter } from "@/components/about/AboutFooter";
 
 export default function Landing() {
   return (
-    <div className="landing-page min-h-screen overflow-x-hidden">
-      <LandingHeader />
+    <div className="about-page min-h-screen overflow-x-hidden">
+      <AboutNavbar />
       <main>
-        <HeroSection />
-        <EvidenceStrip />
-        <ProcessSection />
-        <EvidenceWalletSection />
-        <DualAudienceSection />
-        <TrustLayerSection />
-        <RecruiterSection />
-        <ProofTrustSection />
-        <CredentialStackSection />
-        <FinalCTA />
+        <AboutHero />
+        <AboutTrust />
+        <AboutProblem />
+        <AboutHowItWorks />
+        <AboutVerification />
+        <AboutProfessionalIdentity />
+        <AboutProfessionals />
+        <AboutOrganizations />
+        <AboutSocialTrust />
+        <AboutFinalCTA />
       </main>
-      <LandingFooter />
+      <AboutFooter />
     </div>
   );
 }
