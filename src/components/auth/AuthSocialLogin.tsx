@@ -1,4 +1,3 @@
-import { KeyRound } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 
 function GoogleIcon() {
@@ -35,7 +34,6 @@ function GitHubIcon() {
 const PROVIDERS = [
   { id: "google", label: "Google", icon: GoogleIcon },
   { id: "github", label: "GitHub", icon: GitHubIcon },
-  { id: "sso", label: "SSO", icon: KeyRound },
 ] as const;
 
 export function AuthSocialLogin() {

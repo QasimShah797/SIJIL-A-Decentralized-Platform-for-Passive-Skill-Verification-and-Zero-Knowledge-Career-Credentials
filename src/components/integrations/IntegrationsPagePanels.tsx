@@ -146,10 +146,6 @@ export function IntegrationsHero({
         <div>
           <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#6366f1]">External data sources</p>
           <h1 className="mt-1 text-2xl font-bold text-[#0f172a] sm:text-[1.65rem]">External Integrations</h1>
-          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-[#64748b]">
-            Connect external platforms, synchronize supporting records, and map imported evidence to your declared
-            competencies.
-          </p>
           <div className="mt-5 flex flex-wrap items-center gap-2">
             <Button
               className="rounded-xl bg-[#023E8A] hover:bg-[#012A5C]"

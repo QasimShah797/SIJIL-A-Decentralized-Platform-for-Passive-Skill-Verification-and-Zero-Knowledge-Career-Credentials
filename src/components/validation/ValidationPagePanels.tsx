@@ -92,9 +92,6 @@ export function ValidationListHero({ competencyCount }: { competencyCount: numbe
         Evidence-driven verification
       </p>
       <h1 className="mt-3 text-2xl font-bold text-[#0f172a] sm:text-[1.65rem]">Validation Trail</h1>
-      <p className="mt-2 max-w-2xl text-sm text-[#64748b]">
-        Track each declared competency through the SIJIL verification pipeline — from linked evidence to wallet-ready credentials.
-      </p>
       {competencyCount > 0 && (
         <p className="mt-2 text-xs font-medium text-[#94a3b8]">
           {competencyCount} declared competenc{competencyCount === 1 ? "y" : "ies"} in pipeline

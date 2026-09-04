@@ -831,7 +831,6 @@ export default function WalletPage() {
     <AppShell role="learner">
       <PageHeader
         title="Wallet"
-        description="Your competency-centered wallet. Each competency record stores its evidence package, practical task history, and review context under your holder DID."
         actions={(
           <Button variant="outline" onClick={() => window.location.reload()}>
             <RefreshCw className="mr-1.5 h-4 w-4" />

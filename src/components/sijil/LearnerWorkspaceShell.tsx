@@ -10,7 +10,6 @@ import {
   MessageSquare,
   LogOut,
   Menu,
-  Search,
   Bell,
   ChevronDown,
   ChevronLeft,
@@ -355,7 +354,6 @@ export function LearnerWorkspaceShell({
   const { profile } = useLearnerProfile();
   const { skills } = useDeclaredSkills();
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [search, setSearch] = useState("");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     try {
       return localStorage.getItem(SIDEBAR_STORAGE_KEY) === "1";
@@ -446,27 +444,10 @@ export function LearnerWorkspaceShell({
             {sidebarCollapsed ? <PanelLeft className="h-5 w-5" /> : <PanelLeftClose className="h-5 w-5" />}
           </Button>
 
-          {isDark ? (
-            <div className="mx-auto hidden max-w-lg flex-1 sm:flex">
-              <div className="relative w-full">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#64748b]" />
-                <input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search competencies, evidence, credentials…"
-                  className="learner-dash-search h-10 w-full pl-9 pr-16 text-sm outline-none focus:ring-2 focus:ring-[#023E8A]/30"
-                />
-                <kbd className="pointer-events-none absolute right-2 top-1/2 hidden -translate-y-1/2 rounded border border-[#e2e8f0] bg-white px-1.5 py-0.5 text-[10px] text-[#64748b] sm:inline">
-                  Ctrl K
-                </kbd>
-              </div>
-            </div>
-          ) : (
-            <div className="text-sm">
-              <span className="font-semibold text-[#023E8A]">Learner</span>
-              <span className="text-[#64748b]"> · Verification workspace</span>
-            </div>
-          )}
+          <div className="text-sm">
+            <span className="font-semibold text-[#023E8A]">Learner</span>
+            <span className="text-[#64748b]"> · Verification workspace</span>
+          </div>
 
           <div className="ml-auto flex items-center gap-2">
             <ThemeToggle />
