@@ -8,6 +8,7 @@ export default defineConfig(({ mode }) => ({
   server: {
     host: "::",
     port: 8080,
+    allowedHosts: [".app.github.dev", ".github.dev", "localhost"],
     hmr: {
       overlay: false,
     },

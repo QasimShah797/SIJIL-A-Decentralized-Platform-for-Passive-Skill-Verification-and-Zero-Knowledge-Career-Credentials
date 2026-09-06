@@ -6,6 +6,7 @@ import { AuthSecureFooter } from "@/components/auth/AuthSecureFooter";
 import { LearnerSignInForm } from "@/components/auth/LearnerSignInForm";
 import { LearnerSignUpForm } from "@/components/auth/LearnerSignUpForm";
 import { RecruiterSignInForm } from "@/components/auth/RecruiterSignInForm";
+import { useFinishOAuthReturn } from "@/hooks/useFinishOAuthReturn";
 
 export type AuthRole = "learner" | "recruiter";
 export type LearnerTab = "signin" | "signup";
@@ -41,10 +42,21 @@ type AuthEntryProps = AuthEntryConfig;
 export default function AuthEntry(props: AuthEntryProps = {}) {
   const location = useLocation();
   const navigate = useNavigate();
+  const oauthReturn = useFinishOAuthReturn();
   const { role, learnerTab } = useMemo(
     () => resolveConfig(location.pathname, props),
     [location.pathname, props.role, props.learnerTab],
   );
+
+  if (oauthReturn.active) {
+    return (
+      <AuthEntryLayout>
+        <p className="auth-page-eyebrow">Secure sign in</p>
+        <h1 className="auth-page-title">Continue to SIJIL</h1>
+        <p className="auth-page-subtitle">{oauthReturn.message}</p>
+      </AuthEntryLayout>
+    );
+  }
 
   const isSignup = learnerTab === "signup";
 

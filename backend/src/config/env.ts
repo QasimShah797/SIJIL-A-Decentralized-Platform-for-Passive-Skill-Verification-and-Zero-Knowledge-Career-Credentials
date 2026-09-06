@@ -37,6 +37,8 @@ const envSchema = z.object({
   SMTP_USER: z.string().email().optional(),
   SMTP_PASS: z.string().min(1).optional(),
   EMAIL_FROM: z.string().min(1).optional(),
+  GITHUB_OAUTH_CLIENT_ID: z.string().min(1).optional(),
+  GITHUB_OAUTH_CLIENT_SECRET: z.string().min(1).optional(),
 });
 
 const parsed = envSchema.safeParse({
@@ -47,6 +49,8 @@ const parsed = envSchema.safeParse({
     "SUPABASE_SERVICE_ROLE_KEY",
     "VITE_SUPABASE_ANON_KEY",
   ),
+  GITHUB_OAUTH_CLIENT_ID: firstEnv("GITHUB_OAUTH_CLIENT_ID", "VITE_GITHUB_CLIENT_ID"),
+  GITHUB_OAUTH_CLIENT_SECRET: firstEnv("GITHUB_OAUTH_CLIENT_SECRET"),
 });
 
 if (!parsed.success) {

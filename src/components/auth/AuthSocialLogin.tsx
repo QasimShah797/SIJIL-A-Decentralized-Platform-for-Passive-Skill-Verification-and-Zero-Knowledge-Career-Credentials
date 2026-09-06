@@ -1,4 +1,14 @@
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { toast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
+import {
+  completeOAuthLearnerSignIn,
+  OAuthCancelledError,
+  startSocialSignIn,
+  type SocialAuthProvider,
+} from "@/lib/oauth-signin";
+import { formatSupabaseError } from "@/lib/utils";
 
 function GoogleIcon() {
   return (
@@ -31,17 +41,35 @@ function GitHubIcon() {
   );
 }
 
-const PROVIDERS = [
+const PROVIDERS: { id: SocialAuthProvider; label: string; icon: typeof GoogleIcon }[] = [
   { id: "google", label: "Google", icon: GoogleIcon },
   { id: "github", label: "GitHub", icon: GitHubIcon },
-] as const;
+];
 
 export function AuthSocialLogin() {
-  const notify = (provider: string) => {
-    toast({
-      title: `${provider} sign-in`,
-      description: "Social sign-in is not configured yet. Use email and password.",
-    });
+  const navigate = useNavigate();
+  const { refreshRoles } = useAuth();
+  const [busyProvider, setBusyProvider] = useState<SocialAuthProvider | null>(null);
+
+  const signIn = async (provider: SocialAuthProvider, label: string) => {
+    if (busyProvider) return;
+    setBusyProvider(provider);
+    try {
+      const session = await startSocialSignIn(provider);
+      const destination = await completeOAuthLearnerSignIn(session.user);
+      await refreshRoles();
+      toast({ title: "Signed in" });
+      navigate(destination, { replace: true });
+    } catch (err) {
+      if (err instanceof OAuthCancelledError) return;
+      toast({
+        title: `${label} sign-in failed`,
+        description: formatSupabaseError(err),
+        variant: "destructive",
+      });
+    } finally {
+      setBusyProvider(null);
+    }
   };
 
   return (
@@ -53,10 +81,12 @@ export function AuthSocialLogin() {
             key={id}
             type="button"
             className="auth-social-btn"
-            onClick={() => notify(label)}
+            disabled={busyProvider !== null}
+            aria-busy={busyProvider === id}
+            onClick={() => void signIn(id, label)}
           >
             <Icon />
-            <span>{label}</span>
+            <span>{busyProvider === id ? "Redirecting…" : label}</span>
           </button>
         ))}
       </div>

@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { z } from "zod";
 import { ArrowRight, Mail, User } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { AuthSocialLogin } from "@/components/auth/AuthSocialLogin";
 import { PasswordInput } from "@/components/auth/PasswordInput";
 import { Field } from "@/components/sijil/Field";
 import { PasswordRequirements } from "@/components/sijil/PasswordRequirements";
@@ -192,6 +193,8 @@ export function LearnerSignUpForm({ onSwitchToSignin, showSigninLink = true }: L
           {!busy && <ArrowRight className="h-4 w-4" aria-hidden />}
         </button>
       </form>
+
+      <AuthSocialLogin />
 
       {showSigninLink && onSwitchToSignin && (
         <p className="mt-5 text-center text-sm text-muted-foreground">

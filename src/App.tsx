@@ -26,6 +26,7 @@ import LearnerPeerReviews from "./pages/learner/PeerReviews";
 import LearnerCredentialDetails from "./pages/learner/CredentialDetails";
 import LearnerCredentialProof from "./pages/learner/CredentialProof";
 import LearnerSelectiveDisclosure from "./pages/learner/SelectiveDisclosure";
+import AuthCallback from "./pages/auth/AuthCallback";
 import GitHubPrepare from "./pages/auth/GitHubPrepare";
 import GitHubCallback from "./pages/auth/GitHubCallback";
 import CompetencyPresentationView from "./pages/public/CompetencyPresentationView";
@@ -78,6 +79,7 @@ const App = () => (
           <Route path="/review/invite/:token" element={<ReviewInvite />} />
           <Route path="/review/request/:token" element={<ContextReviewRequest />} />
 
+          <Route path="/auth/callback" element={<AuthCallback />} />
           <Route path="/auth/github/prepare" element={<LRIncomplete><GitHubPrepare /></LRIncomplete>} />
           <Route path="/auth/github/callback" element={<GitHubCallback />} />
 

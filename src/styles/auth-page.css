@@ -294,9 +294,19 @@ html:has(.auth-page) #root {
     border-color 0.15s ease;
 }
 
-.auth-social-btn:hover {
+.auth-social-btn:hover:not(:disabled) {
   border-color: #cbd5e1;
   background: #f8fafc;
+}
+
+.auth-social-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.auth-social-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px #fff, 0 0 0 4px hsl(var(--ring));
 }
 
 .auth-signup-link {

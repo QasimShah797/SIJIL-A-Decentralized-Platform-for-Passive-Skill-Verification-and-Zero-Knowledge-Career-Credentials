@@ -112,7 +112,7 @@ async function insertLearnerProfileRow(
   });
 
   const { error: fullError } = await supabase.from("learner_profiles").insert(fullPayload);
-  if (!fullError) return;
+  if (!fullError || isDuplicateDbError(fullError)) return;
 
   if (!isMissingColumnError(fullError)) {
     throw new LearnerSignupError(
@@ -122,12 +122,20 @@ async function insertLearnerProfileRow(
   }
 
   const { error: minimalError } = await supabase.from("learner_profiles").insert(minimalPayload);
-  if (minimalError) {
+  if (minimalError && !isDuplicateDbError(minimalError)) {
     throw new LearnerSignupError(
       "Could not create learner profile. Please contact support.",
       "general",
     );
   }
+}
+
+function isDuplicateDbError(error: { code?: string; message?: string }): boolean {
+  return (
+    error.code === "23505" ||
+    (error.message?.toLowerCase().includes("duplicate") ?? false) ||
+    (error.message?.toLowerCase().includes("unique") ?? false)
+  );
 }
 
 async function ensureLearnerRole(userId: string): Promise<void> {
@@ -136,14 +144,7 @@ async function ensureLearnerRole(userId: string): Promise<void> {
     role: "learner",
   });
 
-  if (!error) return;
-
-  const duplicate =
-    error.code === "23505" ||
-    error.message?.toLowerCase().includes("duplicate") ||
-    error.message?.toLowerCase().includes("unique");
-
-  if (duplicate) return;
+  if (!error || isDuplicateDbError(error)) return;
 
   throw new LearnerSignupError("Could not assign learner role. Please contact support.", "general");
 }
@@ -195,4 +196,11 @@ export async function signupLearner(input: LearnerSignupInput): Promise<{ userId
   await insertLearnerProfileRow(userId, firstName, lastName, input.institutionName, input.program);
 
   return { userId };
+}
+
+/** Bootstrap learner role + profile for a Google/GitHub OAuth user. */
+export async function provisionOAuthLearner(userId: string, fullName: string): Promise<void> {
+  const { firstName, lastName } = splitFullName(fullName);
+  await ensureLearnerRole(userId);
+  await insertLearnerProfileRow(userId, firstName, lastName);
 }

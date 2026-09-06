@@ -12,6 +12,8 @@ import {
 import { fetchDeclaredSkills } from "@/lib/db/skills";
 import { fetchCredentials } from "@/lib/db/credentials";
 import { supabase } from "@/integrations/supabase/client";
+import { completeGitHubPageSignIn, isGitHubSignInState } from "@/lib/github-signin";
+import { completeOAuthLearnerSignIn } from "@/lib/oauth-signin";
 
 export default function GitHubCallback() {
   const navigate = useNavigate();
@@ -36,6 +38,18 @@ export default function GitHubCallback() {
 
         if (err) throw new Error(errDesc ?? err);
         if (!code || !state) throw new Error("Missing OAuth code or state");
+
+        if (isGitHubSignInState(state)) {
+          setStep(1);
+          setMsg("Signing you in with GitHub…");
+          const session = await completeGitHubPageSignIn(code, state);
+          setStep(2);
+          setMsg("Setting up your account…");
+          const destination = await completeOAuthLearnerSignIn(session.user);
+          toast({ title: "Signed in" });
+          navigate(destination, { replace: true });
+          return;
+        }
 
         const { data: sessionData } = await supabase.auth.getSession();
         if (!sessionData.session) throw new Error("You must be signed in to connect GitHub");
@@ -77,12 +91,17 @@ export default function GitHubCallback() {
         });
         navigate(`${returnTo}?github=connected`, { replace: true });
       } catch (e) {
+        const failedState = new URLSearchParams(window.location.search).get("state");
+        const signInFailed = isGitHubSignInState(failedState);
         toast({
-          title: "GitHub connection failed",
+          title: signInFailed ? "GitHub sign-in failed" : "GitHub connection failed",
           description: e instanceof Error ? e.message : String(e),
           variant: "destructive",
         });
-        navigate(`${returnTo}?github=error`, { replace: true });
+        navigate(
+          signInFailed ? "/login/learner" : `${returnTo}?github=error`,
+          { replace: true },
+        );
       }
     })();
   }, [navigate]);
