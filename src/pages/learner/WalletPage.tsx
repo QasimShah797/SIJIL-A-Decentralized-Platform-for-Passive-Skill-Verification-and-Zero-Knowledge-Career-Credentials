@@ -1,16 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { AppShell } from "@/components/sijil/AppShell";
+import { useNavigate } from "react-router-dom";
+import { LearnerWorkspaceShell } from "@/components/sijil/LearnerWorkspaceShell";
 import { CompetencyShareDialog } from "@/components/wallet/CompetencyShareDialog";
-import { InfoHint } from "@/components/sijil/InfoHint";
-import { PageHeader } from "@/components/sijil/PageHeader";
-import { StatusBadge } from "@/components/sijil/StatusBadge";
 import { PageSkeleton } from "@/components/sijil/SkeletonLoader";
-import { EmptyState } from "@/components/sijil/EmptyState";
-import { StubControl } from "@/components/sijil/StubControl";
-import { CardSurface } from "@/components/sijil/CardSurface";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog,
@@ -20,7 +12,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useAuth } from "@/hooks/useAuth";
-import { useLearnerProfile } from "@/hooks/useLearnerData";
+import { useCredentials, useLearnerProfile } from "@/hooks/useLearnerData";
 import {
   fetchWalletCompetencyRecords,
   type WalletCompetencyRecordView,
@@ -28,24 +20,43 @@ import {
 import type {
   WalletAttemptHistoryItem,
   WalletEvidenceSummary,
-  WalletRecordStatus,
-  WalletSourceBadge,
+  WalletShareFieldId,
 } from "@/lib/wallet-competency-shared";
+import { fetchGitHubConnection } from "@/lib/github-integration";
+import { fetchMoodleConnection } from "@/lib/moodle-integration";
+import { toast } from "@/hooks/use-toast";
 import {
-  Eye,
-  Github,
-  KeyRound,
-  Link2,
-  MessageSquare,
-  RefreshCw,
-  Wallet,
-  FileText,
-  GraduationCap,
   ClipboardList,
+  Github,
+  GraduationCap,
+  MessageSquare,
 } from "lucide-react";
-import { useCredentials } from "@/hooks/useLearnerData";
-import { getWalletCompetenciesApi } from "@/services/api/wallet.api";
-import { parseEvidenceMetadata } from "@/lib/wallet-evidence-mapping";
+import {
+  getWalletCompetenciesApi,
+  getWalletCompetencyApi,
+  revokeWalletShareApi,
+  shareWalletCompetencyApi,
+  type WalletShareRecordView,
+} from "@/services/api/wallet.api";
+import {
+  AuditLedgerCard,
+  CompetencyPackageCard,
+  ConnectedSourcesCard,
+  EvidenceInspectorCard,
+  OneClickShareCard,
+  WalletEmptyState,
+  WalletRefreshBar,
+  WalletStepper,
+  WalletWorkspaceHeader,
+  numberValue,
+  textValue,
+  type ConnectedSourceRow,
+  type GithubPackageStats,
+  type InspectorSource,
+  type LedgerEvent,
+  type LmsCourseRow,
+  type ShareToggle,
+} from "@/components/wallet/WalletWorkspacePanels";
 
 function formatDate(value: string | null | undefined): string {
   if (!value) return "Recent";
@@ -58,29 +69,193 @@ function formatOptional(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value : null;
 }
 
-function statusVariant(
-  status: WalletRecordStatus | string,
-): "verified" | "info" | "warning" | "neutral" {
-  if (status === "Passed" || status === "Review Available") return "verified";
-  if (status === "Task Submitted") return "info";
-  if (status === "Needs Improvement") return "warning";
-  return "neutral";
-}
-
-function badgeVariant(
-  badge: WalletSourceBadge,
-): "neutral" | "info" | "verified" {
-  if (badge === "GitHub") return "info";
-  if (badge === "Reviews") return "verified";
-  return "neutral";
-}
-
 function latestAttempt(summary: WalletEvidenceSummary): WalletAttemptHistoryItem | null {
-  const practicalTask = summary?.practicalTask;
-  if (!practicalTask) return null;
-  return practicalTask.latestAttempt
-    ?? (Array.isArray(practicalTask.attemptHistory) ? practicalTask.attemptHistory[0] : null)
+  return summary.practicalTask.latestAttempt
+    ?? (Array.isArray(summary.practicalTask.attemptHistory) ? summary.practicalTask.attemptHistory[0] : null)
     ?? null;
+}
+
+function resolveEvidencePackage(record: WalletCompetencyRecordView): WalletEvidenceSummary {
+  return record.evidencePackage;
+}
+
+function asEvidenceArray(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is Record<string, unknown> => !!item && typeof item === "object")
+    : [];
+}
+
+function startOfWeek(value: Date): Date {
+  const next = new Date(value);
+  next.setHours(0, 0, 0, 0);
+  next.setDate(next.getDate() - next.getDay());
+  return next;
+}
+
+function buildCommitSeries(
+  repos: Record<string, unknown>[],
+  activities: Record<string, unknown>[],
+): GithubPackageStats["commitSeries"] {
+  const datedCommits = activities
+    .filter((row) => {
+      const type = textValue(row.activity_type).toLowerCase();
+      return type === "commit" || Boolean(textValue(row.commit_hash));
+    })
+    .map((row) => new Date(textValue(row.occurred_at) || textValue(row.synced_at)))
+    .filter((date) => Number.isFinite(date.getTime()));
+
+  if (datedCommits.length > 0) {
+    const buckets = new Map<string, { label: string; commits: number }>();
+    for (let offset = 7; offset >= 0; offset -= 1) {
+      const week = startOfWeek(new Date(Date.now() - offset * 7 * 24 * 60 * 60 * 1000));
+      buckets.set(week.toISOString(), {
+        label: week.toLocaleDateString(undefined, { month: "short", day: "numeric" }),
+        commits: 0,
+      });
+    }
+    for (const date of datedCommits) {
+      const key = startOfWeek(date).toISOString();
+      const bucket = buckets.get(key);
+      if (bucket) bucket.commits += 1;
+    }
+    const series = [...buckets.values()];
+    if (series.some((point) => point.commits > 0)) return series;
+  }
+
+  return repos
+    .map((row) => ({
+      label: (textValue(row.repo_name) || textValue(row.full_name).split("/").pop() || "Repo").slice(0, 10),
+      commits: numberValue(row.commit_count) ?? 0,
+    }))
+    .filter((point) => point.commits > 0)
+    .slice(0, 8);
+}
+
+function buildGithubStats(summary: WalletEvidenceSummary): GithubPackageStats {
+  const repos = asEvidenceArray(summary.github.repos);
+  const activities = asEvidenceArray(summary.github.activities);
+  const languages = [...new Set(
+    repos.map((row) => textValue(row.primary_language) || textValue(row.language)).filter(Boolean),
+  )];
+  const datedCommitCount = activities.filter((row) => {
+    const type = textValue(row.activity_type).toLowerCase();
+    return type === "commit" || Boolean(textValue(row.commit_hash));
+  }).length;
+  const commits = repos.reduce((total, row) => total + (numberValue(row.commit_count) ?? 0), 0) || datedCommitCount;
+  const pullRequests = activities.filter((row) =>
+    textValue(row.activity_type).toLowerCase().includes("pull"),
+  ).length;
+
+  return {
+    repos: repos.length,
+    commits,
+    activities: activities.length,
+    pullRequests,
+    languages,
+    commitSeries: buildCommitSeries(repos, activities),
+  };
+}
+
+function buildLmsRows(summary: WalletEvidenceSummary): LmsCourseRow[] {
+  const courses = asEvidenceArray(summary.lms.courses);
+  const assignments = asEvidenceArray(summary.lms.assignments);
+  const evidence = asEvidenceArray(summary.lms.evidence);
+  const grades = asEvidenceArray(summary.lms.grades);
+
+  if (courses.length > 0) {
+    return courses.map((course, index) => {
+      const courseId = textValue(course.moodle_course_id);
+      const courseAssignments = assignments.filter((row) =>
+        textValue(row.moodle_course_id) === courseId,
+      );
+      const courseGrades = grades.filter((row) => textValue(row.moodle_course_id) === courseId);
+      const scoreValues = [...courseAssignments, ...courseGrades]
+        .map((row) => numberValue(row.grade))
+        .filter((value): value is number => value != null);
+      const maxValues = [...courseAssignments, ...courseGrades]
+        .map((row) => numberValue(row.grade_max))
+        .filter((value): value is number => value != null);
+      const avg = scoreValues.length
+        ? Math.round(scoreValues.reduce((sum, value) => sum + value, 0) / scoreValues.length)
+        : null;
+      const max = maxValues.length
+        ? Math.round(maxValues.reduce((sum, value) => sum + value, 0) / maxValues.length)
+        : null;
+      const percent = avg != null && max ? Math.round((avg / max) * 100) : avg;
+      return {
+        id: courseId || `course-${index}`,
+        name: textValue(course.fullname) || textValue(course.shortname) || textValue(course.course_name) || "LMS course",
+        assignments: courseAssignments.length || courseGrades.length,
+        scoreLabel: avg != null && max != null ? `${avg} / ${max}` : avg != null ? `${avg}` : "—",
+        scorePercent: percent,
+      };
+    });
+  }
+
+  const fallback = [...evidence, ...assignments];
+  if (fallback.length === 0) return [];
+  const avg = fallback
+    .map((row) => numberValue(row.grade))
+    .filter((value): value is number => value != null);
+  const score = avg.length ? Math.round(avg.reduce((sum, value) => sum + value, 0) / avg.length) : null;
+  return [{
+    id: "lms-linked",
+    name: textValue(fallback[0].course_name) || "Linked LMS evidence",
+    assignments: fallback.length,
+    scoreLabel: score != null ? String(score) : "Linked",
+    scorePercent: score,
+  }];
+}
+
+function buildLedgerEvents(summary: WalletEvidenceSummary): LedgerEvent[] {
+  const events: LedgerEvent[] = [];
+
+  for (const row of asEvidenceArray(summary.github.activities)) {
+    const hash = textValue(row.commit_hash) || textValue(row.id);
+    const at = textValue(row.occurred_at) || textValue(row.synced_at);
+    if (!hash || !at) continue;
+    events.push({
+      id: `gh-${hash}`,
+      at,
+      hash,
+      source: textValue(row.activity_type) || "github",
+    });
+  }
+
+  for (const row of asEvidenceArray(summary.github.repos)) {
+    const at = textValue(row.last_updated) || textValue(row.synced_at);
+    const hash = textValue(row.id) || textValue(row.full_name);
+    if (!at || !hash) continue;
+    events.push({ id: `repo-${hash}`, at, hash, source: "github" });
+  }
+
+  for (const row of asEvidenceArray(summary.lms.evidence)) {
+    const at = textValue(row.fetched_at);
+    const hash = textValue(row.id) || textValue(row.course_name);
+    if (!at || !hash) continue;
+    events.push({ id: `lms-${hash}`, at, hash, source: "lms" });
+  }
+
+  for (const attempt of summary.practicalTask.attemptHistory) {
+    if (!attempt.submittedAt) continue;
+    events.push({
+      id: `task-${attempt.attemptId}`,
+      at: attempt.submittedAt,
+      hash: attempt.attemptId,
+      source: "task",
+    });
+  }
+
+  for (const row of asEvidenceArray(summary.peerReviews)) {
+    const at = textValue(row.reviewed_at) || textValue(row.review_date) || textValue(row.created_at);
+    const hash = textValue(row.id) || textValue(row.reviewer_name);
+    if (!at || !hash) continue;
+    events.push({ id: `review-${hash}`, at, hash, source: "review" });
+  }
+
+  return events
+    .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
+    .slice(0, 8);
 }
 
 function ItemCard({
@@ -101,297 +276,11 @@ function ItemCard({
       {body && <div className="mt-2 text-xs text-muted-foreground">{body}</div>}
     </div>
   );
-
   if (!href) return content;
-
   return (
-    <a href={href} target="_blank" rel="noreferrer" className="block transition-colors hover:bg-muted/20">
+    <a href={href} target="_blank" rel="noreferrer" className="block">
       {content}
     </a>
-  );
-}
-
-function EmptyEvidenceNote({ message }: { message: string }) {
-  return (
-    <div className="rounded-xl border border-dashed border-border/60 bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
-      {message}
-    </div>
-  );
-}
-
-function metadataText(value: unknown): string | null {
-  if (value == null) return null;
-  if (typeof value === "string") return formatOptional(value);
-  if (typeof value === "number" && Number.isFinite(value)) return String(value);
-  return null;
-}
-
-function asEvidenceArray(value: unknown): Record<string, unknown>[] {
-  return Array.isArray(value)
-    ? value.filter((item): item is Record<string, unknown> => !!item && typeof item === "object")
-    : [];
-}
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : null;
-}
-
-type ModalEvidenceView = {
-  githubEvidence: Record<string, unknown>[];
-  lmsEvidence: Record<string, unknown>[];
-  assignments: Record<string, unknown>[];
-  teacherFeedback: Record<string, unknown>[];
-};
-
-type LmsDisplayItem = {
-  id: string;
-  course_name: string;
-  activity_name: string;
-  grade: string | null;
-  grade_max: string | null;
-  feedback: string | null;
-  title?: string;
-  meta?: string;
-  body?: string | null;
-};
-
-function isLmsSourceRow(row: Record<string, unknown>): boolean {
-  const source = typeof row.source === "string" ? row.source.trim().toUpperCase() : "";
-  return source === "LMS";
-}
-
-function resolveEvidencePackage(record: WalletCompetencyRecordView): WalletEvidenceSummary {
-  if (record.evidencePackage) return record.evidencePackage;
-  const legacy = asRecord((record as unknown as Record<string, unknown>).evidence_summary);
-  if (legacy) return legacy as unknown as WalletEvidenceSummary;
-  return record.evidencePackage;
-}
-
-function dedupeEvidenceRows(rows: Record<string, unknown>[]): Record<string, unknown>[] {
-  const seen = new Set<string>();
-  const deduped: Record<string, unknown>[] = [];
-
-  for (const row of rows) {
-    const key = String(row.id ?? row.external_id ?? row.moodle_assignment_id ?? "");
-    if (key) {
-      if (seen.has(key)) continue;
-      seen.add(key);
-    }
-    deduped.push(row);
-  }
-
-  return deduped;
-}
-
-function buildModalEvidenceView(record: WalletCompetencyRecordView): ModalEvidenceView {
-  const evidencePackage = resolveEvidencePackage(record);
-  const github = evidencePackage?.github ?? {
-    repos: [],
-    activities: [],
-    evidenceRecords: [],
-    reviews: [],
-  };
-  const lms = evidencePackage?.lms ?? {
-    evidence: [],
-    courses: [],
-    assignments: [],
-    grades: [],
-    importedEvidence: [],
-  };
-
-  const repos = asEvidenceArray(github.repos);
-  const activities = asEvidenceArray(github.activities);
-  const allEvidenceRecords = asEvidenceArray(github.evidenceRecords);
-  const evidenceRecords = allEvidenceRecords.filter((row) => !isLmsSourceRow(row));
-  const reviews = asEvidenceArray(github.reviews);
-  const primaryLmsEvidence = asEvidenceArray(lms.evidence);
-  const assignments = asEvidenceArray(lms.assignments);
-  const teacherFeedback = asEvidenceArray(evidencePackage?.teacherFeedback);
-  const lmsRowsFromGithub = allEvidenceRecords.filter(isLmsSourceRow);
-  const importedEvidence = asEvidenceArray(lms.importedEvidence);
-
-  return {
-    githubEvidence: [...repos, ...activities, ...evidenceRecords, ...reviews],
-    lmsEvidence: dedupeEvidenceRows([
-      ...primaryLmsEvidence,
-      ...lmsRowsFromGithub,
-      ...importedEvidence,
-    ]),
-    assignments,
-    teacherFeedback,
-  };
-}
-
-function feedbackFromTeacherRows(
-  itemId: string,
-  teacherFeedback: Record<string, unknown>[],
-  directFeedback: string | null,
-): string | null {
-  if (directFeedback) return directFeedback;
-
-  for (const row of teacherFeedback) {
-    const assignmentId = metadataText(row.moodle_assignment_id);
-    const evidenceId = metadataText(row.evidence_record_id);
-    const text = metadataText(row.feedback_text);
-    if (!text) continue;
-    if (itemId && (itemId === assignmentId || itemId === evidenceId)) return text;
-  }
-
-  return null;
-}
-
-function buildLmsDisplayItems(
-  modalEvidenceView: ModalEvidenceView,
-  courses: Record<string, unknown>[],
-): LmsDisplayItem[] {
-  const items: LmsDisplayItem[] = [];
-  const seen = new Set<string>();
-
-  const push = (item: LmsDisplayItem) => {
-    const key = item.id || `${item.course_name}:${item.activity_name}`;
-    if (!key.trim() || seen.has(key)) return;
-    seen.add(key);
-    items.push(item);
-  };
-
-  for (const row of modalEvidenceView.lmsEvidence) {
-    const metadata = parseEvidenceMetadata(row.metadata);
-    const id = String(row.id ?? row.external_id ?? "");
-    const directFeedback = metadataText(metadata.teacher_feedback)
-      ?? metadataText(row.feedback_preview)
-      ?? metadataText(row.feedback);
-
-    push({
-      id,
-      course_name: metadataText(metadata.course_name)
-        ?? metadataText(row.course_name)
-        ?? "N/A",
-      activity_name: metadataText(metadata.activity_name)
-        ?? metadataText(metadata.assignment_name)
-        ?? metadataText(row.activity_name)
-        ?? metadataText(row.assignment_name)
-        ?? metadataText(row.text_preview)
-        ?? "N/A",
-      grade: metadataText(metadata.grade) ?? metadataText(row.grade),
-      grade_max: metadataText(metadata.grade_max) ?? metadataText(row.grade_max),
-      feedback: feedbackFromTeacherRows(id, modalEvidenceView.teacherFeedback, directFeedback),
-      title: metadataText(metadata.assignment_name)
-        ?? metadataText(row.assignment_name)
-        ?? metadataText(row.activity_name)
-        ?? metadataText(row.text_preview)
-        ?? metadataText(metadata.course_name)
-        ?? metadataText(row.course_name)
-        ?? "LMS Evidence",
-      meta: `Course: ${metadataText(metadata.course_name) ?? metadataText(row.course_name) ?? "N/A"} · Grade: ${formatGradeLine(
-        metadataText(metadata.grade) ?? metadataText(row.grade),
-        metadataText(metadata.grade_max) ?? metadataText(row.grade_max),
-      )}`,
-    });
-  }
-
-  for (const row of modalEvidenceView.assignments) {
-    const metadata = parseEvidenceMetadata(row.metadata);
-    const id = String(row.moodle_assignment_id ?? row.id ?? "");
-    const directFeedback = metadataText(row.feedback_preview)
-      ?? metadataText(row.feedback)
-      ?? metadataText(metadata.teacher_feedback);
-
-    push({
-      id,
-      course_name: metadataText(metadata.course_name)
-        ?? metadataText(row.course_name)
-        ?? courseNameForAssignment(row, courses),
-      activity_name: metadataText(row.activity_name)
-        ?? metadataText(row.name)
-        ?? metadataText(metadata.assignment_name)
-        ?? "N/A",
-      grade: metadataText(row.grade) ?? metadataText(metadata.grade),
-      grade_max: metadataText(row.grade_max) ?? metadataText(metadata.grade_max),
-      feedback: feedbackFromTeacherRows(id, modalEvidenceView.teacherFeedback, directFeedback),
-      title: metadataText(row.name)
-        ?? metadataText(metadata.assignment_name)
-        ?? metadataText(row.activity_name)
-        ?? "LMS Evidence",
-      meta: `Course: ${metadataText(metadata.course_name) ?? metadataText(row.course_name) ?? courseNameForAssignment(row, courses)} · Grade: ${formatGradeLine(
-        metadataText(row.grade) ?? metadataText(metadata.grade),
-        metadataText(row.grade_max) ?? metadataText(metadata.grade_max),
-      )}`,
-    });
-  }
-
-  for (const row of modalEvidenceView.teacherFeedback) {
-    const text = metadataText(row.feedback_text);
-    if (!text) continue;
-    const id = String(row.moodle_assignment_id ?? row.evidence_record_id ?? text.slice(0, 24));
-    push({
-      id,
-      course_name: metadataText(row.course_name) ?? "LMS Course",
-      activity_name: metadataText(row.source) ?? metadataText(row.assignment_name) ?? "Teacher feedback",
-      grade: null,
-      grade_max: null,
-      feedback: text,
-      title: metadataText(row.source) ?? "Teacher feedback",
-      meta: metadataText(row.course_name) ?? "LMS Course",
-    });
-  }
-
-  return items;
-}
-
-function formatGradeLine(grade: string | null, gradeMax: string | null): string {
-  if (grade && gradeMax) return `${grade} / ${gradeMax}`;
-  if (grade) return grade;
-  if (gradeMax) return gradeMax;
-  return "N/A";
-}
-
-function courseNameForAssignment(
-  assignment: Record<string, unknown>,
-  courses: Record<string, unknown>[],
-): string {
-  const metadata = parseEvidenceMetadata(assignment.metadata);
-  const fromMetadata = metadataText(metadata.course_name);
-  if (fromMetadata) return fromMetadata;
-
-  const courseId = typeof assignment.moodle_course_id === "string" || typeof assignment.moodle_course_id === "number"
-    ? String(assignment.moodle_course_id)
-    : "";
-  if (!courseId) return "N/A";
-
-  const course = courses.find((row) => String(row.moodle_course_id ?? "") === courseId);
-  return metadataText(course?.fullname) ?? metadataText(course?.shortname) ?? "N/A";
-}
-
-function WalletLmsItemCard({ item }: { item: LmsDisplayItem }) {
-  const gradeLine = formatGradeLine(item.grade, item.grade_max);
-  const title = item.course_name !== "N/A" ? item.course_name : item.activity_name;
-
-  return (
-    <div className="rounded-xl border border-border/60 bg-card p-4">
-      <div className="text-sm font-medium">{title}</div>
-      <div className="mt-3 space-y-2 text-sm">
-        <div>
-          <div className="text-[11px] text-muted-foreground">Course</div>
-          <div className="mt-0.5">{item.course_name}</div>
-        </div>
-        <div>
-          <div className="text-[11px] text-muted-foreground">Assignment</div>
-          <div className="mt-0.5">{item.activity_name}</div>
-        </div>
-        <div>
-          <div className="text-[11px] text-muted-foreground">Grade</div>
-          <div className="mt-0.5">{gradeLine}</div>
-        </div>
-        {item.feedback && (
-          <div>
-            <div className="text-[11px] text-muted-foreground">Feedback</div>
-            <div className="mt-0.5 text-muted-foreground">{item.feedback}</div>
-          </div>
-        )}
-      </div>
-    </div>
   );
 }
 
@@ -402,341 +291,94 @@ function WalletEvidenceDialog(props: {
   onOpenChange: (next: boolean) => void;
 }) {
   const { record, fallbackDid, open, onOpenChange } = props;
-
   if (!record) return null;
 
   const summary = resolveEvidencePackage(record);
-  const modalEvidenceView = buildModalEvidenceView(record);
-
-  const githubRepos = Array.isArray(summary?.github?.repos) ? summary.github.repos : [];
-  const githubActivities = Array.isArray(summary?.github?.activities) ? summary.github.activities : [];
-  const githubEvidenceRecords = Array.isArray(summary?.github?.evidenceRecords)
-    ? summary.github.evidenceRecords.filter((row) => !isLmsSourceRow(row))
-    : [];
-  const githubReviews = Array.isArray(summary?.github?.reviews) ? summary.github.reviews : [];
-  const lmsItems = [
-    ...(record?.evidencePackage?.lms?.evidence ?? []),
-    ...(record?.evidencePackage?.lms?.assignments ?? []),
-  ];
-  const teacherFeedback = Array.isArray(summary?.teacherFeedback) ? summary.teacherFeedback : [];
-  const peerReviews = [
-    ...(Array.isArray(summary?.peerReviews)
-      ? summary.peerReviews
-      : []),
-
-    ...(Array.isArray(summary?.github?.reviews)
-      ? summary.github.reviews.map((review) => ({
-        reviewer_name:
-          review.comment_author
-          ?? review.author
-          ?? "GitHub Reviewer",
-
-        reviewer_role:
-          "GitHub Review",
-
-        review_text:
-          review.comment_body
-          ?? review.body
-          ?? review.comment
-          ?? "GitHub contribution review",
-
-        source:
-          "GitHub",
-
-        reviewed_at:
-          review.comment_created_at
-          ?? review.created_at
-          ?? null,
-      }))
-      : []),
-
-    ...(Array.isArray(summary?.teacherFeedback)
-      ? summary.teacherFeedback.map((feedback) => ({
-        reviewer_name:
-          "Teacher Feedback",
-
-        reviewer_role:
-          "LMS",
-
-        review_text:
-          feedback.feedback_text
-          ?? feedback.feedback
-          ?? "No feedback",
-
-        source:
-          "LMS",
-
-        reviewed_at:
-          feedback.reviewed_at
-          ?? feedback.synced_at
-          ?? null,
-      }))
-      : []),
-  ] as Record<string, unknown>[];
-  const attemptHistory = Array.isArray(summary?.practicalTask?.attemptHistory)
-    ? summary.practicalTask.attemptHistory
-    : [];
-
-  const githubItems = modalEvidenceView.githubEvidence;
-  const did = summary?.learner?.did ?? fallbackDid;
+  const githubRepos = asEvidenceArray(summary.github.repos);
+  const githubActivities = asEvidenceArray(summary.github.activities);
+  const lmsItems = [...asEvidenceArray(summary.lms.evidence), ...asEvidenceArray(summary.lms.assignments)];
+  const peerReviews = asEvidenceArray(summary.peerReviews);
   const attempt = latestAttempt(summary);
-  const shownFeedback = new Set(
-    lmsItems
-      .map((item) => {
-        const metadata = item.metadata && typeof item.metadata === "object" && !Array.isArray(item.metadata)
-          ? item.metadata as Record<string, unknown>
-          : {};
-        return formatOptional(item.feedback_preview)
-          ?? formatOptional(metadata.teacher_feedback)
-          ?? formatOptional(item.feedback)
-          ?? formatOptional(item.text_preview);
-      })
-      .filter((value): value is string => Boolean(value)),
-  );
-  const peerReviewTexts = new Set(
-    peerReviews
-      .map((review) => formatOptional(review.review_text))
-      .filter((value): value is string => Boolean(value)),
-  );
-  const standaloneTeacherFeedback = teacherFeedback.filter((feedback) => {
-    const text = formatOptional(feedback.feedback_text);
-    if (!text) return false;
-    return !shownFeedback.has(text) && !peerReviewTexts.has(text);
-  });
+  const attemptHistory = summary.practicalTask.attemptHistory;
+  const did = summary.learner.did ?? fallbackDid;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] max-w-4xl overflow-hidden">
         <DialogHeader className="pr-8">
           <DialogTitle>{record.competencyName}</DialogTitle>
-          <DialogDescription>
-            Competency evidence package for {record.domain}.
-          </DialogDescription>
+          <DialogDescription>Source evidence package for this competency.</DialogDescription>
         </DialogHeader>
-
         <div className="max-h-[75vh] space-y-4 overflow-y-auto pr-2">
-          <Card>
-            <CardContent className="grid gap-4 p-5 md:grid-cols-2">
-              <div>
-                <div className="text-[11px] text-muted-foreground">Competency</div>
-                <div className="mt-1 font-medium">{record.competencyName}</div>
-              </div>
-              <div>
-                <div className="text-[11px] text-muted-foreground">Domain</div>
-                <div className="mt-1 font-medium">{record.domain}</div>
-              </div>
-              {record.description && (
-                <div className="md:col-span-2">
-                  <div className="text-[11px] text-muted-foreground">Description</div>
-                  <div className="mt-1 text-sm text-muted-foreground">{record.description}</div>
-                </div>
-              )}
-              {did && (
-                <div className="md:col-span-2">
-                  <div className="text-[11px] text-muted-foreground">Learner DID</div>
-                  <div className="mono mt-1 break-all text-xs">{did}</div>
-                </div>
-              )}
-              <div>
-                <div className="text-[11px] text-muted-foreground">Overall status</div>
-                <div className="mt-1">
-                  <StatusBadge variant={statusVariant(record.status)}>{record.status}</StatusBadge>
-                </div>
-              </div>
-              {record.taskResult && (
-                <div>
-                  <div className="text-[11px] text-muted-foreground">Task result</div>
-                  <div className="mt-1">
-                    <StatusBadge variant={statusVariant(record.taskResult)}>{record.taskResult}</StatusBadge>
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
+          {did ? (
+            <p className="break-all font-mono text-xs text-muted-foreground">DID · {did}</p>
+          ) : null}
           <Tabs defaultValue="github" className="w-full">
             <TabsList className="w-full justify-start overflow-x-auto">
-              <TabsTrigger value="github" className="gap-1.5">
-                <Github className="h-3.5 w-3.5" /> GitHub
-              </TabsTrigger>
-              <TabsTrigger value="lms" className="gap-1.5">
-                <GraduationCap className="h-3.5 w-3.5" /> LMS
-              </TabsTrigger>
+              <TabsTrigger value="github" className="gap-1.5"><Github className="h-3.5 w-3.5" /> GitHub</TabsTrigger>
+              <TabsTrigger value="lms" className="gap-1.5"><GraduationCap className="h-3.5 w-3.5" /> LMS</TabsTrigger>
               {(attemptHistory.length > 0 || attempt) && (
-                <TabsTrigger value="task" className="gap-1.5">
-                  <ClipboardList className="h-3.5 w-3.5" /> Practical Task
-                </TabsTrigger>
+                <TabsTrigger value="task" className="gap-1.5"><ClipboardList className="h-3.5 w-3.5" /> Practical Task</TabsTrigger>
               )}
               {peerReviews.length > 0 && (
-                <TabsTrigger value="reviews" className="gap-1.5">
-                  <MessageSquare className="h-3.5 w-3.5" /> Reviews
-                </TabsTrigger>
+                <TabsTrigger value="reviews" className="gap-1.5"><MessageSquare className="h-3.5 w-3.5" /> Reviews</TabsTrigger>
               )}
             </TabsList>
-
             <TabsContent value="github" className="mt-4 space-y-3">
-              {githubItems.length > 0 ? (
+              {githubRepos.length === 0 && githubActivities.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No GitHub evidence available.</p>
+              ) : (
                 <>
-                  {Array.isArray(githubRepos) && githubRepos.map((repo, index) => (
+                  {githubRepos.map((repo, index) => (
                     <ItemCard
                       key={`repo-${index}`}
-                      title={formatOptional(repo.full_name) ?? formatOptional(repo.repo_name) ?? "Repository"}
-                      meta={[
-                        formatOptional(repo.primary_language),
-                        typeof repo.commit_count === "number" ? `${repo.commit_count} commits` : null,
-                        formatDate(formatOptional(repo.last_updated) ?? formatOptional(repo.synced_at)),
-                      ].filter(Boolean).join(" · ")}
-                      body={formatOptional(repo.description)}
-                      href={formatOptional(repo.github_url)}
+                      title={textValue(repo.full_name) || textValue(repo.repo_name) || "Repository"}
+                      meta={[textValue(repo.primary_language), numberValue(repo.commit_count) != null ? `${repo.commit_count} commits` : null].filter(Boolean).join(" · ")}
+                      href={textValue(repo.github_url) || null}
                     />
                   ))}
-                  {Array.isArray(githubActivities) && githubActivities.map((activity, index) => (
+                  {githubActivities.map((activity, index) => (
                     <ItemCard
                       key={`activity-${index}`}
-                      title={formatOptional(activity.activity_title) ?? "GitHub activity"}
-                      meta={[
-                        formatOptional(activity.activity_type),
-                        formatOptional(activity.repo_name),
-                        formatDate(formatOptional(activity.occurred_at) ?? formatOptional(activity.synced_at)),
-                      ].filter(Boolean).join(" · ")}
-                      body={formatOptional(activity.commit_hash)}
-                      href={formatOptional(activity.activity_url)}
-                    />
-                  ))}
-                  {Array.isArray(githubEvidenceRecords) && githubEvidenceRecords.map((item, index) => (
-                    <ItemCard
-                      key={`evidence-${index}`}
-                      title={formatOptional(item.repository_name) ?? "Evidence record"}
-                      meta={[
-                        formatOptional(item.status),
-                        formatOptional(item.language),
-                        formatDate(formatOptional(item.sync_date)),
-                      ].filter(Boolean).join(" · ")}
-                      href={formatOptional(item.repository_url)}
-                    />
-                  ))}
-                  {Array.isArray(githubReviews) && githubReviews.map((review, index) => (
-                    <ItemCard
-                      key={`review-${index}`}
-                      title={formatOptional(review.discussion_title) ?? "GitHub review"}
-                      meta={[
-                        formatOptional(review.review_type),
-                        formatOptional(review.comment_author),
-                        formatDate(formatOptional(review.comment_created_at)),
-                      ].filter(Boolean).join(" · ")}
-                      body={formatOptional(review.comment_body)}
-                      href={formatOptional(review.discussion_url)}
+                      title={textValue(activity.activity_title) || "GitHub activity"}
+                      meta={[textValue(activity.activity_type), formatDate(textValue(activity.occurred_at))].filter(Boolean).join(" · ")}
+                      href={textValue(activity.activity_url) || null}
                     />
                   ))}
                 </>
-              ) : (
-                <EmptyEvidenceNote message="No GitHub evidence available" />
               )}
             </TabsContent>
-
             <TabsContent value="lms" className="mt-4 space-y-3">
-              {lmsItems.length > 0 ? (
-                lmsItems.map((item: Record<string, unknown>, index: number) => {
-                  const metadata = item.metadata && typeof item.metadata === "object" && !Array.isArray(item.metadata)
-                    ? item.metadata as Record<string, unknown>
-                    : {};
-
-                  return (
-                    <ItemCard
-                      key={`lms-${index}`}
-                      title={
-                        formatOptional(item.course_name)
-                        ?? formatOptional(item.assignment_name)
-                        ?? formatOptional(item.activity_name)
-                        ?? formatOptional(item.name)
-                        ?? "LMS Evidence"
-                      }
-                      meta={[
-                        item.grade
-                          ? `Grade: ${item.grade}`
-                          : metadata.grade != null
-                            ? `Grade: ${metadata.grade}/${metadata.grade_max ?? ""}`
-                            : null,
-                        formatOptional(item.completion_status),
-                      ].filter(Boolean).join(" · ")}
-                      body={
-                        formatOptional(item.feedback_preview)
-                        ?? formatOptional(metadata.teacher_feedback)
-                        ?? formatOptional(item.feedback)
-                        ?? formatOptional(item.text_preview)
-                        ?? "No feedback available"
-                      }
-                    />
-                  );
-                })
-              ) : (
-                <EmptyEvidenceNote message="No LMS evidence available" />
-              )}
+              {lmsItems.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No LMS evidence available.</p>
+              ) : lmsItems.map((item, index) => (
+                <ItemCard
+                  key={`lms-${index}`}
+                  title={textValue(item.course_name) || textValue(item.name) || "LMS evidence"}
+                  meta={item.grade != null ? `Grade: ${String(item.grade)}` : null}
+                  body={formatOptional(item.feedback) ?? formatOptional(item.text_preview)}
+                />
+              ))}
             </TabsContent>
-
             {(attemptHistory.length > 0 || attempt) && (
               <TabsContent value="task" className="mt-4 space-y-3">
-                {attempt && (
-                  <Card>
-                    <CardContent className="grid gap-4 p-4 md:grid-cols-2">
-                      <div>
-                        <div className="text-[11px] text-muted-foreground">Latest attempt</div>
-                        <div className="mt-1 font-medium">{attempt.title}</div>
-                      </div>
-                      <div>
-                        <div className="text-[11px] text-muted-foreground">Status</div>
-                        <div className="mt-1">
-                          <StatusBadge variant={statusVariant(attempt.status)}>{attempt.status}</StatusBadge>
-                        </div>
-                      </div>
-                      {attempt.scorePercent != null && (
-                        <div>
-                          <div className="text-[11px] text-muted-foreground">Score</div>
-                          <div className="mt-1 text-sm font-medium">{attempt.scorePercent}%</div>
-                        </div>
-                      )}
-                      {attempt.correctCount != null && attempt.totalQuestions != null && (
-                        <div>
-                          <div className="text-[11px] text-muted-foreground">Correct answers</div>
-                          <div className="mt-1 text-sm font-medium">
-                            {attempt.correctCount} / {attempt.totalQuestions}
-                          </div>
-                        </div>
-                      )}
-                      <div>
-                        <div className="text-[11px] text-muted-foreground">Submitted</div>
-                        <div className="mt-1 text-sm font-medium">{formatDate(attempt.submittedAt)}</div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                )}
-                {Array.isArray(attemptHistory) && attemptHistory.map((item) => (
+                {attemptHistory.map((item) => (
                   <ItemCard
                     key={item.attemptId}
                     title={item.title}
-                    meta={[
-                      item.status,
-                      item.scorePercent != null ? `${item.scorePercent}%` : null,
-                      formatDate(item.submittedAt),
-                    ].filter(Boolean).join(" · ")}
-                    body={item.attemptId}
+                    meta={[item.status, item.scorePercent != null ? `${item.scorePercent}%` : null].filter(Boolean).join(" · ")}
                   />
                 ))}
               </TabsContent>
             )}
-
             {peerReviews.length > 0 && (
               <TabsContent value="reviews" className="mt-4 space-y-3">
-                {Array.isArray(peerReviews) && peerReviews.map((review, index) => (
+                {peerReviews.map((review, index) => (
                   <ItemCard
                     key={`peer-${index}`}
-                    title={formatOptional(review.reviewer_name) ?? formatOptional(review.reviewerName) ?? "Peer review"}
-                    meta={[
-                      formatOptional(review.reviewer_role) ?? formatOptional(review.reviewerRole),
-                      formatOptional(review.source),
-                      formatDate(formatOptional(review.reviewed_at) ?? formatOptional(review.review_date) ?? formatOptional(review.date)),
-                    ].filter(Boolean).join(" · ")}
-                    body={formatOptional(review.review_text) ?? formatOptional(review.comment) ?? formatOptional(review.body)}
+                    title={textValue(review.reviewer_name) || "Peer review"}
+                    meta={textValue(review.reviewer_role) || textValue(review.source)}
+                    body={textValue(review.review_text) || textValue(review.comment)}
                   />
                 ))}
               </TabsContent>
@@ -754,231 +396,368 @@ export default function WalletPage() {
   const { profile, loading: profileLoading } = useLearnerProfile();
   const { credentials } = useCredentials();
   const [records, setRecords] = useState<WalletCompetencyRecordView[]>([]);
-  const [derivedRecordsById, setDerivedRecordsById] = useState<Map<string, WalletCompetencyRecordView>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string>("");
   const [selectedRecord, setSelectedRecord] = useState<WalletCompetencyRecordView | null>(null);
   const [shareRecord, setShareRecord] = useState<WalletCompetencyRecordView | null>(null);
+  const [inspectorSource, setInspectorSource] = useState<InspectorSource>("github");
+  const [githubUsername, setGithubUsername] = useState<string | null>(null);
+  const [githubSyncedAt, setGithubSyncedAt] = useState<string | null>(null);
+  const [moodleHost, setMoodleHost] = useState<string | null>(null);
+  const [moodleSyncedAt, setMoodleSyncedAt] = useState<string | null>(null);
+  const [shares, setShares] = useState<WalletShareRecordView[]>([]);
+  const [shareUrl, setShareUrl] = useState<string | null>(null);
+  const [expiresInDays, setExpiresInDays] = useState(30);
+  const [enabledFields, setEnabledFields] = useState<WalletShareFieldId[]>(["competency_name"]);
+  const [submitting, setSubmitting] = useState(false);
 
-  useEffect(() => {
+  const loadRecords = async () => {
     if (!user?.id) {
       setRecords([]);
       setLoading(false);
       return;
     }
-
-    let active = true;
     setLoading(true);
     setError(null);
-
-    (async () => {
-      const derivedRecords = await fetchWalletCompetencyRecords(user.id);
-      const apiRecords = await getWalletCompetenciesApi();
-      if (!apiRecords?.length) {
-        const derivedById = new Map(derivedRecords.map((record) => [record.competencyId, record]));
-        return { merged: derivedRecords, derivedById };
-      }
-
+    try {
+      const [derivedRecords, apiRecords, github, moodle] = await Promise.all([
+        fetchWalletCompetencyRecords(user.id),
+        getWalletCompetenciesApi(),
+        fetchGitHubConnection(user.id).catch(() => null),
+        fetchMoodleConnection().catch(() => null),
+      ]);
       const derivedById = new Map(derivedRecords.map((record) => [record.competencyId, record]));
-      const merged = apiRecords.map((record) => derivedById.get(record.competencyId) ?? record);
-      for (const record of derivedRecords) {
-        if (!merged.some((item) => item.competencyId === record.competencyId)) {
-          merged.push(record);
-        }
-      }
-      return { merged, derivedById };
-    })()
-      .then((result) => {
-        if (!active) return;
-        setRecords(result.merged);
-        setDerivedRecordsById(result.derivedById);
-      })
-      .catch((nextError: unknown) => {
-        if (!active) return;
-        setError(nextError instanceof Error ? nextError.message : "Could not load wallet records.");
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
+      const merged = apiRecords?.length
+        ? [
+            ...apiRecords.map((record) => derivedById.get(record.competencyId) ?? record),
+            ...derivedRecords.filter((record) => !apiRecords.some((item) => item.competencyId === record.competencyId)),
+          ]
+        : derivedRecords;
+      setRecords(merged);
+      setSelectedId((current) => current && merged.some((record) => record.competencyId === current)
+        ? current
+        : merged[0]?.competencyId ?? "");
+      setGithubUsername(github?.github_username ?? null);
+      setGithubSyncedAt(github?.last_synced_at ?? null);
+      setMoodleHost(moodle?.moodle_site_url ?? null);
+      setMoodleSyncedAt(moodle?.last_synced_at ?? null);
+    } catch (nextError: unknown) {
+      setError(nextError instanceof Error ? nextError.message : "Could not load wallet records.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
+  useEffect(() => {
+    void loadRecords();
+  }, [user?.id]);
+
+  const activeRecord = records.find((record) => record.competencyId === selectedId) ?? records[0] ?? null;
+  const summary = activeRecord?.evidencePackage ?? null;
+  const githubStats = summary ? buildGithubStats(summary) : { repos: 0, commits: 0, activities: 0, pullRequests: 0, languages: [], commitSeries: [] };
+  const lmsRows = summary ? buildLmsRows(summary) : [];
+  const attempt = summary ? latestAttempt(summary) : null;
+  const peerReviews = summary ? asEvidenceArray(summary.peerReviews) : [];
+
+  useEffect(() => {
+    if (!activeRecord) {
+      setShares([]);
+      setShareUrl(null);
+      return;
+    }
+    let active = true;
+    getWalletCompetencyApi(activeRecord.competencyId)
+      .then((detail) => {
+        if (!active || !detail) return;
+        setShares(detail.shares);
+        const latest = detail.shares.find((share) => share.shareStatus === "Active");
+        if (latest?.tokenHint) {
+          setShareUrl(`${window.location.origin}/recruiter/verify/${latest.tokenHint}`);
+        }
+      })
+      .catch(() => {
+        if (active) setShares([]);
+      });
     return () => {
       active = false;
     };
-  }, [user?.id]);
+  }, [activeRecord?.competencyId]);
 
-  const summary = useMemo(() => ({
-    total: records.length,
-    passed: records.filter((record) => record.taskResult === "Passed").length,
-    evidence: records.reduce((total, record) => total + record.evidenceCount, 0),
-  }), [records]);
+  const availableSources = useMemo<InspectorSource[]>(() => {
+    const next: InspectorSource[] = [];
+    if (githubStats.repos > 0 || githubStats.activities > 0) next.push("github");
+    if (lmsRows.length > 0) next.push("lms");
+    if (attempt) next.push("task");
+    if (peerReviews.length > 0) next.push("reviews");
+    return next.length ? next : ["github"];
+  }, [githubStats.repos, githubStats.activities, lmsRows.length, attempt, peerReviews.length]);
 
-  const credentialIdForRecord = (record: WalletCompetencyRecordView) => {
-    const match = credentials.find(
-      (c) => c.skill === record.competencyName || c.name === record.competencyName,
-    );
-    return match?.id ?? record.id;
+  useEffect(() => {
+    if (!availableSources.includes(inspectorSource)) {
+      setInspectorSource(availableSources[0]);
+    }
+  }, [availableSources, inspectorSource]);
+
+  const connectedSources = useMemo<ConnectedSourceRow[]>(() => {
+    if (!summary || !activeRecord) return [];
+    return [
+      {
+        id: "github",
+        label: "GitHub",
+        detail: githubUsername
+          ? `${githubUsername} · ${githubStats.repos} linked repo${githubStats.repos === 1 ? "" : "s"}`
+          : githubStats.repos > 0
+            ? `${githubStats.repos} linked repositories`
+            : "Connect GitHub on Integrations",
+        lastSync: githubSyncedAt ?? summary.evidenceTimestamps.github[0] ?? null,
+        verified: githubStats.repos > 0 || githubStats.activities > 0,
+        available: Boolean(githubUsername) || githubStats.repos > 0,
+      },
+      {
+        id: "moodle",
+        label: "Moodle / LMS",
+        detail: moodleHost
+          ? moodleHost.replace(/^https?:\/\//, "")
+          : lmsRows.length > 0
+            ? `${lmsRows.length} linked course${lmsRows.length === 1 ? "" : "s"}`
+            : "Connect Moodle on Integrations",
+        lastSync: moodleSyncedAt ?? summary.evidenceTimestamps.lms[0] ?? null,
+        verified: lmsRows.length > 0,
+        available: Boolean(moodleHost) || lmsRows.length > 0,
+      },
+      {
+        id: "reviews",
+        label: "Peer reviews",
+        detail: peerReviews.length > 0
+          ? `${peerReviews.length} review${peerReviews.length === 1 ? "" : "s"} linked`
+          : "Invite reviewers from Peer Reviews",
+        lastSync: summary.evidenceTimestamps.peerReviews[0] ?? null,
+        verified: peerReviews.length > 0,
+        available: peerReviews.length > 0,
+      },
+      {
+        id: "task",
+        label: "Practical task",
+        detail: attempt
+          ? `${attempt.status}${attempt.scorePercent != null ? ` · ${attempt.scorePercent}%` : ""}`
+          : "Submit a task to include a result",
+        lastSync: attempt?.submittedAt ?? null,
+        verified: attempt?.passed === true,
+        available: Boolean(attempt),
+      },
+      ...(profile?.linkedinUrl ? [{
+        id: "linkedin",
+        label: "LinkedIn",
+        detail: profile.linkedinUrl,
+        lastSync: null,
+        verified: true,
+        available: true,
+      }] : []),
+    ];
+  }, [summary, activeRecord, githubUsername, githubSyncedAt, githubStats.repos, githubStats.activities, moodleHost, moodleSyncedAt, lmsRows.length, peerReviews.length, attempt, profile?.linkedinUrl]);
+
+  const shareToggles = useMemo<ShareToggle[]>(() => {
+    if (!activeRecord || !summary) return [];
+    return [
+      { id: "competency_name", label: "Competency name", enabled: enabledFields.includes("competency_name"), available: true },
+      { id: "verification_status", label: "Verification status", enabled: enabledFields.includes("verification_status"), available: true },
+      { id: "github_evidence", label: "GitHub evidence", enabled: enabledFields.includes("github_evidence"), available: githubStats.repos > 0 || githubStats.activities > 0 },
+      { id: "lms_evidence", label: "Moodle / LMS evidence", enabled: enabledFields.includes("lms_evidence"), available: lmsRows.length > 0 },
+      { id: "practical_task_result", label: "Practical task result", enabled: enabledFields.includes("practical_task_result"), available: Boolean(attempt) },
+      { id: "peer_reviews", label: "Peer reviews", enabled: enabledFields.includes("peer_reviews"), available: peerReviews.length > 0 },
+      { id: "teacher_feedback", label: "Teacher feedback", enabled: enabledFields.includes("teacher_feedback"), available: asEvidenceArray(summary.teacherFeedback).length > 0 },
+    ];
+  }, [activeRecord, summary, enabledFields, githubStats.repos, githubStats.activities, lmsRows.length, attempt, peerReviews.length]);
+
+  useEffect(() => {
+    if (!summary) return;
+    const next: WalletShareFieldId[] = ["competency_name", "verification_status"];
+    if (githubStats.repos > 0 || githubStats.activities > 0) next.push("github_evidence");
+    if (lmsRows.length > 0) next.push("lms_evidence");
+    if (attempt) next.push("practical_task_result");
+    if (peerReviews.length > 0) next.push("peer_reviews");
+    setEnabledFields(next);
+  }, [activeRecord?.competencyId]);
+
+  const credentialIssued = activeRecord
+    ? credentials.some((credential) =>
+      credential.skill === activeRecord.competencyName || credential.name === activeRecord.competencyName,
+    )
+    : false;
+  const institutionApproved = /approv|attest|issued|verified/i.test(
+    summary?.institutionReview.status ?? "",
+  );
+  const verified = credentialIssued || institutionApproved || activeRecord?.status === "Passed" || activeRecord?.status === "Review Available";
+  const statusLabel = credentialIssued || institutionApproved
+    ? "Verified"
+    : activeRecord?.status ?? "Collected";
+  const lastSync = githubSyncedAt ?? moodleSyncedAt ?? activeRecord?.updatedAt ?? null;
+  const taskLabel = attempt
+    ? `${attempt.scorePercent != null ? `${attempt.scorePercent}% · ` : ""}${attempt.status}`
+    : null;
+
+  const handleGenerateShare = async () => {
+    if (!activeRecord) return;
+    const selected = shareToggles.filter((toggle) => toggle.enabled && toggle.available).map((toggle) => toggle.id);
+    if (selected.length === 0) {
+      toast({ title: "Select at least one field to share", variant: "destructive" });
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const result = await shareWalletCompetencyApi({
+        competencyId: activeRecord.competencyId,
+        selectionMode: "custom",
+        selectedFields: selected,
+        expiresInDays,
+      });
+      setShareUrl(result.shareUrl);
+      const detail = await getWalletCompetencyApi(activeRecord.competencyId);
+      if (detail) setShares(detail.shares);
+      toast({ title: "Share link created" });
+    } catch (shareError) {
+      toast({
+        title: "Could not create share link",
+        description: shareError instanceof Error ? shareError.message : "Share generation failed.",
+        variant: "destructive",
+      });
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   if (profileLoading || loading) {
     return (
-      <AppShell role="learner">
-        <PageSkeleton rows={4} />
-      </AppShell>
+      <LearnerWorkspaceShell variant="dashboard">
+        <PageSkeleton rows={6} />
+      </LearnerWorkspaceShell>
     );
   }
 
   return (
-    <AppShell role="learner">
-      <PageHeader
-        title="Wallet"
-        actions={(
-          <Button variant="outline" onClick={() => window.location.reload()}>
-            <RefreshCw className="mr-1.5 h-4 w-4" />
-            Refresh
-          </Button>
-        )}
-      />
+    <LearnerWorkspaceShell variant="dashboard">
+      <WalletRefreshBar onRefresh={() => void loadRecords()} loading={loading} />
 
-      <div className="mb-6 grid gap-6 lg:grid-cols-3">
-        <CardSurface variant="flat" padding="hero" className="lg:col-span-2">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <Wallet className="h-5 w-5 text-primary" />
-              <span className="font-semibold">SIJIL Wallet</span>
-            </div>
-            <StatusBadge variant="verified">Learner-controlled</StatusBadge>
-          </div>
-          <div className="mt-4">
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              Holder DID
-              <InfoHint text="Decentralized Identifier — your competency wallet records remain bound to your learner identity." />
-            </div>
-            <div className="mono mt-1 break-all text-sm">{profile?.did ?? "—"}</div>
-          </div>
-          <div className="mt-5 grid grid-cols-3 gap-4 border-t border-border/60 pt-4">
-            <Stat label="Wallet records" value={summary.total} />
-            <Stat label="Passed tasks" value={summary.passed} />
-            <Stat label="Evidence items" value={summary.evidence} />
-          </div>
-        </CardSurface>
+      {error ? (
+        <div className="learner-stat-card p-6 text-sm text-destructive">{error}</div>
+      ) : !activeRecord || !summary ? (
+        <WalletEmptyState
+          onGoTask={() => navigate("/learner/task")}
+          onGoIntegrations={() => navigate("/learner/integrations")}
+        />
+      ) : (
+        <>
+          <WalletWorkspaceHeader
+            competencyName={activeRecord.competencyName}
+            records={records}
+            selectedId={activeRecord.competencyId}
+            onSelect={setSelectedId}
+            statusLabel={statusLabel}
+            verified={verified}
+            lastSync={lastSync}
+          />
+          <WalletStepper />
 
-        <Card>
-          <CardContent className="p-5">
-            <div className="flex items-center gap-2 text-sm font-medium">
-              <KeyRound className="h-4 w-4 text-success" />
-              Key material
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.2fr)_minmax(0,0.95fr)]">
+            <div className="space-y-4">
+              <ConnectedSourcesCard
+                sources={connectedSources}
+                onConnect={() => navigate("/learner/integrations")}
+              />
+              <AuditLedgerCard events={buildLedgerEvents(summary)} />
             </div>
-            <div className="mt-1 text-xs text-muted-foreground">
-              Ed25519 — generated locally, never exported.
-            </div>
-            <div className="mt-3 space-y-2 text-xs">
-              <Row k="Verification key" v={profile?.did ? `${profile.did.slice(0, 8)}…` : "—"} />
-              <Row k="Suite" v="DataIntegrityProof" />
-              <Row k="Wallet mode" v="Competency record" />
-            </div>
-            <div className="mt-4">
-              <StubControl
-                label="Export key backup"
-                reason="Local key export is planned for a future release. Keys remain device-bound for now."
-                className="w-full justify-center"
+
+            <CompetencyPackageCard
+              summary={summary}
+              github={githubStats}
+              lmsRows={lmsRows}
+              taskLabel={taskLabel}
+            />
+
+            <div className="space-y-4">
+              <EvidenceInspectorCard
+                source={inspectorSource}
+                onSourceChange={setInspectorSource}
+                availableSources={availableSources}
+                githubRepos={asEvidenceArray(summary.github.repos).map((repo) => ({
+                  name: textValue(repo.full_name) || textValue(repo.repo_name) || "Repository",
+                  language: textValue(repo.primary_language) || null,
+                  commits: numberValue(repo.commit_count),
+                  url: textValue(repo.github_url) || null,
+                }))}
+                lmsAssignments={[
+                  ...asEvidenceArray(summary.lms.assignments),
+                  ...asEvidenceArray(summary.lms.evidence),
+                ].map((row) => ({
+                  name: textValue(row.name) || textValue(row.assignment_name) || textValue(row.activity_name) || "Assignment",
+                  course: textValue(row.course_name) || "LMS",
+                  grade: row.grade != null ? String(row.grade) : "—",
+                }))}
+                taskDetail={taskLabel}
+                reviews={peerReviews.map((review) => ({
+                  reviewer: textValue(review.reviewer_name) || "Reviewer",
+                  text: textValue(review.review_text) || textValue(review.comment) || "Review submitted",
+                }))}
+                onViewPackage={() => setSelectedRecord(activeRecord)}
+              />
+              <OneClickShareCard
+                toggles={shareToggles}
+                onToggle={(id, next) => {
+                  setEnabledFields((current) => next
+                    ? [...new Set([...current, id])]
+                    : current.filter((field) => field !== id));
+                }}
+                expiresInDays={expiresInDays}
+                onExpiresChange={setExpiresInDays}
+                shareUrl={shareUrl}
+                tokenHint={shares.find((share) => share.shareStatus === "Active")?.tokenHint ?? null}
+                expiresAt={shares.find((share) => share.shareStatus === "Active")?.expiresAt ?? null}
+                shares={shares}
+                submitting={submitting}
+                onGenerate={() => void handleGenerateShare()}
+                onCopy={() => {
+                  if (!shareUrl) return;
+                  void navigator.clipboard.writeText(shareUrl);
+                  toast({ title: "Share link copied" });
+                }}
+                onRevoke={async (shareId) => {
+                  setSubmitting(true);
+                  try {
+                    const ok = await revokeWalletShareApi(shareId);
+                    if (!ok) throw new Error("Revocation failed.");
+                    setShares((current) => current.map((share) => (
+                      share.id === shareId
+                        ? { ...share, shareStatus: "Revoked", revokedAt: new Date().toISOString() }
+                        : share
+                    )));
+                    setShareUrl(null);
+                    toast({ title: "Share link revoked" });
+                  } catch (revokeError) {
+                    toast({
+                      title: "Could not revoke share link",
+                      description: revokeError instanceof Error ? revokeError.message : "Revoke failed.",
+                      variant: "destructive",
+                    });
+                  } finally {
+                    setSubmitting(false);
+                  }
+                }}
+                onCustom={() => setShareRecord(activeRecord)}
               />
             </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Competency Wallet Records</CardTitle>
-        </CardHeader>
-        <CardContent className="p-0">
-          {error ? (
-            <div className="px-6 py-10 text-center text-sm text-destructive">
-              {error}
-            </div>
-          ) : records.length === 0 ? (
-            <EmptyState
-              icon={Wallet}
-              title="No wallet records yet"
-              description="Submit a practical task to create your first competency wallet record."
-              action={{ label: "Start practical task", onClick: () => navigate("/learner/task") }}
-              className="m-6 border-0 bg-transparent"
-            />
-          ) : (
-            <div className="grid gap-5 p-6 md:grid-cols-2">
-              {records.map((record) => (
-                <Card key={record.id} className="overflow-hidden border-border/60">
-                  <CardContent className="space-y-4 p-5">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="text-lg font-semibold">{record.competencyName}</div>
-                        <div className="mt-1 text-sm text-muted-foreground">{record.domain}</div>
-                      </div>
-                      <StatusBadge variant={statusVariant(record.status)}>{record.status}</StatusBadge>
-                    </div>
-
-                    <div className="flex flex-wrap gap-2">
-                      {Array.isArray(record.sourceBadges) && record.sourceBadges.map((badge) => (
-                        <StatusBadge key={badge} variant={badgeVariant(badge)}>
-                          {badge}
-                        </StatusBadge>
-                      ))}
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4 text-sm">
-                      <div>
-                        <div className="text-[11px] text-muted-foreground">Task result</div>
-                        <div className="mt-1 font-medium">{record.taskResult ?? "Evidence Collected"}</div>
-                      </div>
-                      <div>
-                        <div className="text-[11px] text-muted-foreground">Evidence count</div>
-                        <div className="mt-1 font-medium">{record.evidenceCount}</div>
-                      </div>
-                      <div className="col-span-2">
-                        <div className="text-[11px] text-muted-foreground">Last updated</div>
-                        <div className="mt-1 font-medium">{formatDate(record.updatedAt)}</div>
-                      </div>
-                    </div>
-
-                    <div className="grid gap-2 sm:grid-cols-2">
-                      <Button
-                        className="w-full"
-                        onClick={() => setSelectedRecord(derivedRecordsById.get(record.competencyId) ?? record)}
-                      >
-                        <Eye className="mr-1.5 h-4 w-4" />
-                        View Evidence Package
-                      </Button>
-                      <Button variant="outline" className="w-full" onClick={() => setShareRecord(record)}>
-                        <Link2 className="mr-1.5 h-4 w-4" />
-                        Share with Recruiter
-                      </Button>
-                    </div>
-                    <Button variant="ghost" size="sm" className="w-full text-muted-foreground" asChild>
-                      <Link to={`/learner/credential/${encodeURIComponent(credentialIdForRecord(record))}`}>
-                        <FileText className="mr-1.5 h-4 w-4" />
-                        View full credential
-                      </Link>
-                    </Button>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+          </div>
+        </>
+      )}
 
       <WalletEvidenceDialog
-  record={
-    selectedRecord
-      ? (derivedRecordsById.get(selectedRecord.competencyId) ?? selectedRecord)
-      : null
-  }
-  fallbackDid={profile?.did ?? null}
-  open={!!selectedRecord}
-  onOpenChange={(open) => {
-    if (!open) setSelectedRecord(null);
-  }}
-/>
+        record={selectedRecord}
+        fallbackDid={profile?.did ?? null}
+        open={!!selectedRecord}
+        onOpenChange={(open) => {
+          if (!open) setSelectedRecord(null);
+        }}
+      />
 
       <CompetencyShareDialog
         record={shareRecord}
@@ -987,29 +766,11 @@ export default function WalletPage() {
           if (!open) setShareRecord(null);
         }}
         onRecordSynced={(next) => {
-          setRecords((current) => current.map((item) => (item.competencyId === next.competencyId ? next : item)));
-          if (selectedRecord?.competencyId === next.competencyId) setSelectedRecord(next);
-          if (shareRecord?.competencyId === next.competencyId) setShareRecord(next);
+          setRecords((current) => current.map((item) => (
+            item.competencyId === next.competencyId ? next : item
+          )));
         }}
       />
-    </AppShell>
-  );
-}
-
-function Stat({ label, value }: { label: string; value: number }) {
-  return (
-    <div>
-      <div className="text-[11px] text-muted-foreground">{label}</div>
-      <div className="mt-0.5 text-xl font-semibold">{value}</div>
-    </div>
-  );
-}
-
-function Row({ k, v }: { k: string; v: string }) {
-  return (
-    <div className="flex items-center justify-between">
-      <span className="text-muted-foreground">{k}</span>
-      <span className="mono">{v}</span>
-    </div>
+    </LearnerWorkspaceShell>
   );
 }

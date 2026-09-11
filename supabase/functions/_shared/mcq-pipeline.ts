@@ -302,30 +302,31 @@ export function normalizeMcqTest(raw: Record<string, unknown>, skillName: string
 
 export async function generateMcqFromEvidence(params: {
   skillName: string;
-  skillDomain: string;
   classification: ClassificationResult;
   evidenceFiles: EvidenceFile[];
   evidenceLanguages: Record<string, number>;
   repo: string | null;
   taskModel: string;
   variationSeed: string;
-  lmsSnippets?: string[];
+  platformEvidence?: string;
 }): Promise<GeneratedMcqTest> {
   const languageLabel = params.classification.language || params.skillName;
   const evidenceBlock = formatEvidenceForPrompt(params.evidenceFiles, params.evidenceLanguages);
-  const lmsBlock = params.lmsSnippets?.length
-    ? `LMS/Moodle evidence:\n${params.lmsSnippets.slice(0, 5).join("\n")}`
-    : "No LMS/Moodle evidence found";
+  const platformBlock = params.platformEvidence?.trim()
+    || "No platform evidence fetched for this competency name.";
 
   const prompt = `You are generating a secure MCQ competency test for SIJIL.
 
 Unique generation seed: ${params.variationSeed}
 
-Declared competency: ${params.skillName} (${params.skillDomain})
-Primary GitHub repo: ${params.repo ?? "none"}
+PRIMARY TARGET: the declared competency NAME "${params.skillName}".
+Do NOT use a domain, category, or unrelated topic as the test subject.
+Generate questions from this competency name and from the learner's fetched platform data below.
+
+Primary GitHub repo used for source snippets: ${params.repo ?? "none"}
 GitHub evidence files analyzed: ${params.evidenceFiles.length}
 
-Evidence classification:
+Evidence classification from platform data:
 - language: ${params.classification.language}
 - frameworks: ${(params.classification.frameworks ?? []).join(", ") || "none"}
 - patterns_observed: ${(params.classification.patterns_observed ?? []).join(", ") || "none"}
@@ -333,18 +334,23 @@ Evidence classification:
 - evidence_quality: ${params.classification.evidence_quality}
 - reason: ${params.classification.reason}
 
-${lmsBlock}
+Platform evidence fetched for "${params.skillName}":
+${platformBlock}
 
 ${evidenceBlock}
 
-Generate exactly 10 multiple-choice questions for "${params.skillName}".
+Generate exactly 10 multiple-choice questions that test practical knowledge of "${params.skillName}".
 Difficulty mix REQUIRED:
 - 4 easy
 - 4 medium
 - 2 hard
 
 Each question must have exactly 4 options with ids A, B, C, D.
-Questions must reflect the declared competency, classification signals, and GitHub code evidence when available.
+Rules:
+- Every question must be about "${params.skillName}".
+- When GitHub, LMS, Moodle, LinkedIn, or uploaded evidence is present, ground questions in that real work (languages, frameworks, repos, courses, assignments).
+- If platform evidence is missing, still test applied knowledge of "${params.skillName}" itself.
+- Do not ask generic domain-category questions.
 
 Return strict JSON only:
 {
@@ -383,14 +389,13 @@ Return strict JSON only:
 
 export async function generateMcqTask(params: {
   skillName: string;
-  skillDomain: string;
   classification: ClassificationResult;
   evidenceFiles: EvidenceFile[];
   evidenceLanguages: Record<string, number>;
   repo: string | null;
   taskModel: string;
   variationSeed: string;
-  lmsSnippets?: string[];
+  platformEvidence?: string;
 }): Promise<{ test: GeneratedMcqTest; fallback: boolean }> {
   if (!hasAiProviderConfigured()) {
     const test = buildLocalFallbackMcqTest(params.skillName);

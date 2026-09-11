@@ -56,11 +56,15 @@ function toDeclaredSkill(s: SkillApiView): DeclaredSkill {
 }
 
 export async function createSkillApi(
-  skill: Pick<DeclaredSkill, "name" | "domain" | "description">,
+  skill: Pick<DeclaredSkill, "name"> & Partial<Pick<DeclaredSkill, "domain" | "description">>,
 ): Promise<DeclaredSkillResultApiView | null> {
   const result = await tryApiRequest<DeclaredSkillResultApiView>("/skills/declare", {
     method: "POST",
-    body: JSON.stringify(skill),
+    body: JSON.stringify({
+      name: skill.name,
+      domain: skill.domain || "General",
+      description: skill.description || "",
+    }),
   });
   return result
     ? {
@@ -71,7 +75,7 @@ export async function createSkillApi(
 }
 
 export async function declareSkillApi(
-  skill: Pick<DeclaredSkill, "name" | "domain" | "description">,
+  skill: Pick<DeclaredSkill, "name"> & Partial<Pick<DeclaredSkill, "domain" | "description">>,
 ): Promise<DeclaredSkillResultApiView | null> {
   return createSkillApi(skill);
 }

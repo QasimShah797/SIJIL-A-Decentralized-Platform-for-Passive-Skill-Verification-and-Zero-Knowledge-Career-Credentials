@@ -19,14 +19,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -43,12 +35,6 @@ import {
   useLearnerProfile,
   usePeerReviews,
 } from "@/hooks/useLearnerData";
-import {
-  COMPETENCY_DOMAINS,
-  COMPETENCY_DOMAIN_OTHER,
-  resolveCompetencyDomain,
-  splitCompetencyDomain,
-} from "@/lib/competency-domains";
 import { toast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 
@@ -63,20 +49,13 @@ export default function LearnerProfile() {
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [name, setName] = useState("");
-  const [domainSelect, setDomainSelect] = useState("");
-  const [customDomain, setCustomDomain] = useState("");
-  const [desc, setDesc] = useState("");
   const [declareQuery, setDeclareQuery] = useState("");
   const { user } = useAuth();
   const [saving, setSaving] = useState(false);
   const [removeTarget, setRemoveTarget] = useState<DeclaredSkill | null>(null);
   const [removing, setRemoving] = useState(false);
 
-  const resolvedDomain = resolveCompetencyDomain(domainSelect, customDomain);
-  const canSubmit =
-    Boolean(name.trim()) &&
-    Boolean(domainSelect) &&
-    (domainSelect !== COMPETENCY_DOMAIN_OTHER || Boolean(customDomain.trim()));
+  const canSubmit = Boolean(name.trim());
 
   const skillSyncKey = useMemo(() => skills.map((s) => s.id).join("|"), [skills]);
   const decaying = useMemo(() => skills.filter((s) => isSkillDecaying(s)), [skills]);
@@ -147,9 +126,6 @@ export default function LearnerProfile() {
   const resetForm = () => {
     setEditingId(null);
     setName("");
-    setDomainSelect("");
-    setCustomDomain("");
-    setDesc("");
   };
 
   const handleDialogOpenChange = (next: boolean) => {
@@ -164,12 +140,8 @@ export default function LearnerProfile() {
   };
 
   const openEditDialog = (skill: DeclaredSkill) => {
-    const { select, custom } = splitCompetencyDomain(skill.domain);
     setEditingId(skill.id);
     setName(skill.name);
-    setDomainSelect(select);
-    setCustomDomain(custom);
-    setDesc(skill.description ?? "");
     setOpen(true);
   };
 
@@ -177,7 +149,7 @@ export default function LearnerProfile() {
     if (!canSubmit || !user) return;
     setSaving(true);
     try {
-      const payload = { name: name.trim(), domain: resolvedDomain, description: desc.trim() };
+      const payload = { name: name.trim() };
       if (isEditing && editingId) {
         await updateSkill(editingId, payload);
         toast({ title: "Competency updated", description: `${payload.name} saved.` });
@@ -187,7 +159,7 @@ export default function LearnerProfile() {
           title: "Competency claimed",
           description:
             created?.status === "Evidence Linked"
-              ? `${payload.name} added and linked to matching GitHub evidence.`
+              ? `${payload.name} added and linked to matching platform evidence.`
               : `${payload.name} added.`,
         });
       }
@@ -350,14 +322,14 @@ export default function LearnerProfile() {
             <div className="flex-1">
               <h2 className="text-lg font-semibold text-[#023E8A]">Declare a New Competency</h2>
               <p className="text-sm text-[#64748b]">
-                Enter a skill, technology, or domain to begin collecting evidence.
+                Enter a competency name to begin collecting evidence from connected platforms.
               </p>
             </div>
             <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto lg:min-w-[420px]">
               <Input
                 value={declareQuery}
                 onChange={(e) => setDeclareQuery(e.target.value)}
-                placeholder="Enter a skill, technology, or domain…"
+                placeholder="Enter a competency name…"
                 className="h-11 flex-1 rounded-xl border-[#e2e8f0] bg-white"
                 onKeyDown={(e) => {
                   if (e.key === "Enter") openAddDialog(declareQuery);
@@ -396,7 +368,7 @@ export default function LearnerProfile() {
                       </div>
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-medium text-[#023E8A]">{skill.name}</p>
-                        <p className="text-xs text-[#64748b]">{skill.domain}</p>
+                        <p className="text-xs text-[#64748b]">{skill.status}</p>
                       </div>
                       <span className="learner-tag-linked">{statusLabel}</span>
                       <span className="text-[10px] text-[#64748b]">
@@ -454,42 +426,13 @@ export default function LearnerProfile() {
                 onChange={(e) => setName(e.target.value)}
                 placeholder="e.g. TypeScript"
                 className="mt-1.5 rounded-xl"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && canSubmit && !saving) void handleSaveCompetency();
+                }}
               />
-            </div>
-            <div>
-              <Label>Category / Domain</Label>
-              <Select value={domainSelect || undefined} onValueChange={setDomainSelect}>
-                <SelectTrigger className="mt-1.5 rounded-xl">
-                  <SelectValue placeholder="Select a domain" />
-                </SelectTrigger>
-                <SelectContent>
-                  {COMPETENCY_DOMAINS.map((d) => (
-                    <SelectItem key={d} value={d}>
-                      {d}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            {domainSelect === COMPETENCY_DOMAIN_OTHER && (
-              <div>
-                <Label>Enter custom domain</Label>
-                <Input
-                  value={customDomain}
-                  onChange={(e) => setCustomDomain(e.target.value)}
-                  placeholder="e.g. Game Development"
-                  className="mt-1.5 rounded-xl"
-                />
-              </div>
-            )}
-            <div>
-              <Label>Description (optional)</Label>
-              <Textarea
-                value={desc}
-                onChange={(e) => setDesc(e.target.value)}
-                placeholder="Short description"
-                className="mt-1.5 resize-none rounded-xl"
-              />
+              <p className="mt-1.5 text-xs text-[#64748b]">
+                Only the name is required. Matching evidence is pulled from GitHub, LMS, and other connected platforms.
+              </p>
             </div>
           </div>
           <DialogFooter>

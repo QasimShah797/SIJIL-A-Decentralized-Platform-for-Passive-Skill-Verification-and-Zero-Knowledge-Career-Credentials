@@ -222,7 +222,7 @@ export function PracticalTaskCard({
               )}
             </div>
             <p className="mt-0.5 text-xs text-[#64748b]">
-              {skill.domain} · MCQ practical task · {skill.domain}
+              {skill.name} · MCQ from competency name and linked platform evidence
             </p>
             <p className="mt-0.5 text-[11px] text-[#94a3b8]">
               Last related sync: {lastDays === null ? "never" : `${lastDays}d ago`}
@@ -317,6 +317,7 @@ export function AssessmentRulesPanel() {
   const rules = [
     ["Questions per task", "10 MCQ"],
     ["Time per question", `${MCQ_SECONDS_PER_QUESTION} seconds`],
+    ["Based on", "Competency name + platform evidence"],
     ["Delivery", "One at a time"],
   ] as const;
 
@@ -398,7 +399,7 @@ export function EmptyTasksPanel({ onGoProfile }: { onGoProfile: () => void }) {
       <Play className="mb-3 h-8 w-8 text-[#94a3b8]" />
       <p className="font-semibold text-[#0f172a]">No declared competencies</p>
       <p className="mt-1 max-w-sm text-sm text-[#64748b]">
-        Declare a competency on your profile before starting a practical task.
+        Declare a competency by name on your profile before starting a practical task.
       </p>
       <Button className="mt-4 rounded-xl bg-[#023E8A] hover:bg-[#012A5C]" onClick={onGoProfile}>
         Go to profile

@@ -263,3 +263,44 @@
 .learner-sidebar-scroll-light::-webkit-scrollbar-thumb:hover {
   background: rgba(2, 62, 138, 0.22);
 }
+
+.wallet-stepper {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.wallet-stepper-line {
+  flex: 1;
+  height: 2px;
+  background: #bbf7d0;
+}
+
+.wallet-mini-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 36px;
+}
+
+.wallet-mini-bar {
+  width: 6px;
+  border-radius: 9999px;
+  background: #cbd5e1;
+}
+
+.wallet-mini-bar--on {
+  background: #14b8a6;
+}
+
+.wallet-ledger-row {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.learner-stat-card details summary {
+  list-style: none;
+}
+
+.learner-stat-card details summary::-webkit-details-marker {
+  display: none;
+}

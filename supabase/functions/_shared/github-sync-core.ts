@@ -18,18 +18,46 @@ type GitHubConnection = {
   access_token: string;
 };
 
+const SKILL_LANGUAGE_ALIASES: Record<string, string[]> = {
+  react: ["javascript", "typescript", "jsx", "tsx"],
+  "react.js": ["javascript", "typescript", "react"],
+  node: ["javascript", "typescript"],
+  "node.js": ["javascript", "typescript"],
+  typescript: ["javascript", "ts"],
+  javascript: ["typescript", "js"],
+  python: ["django", "flask", "py"],
+  postgresql: ["sql", "postgres"],
+  sql: ["postgresql", "postgres", "mysql"],
+};
+
 function matchSkill(
-  lang: string | null,
+  repo: { language?: string | null; name?: string; full_name?: string; description?: string | null },
   declaredSkills: DeclaredSkillRef[],
 ): DeclaredSkillRef | null {
-  if (!lang) return null;
-  const l = lang.toLowerCase();
-  return (
-    declaredSkills.find((s) => {
-      const n = s.name.toLowerCase();
-      return n === l || n.includes(l) || l.includes(n.split(/[ .&+/]/)[0]);
-    }) ?? null
-  );
+  const haystack = [
+    repo.language,
+    repo.name,
+    repo.full_name,
+    repo.description,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  if (!haystack) return null;
+
+  let best: { skill: DeclaredSkillRef; score: number } | null = null;
+  for (const skill of declaredSkills) {
+    const n = skill.name.trim().toLowerCase();
+    if (!n) continue;
+    let score = 0;
+    if (haystack.includes(n) || n.split(/[ .&+/_-]/).filter(Boolean).some((token) => token.length >= 2 && haystack.includes(token))) {
+      score += 3;
+    }
+    const aliases = SKILL_LANGUAGE_ALIASES[n] ?? [];
+    if (aliases.some((alias) => haystack.includes(alias))) score += 2;
+    if (score > (best?.score ?? 0)) best = { skill, score };
+  }
+  return best?.skill ?? null;
 }
 
 export async function runGitHubSync(
@@ -64,76 +92,82 @@ export async function runGitHubSync(
   const repos = reposResp.ok ? await reposResp.json() : [];
 
   for (const r of repos) {
-    const skill = matchSkill(r.language, declaredSkills);
-    if (!skill) continue;
+    const skill = matchSkill({
+      language: r.language,
+      name: r.name,
+      full_name: r.full_name,
+      description: r.description,
+    }, declaredSkills);
 
     let commitCount: number | null = null;
-    try {
-      const cResp = await fetch(`${GH}/repos/${r.full_name}/commits?per_page=1`, { headers: ghHeaders });
-      if (cResp.ok) {
-        const link = cResp.headers.get("link") ?? "";
-        const m = link.match(/&page=(\d+)>; rel="last"/);
-        if (m) commitCount = parseInt(m[1], 10);
-        else {
-          const arr = await cResp.json().catch(() => []);
-          commitCount = Array.isArray(arr) ? arr.length : null;
-        }
-      }
-    } catch { /* ignore per-repo failures */ }
-
-    try {
-      const commitsResp = await fetch(
-        `${GH}/repos/${r.full_name}/commits?author=${connection.github_username}&per_page=30`,
-        { headers: ghHeaders },
-      );
-      if (commitsResp.ok) {
-        const commits = await commitsResp.json();
-        if (Array.isArray(commits)) {
-          for (const c of commits) {
-            rows.push({
-              user_id: userId,
-              github_username: connection.github_username,
-              repo_name: r.full_name,
-              activity_type: "commit",
-              activity_title: (c.commit?.message ?? "").split("\n")[0].slice(0, 200) || "Commit",
-              activity_url: c.html_url ?? null,
-              commit_hash: c.sha ?? null,
-              occurred_at: c.commit?.author?.date ?? null,
-              external_id: `commit:${c.sha}`,
-            });
+    if (skill) {
+      try {
+        const cResp = await fetch(`${GH}/repos/${r.full_name}/commits?per_page=1`, { headers: ghHeaders });
+        if (cResp.ok) {
+          const link = cResp.headers.get("link") ?? "";
+          const m = link.match(/&page=(\d+)>; rel="last"/);
+          if (m) commitCount = parseInt(m[1], 10);
+          else {
+            const arr = await cResp.json().catch(() => []);
+            commitCount = Array.isArray(arr) ? arr.length : null;
           }
         }
-      }
-    } catch { /* ignore per-repo commit failures */ }
+      } catch { /* ignore per-repo failures */ }
 
-    try {
-      const contribResp = await fetch(`${GH}/repos/${r.full_name}/contributors?per_page=30`, { headers: ghHeaders });
-      if (contribResp.ok) {
-        const contribs = await contribResp.json();
-        if (Array.isArray(contribs)) {
-          for (const c of contribs) {
-            if (!c?.login) continue;
-            const resolvedEmail = await resolveGitHubUserEmail(
-              c.login as string,
-              connection.access_token,
-              r.full_name as string,
-            );
-            contributorRows.push({
-              user_id: userId,
-              repo_id: r.id,
-              full_name: c.login as string,
-              github_url: r.html_url,
-              contributor_login: c.login,
-              contributor_avatar_url: c.avatar_url ?? null,
-              contributor_html_url: c.html_url ?? null,
-              contributor_email: resolvedEmail,
-              contributions: c.contributions ?? 0,
-              synced_at: new Date().toISOString(),
-            });
+      try {
+        const commitsResp = await fetch(
+          `${GH}/repos/${r.full_name}/commits?author=${connection.github_username}&per_page=30`,
+          { headers: ghHeaders },
+        );
+        if (commitsResp.ok) {
+          const commits = await commitsResp.json();
+          if (Array.isArray(commits)) {
+            for (const c of commits) {
+              rows.push({
+                user_id: userId,
+                github_username: connection.github_username,
+                repo_name: r.full_name,
+                activity_type: "commit",
+                activity_title: (c.commit?.message ?? "").split("\n")[0].slice(0, 200) || "Commit",
+                activity_url: c.html_url ?? null,
+                commit_hash: c.sha ?? null,
+                occurred_at: c.commit?.author?.date ?? null,
+                external_id: `commit:${c.sha}`,
+              });
+            }
           }
         }
-      }
-    } catch { /* ignore contributor failures */ }
+      } catch { /* ignore per-repo commit failures */ }
+
+      try {
+        const contribResp = await fetch(`${GH}/repos/${r.full_name}/contributors?per_page=30`, { headers: ghHeaders });
+        if (contribResp.ok) {
+          const contribs = await contribResp.json();
+          if (Array.isArray(contribs)) {
+            for (const c of contribs) {
+              if (!c?.login) continue;
+              const resolvedEmail = await resolveGitHubUserEmail(
+                c.login as string,
+                connection.access_token,
+                r.full_name as string,
+              );
+              contributorRows.push({
+                user_id: userId,
+                repo_id: r.id,
+                full_name: c.login as string,
+                github_url: r.html_url,
+                contributor_login: c.login,
+                contributor_avatar_url: c.avatar_url ?? null,
+                contributor_html_url: c.html_url ?? null,
+                contributor_email: resolvedEmail,
+                contributions: c.contributions ?? 0,
+                synced_at: new Date().toISOString(),
+              });
+            }
+          }
+        }
+      } catch { /* ignore contributor failures */ }
+    }
 
     repoRows.push({
       user_id: userId,

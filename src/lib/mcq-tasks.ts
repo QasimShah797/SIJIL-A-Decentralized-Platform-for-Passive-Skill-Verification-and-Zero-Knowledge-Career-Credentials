@@ -156,15 +156,25 @@ export async function generateSecureMcqTask(
   repos: { name: string; language: string | null; full_name: string }[],
   invoke: (body: Record<string, unknown>) => Promise<{ data: Record<string, unknown> | null; error: Error | null }>,
 ): Promise<McqTask> {
-  const matchedRepos = repos.filter((r) =>
-    r.language?.toLowerCase().includes(skill.name.toLowerCase())
-    || skill.name.toLowerCase().includes((r.language ?? "").toLowerCase()),
-  );
+  const skillName = skill.name.trim().toLowerCase();
+  const matchedRepos = repos.filter((r) => {
+    const language = (r.language ?? "").toLowerCase();
+    const name = (r.name ?? "").toLowerCase();
+    const fullName = (r.full_name ?? "").toLowerCase();
+    if (!skillName) return false;
+    return (
+      name.includes(skillName)
+      || skillName.includes(name)
+      || fullName.includes(skillName)
+      || language.includes(skillName)
+      || skillName.includes(language)
+    );
+  });
 
   const { data, error } = await invoke({
     action: "generate",
     taskType: "mcq",
-    skill: { id: skill.id, name: skill.name, domain: skill.domain ?? "General" },
+    skill: { id: skill.id, name: skill.name },
     declaredSkill: skill.name,
     repos: matchedRepos.length ? matchedRepos : repos,
   });

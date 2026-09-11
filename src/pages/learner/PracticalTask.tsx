@@ -729,7 +729,7 @@ export default function PracticalTask() {
       setNow(Date.now());
       toast({
         title: "MCQ ready",
-        description: `${generatedTask.questions.length} AI-generated questions · ${MCQ_SECONDS_PER_QUESTION}s each.`,
+        description: `${generatedTask.questions.length} questions generated from ${activeSkill.name} and linked platform evidence · ${MCQ_SECONDS_PER_QUESTION}s each.`,
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

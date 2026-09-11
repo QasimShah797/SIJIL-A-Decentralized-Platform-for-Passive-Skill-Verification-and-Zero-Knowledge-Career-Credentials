@@ -157,11 +157,10 @@ export async function fetchDeclaredSkillsForUsers(userIds: string[]): Promise<Re
 
 export async function insertDeclaredSkill(
   userId: string,
-  skill: Pick<DeclaredSkill, "name" | "domain" | "description">,
+  skill: Pick<DeclaredSkill, "name"> & Partial<Pick<DeclaredSkill, "domain" | "description">>,
   allDeclaredSkills?: DeclaredSkill[],
 ): Promise<DeclaredSkill> {
   const normalizedName = skill.name.trim().toLowerCase();
-  const normalizedDomain = (skill.domain || "General").trim().toLowerCase();
   const { data: existing, error: existingError } = await supabase
     .from("declared_skills")
     .select("*")
@@ -169,8 +168,7 @@ export async function insertDeclaredSkill(
   if (existingError) throw existingError;
 
   const existingSkill = (existing ?? []).find((row) =>
-    String(row.name ?? "").trim().toLowerCase() === normalizedName
-    && String(row.domain ?? "General").trim().toLowerCase() === normalizedDomain,
+    String(row.name ?? "").trim().toLowerCase() === normalizedName,
   );
   if (existingSkill) {
     const declared = rowToSkill(existingSkill);
@@ -262,19 +260,21 @@ export async function deleteDeclaredSkill(userId: string, skillId: string): Prom
   if (error) throw error;
 }
 
-/** Update competency name, domain, and description (E1-US3 edit). */
+/** Update competency name. Domain/description stay stored for compatibility. */
 export async function updateDeclaredSkill(
   userId: string,
   skillId: string,
-  skill: Pick<DeclaredSkill, "name" | "domain" | "description">,
+  skill: Pick<DeclaredSkill, "name"> & Partial<Pick<DeclaredSkill, "domain" | "description">>,
 ): Promise<DeclaredSkill> {
+  const patch: Record<string, unknown> = {
+    name: skill.name.trim(),
+  };
+  if (skill.domain != null) patch.domain = skill.domain.trim() || "General";
+  if (skill.description != null) patch.description = skill.description.trim();
+
   const { data, error } = await supabase
     .from("declared_skills")
-    .update({
-      name: skill.name.trim(),
-      domain: skill.domain.trim() || "General",
-      description: skill.description?.trim() ?? "",
-    })
+    .update(patch)
     .eq("user_id", userId)
     .eq("id", skillId)
     .select("*")

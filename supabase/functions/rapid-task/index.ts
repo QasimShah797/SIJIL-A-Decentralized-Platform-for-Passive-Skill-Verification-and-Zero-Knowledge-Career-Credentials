@@ -21,6 +21,7 @@ import {
   deriveWalletRecordStatus,
   type WalletAttemptHistoryItem,
 } from "../_shared/wallet-competency.ts";
+import { collectPlatformEvidenceForTask } from "../_shared/platform-task-evidence.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -58,27 +59,6 @@ async function resolveUser(req: Request) {
   );
 
   return { userId: userData.user.id, admin };
-}
-
-async function fetchLmsSnippets(
-  admin: ReturnType<typeof createClient>,
-  userId: string,
-  skillId?: string,
-): Promise<string[]> {
-  if (!skillId) return [];
-
-  const { data: lmsRows } = await admin
-    .from("lms_evidence")
-    .select("title, source, course_name, fetched_at")
-    .eq("user_id", userId)
-    .eq("linked_skill_id", skillId)
-    .order("fetched_at", { ascending: false })
-    .limit(10);
-
-  return (lmsRows ?? []).map((row) => {
-    const title = row.title ?? row.course_name ?? "LMS item";
-    return `${title} (${row.source ?? "LMS"})`;
-  });
 }
 
 type QueryRow = Record<string, unknown>;
@@ -577,13 +557,6 @@ Deno.serve(async (req) => {
       const skillName = skill.name;
       const skillDomain = skill.domain ?? "General";
 
-      const { classification, evidence, evidenceMeta } = await collectSkillEvidence({
-        skill,
-        repos,
-        githubToken: GITHUB_TOKEN,
-        classifyModel: CLASSIFY_MODEL,
-      });
-
       if (body.taskType === "mcq") {
         const auth = await resolveUser(req);
         if ("error" in auth && auth.error) return auth.error;
@@ -591,28 +564,44 @@ Deno.serve(async (req) => {
 
         const parsed = parseMcqGenerateBody(body);
         const skillId = parsed.skillId;
-        const lmsSnippets = await fetchLmsSnippets(admin, userId, skillId);
+        const platformEvidence = await collectPlatformEvidenceForTask(
+          admin,
+          userId,
+          skillId,
+          skillName,
+        );
+        const reposForEvidence = platformEvidence.githubRepos.length
+          ? platformEvidence.githubRepos
+          : repos;
+
+        const { classification, evidence, evidenceMeta } = await collectSkillEvidence({
+          skill: { name: skillName },
+          repos: reposForEvidence,
+          githubToken: GITHUB_TOKEN,
+          classifyModel: CLASSIFY_MODEL,
+        });
 
         const { test, fallback } = await generateMcqTask({
           skillName,
-          skillDomain,
           classification,
           evidenceFiles: evidence.files,
           evidenceLanguages: evidence.languages,
           repo: evidenceMeta.repo,
           taskModel: TASK_MODEL,
           variationSeed: variationSeed ?? crypto.randomUUID(),
-          lmsSnippets,
+          platformEvidence: platformEvidence.promptBlock,
         });
 
         const learnerQuestions = test.questions.map(stripQuestionForLearner);
         const answerKey = buildAnswerKeyEntries(test.questions);
 
         const evidencePackage = {
+          competencyName: skillName,
           githubEvidence: {
             repo: evidenceMeta.repo,
             fileCount: evidenceMeta.fileCount,
           },
+          platformEvidence: platformEvidence.sources,
           classification,
         };
 
@@ -647,15 +636,28 @@ Deno.serve(async (req) => {
           durationMinutes: test.durationMinutes || 15,
           questions: learnerQuestions,
           skill: skillName,
-          domain: skillDomain,
           classification,
           evidence: {
             repo: evidenceMeta.repo,
             fileCount: evidenceMeta.fileCount,
+            platforms: {
+              github: platformEvidence.sources.github.length,
+              lms: platformEvidence.sources.lms.length,
+              moodle: platformEvidence.sources.moodle.length,
+              uploads: platformEvidence.sources.uploads.length,
+              linkedin: platformEvidence.sources.linkedin ? 1 : 0,
+            },
           },
           fallback,
         });
       }
+
+      const { classification, evidence, evidenceMeta } = await collectSkillEvidence({
+        skill,
+        repos,
+        githubToken: GITHUB_TOKEN,
+        classifyModel: CLASSIFY_MODEL,
+      });
 
       if (!hasAiProviderConfigured()) {
         console.log("No AI providers configured, using local fallback task for:", skillName);

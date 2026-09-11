@@ -128,11 +128,9 @@ export class SkillsService {
 
     if (existingErr) throw new AppError(existingErr.message, 500);
 
-    const existing = (existingSkills ?? []).find((row) => {
-      const sameName = normalizeSkillKey(String(row.name ?? "")) === normalizedName;
-      const sameDomain = normalizeSkillKey(String(row.domain ?? "General")) === normalizeSkillKey(domain);
-      return sameName && sameDomain;
-    });
+    const existing = (existingSkills ?? []).find((row) =>
+      normalizeSkillKey(String(row.name ?? "")) === normalizedName,
+    );
 
     let skill: SkillView;
 

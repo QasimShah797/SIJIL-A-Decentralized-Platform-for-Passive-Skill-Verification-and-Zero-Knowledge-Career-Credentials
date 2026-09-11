@@ -654,7 +654,7 @@ export async function classifyEvidence(
 ): Promise<ClassificationResult> {
   const prompt = `You are a technical evidence classifier for a skills verification platform.
 
-Declared skill: "${skill.name}" (domain: "${skill.domain ?? "General"}")
+Declared competency name: "${skill.name}"
 ${formatEvidenceForPrompt(evidence.files, evidence.languages)}
 
 Analyze ONLY the evidence above. Return strict JSON with exactly these keys:
@@ -691,7 +691,7 @@ export async function generateTask(
   const seed = variationSeed ?? crypto.randomUUID();
   const prompt = `You are creating a unique multiple-choice quiz (MCQs only) for a skills verification platform.
 
-Declared skill: "${skill.name}" (domain: "${skill.domain ?? "General"}")
+Declared competency name: "${skill.name}"
 Unique generation ID: ${seed}
 Evidence classification:
 ${JSON.stringify(classification, null, 2)}
@@ -699,6 +699,7 @@ ${JSON.stringify(classification, null, 2)}
 Generate exactly 5 NEW multiple-choice questions that test practical knowledge of "${skill.name}".
 This generation ID must produce a fresh question set — do not reuse generic textbook or interview questions verbatim.
 Cover different subtopics within ${skill.name} (concepts, usage, best practices, common pitfalls).
+Base questions on the competency name and classified platform evidence, not on a domain category.
 
 Return strict JSON with exactly these keys:
 {
@@ -824,13 +825,17 @@ export function pickBestRepo(repos: RepoRef[], skillName: string): RepoRef | nul
   const scored = repos
     .map((r) => {
       const lang = (r.language ?? "").toLowerCase();
+      const name = (r.name ?? "").toLowerCase();
+      const fullName = (r.full_name ?? "").toLowerCase();
       let score = 0;
+      if (name && (name.includes(skill) || skill.includes(name))) score += 4;
+      if (fullName && (fullName.includes(skill) || skill.includes(fullName.split("/").pop() ?? ""))) score += 3;
       if (lang && (lang.includes(skill) || skill.includes(lang))) score += 3;
-      if (skill.includes("react") && (lang.includes("javascript") || lang.includes("typescript"))) score += 2;
-      if (skill.includes("node") && lang.includes("javascript")) score += 2;
+      if (skill.includes("react") && (lang.includes("javascript") || lang.includes("typescript") || name.includes("react"))) score += 2;
+      if (skill.includes("node") && (lang.includes("javascript") || name.includes("node"))) score += 2;
       if (skill.includes("python") && lang.includes("python")) score += 3;
-      if (skill.includes("java") && lang.includes("java")) score += 3;
-      if (skill.includes("sql") && (lang.includes("sql") || lang.includes("plpgsql"))) score += 3;
+      if (skill.includes("java") && !skill.includes("javascript") && lang.includes("java")) score += 3;
+      if (skill.includes("sql") && (lang.includes("sql") || lang.includes("plpgsql") || name.includes("sql"))) score += 3;
       return { repo: r, score };
     })
     .sort((a, b) => b.score - a.score);

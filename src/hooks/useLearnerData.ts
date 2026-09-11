@@ -144,7 +144,9 @@ export function useDeclaredSkills() {
     refresh();
   }, [refresh]);
 
-  const addSkill = async (skill: Pick<DeclaredSkill, "name" | "domain" | "description">) => {
+  const addSkill = async (
+    skill: Pick<DeclaredSkill, "name"> & Partial<Pick<DeclaredSkill, "domain" | "description">>,
+  ) => {
     if (!userId) return;
     const created = await insertDeclaredSkill(userId, skill, skills);
     setSkills((s) => {
@@ -171,7 +173,7 @@ export function useDeclaredSkills() {
 
   const updateSkill = async (
     skillId: string,
-    skill: Pick<DeclaredSkill, "name" | "domain" | "description">,
+    skill: Pick<DeclaredSkill, "name"> & Partial<Pick<DeclaredSkill, "domain" | "description">>,
   ) => {
     if (!userId) return;
     const updated = await updateDeclaredSkill(userId, skillId, skill);
