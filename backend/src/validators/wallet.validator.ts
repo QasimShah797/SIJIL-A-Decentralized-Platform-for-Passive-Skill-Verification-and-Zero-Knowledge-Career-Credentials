@@ -13,6 +13,11 @@ export const presentationTokenParamSchema = z.object({
   token: z.string().min(16),
 });
 
+export const publicCompetencyParamSchema = z.object({
+  token: z.string().min(16),
+  competencyId: z.string().min(1),
+});
+
 export const shareWalletCompetencySchema = z.object({
   selectionMode: z.enum([
     "basic_summary",

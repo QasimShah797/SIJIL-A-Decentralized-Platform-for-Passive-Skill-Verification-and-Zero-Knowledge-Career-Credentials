@@ -18,7 +18,9 @@
     "express": "^4.21.2",
     "helmet": "^8.0.0",
     "morgan": "^1.10.0",
+    "node-forge": "^1.3.1",
     "nodemailer": "^9.0.3",
+    "pdf-lib": "^1.17.1",
     "zod": "^3.25.76"
   },
   "devDependencies": {
@@ -26,6 +28,7 @@
     "@types/express": "^5.0.0",
     "@types/morgan": "^1.9.9",
     "@types/node": "^22.16.5",
+    "@types/node-forge": "^1.3.14",
     "@types/nodemailer": "^8.0.1",
     "tsx": "^4.19.2",
     "typescript": "^5.8.3"

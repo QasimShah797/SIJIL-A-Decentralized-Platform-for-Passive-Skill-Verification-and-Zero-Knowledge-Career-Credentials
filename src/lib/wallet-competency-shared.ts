@@ -40,6 +40,8 @@ export const WALLET_SHARE_FIELD_IDS = [
   "learner_skills_summary",
   "learner_career_goal",
   "learner_did",
+  "learner_contact",
+  "learner_photo",
   "timestamps",
   "credential_metadata",
 ] as const;

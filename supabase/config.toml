@@ -8,3 +8,18 @@ verify_jwt = false
 
 [functions.linkedin-oauth-callback]
 verify_jwt = false
+
+[functions.public-credential]
+verify_jwt = false
+
+[functions.public-competency]
+verify_jwt = false
+
+[functions.resume-pdf]
+verify_jwt = false
+
+[functions.apple-wallet-pass]
+verify_jwt = false
+
+[functions.google-wallet-pass]
+verify_jwt = false

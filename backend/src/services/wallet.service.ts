@@ -7,7 +7,7 @@ import {
   hashDisclosurePayload,
   verifySelectiveDisclosureProof,
 } from "./proof.service";
-import { getRequestSupabase } from "../config/supabase";
+import { getRequestSupabase, getServiceSupabase, runWithServiceDb } from "../config/supabase";
 import { resolveLearnerDisplayName } from "../utils/learnerDisplayName";
 import {
   aggregateLmsEvidenceForCompetency,
@@ -18,21 +18,33 @@ import {
   logWalletLoad,
   splitEvidenceRecordsBySource,
 } from "../utils/wallet-evidence-mapping";
-import type {
-  PublicPresentationVerification,
-  PublicPresentationView,
-  ShareWalletCompetencyInput,
-  ShareWalletCompetencyResult,
-  WalletAttemptHistoryItem,
-  WalletCompetencyDetailView,
-  WalletCompetencyRecordView,
-  WalletEvidenceSummary,
-  WalletPracticalTaskStatus,
-  WalletRecordStatus,
-  WalletShareFieldId,
-  WalletShareRecordView,
-  WalletSourceBadge,
+import {
+  WALLET_SHARE_FIELD_IDS,
+  type PublicPresentationVerification,
+  type PublicPresentationView,
+  type ShareWalletCompetencyInput,
+  type ShareWalletCompetencyResult,
+  type WalletAttemptHistoryItem,
+  type WalletCompetencyDetailView,
+  type WalletCompetencyRecordView,
+  type WalletEvidenceSummary,
+  type WalletPracticalTaskStatus,
+  type WalletRecordStatus,
+  type WalletShareFieldId,
+  type WalletShareRecordView,
+  type WalletSourceBadge,
 } from "../types/wallet.types";
+import type {
+  PublicCompetencyResponse,
+  PublicCredentialResponse,
+} from "../types/public-credential.types";
+import {
+  atsResumeToPlainText,
+  buildAtsResume,
+  buildEvidenceLedger,
+  competencyFromSharePayload,
+} from "../utils/public-credential-map";
+import { walletExportAvailability } from "./wallet-pass.service";
 
 type DbRow = Record<string, unknown>;
 
@@ -475,26 +487,77 @@ function rowToWalletRecord(row: PersistedWalletRow, summary: WalletEvidenceSumma
   };
 }
 
+type LearnerDisclosureContext = {
+  displayName: string | null;
+  institution: string | null;
+  program: string | null;
+  cityCountry: string | null;
+  skillsSummary: string | null;
+  careerGoal: string | null;
+  email: string | null;
+  phone: string | null;
+  photoUrl: string | null;
+};
+
+function buildSkillEvidenceSlice(
+  record: WalletCompetencyRecordView,
+  selectedFields: WalletShareFieldId[],
+): Record<string, unknown> | undefined {
+  const hasField = (field: WalletShareFieldId) => selectedFields.includes(field);
+  const evidence: Record<string, unknown> = {};
+  if (hasField("github_evidence") || hasField("complete_evidence_package")) {
+    const githubEvidence = sanitizeForDisclosure({
+      repos: record.evidencePackage.github.repos,
+      activities: record.evidencePackage.github.activities,
+      evidenceRecords: record.evidencePackage.github.evidenceRecords,
+      reviews: record.evidencePackage.github.reviews,
+    });
+    if (githubEvidence) evidence.github = githubEvidence;
+  }
+  if (hasField("lms_evidence") || hasField("complete_evidence_package")) {
+    const lmsEvidence = sanitizeForDisclosure({
+      evidence: record.evidencePackage.lms.evidence,
+      courses: record.evidencePackage.lms.courses,
+      assignments: record.evidencePackage.lms.assignments,
+      grades: record.evidencePackage.lms.grades,
+      importedEvidence: record.evidencePackage.lms.importedEvidence,
+    });
+    if (lmsEvidence) evidence.lms = lmsEvidence;
+  }
+  if (hasField("practical_task_result") || hasField("complete_evidence_package")) {
+    const practicalTask = sanitizeForDisclosure({
+      latestAttempt: record.evidencePackage.practicalTask.latestAttempt,
+      attemptHistory: record.evidencePackage.practicalTask.attemptHistory,
+    });
+    if (practicalTask) evidence.practicalTask = practicalTask;
+  }
+  if (hasField("peer_reviews") || hasField("complete_evidence_package")) {
+    const peerReviews = sanitizeForDisclosure(record.evidencePackage.peerReviews);
+    if (peerReviews) evidence.peerReviews = peerReviews;
+  }
+  if (hasField("teacher_feedback") || hasField("complete_evidence_package")) {
+    const teacherFeedback = sanitizeForDisclosure(record.evidencePackage.teacherFeedback);
+    if (teacherFeedback) evidence.teacherFeedback = teacherFeedback;
+  }
+  return Object.keys(evidence).length > 0 ? evidence : undefined;
+}
+
 function buildDisclosedPayload(
   record: WalletCompetencyRecordView,
   selectedFields: WalletShareFieldId[],
-  learnerContext?: {
-    displayName: string | null;
-    institution: string | null;
-    program: string | null;
-    cityCountry: string | null;
-    skillsSummary?: string | null;
-    careerGoal?: string | null;
-  },
+  learnerContext?: LearnerDisclosureContext,
+  siblingRecords: WalletCompetencyRecordView[] = [],
 ): Record<string, unknown> {
   const hasField = (field: WalletShareFieldId) => selectedFields.includes(field);
   const payload: Record<string, unknown> = {};
 
-  const competency: Record<string, unknown> = {};
+  const competency: Record<string, unknown> = {
+    competencyId: record.competencyId,
+  };
   if (hasField("competency_name")) competency.name = record.competencyName;
   if (hasField("competency_domain")) competency.domain = record.domain;
   if (hasField("competency_description") && record.description) competency.description = record.description;
-  if (Object.keys(competency).length > 0) payload.competency = competency;
+  if (Object.keys(competency).length > 1 || hasField("competency_name")) payload.competency = competency;
 
   const learner: Record<string, unknown> = {};
   if (hasField("learner_did") && record.learnerDid) learner.did = record.learnerDid;
@@ -504,6 +567,18 @@ function buildDisclosedPayload(
   if (hasField("learner_location") && learnerContext?.cityCountry) learner.cityCountry = learnerContext.cityCountry;
   if (hasField("learner_skills_summary") && learnerContext?.skillsSummary) learner.skillsSummary = learnerContext.skillsSummary;
   if (hasField("learner_career_goal") && learnerContext?.careerGoal) learner.careerGoal = learnerContext.careerGoal;
+  if (hasField("learner_photo")) {
+    learner.photoHidden = false;
+    if (learnerContext?.photoUrl) learner.photoUrl = learnerContext.photoUrl;
+  } else {
+    learner.photoHidden = true;
+  }
+  if (hasField("learner_contact")) {
+    const contact: Record<string, unknown> = {};
+    if (learnerContext?.email) contact.email = learnerContext.email;
+    if (learnerContext?.phone) contact.phone = learnerContext.phone;
+    if (Object.keys(contact).length > 0) learner.contact = contact;
+  }
   if (Object.keys(learner).length > 0) payload.learner = learner;
 
   const status: Record<string, unknown> = {};
@@ -581,20 +656,123 @@ function buildDisclosedPayload(
     if (metadata) payload.credentialMetadata = metadata;
   }
 
+  const includeSiblingSkills = hasField("competency_name")
+    || hasField("learner_skills_summary")
+    || hasField("complete_evidence_package");
+  const skillRows: Record<string, unknown>[] = [];
+  if (hasField("competency_name") || hasField("complete_evidence_package")) {
+    const primarySkill: Record<string, unknown> = {
+      competencyId: record.competencyId,
+      primary: true,
+      evidenceBacked: record.evidenceCount > 0,
+    };
+    if (hasField("competency_name")) primarySkill.name = record.competencyName;
+    if (hasField("competency_domain")) primarySkill.domain = record.domain;
+    if (hasField("competency_description") && record.description) primarySkill.description = record.description;
+    const primaryEvidence = buildSkillEvidenceSlice(record, selectedFields);
+    if (primaryEvidence) primarySkill.evidence = primaryEvidence;
+    skillRows.push(primarySkill);
+  }
+  if (includeSiblingSkills) {
+    for (const sibling of siblingRecords) {
+      if (sibling.competencyId === record.competencyId) continue;
+      const row: Record<string, unknown> = {
+        competencyId: sibling.competencyId,
+        primary: false,
+        evidenceBacked: sibling.evidenceCount > 0,
+        name: sibling.competencyName,
+      };
+      if (hasField("competency_domain") && sibling.domain) row.domain = sibling.domain;
+      const siblingEvidence = buildSkillEvidenceSlice(sibling, selectedFields);
+      if (siblingEvidence) row.evidence = siblingEvidence;
+      skillRows.push(row);
+    }
+  }
+  if (skillRows.length > 0) payload.skills = skillRows;
+
   return payload;
 }
 
-async function loadLearnerDisclosureContext(userId: string): Promise<{
-  displayName: string | null;
-  institution: string | null;
-  program: string | null;
-  cityCountry: string | null;
-  skillsSummary: string | null;
-  careerGoal: string | null;
-}> {
+async function hydrateSharedWalletPayload(row: PresentationRow): Promise<Record<string, unknown>> {
+  const payload: Record<string, unknown> = { ...row.disclosed_payload };
+  let records: WalletCompetencyRecordView[] = [];
+  try {
+    records = await runWithServiceDb(() => loadAggregatedWallet(row.learner_id));
+  } catch {
+    return payload;
+  }
+  if (records.length === 0) return payload;
+
+  const selected = row.selected_fields.length > 0 ? row.selected_fields : [];
+  const hasEvidenceField = selected.some((field) =>
+    field === "github_evidence"
+    || field === "lms_evidence"
+    || field === "practical_task_result"
+    || field === "peer_reviews"
+    || field === "teacher_feedback"
+    || field === "complete_evidence_package",
+  );
+  const fields: WalletShareFieldId[] = hasEvidenceField
+    ? [...new Set([...selected, "competency_name", "competency_domain"])]
+    : [...new Set([
+      ...selected,
+      "competency_name",
+      "competency_domain",
+      "github_evidence",
+      "lms_evidence",
+      "practical_task_result",
+      "peer_reviews",
+      "teacher_feedback",
+      "complete_evidence_package",
+    ])];
+  const primaryId = row.competency_id;
+  payload.skills = records
+    .filter((record) => record.competencyName.trim())
+    .map((record) => ({
+      competencyId: record.competencyId,
+      name: record.competencyName,
+      domain: record.domain,
+      description: record.description,
+      primary: record.competencyId === primaryId,
+      evidenceBacked: record.evidenceCount > 0,
+      evidence: buildSkillEvidenceSlice(record, fields),
+    }));
+
+  const existingEvidence = asRecord(payload.evidence) ?? {};
+  const existingGithub = asRecord(existingEvidence.github) ?? {};
+  const existingLms = asRecord(existingEvidence.lms) ?? {};
+  payload.evidence = {
+    ...existingEvidence,
+    github: {
+      ...existingGithub,
+      repos: records.flatMap((record) => record.evidencePackage.github.repos),
+    },
+    lms: {
+      ...existingLms,
+      courses: records.flatMap((record) => record.evidencePackage.lms.courses),
+      assignments: records.flatMap((record) => record.evidencePackage.lms.assignments),
+    },
+  };
+
+  const credentials = records.flatMap((record) => record.evidencePackage.credentialMetadata);
+  if (credentials.length > 0) payload.credentialMetadata = credentials;
+
+  const primary = records.find((record) => record.competencyId === primaryId);
+  if (primary) {
+    const competency = asRecord(payload.competency) ?? {};
+    competency.competencyId = primary.competencyId;
+    if (primary.competencyName) competency.name = primary.competencyName;
+    if (primary.domain) competency.domain = primary.domain;
+    payload.competency = competency;
+  }
+
+  return payload;
+}
+
+async function loadLearnerDisclosureContext(userId: string): Promise<LearnerDisclosureContext> {
   const { data, error } = await db()
     .from("learner_profiles")
-    .select("first_name, last_name, username, university_email, institution_name, program, city_country, skills_summary, career_goal")
+    .select("first_name, last_name, username, university_email, contact_number, institution_name, program, city_country, skills_summary, career_goal, avatar_url")
     .eq("user_id", userId)
     .maybeSingle();
 
@@ -606,6 +784,9 @@ async function loadLearnerDisclosureContext(userId: string): Promise<{
       cityCountry: null,
       skillsSummary: null,
       careerGoal: null,
+      email: null,
+      phone: null,
+      photoUrl: null,
     };
   }
 
@@ -618,7 +799,131 @@ async function loadLearnerDisclosureContext(userId: string): Promise<{
     cityCountry: asNullableText(row.city_country),
     skillsSummary: asNullableText(row.skills_summary),
     careerGoal: asNullableText(row.career_goal),
+    email: asNullableText(row.university_email),
+    phone: asNullableText(row.contact_number),
+    photoUrl: await resolvePublicPhotoUrl(userId, asNullableText(row.avatar_url)),
   };
+}
+
+const PHOTO_EXTS = ["jpg", "jpeg", "png", "webp", "gif"] as const;
+
+function avatarPathFromUrl(url: string): string | null {
+  try {
+    const parsed = new URL(url);
+    const match = parsed.pathname.match(/\/profile-avatars\/(.+)$/);
+    if (match?.[1]) return decodeURIComponent(match[1]);
+  } catch {
+    // stored value may already be a storage path
+  }
+  if (!url.includes("://") && url.includes("/")) return url.replace(/^\/+/, "");
+  return null;
+}
+
+function candidateAvatarPaths(userId: string, storedUrl: string | null): string[] {
+  const paths: string[] = [];
+  const fromUrl = storedUrl ? avatarPathFromUrl(storedUrl) : null;
+  if (fromUrl) paths.push(fromUrl);
+  for (const ext of PHOTO_EXTS) {
+    const candidate = `${userId}/avatar.${ext}`;
+    if (!paths.includes(candidate)) paths.push(candidate);
+  }
+  return paths;
+}
+
+async function loadGithubAvatarUrl(userId: string): Promise<string | null> {
+  const { data, error } = await getServiceSupabase()
+    .from("github_connections")
+    .select("github_avatar_url")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error || !data) return null;
+  return asNullableText((data as Record<string, unknown>).github_avatar_url);
+}
+
+async function signAvatarPath(path: string): Promise<string | null> {
+  const { data, error } = await getServiceSupabase()
+    .storage
+    .from("profile-avatars")
+    .createSignedUrl(path, 60 * 60 * 24 * 14);
+  return !error && data?.signedUrl ? data.signedUrl : null;
+}
+
+async function resolvePublicPhotoUrl(userId: string, storedUrl: string | null): Promise<string | null> {
+  const { data: listed } = await getServiceSupabase()
+    .storage
+    .from("profile-avatars")
+    .list(userId, { limit: 20 });
+  const existing = (listed ?? []).map((file) => `${userId}/${file.name}`);
+  for (const path of candidateAvatarPaths(userId, storedUrl)) {
+    if (existing.includes(path)) {
+      const signed = await signAvatarPath(path);
+      if (signed) return signed;
+    }
+  }
+  for (const path of existing) {
+    if (!path.includes("/avatar.")) continue;
+    const signed = await signAvatarPath(path);
+    if (signed) return signed;
+  }
+  if (storedUrl) return storedUrl;
+  return loadGithubAvatarUrl(userId);
+}
+
+async function downloadLearnerPhotoBytes(
+  userId: string,
+  storedUrl: string | null,
+): Promise<{ bytes: Uint8Array; contentType: string } | null> {
+  const service = getServiceSupabase();
+  for (const path of candidateAvatarPaths(userId, storedUrl)) {
+    const { data, error } = await service.storage.from("profile-avatars").download(path);
+    if (error || !data) continue;
+    const bytes = new Uint8Array(await data.arrayBuffer());
+    if (bytes.length === 0) continue;
+    const contentType = data.type && data.type !== "application/octet-stream"
+      ? data.type
+      : guessImageType(path, bytes);
+    return { bytes, contentType };
+  }
+
+  const fallbackUrl = storedUrl || await loadGithubAvatarUrl(userId);
+  if (!fallbackUrl) return null;
+  try {
+    const response = await fetch(fallbackUrl);
+    if (!response.ok) return null;
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    if (bytes.length === 0) return null;
+    return {
+      bytes,
+      contentType: response.headers.get("content-type") || guessImageType(fallbackUrl, bytes),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function guessImageType(path: string, bytes: Uint8Array): string {
+  if (bytes[0] === 0x89 && bytes[1] === 0x50) return "image/png";
+  if (bytes[0] === 0xff && bytes[1] === 0xd8) return "image/jpeg";
+  if (bytes[0] === 0x47 && bytes[1] === 0x49) return "image/gif";
+  if (path.toLowerCase().includes(".png")) return "image/png";
+  if (path.toLowerCase().includes(".webp")) return "image/webp";
+  return "image/jpeg";
+}
+
+function learnerPhotoHidden(payload: Record<string, unknown>): boolean {
+  const learner = payload.learner;
+  return Boolean(learner && typeof learner === "object" && !Array.isArray(learner)
+    && (learner as Record<string, unknown>).photoHidden === true);
+}
+
+async function loadLearnerPhotoUrl(userId: string): Promise<string | null> {
+  const { data } = await getServiceSupabase()
+    .from("learner_profiles")
+    .select("avatar_url")
+    .eq("user_id", userId)
+    .maybeSingle();
+  const storedUrl = asNullableText((data as Record<string, unknown> | null)?.avatar_url);
+  return resolvePublicPhotoUrl(userId, storedUrl);
 }
 
 async function listSharesForCompetency(
@@ -1210,18 +1515,7 @@ function buildVerificationResult(params: {
   };
 }
 
-async function loadPresentationByToken(token: string): Promise<PresentationRow> {
-  const tokenHash = generateSha256Hash(token);
-  const row = await safeFetchSingle("selective_disclosure_presentations", () =>
-    db()
-      .from("selective_disclosure_presentations")
-      .select("*")
-      .eq("share_token_hash", tokenHash)
-      .maybeSingle(),
-  );
-
-  if (!row) throw new AppError("Presentation not found", 404);
-
+function mapPresentationRow(row: DbRow): PresentationRow {
   return {
     id: asText(row.id),
     learner_id: asText(row.learner_id),
@@ -1242,6 +1536,28 @@ async function loadPresentationByToken(token: string): Promise<PresentationRow> 
     created_at: asNullableText(row.created_at) ?? new Date().toISOString(),
     updated_at: asNullableText(row.updated_at) ?? asNullableText(row.created_at) ?? new Date().toISOString(),
   };
+}
+
+async function loadPresentationByToken(token: string): Promise<PresentationRow> {
+  const tokenHash = generateSha256Hash(token);
+  const clients = [getServiceSupabase(), getRequestSupabase()];
+  for (const client of clients) {
+    const { data, error } = await client
+      .from("selective_disclosure_presentations")
+      .select("*")
+      .eq("share_token_hash", tokenHash)
+      .maybeSingle();
+    if (error) {
+      if (env.NODE_ENV === "development") {
+        console.warn("[wallet service] token lookup failed:", error.message);
+      }
+      continue;
+    }
+    const row = asRecord(data);
+    if (row) return mapPresentationRow(row);
+  }
+
+  throw new AppError("Presentation not found", 404);
 }
 
 export class WalletService {
@@ -1270,9 +1586,17 @@ export class WalletService {
     competencyId: string,
     input: ShareWalletCompetencyInput,
   ): Promise<ShareWalletCompetencyResult> {
-    const record = await this.syncCompetency(userId, competencyId);
+    const records = await loadAggregatedWallet(userId);
+    const record = records.find((item) => item.competencyId === competencyId);
+    if (!record) throw new AppError("Competency wallet record not found", 404);
+    await persistWalletRecord(record);
     const learnerContext = await loadLearnerDisclosureContext(userId);
-    const disclosedPayload = buildDisclosedPayload(record, input.selectedFields, learnerContext);
+    const disclosedPayload = buildDisclosedPayload(
+      record,
+      input.selectedFields,
+      learnerContext,
+      records,
+    );
 
     if (Object.keys(disclosedPayload).length === 0) {
       throw new AppError("Selected fields did not produce a shareable payload", 400);
@@ -1317,7 +1641,7 @@ export class WalletService {
 
     return {
       shareId: asText((data as DbRow).id),
-      shareUrl: `${env.FRONTEND_URL.replace(/\/$/, "")}/recruiter/verify/${encodeURIComponent(token)}`,
+      shareUrl: `${env.FRONTEND_URL.replace(/\/$/, "")}/credential/${encodeURIComponent(token)}`,
       token,
       tokenHint: token.slice(0, 8),
       proofType: "SignedSelectiveDisclosure",
@@ -1385,6 +1709,232 @@ export class WalletService {
       verification,
     };
   }
+
+  async getPublicCredential(token: string): Promise<PublicCredentialResponse> {
+    const row = await loadPresentationByToken(token);
+    return await this.toPublicCredential(token, row);
+  }
+
+  async getPublicResumePhoto(token: string): Promise<{ bytes: Uint8Array; contentType: string } | null> {
+    const row = await loadPresentationByToken(token);
+    if (row.revoked_at || (row.expires_at && new Date(row.expires_at).getTime() < Date.now())) {
+      return null;
+    }
+    if (learnerPhotoHidden(row.disclosed_payload)) return null;
+    const storedUrl = asNullableText(
+      (row.disclosed_payload.learner && typeof row.disclosed_payload.learner === "object"
+        ? (row.disclosed_payload.learner as Record<string, unknown>).photoUrl
+        : null),
+    );
+    return downloadLearnerPhotoBytes(row.learner_id, storedUrl);
+  }
+
+  async getPublicCompetency(token: string, competencyId: string): Promise<PublicCompetencyResponse> {
+    const row = await loadPresentationByToken(token);
+    const verification = buildVerificationResult({
+      row,
+      disclosedPayload: row.disclosed_payload,
+    });
+    const verifiedAt = new Date().toISOString();
+
+    if (verification.revoked) {
+      return {
+        status: "revoked",
+        verified: false,
+        verifiedAt,
+        competency: null,
+        ledger: null,
+      };
+    }
+    if (verification.expired) {
+      return {
+        status: "expired",
+        verified: false,
+        verifiedAt,
+        competency: null,
+        ledger: null,
+      };
+    }
+    const payload = await hydrateSharedWalletPayload(row);
+    const competency = competencyFromSharePayload(
+      payload,
+      competencyId,
+      row.competency_id,
+    );
+    if (!competency) {
+      throw new AppError("This competency was not included in the share", 404);
+    }
+
+    return {
+      status: "valid",
+      verified: verification.result === "Valid Proof",
+      verifiedAt,
+      competency,
+      ledger: buildEvidenceLedger(payload, competencyId, row.selected_fields),
+    };
+  }
+
+  async getOwnerWalletResume(userId: string): Promise<{
+    resume: PublicCredentialResponse["resume"];
+    resumeText: string | null;
+    competencyCount: number;
+  }> {
+    const records = await loadAggregatedWallet(userId);
+    if (records.length === 0) {
+      throw new AppError("No competency records to export", 404);
+    }
+
+    const learnerContext = await loadLearnerDisclosureContext(userId);
+    const allFields = [...WALLET_SHARE_FIELD_IDS];
+    const primary = records[0];
+    const payload = buildDisclosedPayload(primary, allFields, learnerContext, records);
+
+    const skills = records
+      .filter((record) => record.competencyName.trim())
+      .map((record) => ({
+        competencyId: record.competencyId,
+        name: record.competencyName,
+        domain: record.domain,
+        primary: record.competencyId === primary.competencyId,
+        evidenceBacked: record.evidenceCount > 0,
+        evidence: buildSkillEvidenceSlice(record, allFields),
+      }));
+    payload.skills = skills;
+
+    const evidence = (payload.evidence && typeof payload.evidence === "object" && !Array.isArray(payload.evidence))
+      ? payload.evidence as Record<string, unknown>
+      : {};
+    const githubRepos = records.flatMap((record) => record.evidencePackage.github.repos);
+    const lmsCourses = records.flatMap((record) => record.evidencePackage.lms.courses);
+    const lmsAssignments = records.flatMap((record) => record.evidencePackage.lms.assignments);
+    const credentials = records.flatMap((record) => record.evidencePackage.credentialMetadata);
+    evidence.github = {
+      ...((evidence.github && typeof evidence.github === "object") ? evidence.github as Record<string, unknown> : {}),
+      repos: githubRepos,
+    };
+    evidence.lms = {
+      ...((evidence.lms && typeof evidence.lms === "object") ? evidence.lms as Record<string, unknown> : {}),
+      courses: lmsCourses,
+      assignments: lmsAssignments,
+    };
+    payload.evidence = evidence;
+    if (credentials.length > 0) payload.credentialMetadata = credentials;
+    if (learnerContext.photoUrl) {
+      const learner = (payload.learner && typeof payload.learner === "object")
+        ? payload.learner as Record<string, unknown>
+        : {};
+      learner.photoUrl = learnerContext.photoUrl;
+      payload.learner = learner;
+    }
+
+    const resume = buildAtsResume(payload, "wallet", primary.competencyId);
+    return {
+      resume,
+      resumeText: atsResumeToPlainText(resume),
+      competencyCount: records.length,
+    };
+  }
+
+  async getOwnerShareExport(userId: string, shareId: string): Promise<{
+    status: PublicCredentialResponse["status"];
+    resume: PublicCredentialResponse["resume"];
+    resumeText: string | null;
+    shareId: string;
+  }> {
+    const row = await loadPresentationByShareId(userId, shareId);
+    const resolved = await this.toPublicCredential("owner", row);
+    return {
+      status: resolved.status,
+      resume: resolved.resume,
+      resumeText: resolved.resume ? atsResumeToPlainText(resolved.resume) : null,
+      shareId: row.id,
+    };
+  }
+
+  async getOwnerSharePresentation(userId: string, shareId: string): Promise<PresentationRow> {
+    return loadPresentationByShareId(userId, shareId);
+  }
+
+  private async toPublicCredential(token: string, row: PresentationRow): Promise<PublicCredentialResponse> {
+    const verification = buildVerificationResult({
+      row,
+      disclosedPayload: row.disclosed_payload,
+    });
+    const verifiedAt = new Date().toISOString();
+    const walletExport = walletExportAvailability();
+
+    if (verification.revoked) {
+      return {
+        status: "revoked",
+        verified: false,
+        verifiedAt,
+        competencyId: row.competency_id,
+        selectedFields: row.selected_fields,
+        selectionMode: row.selection_mode,
+        resume: null,
+        webView: null,
+        walletExport,
+      };
+    }
+    if (verification.expired) {
+      return {
+        status: "expired",
+        verified: false,
+        verifiedAt,
+        competencyId: row.competency_id,
+        selectedFields: row.selected_fields,
+        selectionMode: row.selection_mode,
+        resume: null,
+        webView: null,
+        walletExport,
+      };
+    }
+
+    const resumeToken = token === "owner" ? row.id : token;
+    const payload = await hydrateSharedWalletPayload(row);
+    const resume = buildAtsResume(payload, resumeToken, row.competency_id, row.selected_fields);
+    if (resume) {
+      if (learnerPhotoHidden(payload)) {
+        resume.photoUrl = undefined;
+      } else {
+        const photoUrl = await loadLearnerPhotoUrl(row.learner_id);
+        if (photoUrl) resume.photoUrl = photoUrl;
+      }
+    }
+    return {
+      status: verification.result === "Valid Proof" ? "valid" : "valid",
+      verified: verification.result === "Valid Proof",
+      verifiedAt,
+      competencyId: row.competency_id,
+      selectedFields: row.selected_fields,
+      selectionMode: row.selection_mode,
+      resume,
+      webView: {
+        disclosedPayload: payload,
+        proofType: row.proof_type || "SignedSelectiveDisclosure",
+        verificationMethod: row.verification_method,
+        createdAt: row.created_at,
+        expiresAt: row.expires_at,
+        payloadHash: row.payload_hash,
+      },
+      walletExport,
+    };
+  }
+}
+
+async function loadPresentationByShareId(userId: string, shareId: string): Promise<PresentationRow> {
+  const row = await safeFetchSingle("selective_disclosure_presentations", () =>
+    db()
+      .from("selective_disclosure_presentations")
+      .select("*")
+      .eq("id", shareId)
+      .eq("learner_id", userId)
+      .maybeSingle(),
+  );
+
+  if (!row) throw new AppError("Presentation not found", 404);
+
+  return mapPresentationRow(row);
 }
 
 export const walletService = new WalletService();

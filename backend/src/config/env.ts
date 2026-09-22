@@ -39,6 +39,14 @@ const envSchema = z.object({
   EMAIL_FROM: z.string().min(1).optional(),
   GITHUB_OAUTH_CLIENT_ID: z.string().min(1).optional(),
   GITHUB_OAUTH_CLIENT_SECRET: z.string().min(1).optional(),
+  APPLE_PASS_CERT: z.string().min(1).optional(),
+  APPLE_PASS_KEY: z.string().min(1).optional(),
+  APPLE_PASS_TYPE_ID: z.string().min(1).optional(),
+  APPLE_PASS_TEAM_ID: z.string().min(1).optional(),
+  APPLE_PASS_WWDR: z.string().min(1).optional(),
+  APPLE_PASS_KEY_PASSPHRASE: z.string().min(1).optional(),
+  GOOGLE_WALLET_ISSUER_ID: z.string().min(1).optional(),
+  GOOGLE_WALLET_SA_KEY: z.string().min(1).optional(),
 });
 
 const parsed = envSchema.safeParse({

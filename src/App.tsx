@@ -30,6 +30,8 @@ import AuthCallback from "./pages/auth/AuthCallback";
 import GitHubPrepare from "./pages/auth/GitHubPrepare";
 import GitHubCallback from "./pages/auth/GitHubCallback";
 import CompetencyPresentationView from "./pages/public/CompetencyPresentationView";
+import PublicCredentialPage from "./pages/public/PublicCredentialPage";
+import PublicCompetencyPage from "./pages/public/PublicCompetencyPage";
 import RecruiterLogin from "./pages/login/RecruiterLogin";
 import RecruiterSearch from "./pages/recruiter/Search";
 import RecruiterCandidateSummary from "./pages/recruiter/CandidateSummary";
@@ -101,6 +103,8 @@ const App = () => (
           <Route path="/recruiter/candidate/:id" element={<RR><RecruiterCandidateSummary /></RR>} />
           <Route path="/recruiter/compare" element={<RR><RecruiterCompare /></RR>} />
           <Route path="/recruiter/verify/:token" element={<CompetencyPresentationView />} />
+          <Route path="/credential/:shareToken" element={<PublicCredentialPage />} />
+          <Route path="/credential/:shareToken/competency/:competencyId" element={<PublicCompetencyPage />} />
 
           {/* Legacy institution routes → 404 */}
           <Route path="/login/institution" element={<NotFound />} />

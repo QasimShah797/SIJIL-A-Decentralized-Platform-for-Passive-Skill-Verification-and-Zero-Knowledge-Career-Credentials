@@ -11,7 +11,6 @@ import {
   CheckCircle2,
   ChevronDown,
   ClipboardList,
-  Copy,
   Github,
   GraduationCap,
   Link2,
@@ -19,6 +18,8 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ShareExportActions } from "@/components/public/ShareExportActions";
+import { TrustTierBadge } from "@/components/public/TrustTierBadge";
 import { Switch } from "@/components/ui/switch";
 import {
   Select,
@@ -29,7 +30,7 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import type { WalletCompetencyRecordView } from "@/lib/db/wallet-competency-records";
-import type { WalletEvidenceSummary, WalletShareFieldId } from "@/lib/wallet-competency-shared";
+import type { WalletShareFieldId } from "@/lib/wallet-competency-shared";
 import type { WalletShareRecordView } from "@/services/api/wallet.api";
 
 export type InspectorSource = "github" | "lms" | "task" | "reviews";
@@ -311,12 +312,12 @@ function CommitActivityChart({ points }: { points: CommitChartPoint[] }) {
 }
 
 export function CompetencyPackageCard({
-  summary,
+  competencyName,
   github,
   lmsRows,
   taskLabel,
 }: {
-  summary: WalletEvidenceSummary;
+  competencyName: string;
   github: GithubPackageStats;
   lmsRows: LmsCourseRow[];
   taskLabel: string | null;
@@ -329,7 +330,7 @@ export function CompetencyPackageCard({
     <div className="learner-stat-card p-4">
       <p className="text-sm font-semibold text-[#023E8A]">Evidence Profile</p>
       <p className="mt-0.5 text-xs text-[#64748b]">
-        Unified package anchored to {summary.competency.name} source evidence.
+        Unified package anchored to {competencyName} source evidence.
       </p>
 
       {!hasVerifiedEvidence ? (
@@ -436,6 +437,7 @@ export function EvidenceInspectorCard({
   taskDetail,
   reviews,
   onViewPackage,
+  verifyUrl,
 }: {
   source: InspectorSource;
   onSourceChange: (next: InspectorSource) => void;
@@ -444,7 +446,8 @@ export function EvidenceInspectorCard({
   lmsAssignments: Array<{ name: string; course: string; grade: string }>;
   taskDetail: string | null;
   reviews: Array<{ reviewer: string; text: string }>;
-  onViewPackage: () => void;
+  onViewPackage?: () => void;
+  verifyUrl?: string | null;
 }) {
   const labels: Record<InspectorSource, string> = {
     github: "GitHub",
@@ -457,16 +460,18 @@ export function EvidenceInspectorCard({
     <div className="learner-stat-card p-4">
       <div className="flex items-center justify-between gap-2">
         <p className="text-sm font-semibold text-[#023E8A]">Evidence Inspector</p>
-        <Select value={source} onValueChange={(value) => onSourceChange(value as InspectorSource)}>
-          <SelectTrigger className="h-8 w-[160px] rounded-lg border-[#e2e8f0] text-xs">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {availableSources.map((item) => (
-              <SelectItem key={item} value={item}>{labels[item]}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        {availableSources.length > 0 ? (
+          <Select value={source} onValueChange={(value) => onSourceChange(value as InspectorSource)}>
+            <SelectTrigger className="h-8 w-[160px] rounded-lg border-[#e2e8f0] text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {availableSources.map((item) => (
+                <SelectItem key={item} value={item}>{labels[item]}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : null}
       </div>
 
       <div className="mt-3 max-h-56 space-y-2 overflow-y-auto">
@@ -480,7 +485,10 @@ export function EvidenceInspectorCard({
             rel="noreferrer"
             className="block rounded-lg border border-[#e2e8f0] px-3 py-2"
           >
-            <p className="truncate text-sm font-medium text-[#0f172a]">{repo.name}</p>
+            <div className="flex items-start justify-between gap-2">
+              <p className="truncate text-sm font-medium text-[#0f172a]">{repo.name}</p>
+              <TrustTierBadge trustTier="corroborating" trustTierLabel="Corroborating" />
+            </div>
             <p className="text-[11px] text-[#64748b]">
               {[repo.language, repo.commits != null ? `${repo.commits} commits` : null].filter(Boolean).join(" · ")}
             </p>
@@ -491,28 +499,52 @@ export function EvidenceInspectorCard({
           <p className="text-xs text-[#94a3b8]">No Moodle assignments are linked to this competency.</p>
         ) : lmsAssignments.map((item) => (
           <div key={`${item.course}-${item.name}`} className="rounded-lg border border-[#e2e8f0] px-3 py-2">
-            <p className="text-sm font-medium text-[#0f172a]">{item.name}</p>
+            <div className="flex items-start justify-between gap-2">
+              <p className="text-sm font-medium text-[#0f172a]">{item.name}</p>
+              <TrustTierBadge trustTier="lms_preverified" trustTierLabel="LMS pre-verified" />
+            </div>
             <p className="text-[11px] text-[#64748b]">{item.course} · {item.grade}</p>
           </div>
         )))}
 
         {source === "task" && (
-          <p className="text-sm text-[#334155]">{taskDetail ?? "No practical task result is stored yet."}</p>
+          <div className="rounded-lg border border-[#e2e8f0] px-3 py-2">
+            <div className="mb-2">
+              <TrustTierBadge trustTier="corroborating" trustTierLabel="Corroborating" />
+            </div>
+            <p className="text-sm text-[#334155]">{taskDetail ?? "No practical task result is stored yet."}</p>
+          </div>
         )}
 
         {source === "reviews" && (reviews.length === 0 ? (
           <p className="text-xs text-[#94a3b8]">No peer reviews are linked to this competency.</p>
         ) : reviews.map((review, index) => (
           <div key={`${review.reviewer}-${index}`} className="rounded-lg border border-[#e2e8f0] px-3 py-2">
-            <p className="text-sm font-medium text-[#0f172a]">{review.reviewer}</p>
+            <div className="flex items-start justify-between gap-2">
+              <p className="text-sm font-medium text-[#0f172a]">{review.reviewer}</p>
+              <TrustTierBadge trustTier="corroborating" trustTierLabel="Corroborating" />
+            </div>
             <p className="mt-1 text-xs text-[#64748b]">{review.text}</p>
           </div>
         )))}
       </div>
 
-      <Button variant="outline" size="sm" className="mt-3 w-full rounded-xl" onClick={onViewPackage}>
-        Verify at source
-      </Button>
+      {onViewPackage || verifyUrl ? (
+        <Button
+          variant="outline"
+          size="sm"
+          className="mt-3 w-full rounded-xl"
+          onClick={() => {
+            if (onViewPackage) {
+              onViewPackage();
+              return;
+            }
+            if (verifyUrl) window.open(verifyUrl, "_blank", "noreferrer");
+          }}
+        >
+          Verify at source
+        </Button>
+      ) : null}
     </div>
   );
 }
@@ -520,6 +552,7 @@ export function EvidenceInspectorCard({
 export function OneClickShareCard({
   toggles,
   onToggle,
+  photoPreviewUrl,
   expiresInDays,
   onExpiresChange,
   shareUrl,
@@ -528,12 +561,13 @@ export function OneClickShareCard({
   shares,
   submitting,
   onGenerate,
-  onCopy,
   onRevoke,
-  onCustom,
+  shareToken,
+  shareId,
 }: {
   toggles: ShareToggle[];
   onToggle: (id: WalletShareFieldId, next: boolean) => void;
+  photoPreviewUrl?: string | null;
   expiresInDays: number;
   onExpiresChange: (days: number) => void;
   shareUrl: string | null;
@@ -542,22 +576,44 @@ export function OneClickShareCard({
   shares: WalletShareRecordView[];
   submitting: boolean;
   onGenerate: () => void;
-  onCopy: () => void;
   onRevoke: (shareId: string) => void;
-  onCustom: () => void;
+  shareToken?: string | null;
+  shareId?: string | null;
 }) {
   const activeShare = shares.find((share) => share.shareStatus === "Active");
 
   return (
     <div className="learner-stat-card p-4">
       <p className="text-sm font-semibold text-[#023E8A]">One-Click Share & Link Management</p>
-      <p className="mt-0.5 text-xs text-[#64748b]">Only fields from connected evidence can be shared.</p>
+      <p className="mt-0.5 text-xs text-[#64748b]">
+        Generate a link to share every competency in this wallet with a recruiter.
+      </p>
 
       <div className="mt-4 space-y-3">
         {toggles.map((toggle) => (
-          <label key={toggle.id} className="flex items-center justify-between gap-3">
-            <span className={cn("text-sm", toggle.available ? "text-[#334155]" : "text-[#94a3b8]")}>
-              {toggle.label}
+          <label key={toggle.id} className="flex items-center justify-between gap-3 rounded-xl border border-[#e2e8f0] bg-[#f8fafc] px-3 py-2.5">
+            <span className="flex min-w-0 items-center gap-3">
+              {toggle.id === "learner_photo" && photoPreviewUrl ? (
+                <img
+                  src={photoPreviewUrl}
+                  alt=""
+                  className="h-10 w-10 rounded-lg object-cover"
+                />
+              ) : toggle.id === "learner_photo" ? (
+                <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#e2e8f0] text-[11px] font-semibold text-[#64748b]">
+                  Photo
+                </span>
+              ) : null}
+              <span className="min-w-0">
+                <span className={cn("block text-sm", toggle.available ? "text-[#334155]" : "text-[#94a3b8]")}>
+                  {toggle.enabled ? "Show profile picture" : "Hide profile picture"}
+                </span>
+                <span className="block text-[11px] text-[#94a3b8]">
+                  {toggle.available
+                    ? "Recruiters will see this on the public resume and PDF."
+                    : "Upload a photo on My Profile to include it."}
+                </span>
+              </span>
             </span>
             <Switch
               checked={toggle.enabled}
@@ -585,7 +641,7 @@ export function OneClickShareCard({
       <div className="mt-4 rounded-xl border border-[#e2e8f0] bg-[#f8fafc] p-3">
         <p className="text-[11px] font-medium text-[#64748b]">Shareable link preview</p>
         <p className="mt-1 break-all font-mono text-[11px] text-[#023E8A]">
-          {shareUrl ?? (tokenHint ? `/recruiter/verify/${tokenHint}` : "Generate a link to preview it here.")}
+          {shareUrl ?? (tokenHint ? `Active share · hint ${tokenHint}` : "Generate a link to preview it here.")}
         </p>
         {expiresAt ? (
           <p className="mt-1 text-[11px] text-[#94a3b8]">Expires {formatWhen(expiresAt)}</p>
@@ -595,17 +651,11 @@ export function OneClickShareCard({
       <div className="mt-3 grid gap-2">
         <Button className="rounded-xl bg-[#023E8A] hover:bg-[#012A5C]" onClick={onGenerate} disabled={submitting}>
           <Link2 className="mr-1.5 h-4 w-4" />
-          Generate share link
+          Share with recruiters on SIJIL
         </Button>
-        <div className="grid grid-cols-2 gap-2">
-          <Button variant="outline" className="rounded-xl" onClick={onCopy} disabled={!shareUrl}>
-            <Copy className="mr-1.5 h-4 w-4" />
-            Copy
-          </Button>
-          <Button variant="outline" className="rounded-xl" onClick={onCustom}>
-            Custom
-          </Button>
-        </div>
+        {shareUrl || shareToken || shareId ? (
+          <ShareExportActions publicUrl={shareUrl} shareToken={shareToken} shareId={shareId} />
+        ) : null}
       </div>
 
       {activeShare ? (

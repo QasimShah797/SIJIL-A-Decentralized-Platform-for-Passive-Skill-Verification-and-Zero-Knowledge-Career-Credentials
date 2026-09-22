@@ -46,3 +46,7 @@ export function runWithUserDb<T>(accessToken: string | undefined, fn: () => Prom
   if (!accessToken) return fn();
   return requestClient.run(getUserSupabase(accessToken), fn);
 }
+
+export function runWithServiceDb<T>(fn: () => Promise<T>): Promise<T> {
+  return requestClient.run(getServiceSupabase(), fn);
+}

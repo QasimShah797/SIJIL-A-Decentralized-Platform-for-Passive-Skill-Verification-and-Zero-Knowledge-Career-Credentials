@@ -4,7 +4,6 @@ export type IntegrationSummaryProps = {
   connectedSources: number;
   githubEvidence: number;
   lmsRecords: number;
-  certificates: number;
   lastPortfolioSync: string | null;
   className?: string;
   variant?: "default" | "embedded";
@@ -43,7 +42,6 @@ export function IntegrationSummary({
   connectedSources,
   githubEvidence,
   lmsRecords,
-  certificates,
   lastPortfolioSync,
   className,
   variant = "default",
@@ -116,7 +114,6 @@ export function IntegrationSummary({
           ) : null}
         </div>
       ))}
-      <span className="sr-only">Certificates uploaded: {certificates}</span>
     </div>
   );
 }

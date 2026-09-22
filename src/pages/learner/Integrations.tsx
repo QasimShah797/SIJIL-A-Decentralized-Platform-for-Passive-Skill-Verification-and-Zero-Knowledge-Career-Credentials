@@ -6,7 +6,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useNavigate } from "react-router-dom";
 import { useDeclaredSkills, useCredentials, useLearnerProfile } from "@/hooks/useLearnerData";
-import { Github, BookOpen, FileUp } from "lucide-react";
+import { Github, BookOpen } from "lucide-react";
 import {
   fetchLmsEvidence,
   toCardEvidence,
@@ -40,7 +40,6 @@ import {
   type LanguageFilter,
 } from "@/components/integrations/GitHubEvidencePanel";
 import { LMSActivityPanel } from "@/components/integrations/LMSActivityPanel";
-import { CertificatesPanel } from "@/components/integrations/CertificatesPanel";
 import {
   ConnectedSourcesHeader,
   IntegrationsBreadcrumbBar,
@@ -168,7 +167,6 @@ export default function Integrations() {
   const remainingRepoCount = Math.max(0, filteredLinkedProjects.length - REPO_PAGE_SIZE);
 
   const connectedSources = (lmsConnected ? 1 : 0) + (ghConn ? 1 : 0);
-  const certificateCount = 0;
   const lastPortfolioSync = formatPortfolioSyncTime(
     ghConn?.last_synced_at,
     moodleConnection?.last_synced_at,
@@ -471,17 +469,11 @@ export default function Integrations() {
     }
   };
 
-  const uploadCertificate = () => {
-    toast({ title: "Upload coming soon" });
-  };
-
   const scrollToSources = () => {
     document.getElementById("connected-sources")?.scrollIntoView({ behavior: "smooth" });
   };
 
   const portfolioBusy = portfolioSyncing || syncing || lmsSyncing;
-  const mappedEvidence = linkedRepoCount + lmsImportedCount + certificateCount;
-  const evidenceSlots = 10;
   const didShort = profile?.did ? shortDid(profile.did) : undefined;
 
   return (
@@ -493,20 +485,12 @@ export default function Integrations() {
         onSyncPortfolio={() => void syncPortfolio()}
         onAddIntegration={scrollToSources}
         onViewSyncLog={() => toast({ title: "Sync log coming soon" })}
-        coverage={{
-          mappedCount: mappedEvidence,
-          totalSlots: evidenceSlots,
-          githubCount: linkedRepoCount,
-          lmsCount: lmsImportedCount,
-          certCount: certificateCount,
-        }}
         summary={
           <IntegrationSummary
             variant="embedded"
             connectedSources={connectedSources}
             githubEvidence={linkedRepoCount}
             lmsRecords={lmsImportedCount}
-            certificates={certificateCount}
             lastPortfolioSync={lastPortfolioSync}
           />
         }
@@ -515,7 +499,7 @@ export default function Integrations() {
       <div className="mt-8 space-y-8">
         <div id="connected-sources">
           <ConnectedSourcesHeader onManageAll={scrollToSources} />
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-4 sm:grid-cols-2">
           <IntegrationConnectionCard
             icon={BookOpen}
             name="Moodle LMS"
@@ -560,18 +544,6 @@ export default function Integrations() {
             syncLoading={syncing}
             connectLabel="Connect GitHub"
           />
-
-          <IntegrationConnectionCard
-            icon={FileUp}
-            name="External Certificate Upload"
-            status="available"
-            subtitle="Upload third-party certificates as evidence."
-            records={certificateCount}
-            recordsLabel="certificates uploaded"
-            primaryLabel="Upload certificate"
-            onPrimary={uploadCertificate}
-            showPrimary
-          />
           </div>
         </div>
 
@@ -614,8 +586,6 @@ export default function Integrations() {
           onConnect={connectMoodle}
           onSync={refreshMoodle}
         />
-
-        <CertificatesPanel onUpload={uploadCertificate} />
       </div>
 
       <IntegrationsFooter />

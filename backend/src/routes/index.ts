@@ -16,6 +16,7 @@ import institutionStudentsRoutes from "./institution-students.routes";
 import studentActivationRoutes from "./student-activation.routes";
 import walletRoutes from "./wallet.routes";
 import publicPresentationsRoutes from "./public-presentations.routes";
+import publicCredentialsRoutes from "./public-credentials.routes";
 
 const router = Router();
 
@@ -34,5 +35,6 @@ router.use("/institution", institutionStudentsRoutes);
 router.use("/student-activation", studentActivationRoutes);
 router.use("/wallet", walletRoutes);
 router.use("/public/presentations", publicPresentationsRoutes);
+router.use("/public", publicCredentialsRoutes);
 
 export default router;

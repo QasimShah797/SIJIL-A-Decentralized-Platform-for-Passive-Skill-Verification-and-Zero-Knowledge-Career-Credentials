@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Copy, Link2, RefreshCw, ShieldCheck } from "lucide-react";
+import { Link2, RefreshCw, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusBadge } from "@/components/sijil/StatusBadge";
+import { ShareExportActions } from "@/components/public/ShareExportActions";
 import { toast } from "@/hooks/use-toast";
 import type { WalletCompetencyRecordView } from "@/lib/db/wallet-competency-records";
 import type {
@@ -49,6 +50,8 @@ const SHARE_FIELD_OPTIONS: Array<{
   { id: "learner_skills_summary", label: "Academic interests / skills summary", description: "Share your skills summary from your profile." },
   { id: "learner_career_goal", label: "Career goal", description: "Share your career goal from your profile." },
   { id: "learner_did", label: "Learner DID", description: "Share the wallet holder DID." },
+  { id: "learner_contact", label: "Contact details", description: "Share your university email and phone number from your profile." },
+  { id: "learner_photo", label: "Profile picture", description: "Show or hide your profile photo on the public resume and PDF." },
   { id: "timestamps", label: "Timestamps", description: "Share evidence collection and update timestamps." },
   { id: "credential_metadata", label: "Credential metadata", description: "Share any linked credential metadata already stored in SIJIL." },
 ];
@@ -61,7 +64,7 @@ const PRESETS: Array<{
   {
     mode: "basic_summary",
     label: "Share Basic Summary",
-    fields: ["competency_name", "competency_domain", "learner_name", "learner_skills_summary", "learner_career_goal"],
+    fields: ["competency_name", "competency_domain", "learner_name", "learner_contact", "learner_skills_summary", "learner_career_goal"],
   },
   {
     mode: "verification_summary",
@@ -94,6 +97,8 @@ const PRESETS: Array<{
       "learner_location",
       "learner_skills_summary",
       "learner_career_goal",
+      "learner_contact",
+      "learner_photo",
       "timestamps",
       "credential_metadata",
     ],
@@ -292,6 +297,14 @@ export function CompetencyShareDialog({
         expiresInDays: 30,
       });
       setCreatedShare(result);
+      try {
+        sessionStorage.setItem(
+          `sijil.share.${result.shareId}`,
+          JSON.stringify({ token: result.token, url: result.shareUrl }),
+        );
+      } catch {
+        // ignore quota / private-mode failures
+      }
 
       const nextDetail = await getWalletCompetencyApi(record.competencyId);
       if (nextDetail) {
@@ -502,23 +515,15 @@ export function CompetencyShareDialog({
                     <div className="text-[11px] text-muted-foreground">Share URL</div>
                     <div className="mt-1 break-all text-sm font-medium">{createdShare.shareUrl}</div>
                   </div>
-                  <div className="flex flex-wrap gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => {
-                        void navigator.clipboard.writeText(createdShare.shareUrl);
-                        toast({ title: "Share link copied" });
-                      }}
-                    >
-                      <Copy className="mr-1.5 h-4 w-4" />
-                      Copy Link
-                    </Button>
-                    <StatusBadge variant="verified">
-                      <ShieldCheck className="h-3.5 w-3.5" />
-                      {createdShare.proofType}
-                    </StatusBadge>
-                  </div>
+                  <ShareExportActions
+                    publicUrl={createdShare.shareUrl}
+                    shareToken={createdShare.token}
+                    shareId={createdShare.shareId}
+                  />
+                  <StatusBadge variant="verified">
+                    <ShieldCheck className="h-3.5 w-3.5" />
+                    {createdShare.proofType}
+                  </StatusBadge>
                 </CardContent>
               </Card>
             )}
