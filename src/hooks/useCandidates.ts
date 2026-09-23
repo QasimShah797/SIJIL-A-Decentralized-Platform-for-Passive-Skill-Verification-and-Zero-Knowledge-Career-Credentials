@@ -52,6 +52,9 @@ export function useCandidates() {
           skillsSummary: coalesceCandidateText(candidate.skillsSummary, fallback.skillsSummary),
           careerGoal: coalesceCandidateText(candidate.careerGoal, fallback.careerGoal),
           searchableSkills: [...new Set([...(candidate.searchableSkills ?? []), ...(fallback.searchableSkills ?? [])])],
+          skillEvidence: fallback.skillEvidence?.length
+            ? fallback.skillEvidence
+            : candidate.skillEvidence,
         };
       });
 

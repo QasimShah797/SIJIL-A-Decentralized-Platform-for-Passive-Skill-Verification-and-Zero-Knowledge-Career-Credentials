@@ -703,66 +703,63 @@ async function hydrateSharedWalletPayload(row: PresentationRow): Promise<Record<
   }
   if (records.length === 0) return payload;
 
-  const selected = row.selected_fields.length > 0 ? row.selected_fields : [];
-  const hasEvidenceField = selected.some((field) =>
-    field === "github_evidence"
-    || field === "lms_evidence"
-    || field === "practical_task_result"
-    || field === "peer_reviews"
-    || field === "teacher_feedback"
-    || field === "complete_evidence_package",
-  );
-  const fields: WalletShareFieldId[] = hasEvidenceField
-    ? [...new Set([...selected, "competency_name", "competency_domain"])]
-    : [...new Set([
-      ...selected,
-      "competency_name",
-      "competency_domain",
-      "github_evidence",
-      "lms_evidence",
-      "practical_task_result",
-      "peer_reviews",
-      "teacher_feedback",
-      "complete_evidence_package",
-    ])];
+  const fields: WalletShareFieldId[] = row.selected_fields.length > 0
+    ? [...row.selected_fields]
+    : ["competency_name"];
+  const shareScope = payload.shareScope === "selected" ? "selected" : "all";
+  const scopedRecords = shareScope === "selected"
+    ? records.filter((record) => record.competencyId === row.competency_id)
+    : records;
+  const includeNames = fields.includes("competency_name")
+    || fields.includes("learner_skills_summary")
+    || fields.includes("complete_evidence_package");
   const primaryId = row.competency_id;
-  payload.skills = records
-    .filter((record) => record.competencyName.trim())
-    .map((record) => ({
-      competencyId: record.competencyId,
-      name: record.competencyName,
-      domain: record.domain,
-      description: record.description,
-      primary: record.competencyId === primaryId,
-      evidenceBacked: record.evidenceCount > 0,
-      evidence: buildSkillEvidenceSlice(record, fields),
-    }));
+  if (includeNames) {
+    payload.skills = scopedRecords
+      .filter((record) => record.competencyName.trim())
+      .map((record) => ({
+        competencyId: record.competencyId,
+        name: record.competencyName,
+        domain: fields.includes("competency_domain") ? record.domain : undefined,
+        description: fields.includes("competency_description") ? record.description : undefined,
+        primary: record.competencyId === primaryId,
+        evidenceBacked: record.evidenceCount > 0,
+        evidence: buildSkillEvidenceSlice(record, fields),
+      }));
+  }
 
-  const existingEvidence = asRecord(payload.evidence) ?? {};
-  const existingGithub = asRecord(existingEvidence.github) ?? {};
-  const existingLms = asRecord(existingEvidence.lms) ?? {};
-  payload.evidence = {
-    ...existingEvidence,
-    github: {
-      ...existingGithub,
-      repos: records.flatMap((record) => record.evidencePackage.github.repos),
-    },
-    lms: {
-      ...existingLms,
-      courses: records.flatMap((record) => record.evidencePackage.lms.courses),
-      assignments: records.flatMap((record) => record.evidencePackage.lms.assignments),
-    },
-  };
+  const includeGithub = fields.includes("github_evidence") || fields.includes("complete_evidence_package");
+  const includeLms = fields.includes("lms_evidence") || fields.includes("complete_evidence_package");
+  if (includeGithub || includeLms) {
+    const existingEvidence = asRecord(payload.evidence) ?? {};
+    const nextEvidence: Record<string, unknown> = { ...existingEvidence };
+    if (includeGithub) {
+      nextEvidence.github = {
+        ...(asRecord(existingEvidence.github) ?? {}),
+        repos: scopedRecords.flatMap((record) => record.evidencePackage.github.repos),
+      };
+    }
+    if (includeLms) {
+      nextEvidence.lms = {
+        ...(asRecord(existingEvidence.lms) ?? {}),
+        courses: scopedRecords.flatMap((record) => record.evidencePackage.lms.courses),
+        assignments: scopedRecords.flatMap((record) => record.evidencePackage.lms.assignments),
+      };
+    }
+    payload.evidence = nextEvidence;
+  }
 
-  const credentials = records.flatMap((record) => record.evidencePackage.credentialMetadata);
-  if (credentials.length > 0) payload.credentialMetadata = credentials;
+  if (fields.includes("credential_metadata")) {
+    const credentials = scopedRecords.flatMap((record) => record.evidencePackage.credentialMetadata);
+    if (credentials.length > 0) payload.credentialMetadata = credentials;
+  }
 
   const primary = records.find((record) => record.competencyId === primaryId);
-  if (primary) {
+  if (primary && fields.includes("competency_name")) {
     const competency = asRecord(payload.competency) ?? {};
     competency.competencyId = primary.competencyId;
-    if (primary.competencyName) competency.name = primary.competencyName;
-    if (primary.domain) competency.domain = primary.domain;
+    competency.name = primary.competencyName;
+    if (fields.includes("competency_domain") && primary.domain) competency.domain = primary.domain;
     payload.competency = competency;
   }
 
@@ -1560,6 +1557,57 @@ async function loadPresentationByToken(token: string): Promise<PresentationRow> 
   throw new AppError("Presentation not found", 404);
 }
 
+function isShareActive(row: PresentationRow, now = Date.now()): boolean {
+  if (row.revoked_at) return false;
+  if (row.expires_at && new Date(row.expires_at).getTime() <= now) return false;
+  return true;
+}
+
+async function loadActiveShareForCompetency(
+  userId: string,
+  competencyId: string,
+): Promise<PresentationRow | null> {
+  const rows = await safeFetchRows("selective_disclosure_presentations", () =>
+    db()
+      .from("selective_disclosure_presentations")
+      .select("*")
+      .eq("learner_id", userId)
+      .eq("competency_id", competencyId)
+      .is("revoked_at", null)
+      .order("created_at", { ascending: false }),
+  );
+  const active = rows
+    .map((row) => mapPresentationRow(row))
+    .filter((row) => isShareActive(row));
+  return active[0] ?? null;
+}
+
+async function revokeDuplicateShares(
+  userId: string,
+  competencyId: string,
+  keepId: string,
+): Promise<void> {
+  const rows = await safeFetchRows("selective_disclosure_presentations", () =>
+    db()
+      .from("selective_disclosure_presentations")
+      .select("id, expires_at, revoked_at")
+      .eq("learner_id", userId)
+      .eq("competency_id", competencyId)
+      .is("revoked_at", null),
+  );
+  const extras = rows
+    .filter((row) => asText(row.id) !== keepId)
+    .map((row) => asText(row.id))
+    .filter(Boolean);
+  if (extras.length === 0) return;
+  await db()
+    .from("selective_disclosure_presentations")
+    .update({ revoked_at: new Date().toISOString() })
+    .eq("learner_id", userId)
+    .eq("competency_id", competencyId)
+    .in("id", extras);
+}
+
 export class WalletService {
   async getCompetencies(userId: string): Promise<WalletCompetencyRecordView[]> {
     return loadAggregatedWallet(userId);
@@ -1591,12 +1639,14 @@ export class WalletService {
     if (!record) throw new AppError("Competency wallet record not found", 404);
     await persistWalletRecord(record);
     const learnerContext = await loadLearnerDisclosureContext(userId);
+    const shareScope = input.shareScope === "selected" ? "selected" : "all";
     const disclosedPayload = buildDisclosedPayload(
       record,
       input.selectedFields,
       learnerContext,
-      records,
+      shareScope === "all" ? records : [],
     );
+    disclosedPayload.shareScope = shareScope;
 
     if (Object.keys(disclosedPayload).length === 0) {
       throw new AppError("Selected fields did not produce a shareable payload", 400);
@@ -1604,9 +1654,11 @@ export class WalletService {
 
     const token = randomUUID();
     const tokenHash = generateSha256Hash(token);
-    const createdAt = new Date().toISOString();
+    const now = new Date().toISOString();
     const expiresAt = new Date(Date.now() + (input.expiresInDays ?? 30) * 86_400_000).toISOString();
     const payloadHash = hashDisclosurePayload(disclosedPayload);
+    const existing = await loadActiveShareForCompetency(userId, competencyId);
+    const createdAt = existing?.created_at ?? now;
     const proof = buildSelectiveDisclosureProof({
       learnerDid: record.learnerDid,
       competencyId,
@@ -1616,27 +1668,43 @@ export class WalletService {
       expiresAt,
     });
 
-    const { data, error } = await db()
-      .from("selective_disclosure_presentations")
-      .insert({
-        learner_id: userId,
-        competency_id: competencyId,
-        selected_fields: input.selectedFields,
-        selection_mode: input.selectionMode,
-        disclosed_payload: disclosedPayload,
-        payload_hash: payloadHash,
-        proof_type: "SignedSelectiveDisclosure",
-        proof_value: proof.proofValue,
-        verification_method: proof.verificationMethod,
-        share_token_hash: tokenHash,
-        share_token_hint: token.slice(0, 8),
-        expires_at: expiresAt,
-      })
-      .select("id, expires_at")
-      .single();
+    const shareRow = {
+      learner_id: userId,
+      competency_id: competencyId,
+      selected_fields: input.selectedFields,
+      selection_mode: input.selectionMode,
+      disclosed_payload: disclosedPayload,
+      payload_hash: payloadHash,
+      proof_type: "SignedSelectiveDisclosure",
+      proof_value: proof.proofValue,
+      verification_method: proof.verificationMethod,
+      share_token_hash: tokenHash,
+      share_token_hint: token.slice(0, 8),
+      expires_at: expiresAt,
+      revoked_at: null,
+      updated_at: now,
+    };
+
+    const { data, error } = existing
+      ? await db()
+        .from("selective_disclosure_presentations")
+        .update(shareRow)
+        .eq("id", existing.id)
+        .eq("learner_id", userId)
+        .select("id, expires_at")
+        .single()
+      : await db()
+        .from("selective_disclosure_presentations")
+        .insert({ ...shareRow, created_at: now })
+        .select("id, expires_at")
+        .single();
 
     if (error) {
       throwDbError(error, "Could not create share link");
+    }
+
+    if (existing) {
+      await revokeDuplicateShares(userId, competencyId, asText((data as DbRow).id));
     }
 
     return {

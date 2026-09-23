@@ -7,6 +7,7 @@ import {
   isActiveShare,
   mapCredentialShareToView,
   mapWalletShareToView,
+  skillEvidenceFromShares,
   type SharedCredentialView,
 } from "@/lib/shared-presentation";
 
@@ -141,5 +142,32 @@ describe("buildCandidateDetail", () => {
     expect(detail.topSkill).toBe("React.js");
     expect(attestationFromShared(detail.sharedCredentials)).toBe("Partial");
     expect(flattenDisclosedPayload({ competency: { name: "Go" } })[0]?.value).toBe("Go");
+  });
+});
+
+describe("skillEvidenceFromShares", () => {
+  it("does not copy package Moodle onto a skill that has its own empty snapshot", () => {
+    const signals = skillEvidenceFromShares([
+      sampleWalletShare({
+        skill: "Dart",
+        selectedFields: ["competency_name", "lms_evidence", "github_evidence"],
+        disclosedPayload: {
+          competency: { name: "Dart" },
+          skills: [
+            { name: "Dart", evidence: { github: { repos: [{ full_name: "me/dart-app" }] } } },
+            { name: "TypeScript", evidence: { lms: { courses: [{ fullname: "TS 101" }] } } },
+          ],
+          evidence: {
+            lms: { courses: [{ fullname: "TS 101" }] },
+            github: { repos: [{ full_name: "me/dart-app" }, { full_name: "me/ts-app" }] },
+          },
+        },
+      }),
+    ]);
+    const dart = signals.find((item) => item.skill === "Dart");
+    const ts = signals.find((item) => item.skill === "TypeScript");
+    expect(dart?.lmsRecords).toBe(0);
+    expect(dart?.githubRecords).toBeGreaterThan(0);
+    expect(ts?.lmsRecords).toBeGreaterThan(0);
   });
 });

@@ -167,6 +167,20 @@ export function filterActiveSharedCredentials(
   );
 }
 
+export function dedupeLatestSharedCredentials(
+  credentials: SharedCredentialView[],
+): SharedCredentialView[] {
+  const seen = new Set<string>();
+  const unique: SharedCredentialView[] = [];
+  for (const credential of credentials) {
+    const key = (credential.skill ?? credential.title).trim().toLowerCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    unique.push(credential);
+  }
+  return unique;
+}
+
 export function mapWalletShareToView(row: {
   id: unknown;
   selected_fields?: unknown;
@@ -313,6 +327,149 @@ export function extractDisclosedLearnerName(credentials: SharedCredentialView[])
   return null;
 }
 
+export type SkillEvidenceSignal = {
+  skill: string;
+  githubRecords: number;
+  lmsRecords: number;
+  reviews: number;
+  practicalTask: "Submitted" | "Auto-Submitted" | "—";
+};
+
+function asRecords(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object")
+    : [];
+}
+
+function countGithubBlock(value: unknown): { count: number; languages: string[] } {
+  const github = asRecord(value);
+  if (!github) return { count: 0, languages: [] };
+  const rows = [
+    ...asRecords(github.repos),
+    ...asRecords(github.evidenceRecords),
+    ...asRecords(github.activities),
+  ];
+  const languages = rows
+    .map((row) => asText(row.primary_language) ?? asText(row.language))
+    .filter((item): item is string => Boolean(item));
+  return { count: rows.length, languages };
+}
+
+function countLmsBlock(value: unknown): number {
+  const lms = asRecord(value);
+  if (!lms) return 0;
+  return asRecords(lms.assignments).length
+    + asRecords(lms.evidence).length
+    + asRecords(lms.importedEvidence).length
+    + asRecords(lms.grades).length
+    + asRecords(lms.courses).length;
+}
+
+function shareAllowsGithub(fields: string[]): boolean {
+  return fields.length === 0
+    || fields.includes("github_evidence")
+    || fields.includes("complete_evidence_package");
+}
+
+function shareAllowsLms(fields: string[]): boolean {
+  return fields.length === 0
+    || fields.includes("lms_evidence")
+    || fields.includes("complete_evidence_package");
+}
+
+/** Recruiter-visible GitHub / LMS / task counts from what the learner shared. */
+export function skillEvidenceFromShares(shares: SharedCredentialView[]): SkillEvidenceSignal[] {
+  const byName = new Map<string, SkillEvidenceSignal>();
+  const add = (skill: string | null | undefined, patch: Partial<SkillEvidenceSignal>) => {
+    const name = skill?.trim();
+    if (!name || name === "—") return;
+    const key = name.toLowerCase();
+    const existing = byName.get(key) ?? {
+      skill: name,
+      githubRecords: 0,
+      lmsRecords: 0,
+      reviews: 0,
+      practicalTask: "—" as const,
+    };
+    existing.githubRecords += patch.githubRecords ?? 0;
+    existing.lmsRecords += patch.lmsRecords ?? 0;
+    existing.reviews += patch.reviews ?? 0;
+    if (existing.practicalTask === "—" && patch.practicalTask && patch.practicalTask !== "—") {
+      existing.practicalTask = patch.practicalTask;
+    }
+    byName.set(key, existing);
+  };
+
+  for (const share of shares) {
+    const payload = share.disclosedPayload ?? {};
+    const fields = share.selectedFields ?? [];
+    const packageEvidence = asRecord(payload.evidence)
+      ?? asRecord(payload.complete_evidence_package)
+      ?? {};
+    const skillRows = asRecords(payload.skills);
+    const rows = skillRows.length > 0
+      ? skillRows
+      : [{
+          name: share.skill ?? share.title,
+          evidence: packageEvidence,
+        }];
+    const usePackageFallback = rows.length <= 1;
+
+    for (const row of rows) {
+      const snapshot = asRecord(row.evidence);
+      const github = countGithubBlock(snapshot?.github);
+      const packageGithub = shareAllowsGithub(fields) ? countGithubBlock(packageEvidence.github) : { count: 0, languages: [] };
+      const githubRecords = snapshot
+        ? github.count
+        : (usePackageFallback ? packageGithub.count : 0);
+      const lmsRecords = snapshot
+        ? countLmsBlock(snapshot.lms)
+        : (usePackageFallback && shareAllowsLms(fields) ? countLmsBlock(packageEvidence.lms) : 0);
+      const reviews = snapshot
+        ? asRecords(snapshot.peerReviews).length
+        : (usePackageFallback ? asRecords(packageEvidence.peerReviews).length : 0);
+      const practical = snapshot
+        ? asRecord(snapshot.practicalTask)
+        : (usePackageFallback ? asRecord(packageEvidence.practicalTask) : null);
+      const task = practical && (practical.latestAttempt || asRecords(practical.attemptHistory).length)
+        ? "Submitted" as const
+        : "—" as const;
+      const skillName = asText(row.name) ?? share.skill ?? share.title;
+      add(skillName, { githubRecords, lmsRecords, reviews, practicalTask: task });
+      const languages = snapshot ? github.languages : (usePackageFallback ? packageGithub.languages : []);
+      for (const language of languages) {
+        add(language, { githubRecords: Math.max(1, githubRecords) });
+      }
+    }
+  }
+
+  return [...byName.values()];
+}
+
+export function mergeSkillEvidence(
+  ...lists: (SkillEvidenceSignal[] | undefined)[]
+): SkillEvidenceSignal[] {
+  const byName = new Map<string, SkillEvidenceSignal>();
+  for (const list of lists) {
+    for (const item of list ?? []) {
+      const key = item.skill.toLowerCase();
+      const existing = byName.get(key);
+      if (!existing) {
+        byName.set(key, { ...item });
+        continue;
+      }
+      byName.set(key, {
+        skill: existing.skill,
+        githubRecords: Math.max(existing.githubRecords, item.githubRecords),
+        lmsRecords: Math.max(existing.lmsRecords, item.lmsRecords),
+        reviews: Math.max(existing.reviews, item.reviews),
+        practicalTask: existing.practicalTask !== "—" ? existing.practicalTask : item.practicalTask,
+      });
+    }
+  }
+  return [...byName.values()];
+}
+
 export function extractDisclosedInstitution(credentials: SharedCredentialView[]): string | null {
   for (const credential of credentials) {
     const learner = asRecord(credential.disclosedPayload.learner);
@@ -421,7 +578,9 @@ export function collectCandidateSearchSkills(params: {
     const competency = asRecord(share.disclosedPayload.competency);
     add(asText(competency?.name));
     add(asText(competency?.domain));
+    for (const row of asRecords(share.disclosedPayload.skills)) add(asText(row.name));
   }
+  for (const signal of skillEvidenceFromShares(params.shares ?? [])) add(signal.skill);
 
   for (const skill of params.declaredSkills ?? []) add(skill);
   add(params.topSkill);

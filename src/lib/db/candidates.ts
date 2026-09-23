@@ -9,7 +9,10 @@ import {
   collectCandidateSearchSkills,
   extractDisclosedCareerInfo,
   mapWalletShareToView,
+  mergeSkillEvidence,
   pickRecruiterDisplayName,
+  skillEvidenceFromShares,
+  type SkillEvidenceSignal,
 } from "@/lib/shared-presentation";
 import type { SharedCredentialView } from "@/lib/shared-presentation";
 import type { CandidateSkill } from "@/lib/sijil-data";
@@ -27,6 +30,7 @@ export type CandidateView = {
   skillsSummary?: string | null;
   careerGoal?: string | null;
   searchableSkills?: string[];
+  skillEvidence?: SkillEvidenceSignal[];
 };
 
 function attestationFromCredentials(creds: { attestation: string }[]): "Approved" | "Partial" | "Pending" {
@@ -81,6 +85,7 @@ export function mergeCandidateLists(base: CandidateView[], extra: CandidateView[
       skillsSummary: coalesceText(primary.skillsSummary, secondary.skillsSummary),
       careerGoal: coalesceText(primary.careerGoal, secondary.careerGoal),
       searchableSkills: mergeSearchableSkills(primary.searchableSkills, secondary.searchableSkills),
+      skillEvidence: mergeSkillEvidence(primary.skillEvidence, secondary.skillEvidence),
       credentialCount: Math.max(existing.credentialCount, candidate.credentialCount),
       topSkill: primary.topSkill !== "—" ? primary.topSkill : secondary.topSkill,
       evidence: Math.max(primary.evidence, secondary.evidence),
@@ -282,6 +287,7 @@ async function fetchCandidatesFromActiveShares(): Promise<CandidateView[]> {
           skillsSummary: career.skillsSummary,
           topSkill: detail.topSkill,
         }),
+        skillEvidence: skillEvidenceFromShares(activeShares),
       };
     });
   } catch (error) {
@@ -340,6 +346,7 @@ export async function fetchCandidates(): Promise<CandidateView[]> {
         }),
         sharedMatch?.searchableSkills,
       ),
+      skillEvidence: mergeSkillEvidence(sharedMatch?.skillEvidence),
     };
   });
 

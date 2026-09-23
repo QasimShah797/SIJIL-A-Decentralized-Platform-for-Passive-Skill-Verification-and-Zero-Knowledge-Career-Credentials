@@ -84,36 +84,6 @@ function asEvidenceArray(value: unknown): Record<string, unknown>[] {
     : [];
 }
 
-function walletWideShareFields(records: WalletCompetencyRecordView[]): WalletShareFieldId[] {
-  const fields = new Set<WalletShareFieldId>([
-    "competency_name",
-    "competency_domain",
-    "verification_status",
-    "learner_skills_summary",
-    "complete_evidence_package",
-  ]);
-  for (const record of records) {
-    const pkg = record.evidencePackage;
-    if (asEvidenceArray(pkg?.github?.repos).length || asEvidenceArray(pkg?.github?.activities).length) {
-      fields.add("github_evidence");
-    }
-    if (
-      asEvidenceArray(pkg?.lms?.courses).length
-      || asEvidenceArray(pkg?.lms?.assignments).length
-      || asEvidenceArray(pkg?.lms?.evidence).length
-    ) {
-      fields.add("lms_evidence");
-    }
-    if (pkg?.practicalTask?.latestAttempt || asEvidenceArray(pkg?.practicalTask?.attemptHistory).length) {
-      fields.add("practical_task_result");
-    }
-    if (asEvidenceArray(pkg?.peerReviews).length) fields.add("peer_reviews");
-    if (asEvidenceArray(pkg?.teacherFeedback).length) fields.add("teacher_feedback");
-    if (asEvidenceArray(pkg?.credentialMetadata).length) fields.add("credential_metadata");
-  }
-  return [...fields];
-}
-
 function startOfWeek(value: Date): Date {
   const next = new Date(value);
   next.setHours(0, 0, 0, 0);
@@ -440,6 +410,7 @@ export default function WalletPage() {
   const [shareToken, setShareToken] = useState<string | null>(null);
   const [expiresInDays, setExpiresInDays] = useState(30);
   const [enabledFields, setEnabledFields] = useState<WalletShareFieldId[]>(["competency_name"]);
+  const [shareScope, setShareScope] = useState<"all" | "selected">("all");
   const [submitting, setSubmitting] = useState(false);
 
   const loadRecords = async () => {
@@ -653,18 +624,14 @@ export default function WalletPage() {
 
   const handleGenerateShare = async () => {
     if (!activeRecord) return;
-    const selected = new Set<WalletShareFieldId>([
-      ...shareToggles.filter((toggle) => toggle.enabled && toggle.available).map((toggle) => toggle.id),
-      ...walletWideShareFields(records),
-    ]);
-    if (profile?.name) selected.add("learner_name");
-    if (profile?.email || profile?.contactNumber) selected.add("learner_contact");
-    if (profile?.institution) {
-      selected.add("learner_institution");
-      if (profile.program) selected.add("learner_program");
-      if (profile.cityCountry) selected.add("learner_location");
+    const selected = new Set<WalletShareFieldId>(
+      shareToggles.filter((toggle) => toggle.enabled && toggle.available).map((toggle) => toggle.id),
+    );
+    if (selected.has("learner_institution")) {
+      if (profile?.program) selected.add("learner_program");
+      if (profile?.cityCountry) selected.add("learner_location");
     }
-    if (profile?.careerGoal) selected.add("learner_career_goal");
+    if (selected.has("competency_name")) selected.add("competency_domain");
     if (selected.size === 0) {
       toast({ title: "Select at least one field to share", variant: "destructive" });
       return;
@@ -675,6 +642,7 @@ export default function WalletPage() {
         competencyId: activeRecord.competencyId,
         selectionMode: "custom",
         selectedFields: [...selected],
+        shareScope,
         expiresInDays,
       });
       setShareUrl(result.shareUrl);
@@ -691,7 +659,9 @@ export default function WalletPage() {
       if (detail) setShares(detail.shares);
       toast({
         title: "Share link created",
-        description: `${records.length} competenc${records.length === 1 ? "y" : "ies"} included for recruiters.`,
+        description: shareScope === "selected"
+          ? `Only ${activeRecord.competencyName} included for recruiters.`
+          : `${records.length} competenc${records.length === 1 ? "y" : "ies"} included for recruiters.`,
       });
     } catch (shareError) {
       toast({
@@ -779,8 +749,12 @@ export default function WalletPage() {
                 onViewPackage={() => setSelectedRecord(activeRecord)}
               />
               <OneClickShareCard
-                toggles={shareToggles.filter((toggle) => toggle.id === "learner_photo")}
+                toggles={shareToggles}
                 photoPreviewUrl={profilePhotoUrl}
+                shareScope={shareScope}
+                onShareScopeChange={setShareScope}
+                selectedCompetencyName={activeRecord.competencyName}
+                competencyCount={records.length}
                 onToggle={(id, next) => {
                   setEnabledFields((current) => next
                     ? [...new Set([...current, id])]

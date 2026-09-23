@@ -553,6 +553,10 @@ export function OneClickShareCard({
   toggles,
   onToggle,
   photoPreviewUrl,
+  shareScope,
+  onShareScopeChange,
+  selectedCompetencyName,
+  competencyCount,
   expiresInDays,
   onExpiresChange,
   shareUrl,
@@ -568,6 +572,10 @@ export function OneClickShareCard({
   toggles: ShareToggle[];
   onToggle: (id: WalletShareFieldId, next: boolean) => void;
   photoPreviewUrl?: string | null;
+  shareScope: "all" | "selected";
+  onShareScopeChange: (scope: "all" | "selected") => void;
+  selectedCompetencyName?: string;
+  competencyCount?: number;
   expiresInDays: number;
   onExpiresChange: (days: number) => void;
   shareUrl: string | null;
@@ -586,10 +594,45 @@ export function OneClickShareCard({
     <div className="learner-stat-card p-4">
       <p className="text-sm font-semibold text-[#023E8A]">One-Click Share & Link Management</p>
       <p className="mt-0.5 text-xs text-[#64748b]">
-        Generate a link to share every competency in this wallet with a recruiter.
+        Choose the competency scope and the fields recruiters can see.
       </p>
 
-      <div className="mt-4 space-y-3">
+      <div className="mt-4 grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          onClick={() => onShareScopeChange("all")}
+          className={cn(
+            "rounded-xl border px-3 py-2.5 text-left",
+            shareScope === "all"
+              ? "border-[#023E8A] bg-[#eff6ff] text-[#023E8A]"
+              : "border-[#e2e8f0] bg-white text-[#334155]",
+          )}
+        >
+          <span className="block text-sm font-medium">All competencies</span>
+          <span className="mt-0.5 block text-[11px] text-[#64748b]">
+            {competencyCount && competencyCount > 1
+              ? `Share ${competencyCount} wallet competencies`
+              : "Share every competency in this wallet"}
+          </span>
+        </button>
+        <button
+          type="button"
+          onClick={() => onShareScopeChange("selected")}
+          className={cn(
+            "rounded-xl border px-3 py-2.5 text-left",
+            shareScope === "selected"
+              ? "border-[#023E8A] bg-[#eff6ff] text-[#023E8A]"
+              : "border-[#e2e8f0] bg-white text-[#334155]",
+          )}
+        >
+          <span className="block text-sm font-medium">Selected only</span>
+          <span className="mt-0.5 block text-[11px] text-[#64748b]">
+            {selectedCompetencyName ? `Only ${selectedCompetencyName}` : "Only the competency currently open"}
+          </span>
+        </button>
+      </div>
+
+      <div className="mt-4 space-y-2">
         {toggles.map((toggle) => (
           <label key={toggle.id} className="flex items-center justify-between gap-3 rounded-xl border border-[#e2e8f0] bg-[#f8fafc] px-3 py-2.5">
             <span className="flex min-w-0 items-center gap-3">
@@ -597,22 +640,20 @@ export function OneClickShareCard({
                 <img
                   src={photoPreviewUrl}
                   alt=""
-                  className="h-10 w-10 rounded-lg object-cover"
+                  className="h-9 w-9 rounded-lg object-cover"
                 />
-              ) : toggle.id === "learner_photo" ? (
-                <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#e2e8f0] text-[11px] font-semibold text-[#64748b]">
-                  Photo
-                </span>
               ) : null}
               <span className="min-w-0">
                 <span className={cn("block text-sm", toggle.available ? "text-[#334155]" : "text-[#94a3b8]")}>
-                  {toggle.enabled ? "Show profile picture" : "Hide profile picture"}
+                  {toggle.label}
                 </span>
-                <span className="block text-[11px] text-[#94a3b8]">
-                  {toggle.available
-                    ? "Recruiters will see this on the public resume and PDF."
-                    : "Upload a photo on My Profile to include it."}
-                </span>
+                {!toggle.available ? (
+                  <span className="block text-[11px] text-[#94a3b8]">
+                    {toggle.id === "learner_photo"
+                      ? "Upload a photo on My Profile to include it."
+                      : "No data available yet."}
+                  </span>
+                ) : null}
               </span>
             </span>
             <Switch

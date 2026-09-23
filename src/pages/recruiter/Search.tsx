@@ -1,7 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import { useMemo, useState } from "react";
 import { AppShell } from "@/components/sijil/AppShell";
-import { PageHeader } from "@/components/sijil/PageHeader";
 import { FilterBar } from "@/components/sijil/FilterBar";
 import { PageSkeleton } from "@/components/sijil/SkeletonLoader";
 import { Button } from "@/components/ui/button";
@@ -9,6 +8,8 @@ import { GitCompare, Users, X } from "lucide-react";
 import { EmptyState } from "@/components/sijil/EmptyState";
 import { candidateMatchesSkillQuery } from "@/lib/shared-presentation";
 import { RecruiterCandidateCard } from "@/components/recruiter/RecruiterCandidateCard";
+import { RecruiterDashboardStats } from "@/components/recruiter/RecruiterDashboardStats";
+import { SijilMatchBot } from "@/components/recruiter/SijilMatchBot";
 import { useCandidates } from "@/hooks/useCandidates";
 
 export default function RecruiterSearch() {
@@ -65,69 +66,90 @@ export default function RecruiterSearch() {
 
   return (
     <AppShell role="recruiter">
-      <PageHeader
-        title="Search candidates"
-        description="Find candidates by skill. Results are backed by verifiable credentials, attestations and supporting evidence."
-      />
+      <div className="mb-6">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-primary">Talent workspace</p>
+        <div className="mt-1 flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight text-foreground">Candidate directory</h1>
+            <p className="mt-1 max-w-2xl text-sm leading-relaxed text-muted-foreground">
+              Review learners who shared credentials with recruiters. Shortlists stay limited to disclosed evidence.
+            </p>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {q.trim()
+              ? `${results.length} of ${candidates.length} matching “${q.trim()}”`
+              : `${candidates.length} in directory`}
+          </p>
+        </div>
+      </div>
 
-      <FilterBar
-        className="mb-4"
-        searchValue={q}
-        onSearchChange={setQ}
-        searchPlaceholder="Search by skill (e.g. React.js, Node.js, PostgreSQL, Python)"
-      >
-        {["React", "Node", "Python", "PostgreSQL", "Docker"].map((s) => (
-          <button
-            key={s}
-            type="button"
-            onClick={() => setQ(s)}
-            className="rounded-full border border-border bg-background px-3 py-1 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+      <RecruiterDashboardStats candidates={candidates} />
+
+      <div className="grid items-start gap-6 pb-24 xl:grid-cols-[minmax(0,1fr)_380px]">
+        <section className="min-w-0">
+          <FilterBar
+            className="mb-4"
+            searchValue={q}
+            onSearchChange={setQ}
+            searchPlaceholder="Filter by skill, name, or institution"
           >
-            {s}
-          </button>
-        ))}
-      </FilterBar>
+            {["TypeScript", "Dart", "React", "Python"].map((s) => (
+              <button
+                key={s}
+                type="button"
+                onClick={() => setQ(s)}
+                className="rounded-full border border-border bg-background px-3 py-1 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+              >
+                {s}
+              </button>
+            ))}
+          </FilterBar>
 
-      <p className="mb-4 text-xs text-muted-foreground">
-        {candidates.length} candidate{candidates.length === 1 ? "" : "s"} in the directory
-        {q.trim() ? ` · ${results.length} matching “${q.trim()}”` : ""}
-      </p>
+          <div className="grid gap-4 md:grid-cols-2">
+            {error && (
+              <div className="md:col-span-2">
+                <EmptyState
+                  icon={Users}
+                  title="Could not load candidates"
+                  description={error}
+                  action={{ label: "Try again", onClick: () => void refresh() }}
+                />
+              </div>
+            )}
+            {!error && results.length === 0 && (
+              <div className="md:col-span-2">
+                <EmptyState
+                  icon={Users}
+                  title={q.trim() ? "No candidates match this filter" : "No candidates yet"}
+                  description={
+                    q.trim()
+                      ? "Try another skill, or clear the search to see every learner in the directory."
+                      : "Learners appear here once they share credentials or complete a profile."
+                  }
+                  action={q.trim() ? { label: "Clear search", onClick: () => setQ("") } : undefined}
+                />
+              </div>
+            )}
+            {results.map((c) => (
+              <RecruiterCandidateCard
+                key={c.id}
+                candidate={c}
+                selected={selected.includes(c.id)}
+                onSelectedChange={() => toggleSelect(c.id)}
+                onOpenSummary={() => navigate(`/recruiter/candidate/${c.id}`)}
+              />
+            ))}
+          </div>
+        </section>
 
-      <div className="grid md:grid-cols-2 gap-4 pb-24">
-        {error && (
-          <div className="md:col-span-2">
-            <EmptyState
-              icon={Users}
-              title="Could not load candidates"
-              description={error}
-              action={{ label: "Try again", onClick: () => void refresh() }}
-            />
-          </div>
-        )}
-        {!error && results.length === 0 && (
-          <div className="md:col-span-2">
-            <EmptyState
-              icon={Users}
-              title={q.trim() ? "No candidates match this skill yet" : "No candidates yet"}
-              description={
-                q.trim()
-                  ? "Try another skill, or clear the search to see every learner in the directory."
-                  : "Learners appear here once they share credentials or complete a profile. Open a candidate to see only what they disclosed."
-              }
-              action={q.trim() ? { label: "Clear search", onClick: () => setQ("") } : undefined}
-            />
-          </div>
-        )}
-        {results.map((c) => (
-          <RecruiterCandidateCard
-            key={c.id}
-            candidate={c}
-            selected={selected.includes(c.id)}
-            onSelectedChange={() => toggleSelect(c.id)}
-            onOpenSummary={() => navigate(`/recruiter/candidate/${c.id}`)}
-            className={selected.includes(c.id) ? "ring-2 ring-primary" : ""}
+        <div className="xl:sticky xl:top-20">
+          <SijilMatchBot
+            candidates={candidates}
+            candidateSkills={candidateSkills}
+            onOpenCandidate={(id) => navigate(`/recruiter/candidate/${id}`)}
+            onCompare={(leftId, rightId) => navigate(`/recruiter/compare?ids=${leftId},${rightId}`)}
           />
-        ))}
+        </div>
       </div>
 
       {selected.length > 0 && (

@@ -118,14 +118,11 @@ export default function PublicCompetencyPage() {
           <div className="mt-8"><ShareUnavailableState status="invalid" /></div>
         ) : (
           <div className="mt-8 space-y-4">
-            <div className="flex flex-wrap items-center gap-2">
-              <StatusBadge variant={payload.verified ? "verified" : "warning"}>
-                {payload.verified ? "Verified share" : "Unverified"}
-              </StatusBadge>
-              {payload.competency?.domain ? (
+            {payload.competency?.domain ? (
+              <div className="flex flex-wrap items-center gap-2">
                 <StatusBadge variant="neutral">{payload.competency.domain}</StatusBadge>
-              ) : null}
-            </div>
+              </div>
+            ) : null}
             {payload.competency?.description ? (
               <p className="text-sm text-muted-foreground">{payload.competency.description}</p>
             ) : null}

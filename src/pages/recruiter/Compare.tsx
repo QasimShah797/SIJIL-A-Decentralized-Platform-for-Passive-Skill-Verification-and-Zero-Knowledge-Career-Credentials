@@ -42,15 +42,15 @@ export default function RecruiterCompare() {
         <PageHeader
           title="Compare candidates"
           breadcrumbs={[
-            { label: "Search", href: "/recruiter/search" },
+            { label: "Dashboard", href: "/recruiter/search" },
             { label: "Compare" },
           ]}
         />
         <EmptyState
           icon={GitCompare}
           title="Select candidates to compare"
-          description="Pick at least 2 candidates from search to compare evidence-backed skill levels."
-          action={{ label: "Back to Search", onClick: () => navigate("/recruiter/search") }}
+          description="Pick at least 2 candidates from the dashboard to compare evidence-backed skill levels."
+          action={{ label: "Back to dashboard", onClick: () => navigate("/recruiter/search") }}
         />
       </AppShell>
     );
@@ -62,12 +62,12 @@ export default function RecruiterCompare() {
         title="Compare candidates"
         description={`Side-by-side comparison of evidence and attestation for ${selected.length} candidate(s)${skillFilter ? ` · skill filter: ${skillFilter}` : ""}.`}
         breadcrumbs={[
-          { label: "Search", href: "/recruiter/search" },
+          { label: "Dashboard", href: "/recruiter/search" },
           { label: "Compare" },
         ]}
         actions={
           <Button variant="outline" onClick={() => navigate("/recruiter/search")}>
-            <ArrowLeft className="h-4 w-4 mr-1.5" />Back to search
+            <ArrowLeft className="h-4 w-4 mr-1.5" />Back to dashboard
           </Button>
         }
       />

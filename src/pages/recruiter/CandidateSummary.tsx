@@ -8,18 +8,13 @@ import { EmptyState } from "@/components/sijil/EmptyState";
 
 import { PageSkeleton } from "@/components/sijil/SkeletonLoader";
 
-import { DisclosedPayloadView } from "@/components/recruiter/DisclosedPayloadView";
+import { RecruiterSkillEvidenceItem, recruiterSkillCards } from "@/components/recruiter/RecruiterSkillEvidence";
 
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from "@/components/ui/accordion";
+import { Accordion } from "@/components/ui/accordion";
 
 import { Button } from "@/components/ui/button";
 
-import { ArrowLeft, ArrowRight, ChevronDown, Lock, ShieldCheck, Wallet } from "lucide-react";
+import { ArrowLeft, Lock, ShieldCheck, Wallet } from "lucide-react";
 
 import { fetchPeerReviews } from "@/lib/db/peer-reviews";
 
@@ -31,7 +26,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import type { PeerReview } from "@/lib/sijil-data";
 
-import type { CandidateDetailView, SharedCredentialView } from "@/lib/shared-presentation";
+import { dedupeLatestSharedCredentials, type CandidateDetailView, type SharedCredentialView } from "@/lib/shared-presentation";
 
 
 
@@ -66,36 +61,6 @@ const IDENTITY_FIELD_IDS = new Set([
   "role",
 
   "track",
-
-]);
-
-
-
-const EVIDENCE_PAYLOAD_KEYS = new Set([
-
-  "evidence",
-
-  "evidencePackage",
-
-  "github",
-
-  "lms",
-
-  "peer_reviews",
-
-  "peerReviews",
-
-  "teacher_feedback",
-
-  "teacherFeedback",
-
-  "status",
-
-  "timestamps",
-
-  "practical_task_result",
-
-  "practicalTaskResult",
 
 ]);
 
@@ -183,10 +148,15 @@ export default function CandidateSummary() {
 
   const sharedCredentials = useMemo(
 
-    () => sortCredentialsByRecency(candidate?.sharedCredentials ?? []),
+    () => dedupeLatestSharedCredentials(sortCredentialsByRecency(candidate?.sharedCredentials ?? [])),
 
     [candidate?.sharedCredentials],
 
+  );
+
+  const skillCards = useMemo(
+    () => recruiterSkillCards(sharedCredentials),
+    [sharedCredentials],
   );
 
   const identityLine = useMemo(
@@ -345,19 +315,11 @@ export default function CandidateSummary() {
 
               ) : (
 
-                <Accordion type="single" collapsible className="w-full">
+                <Accordion type="single" collapsible defaultValue={skillCards[0]?.id} className="w-full">
 
-                  {sharedCredentials.map((credential) => (
+                  {skillCards.map((card) => (
 
-                    <VerifiedSkillAccordionItem
-
-                      key={credential.presentationId}
-
-                      credential={credential}
-
-                      candidateId={candidate.id}
-
-                    />
+                    <RecruiterSkillEvidenceItem key={card.id} card={card} />
 
                   ))}
 
@@ -456,160 +418,6 @@ function CvSection({ title, children }: { title: string; children: ReactNode }) 
       {children}
 
     </section>
-
-  );
-
-}
-
-
-
-function VerifiedSkillAccordionItem({
-
-  credential,
-
-  candidateId,
-
-}: {
-
-  credential: SharedCredentialView;
-
-  candidateId: string;
-
-}) {
-
-  const navigate = useNavigate();
-
-  const skillName = credential.skill ?? credential.title;
-
-  const track = getSkillTrack(credential);
-
-  const tiers = getEvidenceTierLabels(credential);
-
-  const evidencePayload = pickEvidencePayload(credential.disclosedPayload);
-
-  const hasEvidence = Object.keys(evidencePayload).length > 0;
-
-
-
-  return (
-
-    <AccordionItem value={credential.presentationId} className="border-border/60">
-
-      <AccordionTrigger className="group py-4 hover:no-underline [&>svg:last-child]:hidden">
-
-        <div className="flex w-full min-w-0 items-start gap-3 text-left">
-
-          <div className="min-w-0 flex-1 space-y-1">
-
-            <p className="text-base font-semibold leading-snug text-foreground">{skillName}</p>
-
-            <p className="text-sm leading-relaxed text-muted-foreground">
-
-              {[
-
-                track,
-
-                `Issued ${formatShortDate(credential.createdAt)}`,
-
-                `Valid through ${formatValidityEnd(credential.expiresAt)}`,
-
-              ].filter(Boolean).join(" · ")}
-
-            </p>
-
-          </div>
-
-          <ChevronDown
-
-            className="mt-1 h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200 group-data-[state=open]:rotate-180"
-
-            aria-hidden
-
-          />
-
-        </div>
-
-      </AccordionTrigger>
-
-      <AccordionContent className="pb-4 pt-0">
-
-        {(tiers.length > 0 || credential.proofType) && (
-
-          <div className="mb-4 flex flex-wrap gap-1.5">
-
-            {tiers.map((tier) => (
-
-              <span
-
-                key={tier}
-
-                className="inline-flex rounded-full border border-border/70 bg-muted/40 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
-
-              >
-
-                {tier}
-
-              </span>
-
-            ))}
-
-            {tiers.length === 0 && credential.proofType && (
-
-              <span className="inline-flex rounded-full border border-border/70 bg-muted/40 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-
-                {credential.proofType}
-
-              </span>
-
-            )}
-
-          </div>
-
-        )}
-
-        <div className="border-l-2 border-border/60 pl-4 text-sm leading-relaxed [&_.text-sm]:leading-relaxed">
-
-          {hasEvidence ? (
-
-            <DisclosedPayloadView payload={evidencePayload} fields={credential.disclosedFields} />
-
-          ) : (
-
-            <DisclosedPayloadView payload={credential.disclosedPayload} fields={credential.disclosedFields} />
-
-          )}
-
-        </div>
-
-        {credential.token && (
-
-          <Button
-
-            variant="link"
-
-            size="sm"
-
-            className="mt-3 h-auto p-0 text-xs text-primary"
-
-            onClick={() => navigate(
-
-              `/recruiter/verify/${encodeURIComponent(credential.token!)}?from=${encodeURIComponent(`/recruiter/candidate/${candidateId}`)}`,
-
-            )}
-
-          >
-
-            Open signed presentation
-
-            <ArrowRight className="ml-1 h-3 w-3" />
-
-          </Button>
-
-        )}
-
-      </AccordionContent>
-
-    </AccordionItem>
 
   );
 
@@ -782,144 +590,6 @@ function buildDisclosedIdentityLine(credentials: SharedCredentialView[]): string
 function joinIdentityValues(values: Set<string>): string {
 
   return [...values].join(", ");
-
-}
-
-
-
-function getSkillTrack(credential: SharedCredentialView): string | null {
-
-  const competency = asRecord(credential.disclosedPayload.competency);
-
-  const fromPayload = asText(competency?.domain);
-
-  if (fromPayload) return fromPayload;
-
-
-
-  const trackField = credential.disclosedFields.find((field) => TRACK_FIELD_IDS.has(field.id));
-
-  if (trackField?.value && trackField.value !== "—") return trackField.value;
-
-
-
-  if (credential.source === "wallet_share" && credential.subtitle) {
-
-    return credential.subtitle;
-
-  }
-
-
-
-  return null;
-
-}
-
-
-
-function getEvidenceTierLabels(credential: SharedCredentialView): string[] {
-
-  const labels: string[] = [];
-
-  const payload = credential.disclosedPayload;
-
-  const selected = new Set(credential.selectedFields);
-
-  const evidence = asRecord(payload.evidence);
-
-
-
-  if (selected.has("lms_evidence") || evidence?.lms || payload.lms) {
-
-    labels.push("Verified via LMS");
-
-  }
-
-  if (selected.has("github_evidence") || evidence?.github || payload.github) {
-
-    labels.push("GitHub evidence");
-
-  }
-
-  if (selected.has("peer_reviews") || evidence?.peerReviews || evidence?.peer_reviews || payload.peerReviews) {
-
-    labels.push("Peer reviewed");
-
-  }
-
-  if (selected.has("practical_task_result") || asRecord(payload.status)?.practicalTaskResult) {
-
-    labels.push("Practical task");
-
-  }
-
-  if (selected.has("complete_evidence_package") || payload.evidencePackage) {
-
-    labels.push("Evidence package");
-
-  }
-
-  if (selected.has("teacher_feedback") || payload.teacherFeedback || payload.teacher_feedback) {
-
-    labels.push("Teacher feedback");
-
-  }
-
-
-
-  return labels;
-
-}
-
-
-
-function pickEvidencePayload(payload: Record<string, unknown>): Record<string, unknown> {
-
-  const picked: Record<string, unknown> = {};
-
-  for (const [key, value] of Object.entries(payload)) {
-
-    if (value == null) continue;
-
-    if (key === "competency" || key === "learner") continue;
-
-    if (EVIDENCE_PAYLOAD_KEYS.has(key) || key.toLowerCase().includes("evidence")) {
-
-      picked[key] = value;
-
-    }
-
-  }
-
-  return picked;
-
-}
-
-
-
-function formatShortDate(value: string | null): string {
-
-  if (!value) return "—";
-
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) return value;
-
-  return date.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
-
-}
-
-
-
-function formatValidityEnd(value: string | null): string {
-
-  if (!value) return "No expiry";
-
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) return value;
-
-  return date.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 
 }
 

@@ -7,7 +7,6 @@ import {
   ClipboardCheck,
   ShieldCheck,
   Wallet,
-  Search,
   Bell,
   BadgeCheck,
   MessageSquare,
@@ -35,12 +34,12 @@ type NavGroup = { label: string; items: NavItem[] };
 
 const recruiterNavGroups: NavGroup[] = [
   {
-    label: "Search",
-    items: [{ to: "/recruiter/search", icon: Search, label: "Search Candidates", mobileTab: true }],
+    label: "Workspace",
+    items: [{ to: "/recruiter/search", icon: LayoutDashboard, label: "Dashboard", mobileTab: true }],
   },
   {
-    label: "Compare",
-    items: [{ to: "/recruiter/compare", icon: BadgeCheck, label: "Compare Candidates", mobileTab: true }],
+    label: "Review",
+    items: [{ to: "/recruiter/compare", icon: BadgeCheck, label: "Compare", mobileTab: true }],
   },
 ];
 
@@ -265,7 +264,9 @@ export function AppShell({ role, children }: { role: Role; children: React.React
             </Sheet>
             <div className="text-sm">
               <span className="font-semibold text-foreground">{roleLabel}</span>
-              <span className="hidden text-muted-foreground sm:inline"> · Verification workspace</span>
+              <span className="hidden text-muted-foreground sm:inline">
+                {role === "recruiter" ? " · Talent workspace" : " · Verification workspace"}
+              </span>
             </div>
           </div>
           <div className="flex items-center gap-1 sm:gap-2">

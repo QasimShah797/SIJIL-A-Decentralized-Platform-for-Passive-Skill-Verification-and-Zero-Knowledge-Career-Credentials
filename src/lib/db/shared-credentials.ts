@@ -8,6 +8,7 @@ import {
   mapCredentialShareToView,
   mapWalletShareToView,
   pickRecruiterDisplayName,
+  dedupeLatestSharedCredentials,
   type CandidateDetailView,
   type SharedCredentialView,
 } from "@/lib/shared-presentation";
@@ -66,9 +67,11 @@ export async function fetchActiveSharedCredentials(candidateId: string): Promise
     fetchCredentialShares(candidateId),
   ]);
 
-  return [...walletShares, ...credentialShares].sort((a, b) => (
-    new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-  ));
+  return dedupeLatestSharedCredentials(
+    [...walletShares, ...credentialShares].sort((a, b) => (
+      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    )),
+  );
 }
 
 async function fetchCandidateProfile(candidateId: string): Promise<{ name: string; institution: string } | null> {
