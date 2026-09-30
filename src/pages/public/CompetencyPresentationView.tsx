@@ -3,11 +3,20 @@ import { useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Copy, Info, ShieldAlert, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { EmptyState } from "@/components/sijil/EmptyState";
 import { PageHeader } from "@/components/sijil/PageHeader";
+import { PageSkeleton } from "@/components/sijil/SkeletonLoader";
 import { PublicSurfaceLayout } from "@/components/sijil/PublicSurfaceLayout";
 import { StatusBadge } from "@/components/sijil/StatusBadge";
 import { FieldRow } from "@/components/sijil/FieldRow";
 import { toast } from "@/hooks/use-toast";
+import {
+  isLedgerVerifyStatus,
+  mapLedgerStatusToBadge,
+  shareShowsVerified,
+  type LedgerVerifyStatus,
+} from "@/lib/ledger-status";
+import { getPublicCredentialApi } from "@/services/api/public-credential.api";
 import {
   getPublicPresentationApi,
   verifyPublicPresentationApi,
@@ -32,9 +41,21 @@ function titleCase(value: string): string {
     .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
-function proofVariant(result: PublicPresentationView["verification"]["result"]): "verified" | "warning" | "destructive" {
-  if (result === "Valid Proof") return "verified";
-  if (result === "Expired") return "warning";
+function proofVariant(
+  result: PublicPresentationView["verification"]["result"],
+  ledgerStatus: string | null | undefined,
+  detail?: string | null,
+): "verified" | "warning" | "destructive" {
+  if (shareShowsVerified({ ledgerStatus, detail }) && result === "Valid Proof") return "verified";
+  if (
+    result === "Expired"
+    || ledgerStatus === "ledger_unavailable"
+    || ledgerStatus === "pending_anchor"
+    || ledgerStatus === "evidence_unavailable"
+    || detail === "legacy_unverified_evidence"
+  ) {
+    return "warning";
+  }
   return "destructive";
 }
 
@@ -126,6 +147,8 @@ export default function CompetencyPresentationView() {
   const [loading, setLoading] = useState(true);
   const [verifying, setVerifying] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [ledgerStatus, setLedgerStatus] = useState<LedgerVerifyStatus | null>(null);
+  const [ledgerDetail, setLedgerDetail] = useState<string | null>(null);
 
   useEffect(() => {
     if (!token) {
@@ -151,6 +174,19 @@ export default function CompetencyPresentationView() {
         if (active) setLoading(false);
       });
 
+    getPublicCredentialApi(token)
+      .then((credential) => {
+        if (!active) return;
+        setLedgerStatus(
+          isLedgerVerifyStatus(credential.ledgerStatus) ? credential.ledgerStatus : "ledger_unavailable",
+        );
+        setLedgerDetail(credential.ledgerDetail ?? null);
+      })
+      .catch(() => {
+        if (!active) return;
+        setLedgerStatus("ledger_unavailable");
+      });
+
     return () => {
       active = false;
     };
@@ -166,6 +202,8 @@ export default function CompetencyPresentationView() {
         value,
       }));
   }, [presentation]);
+
+  const ledgerBadge = mapLedgerStatusToBadge(ledgerStatus, ledgerDetail);
 
   const runVerification = async () => {
     if (!token) return;
@@ -242,13 +280,13 @@ export default function CompetencyPresentationView() {
         />
 
         {loading ? (
-          <div className="text-sm text-muted-foreground">Loading presentation…</div>
+          <PageSkeleton rows={4} />
         ) : error || !presentation ? (
-          <Card>
-            <CardContent className="p-6 text-sm text-destructive">
-              {error ?? "Could not load the disclosed presentation."}
-            </CardContent>
-          </Card>
+          <EmptyState
+            icon={ShieldAlert}
+            title="Presentation not found"
+            description={error ?? "Could not load the disclosed presentation."}
+          />
         ) : (
           <div className="space-y-6">
             <Card className="overflow-hidden border-primary/15 shadow-md">
@@ -260,9 +298,14 @@ export default function CompetencyPresentationView() {
                     </p>
                     <p className="mt-1 text-lg font-semibold">{presentation.verification.result}</p>
                   </div>
-                  <StatusBadge variant={proofVariant(presentation.verification.result)} className="bg-white/15 text-primary-foreground">
+                  <StatusBadge variant={proofVariant(presentation.verification.result, ledgerStatus, ledgerDetail)} className="bg-white/15 text-primary-foreground">
                     {presentation.proofType}
                   </StatusBadge>
+                  {ledgerStatus ? (
+                    <StatusBadge variant={ledgerBadge.variant}>
+                      {ledgerBadge.label}
+                    </StatusBadge>
+                  ) : null}
                 </div>
               </div>
               <CardContent className="flex flex-wrap items-center justify-between gap-3 p-5">

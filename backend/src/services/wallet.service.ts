@@ -36,6 +36,7 @@ import {
 } from "../types/wallet.types";
 import type {
   PublicCompetencyResponse,
+  PublicCredentialLedger,
   PublicCredentialResponse,
 } from "../types/public-credential.types";
 import {
@@ -45,6 +46,11 @@ import {
   competencyFromSharePayload,
 } from "../utils/public-credential-map";
 import { walletExportAvailability } from "./wallet-pass.service";
+import {
+  findCredentialForLearnerCompetency,
+  isIssuedCredentialRevoked,
+  verifyPublicCredential,
+} from "./credential-verify.service";
 
 type DbRow = Record<string, unknown>;
 
@@ -99,14 +105,7 @@ const DISCLOSURE_REDACT_KEYS = new Set([
 ]);
 
 function db() {
-  return getRequestSupabase() as unknown as {
-    from: (table: string) => {
-      select: (columns?: string) => any;
-      upsert: (payload: unknown, options?: unknown) => any;
-      insert: (payload: unknown) => any;
-      update: (payload: unknown) => any;
-    };
-  };
+  return getRequestSupabase();
 }
 
 function asRecord(value: unknown): DbRow | null {
@@ -395,7 +394,7 @@ function throwDbError(error: { message?: string }, context: string): never {
 
 async function safeFetchRows(
   table: string,
-  run: () => Promise<{ data: unknown[] | null; error: { message?: string } | null }>,
+  run: () => PromiseLike<{ data: unknown[] | null; error: { message?: string } | null }>,
 ): Promise<DbRow[]> {
   try {
     const { data, error } = await run();
@@ -416,7 +415,7 @@ async function safeFetchRows(
 
 async function safeFetchSingle(
   table: string,
-  run: () => Promise<{ data: unknown; error: { message?: string } | null }>,
+  run: () => PromiseLike<{ data: unknown; error: { message?: string } | null }>,
 ): Promise<DbRow | null> {
   try {
     const { data, error } = await run();
@@ -967,7 +966,7 @@ async function persistWalletRecord(record: WalletCompetencyRecordView): Promise<
     updated_at: record.updatedAt,
   };
 
-  const result = await db()
+  const result = await getServiceSupabase()
     .from("wallet_competency_records")
     .upsert(payload, { onConflict: "learner_id,competency_id" });
 
@@ -1512,6 +1511,40 @@ function buildVerificationResult(params: {
   };
 }
 
+async function withLedgerRevocation(
+  row: PresentationRow,
+  verification: PublicPresentationVerification,
+): Promise<PublicPresentationVerification> {
+  if (verification.revoked) return verification;
+  if (await isIssuedCredentialRevoked(row.learner_id, row.competency_id)) {
+    return { ...verification, revoked: true, result: "Revoked" };
+  }
+  return verification;
+}
+
+async function ledgerSnapshotForPresentation(row: PresentationRow): Promise<{
+  ledgerStatus: string;
+  ledgerDetail: string | null;
+  ledger: PublicCredentialLedger | null;
+}> {
+  const cred = await findCredentialForLearnerCompetency(row.learner_id, row.competency_id);
+  if (!cred) {
+    return { ledgerStatus: "not_found", ledgerDetail: null, ledger: null };
+  }
+  const result = await verifyPublicCredential(cred.id);
+  return {
+    ledgerStatus: result.status,
+    ledgerDetail: result.detail ?? null,
+    ledger: {
+      credentialId: result.credentialId,
+      hash: result.hash,
+      anchorTxId: result.anchorTxId,
+      anchoredAt: result.anchoredAt,
+      verifiedAt: result.verifiedAt,
+    },
+  };
+}
+
 function mapPresentationRow(row: DbRow): PresentationRow {
   return {
     id: asText(row.id),
@@ -1600,7 +1633,7 @@ async function revokeDuplicateShares(
     .map((row) => asText(row.id))
     .filter(Boolean);
   if (extras.length === 0) return;
-  await db()
+  await getServiceSupabase()
     .from("selective_disclosure_presentations")
     .update({ revoked_at: new Date().toISOString() })
     .eq("learner_id", userId)
@@ -1637,6 +1670,9 @@ export class WalletService {
     const records = await loadAggregatedWallet(userId);
     const record = records.find((item) => item.competencyId === competencyId);
     if (!record) throw new AppError("Competency wallet record not found", 404);
+    if (await isIssuedCredentialRevoked(userId, competencyId)) {
+      throw new AppError("Cannot create a presentation for a revoked credential", 409);
+    }
     await persistWalletRecord(record);
     const learnerContext = await loadLearnerDisclosureContext(userId);
     const shareScope = input.shareScope === "selected" ? "selected" : "all";
@@ -1686,14 +1722,14 @@ export class WalletService {
     };
 
     const { data, error } = existing
-      ? await db()
+      ? await getServiceSupabase()
         .from("selective_disclosure_presentations")
         .update(shareRow)
         .eq("id", existing.id)
         .eq("learner_id", userId)
         .select("id, expires_at")
         .single()
-      : await db()
+      : await getServiceSupabase()
         .from("selective_disclosure_presentations")
         .insert({ ...shareRow, created_at: now })
         .select("id, expires_at")
@@ -1718,7 +1754,7 @@ export class WalletService {
   }
 
   async revokeShare(userId: string, shareId: string): Promise<void> {
-    const { error } = await db()
+    const { error } = await getServiceSupabase()
       .from("selective_disclosure_presentations")
       .update({ revoked_at: new Date().toISOString() })
       .eq("id", shareId)
@@ -1729,10 +1765,10 @@ export class WalletService {
 
   async getPublicPresentation(token: string): Promise<PublicPresentationView> {
     const row = await loadPresentationByToken(token);
-    const verification = buildVerificationResult({
+    const verification = await withLedgerRevocation(row, buildVerificationResult({
       row,
       disclosedPayload: row.disclosed_payload,
-    });
+    }));
 
     return {
       id: row.id,
@@ -1756,10 +1792,10 @@ export class WalletService {
     disclosedPayload?: Record<string, unknown>,
   ): Promise<PublicPresentationView> {
     const row = await loadPresentationByToken(token);
-    const verification = buildVerificationResult({
+    const verification = await withLedgerRevocation(row, buildVerificationResult({
       row,
       disclosedPayload: disclosedPayload ?? row.disclosed_payload,
-    });
+    }));
 
     return {
       id: row.id,
@@ -1799,11 +1835,15 @@ export class WalletService {
 
   async getPublicCompetency(token: string, competencyId: string): Promise<PublicCompetencyResponse> {
     const row = await loadPresentationByToken(token);
-    const verification = buildVerificationResult({
+    const verification = await withLedgerRevocation(row, buildVerificationResult({
       row,
       disclosedPayload: row.disclosed_payload,
-    });
+    }));
     const verifiedAt = new Date().toISOString();
+    const ledgerInfo = await ledgerSnapshotForPresentation(row);
+    const ledgerVerified =
+      ledgerInfo.ledgerStatus === "verified" &&
+      ledgerInfo.ledgerDetail !== "legacy_unverified_evidence";
 
     if (verification.revoked) {
       return {
@@ -1812,6 +1852,8 @@ export class WalletService {
         verifiedAt,
         competency: null,
         ledger: null,
+        ledgerStatus: ledgerInfo.ledgerStatus,
+        ledgerDetail: ledgerInfo.ledgerDetail,
       };
     }
     if (verification.expired) {
@@ -1821,6 +1863,8 @@ export class WalletService {
         verifiedAt,
         competency: null,
         ledger: null,
+        ledgerStatus: ledgerInfo.ledgerStatus,
+        ledgerDetail: ledgerInfo.ledgerDetail,
       };
     }
     const payload = await hydrateSharedWalletPayload(row);
@@ -1835,10 +1879,12 @@ export class WalletService {
 
     return {
       status: "valid",
-      verified: verification.result === "Valid Proof",
+      verified: verification.result === "Valid Proof" && ledgerVerified,
       verifiedAt,
       competency,
       ledger: buildEvidenceLedger(payload, competencyId, row.selected_fields),
+      ledgerStatus: ledgerInfo.ledgerStatus,
+      ledgerDetail: ledgerInfo.ledgerDetail,
     };
   }
 
@@ -1924,12 +1970,16 @@ export class WalletService {
   }
 
   private async toPublicCredential(token: string, row: PresentationRow): Promise<PublicCredentialResponse> {
-    const verification = buildVerificationResult({
+    const verification = await withLedgerRevocation(row, buildVerificationResult({
       row,
       disclosedPayload: row.disclosed_payload,
-    });
+    }));
     const verifiedAt = new Date().toISOString();
     const walletExport = walletExportAvailability();
+    const ledgerInfo = await ledgerSnapshotForPresentation(row);
+    const ledgerVerified =
+      ledgerInfo.ledgerStatus === "verified" &&
+      ledgerInfo.ledgerDetail !== "legacy_unverified_evidence";
 
     if (verification.revoked) {
       return {
@@ -1942,6 +1992,9 @@ export class WalletService {
         resume: null,
         webView: null,
         walletExport,
+        ledgerStatus: ledgerInfo.ledgerStatus,
+        ledgerDetail: ledgerInfo.ledgerDetail,
+        ledger: ledgerInfo.ledger,
       };
     }
     if (verification.expired) {
@@ -1955,6 +2008,9 @@ export class WalletService {
         resume: null,
         webView: null,
         walletExport,
+        ledgerStatus: ledgerInfo.ledgerStatus,
+        ledgerDetail: ledgerInfo.ledgerDetail,
+        ledger: ledgerInfo.ledger,
       };
     }
 
@@ -1969,9 +2025,10 @@ export class WalletService {
         if (photoUrl) resume.photoUrl = photoUrl;
       }
     }
+    const shareValid = verification.result === "Valid Proof";
     return {
-      status: verification.result === "Valid Proof" ? "valid" : "valid",
-      verified: verification.result === "Valid Proof",
+      status: "valid",
+      verified: shareValid && ledgerVerified,
       verifiedAt,
       competencyId: row.competency_id,
       selectedFields: row.selected_fields,
@@ -1986,6 +2043,9 @@ export class WalletService {
         payloadHash: row.payload_hash,
       },
       walletExport,
+      ledgerStatus: ledgerInfo.ledgerStatus,
+      ledgerDetail: ledgerInfo.ledgerDetail,
+      ledger: ledgerInfo.ledger,
     };
   }
 }

@@ -1,10 +1,10 @@
 /**
- * Institution student provisioning routes.
+ * Institution student provisioning routes (reviewer / legacy institution).
  */
 import { Router } from "express";
 import { asyncHandler } from "../utils/asyncHandler";
 import { authMiddleware } from "../middleware/auth.middleware";
-import { requireInstitution } from "../middleware/role.middleware";
+import { requireReviewer } from "../middleware/role.middleware";
 import {
   createInstitutionStudent,
   listInstitutionStudents,
@@ -12,7 +12,7 @@ import {
 
 const router = Router();
 
-router.use(authMiddleware, requireInstitution);
+router.use(authMiddleware, requireReviewer);
 
 router.get("/students", asyncHandler(listInstitutionStudents));
 router.post("/students", asyncHandler(createInstitutionStudent));

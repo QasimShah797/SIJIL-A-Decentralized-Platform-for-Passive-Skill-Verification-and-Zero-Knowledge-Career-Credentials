@@ -13,6 +13,7 @@ import { ArrowLeft, Share2, ShieldCheck, FileText, Github, BookOpen, FileUp, Mes
 import { useCredentials } from "@/hooks/useLearnerData";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { mapWalletAnchorStatus } from "@/lib/ledger-status";
 
 type RepoEvidence = {
   id: string;
@@ -67,13 +68,18 @@ export default function CredentialDetails() {
   if (!c) {
     return (
       <AppShell role="learner">
-        <PageHeader title="Credential not found" />
-        <Button onClick={() => navigate("/learner/wallet")}>Back to wallet</Button>
+        <EmptyState
+          icon={FileText}
+          title="Credential not found"
+          description="This credential is not in your wallet."
+          action={{ label: "Back to wallet", onClick: () => navigate("/learner/wallet") }}
+        />
       </AppShell>
     );
   }
 
   const totalSupporting = repoEvidence.length;
+  const anchorBadge = mapWalletAnchorStatus(c.anchorStatus);
 
   return (
     <AppShell role="learner">
@@ -105,6 +111,11 @@ export default function CredentialDetails() {
             <div className="flex flex-col items-end gap-2">
               <StatusBadge variant="verified" icon={<ShieldCheck className="h-3 w-3" />}>{c.verification}</StatusBadge>
               <StatusBadge variant={c.attestation === "Approved" ? "verified" : "info"}>Attestation: {c.attestation}</StatusBadge>
+              {anchorBadge ? (
+                <StatusBadge variant={anchorBadge.variant}>
+                  {anchorBadge.label}
+                </StatusBadge>
+              ) : null}
             </div>
           </div>
         </div>

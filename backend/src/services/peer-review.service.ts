@@ -4,6 +4,7 @@
  */
 import { randomBytes } from "crypto";
 import { supabaseService } from "./supabase.service";
+import { walletService } from "./wallet.service";
 import { reviewsService } from "./reviews.service";
 import { AppError } from "../utils/AppError";
 import { buildReviewLink, sendReviewRequestEmail } from "../utils/reviewEmail";
@@ -910,7 +911,7 @@ export class PeerReviewService {
 
     const { data: pendingInvite } = await supabaseService.client
       .from("peer_review_invites")
-      .select("id, token, status, expires_at, contributor_email")
+      .select("id, token, status, expires_at, contributor_email, contributor_name, project_name, skill")
       .eq("learner_user_id", userId)
       .eq("project_id", input.projectId)
       .eq("contributor_id", input.contributorId)
@@ -1141,6 +1142,15 @@ export class PeerReviewService {
         completed_review_id: review.id,
       })
       .eq("id", invite.id);
+
+    const skillId = (invite.skill_id as string) ?? null;
+    if (skillId) {
+      try {
+        await walletService.syncCompetency(userId, skillId);
+      } catch {
+        // Wallet persist is best-effort until the learner opens the wallet.
+      }
+    }
 
     return rowToPeerReview(review as Record<string, unknown>);
   }

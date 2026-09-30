@@ -6,6 +6,7 @@ import { recruiterService } from "../services/recruiter.service";
 import { sendSuccess } from "../utils/apiResponse";
 import { searchQuerySchema, profileFieldsQuerySchema } from "../validators/recruiter.validator";
 import { paramString } from "../utils/params";
+import { callerFromRequest } from "../services/learner-access";
 
 export async function verifyCredential(req: Request, res: Response): Promise<Response> {
   const result = await recruiterService.verifyCredential(paramString(req.params.credentialId, "credentialId"));
@@ -15,6 +16,7 @@ export async function verifyCredential(req: Request, res: Response): Promise<Res
 export async function getCandidate(req: Request, res: Response): Promise<Response> {
   const candidate = await recruiterService.getCandidate(
     paramString(req.params.candidateId, "candidateId"),
+    callerFromRequest(req),
     req.accessToken,
   );
   return sendSuccess(res, candidate);

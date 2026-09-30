@@ -1,10 +1,10 @@
 /**
- * Attestation workflow routes — institution queue and decisions.
+ * Attestation workflow routes — reviewer queue and decisions.
  */
 import { Router } from "express";
 import { asyncHandler } from "../utils/asyncHandler";
 import { authMiddleware } from "../middleware/auth.middleware";
-import { requireInstitution } from "../middleware/role.middleware";
+import { requireReviewer } from "../middleware/role.middleware";
 import {
   getAttestationQueue,
   approveAttestation,
@@ -14,7 +14,7 @@ import {
 
 const router = Router();
 
-router.use(authMiddleware, requireInstitution);
+router.use(authMiddleware, requireReviewer);
 
 router.get("/queue", asyncHandler(getAttestationQueue));
 router.post("/approve", asyncHandler(approveAttestation));

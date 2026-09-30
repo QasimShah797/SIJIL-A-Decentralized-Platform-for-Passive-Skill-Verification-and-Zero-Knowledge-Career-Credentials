@@ -4,6 +4,8 @@ import { CompetencyPackageCard, EvidenceInspectorCard, type InspectorSource } fr
 import { ShareRevokedState, ShareUnavailableState } from "@/components/public/ShareRevokedState";
 import { PublicSurfaceLayout } from "@/components/sijil/PublicSurfaceLayout";
 import { StatusBadge } from "@/components/sijil/StatusBadge";
+import { PageSkeleton } from "@/components/sijil/SkeletonLoader";
+import { mapLedgerStatusToBadge, shareShowsVerified } from "@/lib/ledger-status";
 import {
   buildEvidenceLedger,
   competencyFromSharePayload,
@@ -14,17 +16,38 @@ import {
 import { getPublicCompetencyApi, getPublicCredentialApi } from "@/services/api/public-credential.api";
 
 async function loadPublicCompetency(shareToken: string, competencyId: string): Promise<PublicCompetencyResponse> {
+  const credential = await getPublicCredentialApi(shareToken).catch(() => null);
+  const ledgerStatus = credential?.ledgerStatus ?? "ledger_unavailable";
+  const verified = shareShowsVerified({
+    ledgerStatus,
+    verified: credential?.verified,
+    detail: credential?.ledgerDetail,
+  });
+
   try {
-    return await getPublicCompetencyApi(shareToken, competencyId);
+    const competency = await getPublicCompetencyApi(shareToken, competencyId);
+    return {
+      ...competency,
+      ledgerStatus: competency.ledgerStatus ?? ledgerStatus,
+      verified: shareShowsVerified({
+        ledgerStatus: competency.ledgerStatus ?? ledgerStatus,
+        verified: competency.verified,
+        detail: competency.ledgerDetail ?? credential?.ledgerDetail,
+      }),
+    };
   } catch {
-    const credential = await getPublicCredentialApi(shareToken);
+    if (!credential) {
+      throw new Error("This competency was not included in the share");
+    }
     if (credential.status !== "valid" || !credential.webView) {
       return {
-        status: credential.status === "valid" ? "invalid" : credential.status,
-        verified: credential.verified,
-        verifiedAt: credential.verifiedAt,
+        status: credential?.status === "valid" ? "invalid" : (credential?.status ?? "invalid"),
+        verified,
+        verifiedAt: credential?.verifiedAt ?? null,
         competency: null,
         ledger: null,
+        ledgerStatus,
+        ledgerDetail: credential?.ledgerDetail ?? null,
       };
     }
     const competency = competencyFromSharePayload(
@@ -37,7 +60,7 @@ async function loadPublicCompetency(shareToken: string, competencyId: string): P
     }
     return {
       status: "valid",
-      verified: credential.verified,
+      verified,
       verifiedAt: credential.verifiedAt,
       competency,
       ledger: buildEvidenceLedger(
@@ -45,6 +68,8 @@ async function loadPublicCompetency(shareToken: string, competencyId: string): P
         competencyId,
         credential.selectedFields,
       ),
+      ledgerStatus,
+      ledgerDetail: credential.ledgerDetail ?? null,
     };
   }
 }
@@ -83,6 +108,7 @@ export default function PublicCompetencyPage() {
     () => inspectorViewFromLedger(payload?.ledger ?? []),
     [payload?.ledger],
   );
+  const ledgerBadge = mapLedgerStatusToBadge(payload?.ledgerStatus, payload?.ledgerDetail);
 
   useEffect(() => {
     if (!inspector.availableSources.includes(inspectorSource)) {
@@ -107,7 +133,7 @@ export default function PublicCompetencyPage() {
         </p>
 
         {loading ? (
-          <p className="mt-8 text-sm text-muted-foreground">Loading evidence…</p>
+          <div className="mt-8"><PageSkeleton rows={4} /></div>
         ) : error === "missing" || !payload ? (
           <div className="mt-8"><ShareUnavailableState status="missing" /></div>
         ) : payload.status === "revoked" ? (
@@ -118,11 +144,14 @@ export default function PublicCompetencyPage() {
           <div className="mt-8"><ShareUnavailableState status="invalid" /></div>
         ) : (
           <div className="mt-8 space-y-4">
-            {payload.competency?.domain ? (
-              <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              {payload.competency?.domain ? (
                 <StatusBadge variant="neutral">{payload.competency.domain}</StatusBadge>
-              </div>
-            ) : null}
+              ) : null}
+              <StatusBadge variant={ledgerBadge.variant}>
+                {ledgerBadge.label}
+              </StatusBadge>
+            </div>
             {payload.competency?.description ? (
               <p className="text-sm text-muted-foreground">{payload.competency.description}</p>
             ) : null}

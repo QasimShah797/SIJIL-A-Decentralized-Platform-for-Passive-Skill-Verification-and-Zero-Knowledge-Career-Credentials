@@ -2,7 +2,14 @@ import { supabase } from "@/integrations/supabase/client";
 import type { RelatedEvidenceApiView } from "@/services/api/skills.api";
 import { syncGitHubAfterSkillDeclare } from "@/lib/github-integration";
 import { cleanupCompetencyRelatedData } from "@/lib/db/competency-cleanup";
-import { deleteSkillApi } from "@/services/api/skills.api";
+import {
+  applySkillEventApi,
+  createSkillApi,
+  deleteSkillApi,
+  syncSkillEvidenceStatusApi,
+  updateSkillApi,
+} from "@/services/api/skills.api";
+import { submitEvidenceApi } from "@/services/api/evidence.api";
 import type { DeclaredSkill } from "@/lib/sijil-data";
 
 function rowToSkill(row: {
@@ -27,105 +34,8 @@ function rowToSkill(row: {
   };
 }
 
-const SKILL_STATUSES_PRESERVED = new Set([
-  "Wallet Ready",
-  "Credential Issued",
-  "Review Available",
-  "Attestation Pending",
-]);
-
-/** Align declared_skills badges with linked GitHub/LMS/uploaded evidence. */
-export async function syncDeclaredSkillEvidenceStatuses(userId: string): Promise<void> {
-  const { data: skills, error: skillsError } = await supabase
-    .from("declared_skills")
-    .select("id, status")
-    .eq("user_id", userId);
-  if (skillsError) throw skillsError;
-  if (!skills?.length) return;
-
-  const [
-    { data: githubRepos },
-    { data: evidenceLinks },
-    { data: lmsEvidence },
-    { data: supportingRecords },
-    { data: evidenceRecords },
-  ] = await Promise.all([
-    supabase
-      .from("github_repos")
-      .select("linked_skill_id")
-      .eq("user_id", userId)
-      .not("linked_skill_id", "is", null),
-    supabase
-      .from("skill_evidence_links")
-      .select("skill_id")
-      .eq("user_id", userId),
-    supabase
-      .from("lms_evidence")
-      .select("linked_skill_id")
-      .eq("user_id", userId)
-      .not("linked_skill_id", "is", null),
-    supabase
-      .from("supporting_records")
-      .select("skill_id")
-      .eq("user_id", userId),
-    supabase
-      .from("evidence_records")
-      .select("mapped_skill_id")
-      .eq("user_id", userId)
-      .not("mapped_skill_id", "is", null),
-  ]);
-
-  const linkedSkillIds = new Set<string>();
-  for (const row of githubRepos ?? []) {
-    if (row.linked_skill_id) linkedSkillIds.add(row.linked_skill_id as string);
-  }
-  for (const row of evidenceLinks ?? []) {
-    if (row.skill_id) linkedSkillIds.add(row.skill_id as string);
-  }
-  for (const row of lmsEvidence ?? []) {
-    if (row.linked_skill_id) linkedSkillIds.add(row.linked_skill_id as string);
-  }
-  for (const row of supportingRecords ?? []) {
-    if (row.skill_id) linkedSkillIds.add(row.skill_id as string);
-  }
-  for (const row of evidenceRecords ?? []) {
-    if (row.mapped_skill_id) linkedSkillIds.add(row.mapped_skill_id as string);
-  }
-
-  const now = new Date().toISOString();
-  await Promise.all(
-    skills.map(async (skill) => {
-      const status = skill.status as string;
-      if (SKILL_STATUSES_PRESERVED.has(status)) return;
-
-      const hasEvidence = linkedSkillIds.has(skill.id as string);
-      if (hasEvidence && status === "Skill Claimed") {
-        const { error } = await supabase
-          .from("declared_skills")
-          .update({
-            status: "Evidence Linked",
-            pipeline_stage: "evidence_linked",
-            last_related_activity_at: now,
-          })
-          .eq("user_id", userId)
-          .eq("id", skill.id);
-        if (error) throw error;
-        return;
-      }
-
-      if (!hasEvidence && status === "Evidence Linked") {
-        const { error } = await supabase
-          .from("declared_skills")
-          .update({
-            status: "Skill Claimed",
-            pipeline_stage: "declared",
-          })
-          .eq("user_id", userId)
-          .eq("id", skill.id);
-        if (error) throw error;
-      }
-    }),
-  );
+export async function syncDeclaredSkillEvidenceStatuses(_userId: string): Promise<void> {
+  await syncSkillEvidenceStatusApi();
 }
 
 export async function fetchDeclaredSkills(userId: string): Promise<DeclaredSkill[]> {
@@ -160,6 +70,15 @@ export async function insertDeclaredSkill(
   skill: Pick<DeclaredSkill, "name"> & Partial<Pick<DeclaredSkill, "domain" | "description">>,
   allDeclaredSkills?: DeclaredSkill[],
 ): Promise<DeclaredSkill> {
+  const viaApi = await createSkillApi(skill);
+  if (viaApi) {
+    await syncGitHubAfterSkillDeclare(
+      (allDeclaredSkills?.length ? [...allDeclaredSkills, viaApi.skill] : [viaApi.skill])
+        .map((s) => ({ id: s.id, name: s.name, domain: s.domain })),
+    );
+    return viaApi.skill;
+  }
+
   const normalizedName = skill.name.trim().toLowerCase();
   const { data: existing, error: existingError } = await supabase
     .from("declared_skills")
@@ -266,6 +185,9 @@ export async function updateDeclaredSkill(
   skillId: string,
   skill: Pick<DeclaredSkill, "name"> & Partial<Pick<DeclaredSkill, "domain" | "description">>,
 ): Promise<DeclaredSkill> {
+  const viaApi = await updateSkillApi(skillId, skill);
+  if (viaApi) return viaApi;
+
   const patch: Record<string, unknown> = {
     name: skill.name.trim(),
   };
@@ -284,22 +206,25 @@ export async function updateDeclaredSkill(
 }
 
 export async function updateSkillPipelineStage(
-  userId: string,
+  _userId: string,
   skillId: string,
   pipelineStage: string,
-  status?: string,
+  _status?: string,
 ): Promise<void> {
-  const patch: Record<string, unknown> = {
-    pipeline_stage: pipelineStage,
-  };
-  if (status) patch.status = status;
+  if (pipelineStage === "institution_attestation_pending") {
+    const applied = await applySkillEventApi(skillId, "attestation_submitted");
+    if (!applied) {
+      throw new Error("Backend required to update attestation pipeline stage");
+    }
+    return;
+  }
 
-  const { error } = await supabase
-    .from("declared_skills")
-    .update(patch)
-    .eq("user_id", userId)
-    .eq("id", skillId);
-  if (error) throw error;
+  if (pipelineStage === "evidence_linked" || pipelineStage === "declared") {
+    const synced = await applySkillEventApi(skillId, "sync_evidence");
+    if (!synced) {
+      throw new Error("Backend required to update skill evidence pipeline stage");
+    }
+  }
 }
 
 export async function updateSkillActivityTimestamp(userId: string, skillId: string): Promise<void> {
@@ -332,20 +257,19 @@ export async function insertSkillSupportingRecord(
   if (error) throw error;
 }
 
-/** Submit evidence via Supabase (backend API disabled for localhost). */
+/** Submit uploaded evidence; pipeline status is written only by the backend. */
 export async function submitSkillEvidenceAfterUpload(
   userId: string,
   skillId: string,
   fileName: string,
   fileUrl: string,
 ): Promise<void> {
+  const viaApi = await submitEvidenceApi({
+    skillId,
+    title: fileName,
+    url: fileUrl,
+    source: "Upload",
+  });
+  if (viaApi) return;
   await insertSkillSupportingRecord(userId, skillId, fileName, fileUrl);
-  const { error } = await supabase.from("declared_skills")
-    .update({
-      status: "Evidence Linked",
-      pipeline_stage: "evidence_linked",
-      last_related_activity_at: new Date().toISOString(),
-    })
-    .eq("id", skillId).eq("user_id", userId);
-  if (error) throw error;
 }

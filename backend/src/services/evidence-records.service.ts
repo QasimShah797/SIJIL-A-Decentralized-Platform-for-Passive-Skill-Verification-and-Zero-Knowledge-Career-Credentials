@@ -10,6 +10,8 @@ import { skillsService } from "./skills.service";
 
 import { AppError } from "../utils/AppError";
 
+import { hashEvidenceRecord } from "../utils/evidence-hash";
+
 import {
 
   EVIDENCE_RECORD_STATUS,
@@ -755,6 +757,16 @@ export class EvidenceRecordsService {
       url: record.repository_url as string,
 
       occurred_at: record.last_updated ?? new Date().toISOString(),
+
+      content_hash: hashEvidenceRecord({
+
+        source: EVIDENCE_SOURCE.GITHUB,
+
+        title: String(record.repository_name ?? ""),
+
+        url: typeof record.repository_url === "string" ? record.repository_url : null,
+
+      }),
 
     });
 

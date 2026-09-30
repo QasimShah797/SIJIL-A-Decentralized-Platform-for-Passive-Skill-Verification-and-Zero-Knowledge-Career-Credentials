@@ -10,6 +10,7 @@ export interface SupportingRecordRow {
   url: string | null;
   occurred_at: string;
   created_at: string;
+  content_hash?: string | null;
 }
 
 export interface EvidenceView {

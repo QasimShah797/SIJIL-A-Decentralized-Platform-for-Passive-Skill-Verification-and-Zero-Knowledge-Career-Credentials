@@ -24,11 +24,14 @@ import type {
 import { fetchGitHubConnection } from "@/lib/github-integration";
 import { fetchMoodleConnection } from "@/lib/moodle-integration";
 import { toast } from "@/hooks/use-toast";
+import { mapWalletAnchorStatus } from "@/lib/ledger-status";
+import { EmptyState } from "@/components/sijil/EmptyState";
 import {
   ClipboardList,
   Github,
   GraduationCap,
   MessageSquare,
+  ShieldAlert,
 } from "lucide-react";
 import {
   getWalletCompetenciesApi,
@@ -76,6 +79,15 @@ function latestAttempt(summary: WalletEvidenceSummary): WalletAttemptHistoryItem
 
 function resolveEvidencePackage(record: WalletCompetencyRecordView): WalletEvidenceSummary {
   return record.evidencePackage;
+}
+
+function matchingCredential<T extends { skill: string; name: string }>(
+  credentials: T[],
+  competencyName: string,
+): T | undefined {
+  return credentials.find(
+    (credential) => credential.skill === competencyName || credential.name === competencyName,
+  );
 }
 
 function asEvidenceArray(value: unknown): Record<string, unknown>[] {
@@ -606,10 +618,17 @@ export default function WalletPage() {
   }, [activeRecord?.competencyId, profilePhotoUrl]);
 
   const credentialIssued = activeRecord
-    ? credentials.some((credential) =>
-      credential.skill === activeRecord.competencyName || credential.name === activeRecord.competencyName,
-    )
+    ? Boolean(matchingCredential(credentials, activeRecord.competencyName))
     : false;
+  const anchorByCompetencyId = Object.fromEntries(
+    records.map((record) => [
+      record.competencyId,
+      mapWalletAnchorStatus(matchingCredential(credentials, record.competencyName)?.anchorStatus),
+    ]),
+  );
+  const activeAnchor = activeRecord
+    ? mapWalletAnchorStatus(matchingCredential(credentials, activeRecord.competencyName)?.anchorStatus)
+    : null;
   const institutionApproved = /approv|attest|issued|verified/i.test(
     summary?.institutionReview.status ?? "",
   );
@@ -687,7 +706,11 @@ export default function WalletPage() {
       <WalletRefreshBar onRefresh={() => void loadRecords()} loading={loading} />
 
       {error ? (
-        <div className="learner-stat-card p-6 text-sm text-destructive">{error}</div>
+        <EmptyState
+          icon={ShieldAlert}
+          title="Could not load wallet"
+          description={error}
+        />
       ) : !activeRecord || !summary ? (
         <WalletEmptyState
           onGoTask={() => navigate("/learner/task")}
@@ -703,6 +726,8 @@ export default function WalletPage() {
             statusLabel={statusLabel}
             verified={verified}
             lastSync={lastSync}
+            anchorStatus={activeAnchor}
+            anchorByCompetencyId={anchorByCompetencyId}
           />
           <WalletStepper />
 

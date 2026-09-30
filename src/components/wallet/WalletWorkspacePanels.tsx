@@ -20,6 +20,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { ShareExportActions } from "@/components/public/ShareExportActions";
 import { TrustTierBadge } from "@/components/public/TrustTierBadge";
+import { StatusBadge } from "@/components/sijil/StatusBadge";
 import { Switch } from "@/components/ui/switch";
 import {
   Select,
@@ -32,6 +33,7 @@ import { cn } from "@/lib/utils";
 import type { WalletCompetencyRecordView } from "@/lib/db/wallet-competency-records";
 import type { WalletShareFieldId } from "@/lib/wallet-competency-shared";
 import type { WalletShareRecordView } from "@/services/api/wallet.api";
+import type { WalletAnchorBadge } from "@/lib/ledger-status";
 
 export type InspectorSource = "github" | "lms" | "task" | "reviews";
 
@@ -120,6 +122,8 @@ export function WalletWorkspaceHeader({
   statusLabel,
   verified,
   lastSync,
+  anchorStatus,
+  anchorByCompetencyId,
 }: {
   competencyName: string;
   records: WalletCompetencyRecordView[];
@@ -128,6 +132,8 @@ export function WalletWorkspaceHeader({
   statusLabel: string;
   verified: boolean;
   lastSync: string | null;
+  anchorStatus?: WalletAnchorBadge | null;
+  anchorByCompetencyId?: Record<string, WalletAnchorBadge | null>;
 }) {
   const recent = lastSync
     ? Date.now() - new Date(lastSync).getTime() < 7 * 24 * 60 * 60 * 1000
@@ -144,11 +150,17 @@ export function WalletWorkspaceHeader({
               <SelectValue placeholder={competencyName} />
             </SelectTrigger>
             <SelectContent>
-              {records.map((record) => (
-                <SelectItem key={record.competencyId} value={record.competencyId}>
-                  {record.competencyName}
-                </SelectItem>
-              ))}
+              {records.map((record) => {
+                const badge = anchorByCompetencyId?.[record.competencyId];
+                return (
+                  <SelectItem key={record.competencyId} value={record.competencyId}>
+                    {record.competencyName}
+                    {badge ? (
+                      <StatusBadge variant={badge.variant}>{badge.label}</StatusBadge>
+                    ) : null}
+                  </SelectItem>
+                );
+              })}
             </SelectContent>
           </Select>
         ) : (
@@ -163,6 +175,9 @@ export function WalletWorkspaceHeader({
           <span className={cn("h-1.5 w-1.5 rounded-full", verified ? "bg-[#059669]" : "bg-[#94a3b8]")} />
           {statusLabel}
         </span>
+        {anchorStatus ? (
+          <StatusBadge variant={anchorStatus.variant}>{anchorStatus.label}</StatusBadge>
+        ) : null}
       </div>
       <span
         className={cn(

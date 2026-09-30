@@ -4,7 +4,8 @@
  */
 import { createHmac } from "node:crypto";
 import { env } from "../config/env";
-import { generateProofHash, generateSha256Hash } from "../utils/generateHash";
+import { canonicalizeJson } from "../utils/canonicalize";
+import { generateSha256Hash } from "../utils/generateHash";
 
 export interface ProofPayload {
   type: string;
@@ -20,45 +21,8 @@ export interface SelectiveDisclosureProof extends ProofPayload {
   cryptosuite: "hmac-sha256-2026";
 }
 
-export function buildCredentialProof(params: {
-  credentialUri: string;
-  issuerDid: string;
-  holderDid: string;
-  skillName: string;
-}): ProofPayload {
-  const proofValue = generateProofHash({
-    credentialUri: params.credentialUri,
-    issuerDid: params.issuerDid,
-    holderDid: params.holderDid,
-    skillName: params.skillName,
-  });
-
-  return {
-    type: "DataIntegrityProof",
-    cryptosuite: "sha256-2024-mock",
-    created: new Date().toISOString(),
-    verificationMethod: `${params.issuerDid}#key-1`,
-    proofValue: `0x${proofValue}`,
-    proofPurpose: "assertionMethod",
-  };
-}
-
-function canonicalizeJson(value: unknown): string {
-  if (value === null || typeof value !== "object") {
-    return JSON.stringify(value);
-  }
-
-  if (Array.isArray(value)) {
-    return `[${value.map((item) => canonicalizeJson(item)).join(",")}]`;
-  }
-
-  const record = value as Record<string, unknown>;
-  const keys = Object.keys(record).sort();
-  return `{${keys.map((key) => `${JSON.stringify(key)}:${canonicalizeJson(record[key])}`).join(",")}}`;
-}
-
 function presentationSigningSecret(): string {
-  return env.PRESENTATION_SIGNING_SECRET ?? env.SUPABASE_SERVICE_ROLE_KEY;
+  return env.PRESENTATION_SIGNING_SECRET;
 }
 
 export function hashDisclosurePayload(payload: unknown): string {

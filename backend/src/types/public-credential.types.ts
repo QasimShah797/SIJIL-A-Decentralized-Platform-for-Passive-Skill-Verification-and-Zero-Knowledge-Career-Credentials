@@ -79,6 +79,14 @@ export interface WalletExportAvailability {
   google: boolean;
 }
 
+export interface PublicCredentialLedger {
+  credentialId: string;
+  hash: string | null;
+  anchorTxId: string | null;
+  anchoredAt: string | null;
+  verifiedAt: string;
+}
+
 export interface PublicCredentialResponse {
   status: PublicShareStatus;
   verified: boolean;
@@ -89,6 +97,9 @@ export interface PublicCredentialResponse {
   resume: AtsResumeView | null;
   webView: PublicCredentialWebView | null;
   walletExport: WalletExportAvailability;
+  ledgerStatus?: string | null;
+  ledgerDetail?: string | null;
+  ledger?: PublicCredentialLedger | null;
 }
 
 export interface PublicCompetencyResponse {
@@ -102,4 +113,6 @@ export interface PublicCompetencyResponse {
     description?: string;
   } | null;
   ledger: EvidenceLedgerItem[] | null;
+  ledgerStatus?: string | null;
+  ledgerDetail?: string | null;
 }

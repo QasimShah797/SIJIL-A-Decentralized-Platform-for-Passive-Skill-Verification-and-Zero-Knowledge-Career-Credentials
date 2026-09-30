@@ -27,8 +27,15 @@ function asNullableText(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
-export function splitEvidenceRecordsBySource(rows: Record<string, unknown>[]) {
-  const normalized = rows.map((row) => ({
+export type EvidenceRecordRow = Record<string, unknown> & {
+  metadata: Record<string, unknown>;
+};
+
+export function splitEvidenceRecordsBySource(rows: Record<string, unknown>[]): {
+  github: EvidenceRecordRow[];
+  lms: EvidenceRecordRow[];
+} {
+  const normalized: EvidenceRecordRow[] = rows.map((row) => ({
     ...row,
     metadata: parseEvidenceMetadata(row.metadata),
   }));
@@ -85,6 +92,8 @@ export function buildLmsBundleFromEvidenceRecords(
       grade_max: gradeMax,
       grade_formatted: grade != null && gradeMax != null ? `${grade}/${gradeMax}` : null,
       feedback: asNullableText(metadata.teacher_feedback),
+      submitted_at: asNullableText(metadata.submitted_at),
+      graded_at: asNullableText(metadata.graded_at),
       synced_at: asNullableText(row.sync_date) ?? asNullableText(row.last_updated),
     };
   });
@@ -103,7 +112,7 @@ export function buildLmsBundleFromEvidenceRecords(
         evidence_record_id: asText(row.id),
       };
     })
-    .filter((row): row is Record<string, unknown> => row !== null);
+    .filter((row): row is NonNullable<typeof row> => row !== null);
 
   return { evidence, courses, assignments, teacherFeedback };
 }

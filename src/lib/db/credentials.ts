@@ -1,7 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
-import { issueCredentialApi, getCredentialApi } from "@/services/api/credentials.api";
+import { getCredentialApi, getWalletApi } from "@/services/api/credentials.api";
 import { verifyCredentialApi } from "@/services/api/recruiter.api";
-import { holderDidFromUserId } from "@/lib/did";
+import { apiRequest } from "@/services/api/client";
 
 export type CredentialView = {
   id: string;
@@ -16,6 +16,9 @@ export type CredentialView = {
   supportingRecords: number;
   skill: string;
   proof?: Record<string, unknown>;
+  anchorStatus?: string;
+  anchorTxId?: string | null;
+  anchoredAt?: string | null;
 };
 
 function rowToCredential(row: {
@@ -32,6 +35,9 @@ function rowToCredential(row: {
   supporting_records: number;
   skill_name: string | null;
   proof: unknown;
+  anchor_status?: string | null;
+  anchor_tx_id?: string | null;
+  anchored_at?: string | null;
 }): CredentialView {
   return {
     id: row.credential_uri,
@@ -46,10 +52,16 @@ function rowToCredential(row: {
     supportingRecords: row.supporting_records,
     skill: row.skill_name ?? "—",
     proof: (row.proof as Record<string, unknown>) ?? undefined,
+    anchorStatus: row.anchor_status ?? undefined,
+    anchorTxId: row.anchor_tx_id ?? null,
+    anchoredAt: row.anchored_at ?? null,
   };
 }
 
 export async function fetchCredentials(userId: string): Promise<CredentialView[]> {
+  const viaApi = await getWalletApi(userId);
+  if (viaApi) return viaApi;
+
   const { data, error } = await supabase
     .from("credentials")
     .select("*")
@@ -109,111 +121,15 @@ export async function getCredentialDbId(uri: string): Promise<string | null> {
   return data?.id ?? null;
 }
 
-function issuerDidFromInstitution(institution: string): string {
-  const slug = institution.toLowerCase().replace(/\s+/g, "");
-  return `did:web:issuer.${slug}.edu.pk`;
-}
-
-/** Issue credential for a wallet-ready skill — backend first, Supabase fallback. */
+/** Issue credential for a wallet-ready skill. Writes go only through the Express backend. */
 export async function issueCredentialForSkill(
-  userId: string,
+  _userId: string,
   skillId: string,
 ): Promise<CredentialView | null> {
-  const viaApi = await issueCredentialApi(skillId);
-  if (viaApi) return viaApi;
-
-  const { data: skill, error: skillErr } = await supabase
-    .from("declared_skills")
-    .select("*")
-    .eq("user_id", userId)
-    .eq("id", skillId)
-    .maybeSingle();
-  if (skillErr) throw skillErr;
-  if (!skill) return null;
-
-  const stage = skill.pipeline_stage as string;
-  if (stage !== "wallet_ready" && stage !== "in_wallet") return null;
-
-  const { data: existing } = await supabase
-    .from("credentials")
-    .select("*")
-    .eq("user_id", userId)
-    .eq("skill_name", skill.name)
-    .maybeSingle();
-  if (existing) return rowToCredential(existing);
-
-  const { data: profile } = await supabase
-    .from("learner_profiles")
-    .select("institution_name, holder_did")
-    .eq("user_id", userId)
-    .maybeSingle();
-
-  const institution = profile?.institution_name ?? "CUST";
-  const holderDid = profile?.holder_did ?? holderDidFromUserId(userId);
-  const issuerDid = issuerDidFromInstitution(institution);
-  const slug = skill.name.toLowerCase().replace(/[^a-z0-9]+/g, "-");
-  const credentialUri = `urn:uuid:sijil:${userId.replace(/-/g, "").slice(0, 8)}:${slug}:${Date.now()}`;
-
-  const { count: evidenceCount } = await supabase
-    .from("supporting_records")
-    .select("*", { count: "exact", head: true })
-    .eq("user_id", userId)
-    .eq("skill_id", skillId);
-
-  const proofPayload = JSON.stringify({
-    credentialUri,
-    issuerDid,
-    holderDid,
-    skillName: skill.name,
-    ts: Date.now(),
+  return apiRequest<CredentialView>("/credentials/issue", {
+    method: "POST",
+    body: JSON.stringify({ skillId }),
   });
-
-  const { data, error } = await supabase
-    .from("credentials")
-    .insert({
-      user_id: userId,
-      credential_uri: credentialUri,
-      name: `${skill.name} Competency Credential`,
-      credential_types: ["VerifiableCredential", "OpenBadgeCredential"],
-      issuer_name: institution,
-      issuer_did: issuerDid,
-      holder_did: holderDid,
-      valid_from: new Date().toISOString(),
-      verification_status: "Verified",
-      attestation_status: "Approved",
-      supporting_records: evidenceCount ?? 0,
-      skill_name: skill.name,
-      proof: {
-        type: "DataIntegrityProof",
-        cryptosuite: "sha256-2024-mock",
-        created: new Date().toISOString(),
-        verificationMethod: `${issuerDid}#key-1`,
-        proofValue: `0x${await sha256Hex(proofPayload)}`,
-        proofPurpose: "assertionMethod",
-      },
-    })
-    .select("*")
-    .single();
-  if (error) throw error;
-
-  await supabase
-    .from("declared_skills")
-    .update({
-      pipeline_stage: "in_wallet",
-      status: "Credential Issued",
-      last_credential_sync_at: new Date().toISOString(),
-    })
-    .eq("user_id", userId)
-    .eq("id", skillId);
-
-  return rowToCredential(data);
-}
-
-async function sha256Hex(input: string): Promise<string> {
-  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(input));
-  return Array.from(new Uint8Array(buf))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
 }
 
 /** Recruiter verify with selective disclosure — backend first, Supabase fallback. */
@@ -221,10 +137,10 @@ export async function verifyCredentialForRecruiter(
   credentialOrToken: string,
 ): Promise<{ credential: CredentialView | Partial<CredentialView>; disclosedOnly: boolean } | null> {
   const viaApi = await verifyCredentialApi(credentialOrToken);
-  if (viaApi) {
+  if (viaApi?.credential) {
     return {
       credential: viaApi.credential as CredentialView,
-      disclosedOnly: viaApi.disclosedFields.length > 0,
+      disclosedOnly: (viaApi.disclosedFields?.length ?? 0) > 0,
     };
   }
 

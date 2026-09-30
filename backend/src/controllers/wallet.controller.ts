@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
 import { sendSuccess } from "../utils/apiResponse";
 import { walletService } from "../services/wallet.service";
-import { runWithUserDb } from "../config/supabase";
+import { runWithServiceDb, runWithUserDb } from "../config/supabase";
 import {
   competencyIdParamSchema,
   presentationTokenParamSchema,
@@ -33,7 +33,7 @@ export async function getWalletCompetency(req: Request, res: Response): Promise<
 
 export async function syncWalletCompetency(req: Request, res: Response): Promise<Response> {
   const { competencyId } = competencyIdParamSchema.parse(req.params);
-  const record = await runWithUserDb(req.accessToken, () =>
+  const record = await runWithServiceDb(() =>
     walletService.syncCompetency(req.user!.id, competencyId),
   );
   return sendSuccess(res, record, "Competency wallet record synced");
@@ -42,7 +42,7 @@ export async function syncWalletCompetency(req: Request, res: Response): Promise
 export async function shareWalletCompetency(req: Request, res: Response): Promise<Response> {
   const { competencyId } = competencyIdParamSchema.parse(req.params);
   const input = shareWalletCompetencySchema.parse(req.body);
-  const result = await runWithUserDb(req.accessToken, () =>
+  const result = await runWithServiceDb(() =>
     walletService.shareCompetency(req.user!.id, competencyId, input),
   );
   return sendSuccess(res, result, "Selective disclosure presentation created", 201);
@@ -50,7 +50,7 @@ export async function shareWalletCompetency(req: Request, res: Response): Promis
 
 export async function revokeWalletShare(req: Request, res: Response): Promise<Response> {
   const { shareId } = shareIdParamSchema.parse(req.params);
-  await runWithUserDb(req.accessToken, () => walletService.revokeShare(req.user!.id, shareId));
+  await runWithServiceDb(() => walletService.revokeShare(req.user!.id, shareId));
   return sendSuccess(res, null, "Presentation revoked");
 }
 

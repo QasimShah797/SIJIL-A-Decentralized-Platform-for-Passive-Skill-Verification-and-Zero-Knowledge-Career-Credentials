@@ -4,20 +4,25 @@ import { AppShell } from "@/components/sijil/AppShell";
 import { PageHeader } from "@/components/sijil/PageHeader";
 import { StatusBadge } from "@/components/sijil/StatusBadge";
 import { FieldRow } from "@/components/sijil/FieldRow";
+import { EmptyState } from "@/components/sijil/EmptyState";
 import { PageSkeleton } from "@/components/sijil/SkeletonLoader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Copy, ShieldCheck, CheckCircle2, Lock } from "lucide-react";
-import { useCredentials, useLearnerProfile } from "@/hooks/useLearnerData";
+import { ArrowLeft, Copy, ShieldCheck, CheckCircle2, Lock, ShieldAlert } from "lucide-react";
+import { useCredentials } from "@/hooks/useLearnerData";
 import { toast } from "@/hooks/use-toast";
+import { mapLedgerStatusToBadge } from "@/lib/ledger-status";
+import { verifyCredentialLedgerApi, type LedgerVerifyResult } from "@/services/api/ledger.api";
 
 export default function CredentialProof() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { credentials, loading } = useCredentials();
   const c = credentials.find((x) => x.id === decodeURIComponent(id || ""));
-  const [verified, setVerified] = useState(false);
+  const [result, setResult] = useState<LedgerVerifyResult | null>(null);
+  const [verifying, setVerifying] = useState(false);
   const proofHash = (c?.proof?.proofValue as string) ?? "—";
+  const ledgerBadge = result ? mapLedgerStatusToBadge(result.status) : null;
 
   if (loading) {
     return (
@@ -26,9 +31,36 @@ export default function CredentialProof() {
       </AppShell>
     );
   }
-  if (!c) return <AppShell role="learner"><PageHeader title="Credential not found" /><Button onClick={() => navigate("/learner/wallet")}>Back</Button></AppShell>;
+  if (!c) {
+    return (
+      <AppShell role="learner">
+        <EmptyState
+          icon={ShieldAlert}
+          title="Credential not found"
+          description="This credential is not in your wallet."
+          action={{ label: "Back to wallet", onClick: () => navigate("/learner/wallet") }}
+        />
+      </AppShell>
+    );
+  }
 
   const encodedId = encodeURIComponent(c.id);
+
+  const handleVerify = async () => {
+    setVerifying(true);
+    try {
+      const next = await verifyCredentialLedgerApi(c.id);
+      setResult(next);
+      const badge = mapLedgerStatusToBadge(next.status);
+      toast({
+        title: badge.label,
+        description: `Ledger status ${badge.label}`,
+        variant: next.status === "verified" ? "default" : "destructive",
+      });
+    } finally {
+      setVerifying(false);
+    }
+  };
 
   return (
     <AppShell role="learner">
@@ -87,9 +119,38 @@ export default function CredentialProof() {
               />
               <FieldRow
                 label="integrity check"
-                value={verified ? <StatusBadge variant="verified" icon={<CheckCircle2 className="h-3 w-3" />}>Passed</StatusBadge> : <StatusBadge variant="info">Not yet run</StatusBadge>}
-                hint="Result of recomputing the canonical hash and verifying the signature."
+                value={
+                  ledgerBadge
+                    ? <StatusBadge variant={ledgerBadge.variant}>{ledgerBadge.label}</StatusBadge>
+                    : <StatusBadge variant="info">Not yet run</StatusBadge>
+                }
+                hint="Result of recomputing the canonical hash and verifying the signature against the ledger."
               />
+              {result?.anchorTxId ? (
+                <FieldRow
+                  label="anchorTxId"
+                  value={
+                    <span className="inline-flex items-center gap-2">
+                      <span className="mono">{result.anchorTxId}</span>
+                      <button
+                        onClick={() => { navigator.clipboard?.writeText(result.anchorTxId ?? ""); toast({ title: "Anchor tx id copied" }); }}
+                        className="text-muted-foreground hover:text-foreground"
+                      >
+                        <Copy className="h-3.5 w-3.5" />
+                      </button>
+                    </span>
+                  }
+                  hint="Ledger transaction id for this credential anchor."
+                />
+              ) : null}
+              {result?.anchoredAt ? (
+                <FieldRow
+                  label="anchoredAt"
+                  value={new Date(result.anchoredAt).toLocaleString()}
+                  mono
+                  hint="When this credential hash was written to the ledger."
+                />
+              ) : null}
             </CardContent>
           </Card>
         </div>
@@ -102,24 +163,20 @@ export default function CredentialProof() {
                 <span className="font-medium">Verify proof</span>
               </div>
               <p className="text-xs text-muted-foreground">
-                Resolves the issuer DID, fetches the verification key, and re-canonicalizes the credential before verifying the signature.
-              </p>
-              <p className="text-[11px] text-muted-foreground mt-2 italic">
-                Simulated verification — demonstrates the proof flow without a live verifier network.
+                Resolves the issuer DID, fetches the verification key, and checks the credential hash against the ledger.
               </p>
               <Button
                 className="w-full mt-4"
-                onClick={() => {
-                  setVerified(true);
-                  toast({ title: "Proof verified", description: "Signature valid · issuer DID resolved · integrity passed." });
-                }}
+                onClick={() => void handleVerify()}
+                disabled={verifying}
               >
-                <ShieldCheck className="h-4 w-4 mr-1.5" />Verify proof
+                <ShieldCheck className="h-4 w-4 mr-1.5" />{verifying ? "Verifying…" : "Verify proof"}
               </Button>
-              {verified && (
-                <div className="mt-4 rounded-md border border-success/30 bg-success-soft p-3 text-xs text-success">
-                  <CheckCircle2 className="h-3.5 w-3.5 inline mr-1" />
-                  Proof verified locally — no third party required.
+              {ledgerBadge && (
+                <div className="mt-4">
+                  <StatusBadge variant={ledgerBadge.variant} icon={ledgerBadge.variant === "verified" ? <CheckCircle2 className="h-3 w-3" /> : undefined}>
+                    {ledgerBadge.label}
+                  </StatusBadge>
                 </div>
               )}
             </CardContent>

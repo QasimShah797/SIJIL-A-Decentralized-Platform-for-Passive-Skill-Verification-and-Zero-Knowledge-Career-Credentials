@@ -280,8 +280,10 @@ export function buildEvidenceLedger(
   const matchedSkill = asRecords(payload.skills).find((row) => asText(row.competencyId) === competencyId);
   const primaryId = asText(competencyFromPayload(payload).competencyId);
   const isPrimary = competencyId === primaryId || (!matchedSkill && Boolean(competencyId));
-  const hasSkillSnapshot = isRecord(matchedSkill?.evidence);
-  const skillEvidence = hasSkillSnapshot ? matchedSkill.evidence : {};
+  const skillEvidence = isRecord(matchedSkill) && isRecord(matchedSkill.evidence)
+    ? matchedSkill.evidence
+    : {};
+  const hasSkillSnapshot = Object.keys(skillEvidence).length > 0;
   const packageEvidence = Object.keys(complete).length > 0
     ? complete
     : (hasSkillSnapshot ? skillEvidence : evidence);
