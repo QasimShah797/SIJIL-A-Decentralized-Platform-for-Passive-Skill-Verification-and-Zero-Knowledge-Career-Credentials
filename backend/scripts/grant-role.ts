@@ -7,6 +7,7 @@
  */
 import { getServiceSupabase } from "../src/config/supabase";
 import { GRANTABLE_OPERATOR_ROLES, isGrantableOperatorRole } from "../src/constants/roles";
+import { upsertGrantedRole } from "../src/services/grant-role";
 
 const email = process.argv[2]?.trim().toLowerCase();
 const role = process.argv[3]?.trim().toLowerCase();
@@ -43,16 +44,7 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const supabase = getServiceSupabase();
-  const { error: deleteError } = await supabase.from("user_roles").delete().eq("user_id", userId);
-  if (deleteError) throw deleteError;
-
-  const { error: insertError } = await supabase.from("user_roles").insert({
-    user_id: userId,
-    role,
-  });
-  if (insertError) throw insertError;
-
+  await upsertGrantedRole(getServiceSupabase(), userId, role);
   console.log(`Granted ${role} to ${email} (${userId})`);
 }
 

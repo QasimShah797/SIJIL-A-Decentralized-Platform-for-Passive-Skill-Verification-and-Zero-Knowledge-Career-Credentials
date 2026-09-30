@@ -20,6 +20,12 @@ export function verifyCacheKey(credentialId: string, hash: string | null | undef
   return `${credentialId}:${hash ?? ""}`;
 }
 
+const TERMINAL_VERIFY_STATUSES = ["verified", "tampered", "revoked", "not_found"] as const;
+
+export function shouldCacheVerifyResult(status: string): boolean {
+  return (TERMINAL_VERIFY_STATUSES as readonly string[]).includes(status);
+}
+
 export function makeVerifyCache<T>(
   ttlMs = VERIFY_CACHE_TTL_MS,
   now: CacheClock = () => Date.now(),

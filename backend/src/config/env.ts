@@ -73,6 +73,7 @@ const envSchema = z.object({
   FABRIC_ANCHOR_BATCH_SIZE: z.coerce.number().int().positive().default(10),
   FABRIC_ANCHOR_MAX_ATTEMPTS: z.coerce.number().int().positive().default(8),
   FABRIC_ANCHOR_BACKOFF_MS: z.coerce.number().int().nonnegative().default(5_000),
+  TRUST_PROXY: booleanFromEnv,
 });
 
 const parsed = envSchema.safeParse({

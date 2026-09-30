@@ -2,6 +2,8 @@ node_modules
 .codex-devserver*.log
 
 .env
+.env.local
+.env.*.local
 dist/
 _pptx_temp.zip
 
