@@ -8,6 +8,7 @@ import {
   DeclaredSkillWithEvidenceView,
   DeclaredSkillRow,
   RelatedEvidenceView,
+  SkillLearnerEventType,
   SkillView,
   UpdateSkillInput,
 } from "../types/skills.types";
@@ -78,6 +79,24 @@ function evidenceRowToView(
     mappingConfidence: mappingConfidenceForEvidence(row, skill),
   };
 }
+
+const PRESERVED_PIPELINE_STAGES = new Set<string>([
+  PIPELINE_STAGE.INSTITUTION_PENDING,
+  PIPELINE_STAGE.INSTITUTION_REJECTED,
+  PIPELINE_STAGE.WALLET_READY,
+  PIPELINE_STAGE.IN_WALLET,
+]);
+
+const PRESERVED_SKILL_STATUSES = new Set<string>([
+  SKILL_STATUS.WALLET_READY,
+  SKILL_STATUS.CREDENTIAL_ISSUED,
+  "Review Available",
+  "Attestation Pending",
+  "pending_institution_attestation",
+  "wallet_ready",
+  "institution_attestation_pending",
+  "institution_attestation_rejected",
+]);
 
 function rowToView(row: DeclaredSkillRow): SkillView {
   return {
@@ -178,8 +197,6 @@ export class SkillsService {
     if (input.name !== undefined) patch.name = input.name;
     if (input.domain !== undefined) patch.domain = input.domain;
     if (input.description !== undefined) patch.description = input.description;
-    if (input.status !== undefined) patch.status = input.status;
-    if (input.pipelineStage !== undefined) patch.pipeline_stage = input.pipelineStage;
 
     const { data, error } = await supabaseService.client
       .from("declared_skills")
@@ -243,6 +260,145 @@ export class SkillsService {
       relatedEvidence.length > 0 ? "linked" : "none";
 
     return { skill, relatedEvidence, evidenceStatus };
+  }
+
+  async applyLearnerEvent(
+    userId: string,
+    skillId: string,
+    type: SkillLearnerEventType,
+  ): Promise<SkillView> {
+    await this.getById(userId, skillId);
+
+    if (type === "sync_evidence") {
+      await this.syncEvidenceStatuses(userId, skillId);
+      return this.getById(userId, skillId);
+    }
+
+    const skill = await this.getById(userId, skillId);
+    if (
+      PRESERVED_PIPELINE_STAGES.has(skill.pipelineStage)
+      || PRESERVED_SKILL_STATUSES.has(skill.status)
+    ) {
+      return skill;
+    }
+
+    const { error } = await supabaseService.client
+      .from("declared_skills")
+      .update({
+        pipeline_stage: PIPELINE_STAGE.INSTITUTION_PENDING,
+        status: "pending_institution_attestation",
+        last_related_activity_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq("user_id", userId)
+      .eq("id", skillId);
+
+    if (error) throw new AppError(error.message, 500);
+    return this.getById(userId, skillId);
+  }
+
+  async syncEvidenceStatuses(userId: string, skillId?: string): Promise<void> {
+    let query = supabaseService.client
+      .from("declared_skills")
+      .select("id, status, pipeline_stage")
+      .eq("user_id", userId);
+    if (skillId) query = query.eq("id", skillId);
+
+    const { data: skills, error: skillsError } = await query;
+    if (skillsError) throw new AppError(skillsError.message, 500);
+    if (!skills?.length) return;
+
+    const [
+      { data: githubRepos },
+      { data: evidenceLinks },
+      { data: lmsEvidence },
+      { data: supportingRecords },
+      { data: evidenceRecords },
+    ] = await Promise.all([
+      supabaseService.client
+        .from("github_repos")
+        .select("linked_skill_id")
+        .eq("user_id", userId)
+        .not("linked_skill_id", "is", null),
+      supabaseService.client
+        .from("skill_evidence_links")
+        .select("skill_id")
+        .eq("user_id", userId),
+      supabaseService.client
+        .from("lms_evidence")
+        .select("linked_skill_id")
+        .eq("user_id", userId)
+        .not("linked_skill_id", "is", null),
+      supabaseService.client
+        .from("supporting_records")
+        .select("skill_id")
+        .eq("user_id", userId),
+      supabaseService.client
+        .from("evidence_records")
+        .select("mapped_skill_id")
+        .eq("user_id", userId)
+        .not("mapped_skill_id", "is", null),
+    ]);
+
+    const linkedSkillIds = new Set<string>();
+    for (const row of githubRepos ?? []) {
+      if (row.linked_skill_id) linkedSkillIds.add(row.linked_skill_id as string);
+    }
+    for (const row of evidenceLinks ?? []) {
+      if (row.skill_id) linkedSkillIds.add(row.skill_id as string);
+    }
+    for (const row of lmsEvidence ?? []) {
+      if (row.linked_skill_id) linkedSkillIds.add(row.linked_skill_id as string);
+    }
+    for (const row of supportingRecords ?? []) {
+      if (row.skill_id) linkedSkillIds.add(row.skill_id as string);
+    }
+    for (const row of evidenceRecords ?? []) {
+      if (row.mapped_skill_id) linkedSkillIds.add(row.mapped_skill_id as string);
+    }
+
+    const now = new Date().toISOString();
+    await Promise.all(
+      skills.map(async (skill) => {
+        const status = skill.status as string;
+        const pipelineStage = (skill.pipeline_stage as string) ?? PIPELINE_STAGE.DECLARED;
+        if (PRESERVED_PIPELINE_STAGES.has(pipelineStage) || PRESERVED_SKILL_STATUSES.has(status)) {
+          return;
+        }
+
+        const hasEvidence = linkedSkillIds.has(skill.id as string);
+        if (hasEvidence && status === SKILL_STATUS.CLAIMED) {
+          const { error } = await supabaseService.client
+            .from("declared_skills")
+            .update({
+              status: SKILL_STATUS.EVIDENCE_LINKED,
+              pipeline_stage: PIPELINE_STAGE.EVIDENCE_LINKED,
+              last_related_activity_at: now,
+              updated_at: now,
+            })
+            .eq("user_id", userId)
+            .eq("id", skill.id);
+          if (error) throw new AppError(error.message, 500);
+          return;
+        }
+
+        if (
+          !hasEvidence
+          && (status === SKILL_STATUS.EVIDENCE_LINKED || pipelineStage === PIPELINE_STAGE.EVIDENCE_LINKED)
+        ) {
+          const { error } = await supabaseService.client
+            .from("declared_skills")
+            .update({
+              status: SKILL_STATUS.CLAIMED,
+              pipeline_stage: PIPELINE_STAGE.DECLARED,
+              updated_at: now,
+            })
+            .eq("user_id", userId)
+            .eq("id", skill.id);
+          if (error) throw new AppError(error.message, 500);
+        }
+      }),
+    );
   }
 
   async getSkillRefs(userId: string): Promise<Array<{ id: string; name: string; domain?: string }>> {

@@ -62,12 +62,6 @@ export async function cleanupSkillDependents(
     .eq("skill", trimmedName);
 
   await supabase
-    .from("credentials")
-    .delete()
-    .eq("user_id", userId)
-    .eq("skill_name", trimmedName);
-
-  await supabase
     .from("github_repos")
     .update({
       linked_skill_id: null,

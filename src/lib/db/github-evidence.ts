@@ -13,6 +13,7 @@ import {
   type ProjectEvidenceApiView,
   type SkillLinkApiView,
 } from "@/services/api/github.api";
+import { applySkillEventApi } from "@/services/api/skills.api";
 
 import { buildMatchReasonForSkill } from "@/lib/evidence-matching";
 import { isMissingColumnError, isMissingRelationError } from "@/lib/supabase-errors";
@@ -427,26 +428,11 @@ async function revertSkillIfNoLinkedEvidence(userId: string, skillId: string): P
 
   if (repos?.length) return;
 
-  await supabase
-    .from("declared_skills")
-    .update({
-      status: "Skill Claimed",
-      pipeline_stage: "declared",
-    })
-    .eq("user_id", userId)
-    .eq("id", skillId);
+  await applySkillEventApi(skillId, "sync_evidence");
 }
 
-async function updateSkillEvidenceLinked(userId: string, skillId: string): Promise<void> {
-  await supabase
-    .from("declared_skills")
-    .update({
-      status: "Evidence Linked",
-      pipeline_stage: "evidence_linked",
-      last_related_activity_at: new Date().toISOString(),
-    })
-    .eq("user_id", userId)
-    .eq("id", skillId);
+async function updateSkillEvidenceLinked(_userId: string, skillId: string): Promise<void> {
+  await applySkillEventApi(skillId, "sync_evidence");
 }
 
 export async function ignoreGitHubEvidence(evidenceId: string): Promise<boolean> {

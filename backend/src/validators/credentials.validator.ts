@@ -26,6 +26,10 @@ export const revokeShareSchema = z.object({
   token: z.string().min(1),
 });
 
+export const revokeCredentialSchema = z.object({
+  reason: z.string().trim().min(1).max(500),
+});
+
 export const credentialIdParamSchema = z.object({
   id: z.string().min(1),
 });

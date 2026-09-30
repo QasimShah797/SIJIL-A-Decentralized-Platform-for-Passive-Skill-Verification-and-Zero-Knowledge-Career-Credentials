@@ -13,10 +13,12 @@ export const updateSkillSchema = z.object({
   name: z.string().min(1).optional(),
   domain: z.string().optional(),
   description: z.string().optional(),
-  status: z.string().optional(),
-  pipelineStage: z.string().optional(),
 });
 
 export const skillIdParamSchema = z.object({
   id: z.string().uuid(),
+});
+
+export const skillEventSchema = z.object({
+  type: z.enum(["sync_evidence", "attestation_submitted"]),
 });

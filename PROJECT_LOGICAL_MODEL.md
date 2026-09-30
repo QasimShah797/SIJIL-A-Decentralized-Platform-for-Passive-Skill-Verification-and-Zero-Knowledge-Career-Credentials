@@ -4,7 +4,7 @@
 >
 > **Product:** SIJIL (Skill Integrity & Journey Intelligence Ledger) — a verifiable competency credentials platform for learners, institutions, and recruiters.
 >
-> **Stack:** React (Vite + TypeScript + Tailwind + shadcn/ui) frontend, Express backend, Supabase (PostgreSQL, Auth, Storage, Edge Functions).
+> **Stack:** React (Vite + TypeScript + Tailwind + shadcn/ui) frontend, Express backend, Supabase (PostgreSQL, Auth, Storage, Edge Functions), Hyperledger Fabric test-network for opaque credential-hash anchoring. Recruiter shares are **signed selective disclosure**, not zero-knowledge proofs.
 
 ---
 
@@ -33,13 +33,21 @@
            ▼
 ┌─────────────────────┐
 │  Express Backend    │  Node.js + TypeScript (backend/)
+│                     │  Ed25519 signatures · RFC 8785 hashes · outbox worker
 └──────────┬──────────┘
            │  Service role (server-side only)
            ▼
 ┌─────────────────────┐
-│      Supabase       │  PostgreSQL · Auth · Storage · Edge Functions
+│      Supabase       │  PostgreSQL (documents, hashes, outbox) · Auth · Storage
+└──────────┬──────────┘
+           │  Opaque IDs + hashes only
+           ▼
+┌─────────────────────┐
+│ Hyperledger Fabric  │  channel `sijil` / CredentialAnchor
 └─────────────────────┘
 ```
+
+Credential payloads stay in Postgres. Fabric anchors hashes. Selective disclosure presentations are **HMAC-signed over the disclosed payload** — this is signed selective disclosure, **not** a zero-knowledge proof. ZK proofs and Merkle-root wallet anchoring are future work.
 
 **Frontend data pattern:** API-first with Supabase fallback. When `VITE_API_BASE_URL` is unset, the frontend operates fully via direct Supabase queries in `src/lib/db/*`.
 
@@ -334,7 +342,7 @@ OAuth (guarded):
 | 15 | Wallet | `/learner/wallet` | Learner | Competency wallet records, evidence packages, sharing | Share dialog → `/recruiter/verify/:token` |
 | 16 | Peer Reviews | `/learner/peer-reviews` | Learner | Manage invitations, trust signals, reviews | `/review/invite/:token`, `/review/request/:token` |
 | 17 | Credential Details | `/learner/credential/:id` | Learner | Full VC-style credential view | `/learner/wallet`, proof, share |
-| 18 | Credential Proof | `/learner/credential/:id/proof` | Learner | Cryptographic proof display (mock verify) | Credential details |
+| 18 | Credential Proof | `/learner/credential/:id/proof` | Learner | Calls `GET /api/public/credentials/:id/verify`; StatusBadge for ledger status | Credential details |
 | 19 | Selective Disclosure | `/learner/credential/:id/share` | Learner | Choose fields to disclose to recruiters | `/recruiter/verify/:token` |
 | 20 | GitHub Prepare | `/auth/github/prepare` | Learner | Pre-OAuth session clear | `/auth/github/callback`, return URL |
 | 21 | GitHub Callback | `/auth/github/callback` | Authenticated | OAuth code exchange + sync | Return URL with `?github=` param |
@@ -889,27 +897,27 @@ Each screen follows the 24-point structure. Screens sharing identical layout pat
 
 1. **Screen Name:** Credential Proof
 2. **Route/URL:** `/learner/credential/:id/proof`
-3. **Purpose:** Display cryptographic proof metadata; simulate local verification
+3. **Purpose:** Display cryptographic proof metadata and run live ledger verification
 4. **Target User/Role:** Learner
 5. **How the user reaches this screen:** From Credential Details
 6. **Main layout:** `AppShell` + proof card + sidebar verify card
 7. **Header/navigation:** AppShell standard
 8. **Sidebar/navigation items:** Standard learner nav
 9. **Main content:** Proof object fields; Verify proof panel; "What this proves" explainer
-10. **Components used:** `PageHeader`, `StatusBadge`, `FieldRow`, `Card`, `Button`
+10. **Components used:** `PageHeader`, `StatusBadge`, `FieldRow`, `EmptyState`, `PageSkeleton`, `Card`, `Button`
 11. **Fields/input elements:** None
-12. **Buttons/actions:** Back; Copy proof hash; "Verify proof" (client-side mock)
+12. **Buttons/actions:** Back; Copy proof hash; "Verify proof" (`verifyCredentialLedgerApi` → `GET /api/public/credentials/:id/verify`); copy `anchorTxId` when present
 13. **Tables/cards/lists:** None
 14. **Filters/search/sorting:** None
-15. **Data shown:** Proof type, cryptosuite, DIDs, truncated proofValue; **hardcoded** `created: "2026-04-18T09:30:14Z"`
-16. **User interactions:** Copy hash; verify toggles UI + toast
-17. **Success states:** "Proof verified" toast (mock)
-18. **Error states:** Not found state
-19. **Empty states:** N/A
-20. **Loading states:** Credentials loading
+15. **Data shown:** Proof type, cryptosuite, DIDs, proofValue; ledger `StatusBadge` (`verified`, `tampered`, `revoked`, `pending_anchor`, `ledger_unavailable`); `anchorTxId` / `anchoredAt` when returned
+16. **User interactions:** Copy hash / tx id; verify calls the backend (not a client-side mock)
+17. **Success states:** Toast + badge for the returned ledger status (`verified` is only used for status `verified`)
+18. **Error states:** `EmptyState` when the credential is missing; `ledger_unavailable` when the API is down
+19. **Empty states:** Credential not found
+20. **Loading states:** `PageSkeleton` while credentials load; button "Verifying…"
 21. **Navigation to other screens:** Back → credential details
 22. **Responsive/mobile behavior:** `lg:grid-cols-3`
-23. **Important business rules:** Verification is **demonstration UI only** — not full DID/crypto verify
+23. **Important business rules:** Verification is the public verify endpoint (hash + Ed25519 + Fabric). `ledger_unavailable` must never render as Verified.
 24. **Existing UI/visual design details:** Mono font for hash values
 
 ---
@@ -918,7 +926,7 @@ Each screen follows the 24-point structure. Screens sharing identical layout pat
 
 1. **Screen Name:** Selective Disclosure / Share Credential
 2. **Route/URL:** `/learner/credential/:id/share`
-3. **Purpose:** Choose disclosed fields and generate recruiter verification link
+3. **Purpose:** Choose disclosed fields and generate a **signed selective disclosure** presentation for recruiters (HMAC over the disclosed payload — **not** a zero-knowledge proof)
 4. **Target User/Role:** Learner
 5. **How the user reaches this screen:** From Credential Details
 6. **Main layout:** `AppShell` + 2-column grid
@@ -938,7 +946,7 @@ Each screen follows the 24-point structure. Screens sharing identical layout pat
 20. **Loading states:** Credentials loading
 21. **Navigation to other screens:** Back → details; share URL → public verify page
 22. **Responsive/mobile behavior:** `lg:grid-cols-2`
-23. **Important business rules:** Token per credential; 90-day expiry; defaults: core fields on, sensitive off
+23. **Important business rules:** Token per credential; 90-day expiry; defaults: core fields on, sensitive off. This is **signed selective disclosure**, not ZK. Zero-knowledge proofs and Merkle-root wallet anchoring are future work.
 24. **Existing UI/visual design details:** Switch toggles with live preview update
 
 ---
@@ -1441,6 +1449,8 @@ AppShell → Sign out
 | `reviews.api.ts` | `/reviews/*` |
 | `peer-review.api.ts` | `/peer-review/*` |
 | `wallet.api.ts` | `/wallet/*`, `/public/presentations/*` |
+| `ledger.api.ts` | `/public/credentials/:id/verify` |
+| `public-credential.api.ts` | `/public/credentials/:token`, Edge `public-credential` |
 | `institution-students.api.ts` | `/institution/students` |
 | `student-activation.api.ts` | `/student-activation/*` |
 
@@ -1460,6 +1470,7 @@ See `backend/src/routes/index.ts` for full mount paths:
 - `/api/student-activation` — public token
 - `/api/wallet` — learner, admin
 - `/api/public/presentations` — public
+- `/api/public` — public credential share + `GET /credentials/:id/verify`
 
 ### 9.3 Key Hooks
 
@@ -1493,14 +1504,15 @@ See `backend/src/routes/index.ts` for full mount paths:
 | Recruiter Search decorative filters | "Verification: Verified" and "Has credential: Yes" badges are **display only**, not wired |
 | Certificate upload | **Stub** — toast "Upload coming soon" |
 | Credential Details endorsements/assessments | **Hardcoded placeholder data** |
-| Credential Proof verification | **Mock client-side only** |
+| Credential Proof verification | **Live** — `GET /api/public/credentials/:id/verify` (hash + Ed25519 + Fabric). UI maps `verified` / `tampered` / `revoked` / `pending_anchor` / `ledger_unavailable` |
 | Selective Disclosure QR button | **Stub** — "coming soon" toast |
 | Export VC JSON-LD button | **No handler** |
 | Institution Validation Trail Refresh button | **Disabled placeholder** |
 | AppShell mobile sidebar | Fixed `w-64` sidebar with **no hamburger/collapse** — mobile behavior needs clarification |
 | Admin role UI | **Not found in frontend** |
 | Student provisioning UI for institutions | **Not found** — copy references future onboarding flow |
-| ZKP/Blockchain integration | **Future** — README mentions mock SHA-256 hashes only |
+| Zero-knowledge proofs | **Future** — current shares are signed selective disclosure (HMAC), not ZK |
+| Merkle-root wallet anchoring | **Future** — today each credential hash is anchored individually on Fabric |
 | Two wallet data paradigms | `WalletPage` uses `fetchWalletCompetencyRecords`; credential routes use `useCredentials()` — different data paths |
 
 ---

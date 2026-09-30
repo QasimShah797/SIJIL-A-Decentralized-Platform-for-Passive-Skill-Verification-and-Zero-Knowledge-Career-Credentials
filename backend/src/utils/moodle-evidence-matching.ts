@@ -240,6 +240,8 @@ export function aggregateLmsEvidenceForCompetency(
         grade_max: gradeMax,
         grade_formatted: grade != null && gradeMax != null ? `${grade}/${gradeMax}` : null,
         feedback: metadata.teacher_feedback,
+        submitted_at: metadata.submitted_at,
+        graded_at: metadata.graded_at,
         synced_at: row.sync_date,
       };
     });
@@ -301,13 +303,16 @@ export function aggregateLmsEvidenceForCompetency(
       if (!text) return false;
       return !feedbackFromTable.some((item) => asText(item.moodle_assignment_id) === assignmentId);
     })
-    .map((row) => ({
-      source: "Moodle Teacher Feedback",
-      feedback_text: asNullableText(row.feedback),
-      reviewed_at: asNullableText(row.graded_at) ?? asNullableText(row.synced_at),
-      status: "Available",
-      moodle_assignment_id: asText(row.moodle_assignment_id),
-    }));
+    .map((row) => {
+      const rec = row as Record<string, unknown>;
+      return {
+        source: "Moodle Teacher Feedback",
+        feedback_text: asNullableText(rec.feedback),
+        reviewed_at: asNullableText(rec.graded_at) ?? asNullableText(rec.synced_at),
+        status: "Available",
+        moodle_assignment_id: asText(rec.moodle_assignment_id),
+      };
+    });
 
   const feedbackFromEvidenceRecords = (params.lmsEvidenceRecords ?? [])
     .filter((row) =>
@@ -327,7 +332,7 @@ export function aggregateLmsEvidenceForCompetency(
         evidence_record_id: asText(row.id),
       };
     })
-    .filter((row): row is Record<string, unknown> => row !== null);
+    .filter((row): row is NonNullable<typeof row> => row !== null);
 
   const teacherFeedback = dedupeByKey(
     [...feedbackFromTable, ...feedbackFromAssignments, ...feedbackFromEvidenceRecords],

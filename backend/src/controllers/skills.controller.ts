@@ -4,7 +4,12 @@
 import { Request, Response } from "express";
 import { skillsService } from "../services/skills.service";
 import { sendSuccess } from "../utils/apiResponse";
-import { createSkillSchema, updateSkillSchema } from "../validators/skills.validator";
+import {
+  createSkillSchema,
+  skillEventSchema,
+  skillIdParamSchema,
+  updateSkillSchema,
+} from "../validators/skills.validator";
 import { paramString } from "../utils/params";
 
 export async function listSkills(req: Request, res: Response): Promise<Response> {
@@ -46,4 +51,22 @@ export async function updateSkill(req: Request, res: Response): Promise<Response
 export async function deleteSkill(req: Request, res: Response): Promise<Response> {
   await skillsService.delete(req.user!.id, paramString(req.params.id, "id"));
   return sendSuccess(res, null, "Skill deleted");
+}
+
+export async function syncAllSkillEvidence(req: Request, res: Response): Promise<Response> {
+  await skillsService.syncEvidenceStatuses(req.user!.id);
+  return sendSuccess(res, null, "Skill evidence statuses synced");
+}
+
+export async function syncSkillEvidence(req: Request, res: Response): Promise<Response> {
+  const { id } = skillIdParamSchema.parse(req.params);
+  const skill = await skillsService.applyLearnerEvent(req.user!.id, id, "sync_evidence");
+  return sendSuccess(res, skill, "Skill evidence status synced");
+}
+
+export async function applySkillEvent(req: Request, res: Response): Promise<Response> {
+  const { id } = skillIdParamSchema.parse(req.params);
+  const { type } = skillEventSchema.parse(req.body);
+  const skill = await skillsService.applyLearnerEvent(req.user!.id, id, type);
+  return sendSuccess(res, skill, "Skill event applied");
 }

@@ -101,3 +101,37 @@ export async function getRelatedEvidenceApi(
       }
     : null;
 }
+
+export async function updateSkillApi(
+  skillId: string,
+  skill: Pick<DeclaredSkill, "name"> & Partial<Pick<DeclaredSkill, "domain" | "description">>,
+): Promise<DeclaredSkill | null> {
+  const result = await tryApiRequest<SkillApiView>(`/skills/${skillId}`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      name: skill.name,
+      domain: skill.domain,
+      description: skill.description,
+    }),
+  });
+  return result ? toDeclaredSkill(result) : null;
+}
+
+export async function syncSkillEvidenceStatusApi(skillId?: string): Promise<boolean> {
+  const path = skillId
+    ? `/skills/${skillId}/sync-evidence-status`
+    : "/skills/sync-evidence-status";
+  const result = await tryApiRequest<unknown>(path, { method: "POST" });
+  return result !== null;
+}
+
+export async function applySkillEventApi(
+  skillId: string,
+  type: "sync_evidence" | "attestation_submitted",
+): Promise<boolean> {
+  const result = await tryApiRequest<SkillApiView>(`/skills/${skillId}/events`, {
+    method: "POST",
+    body: JSON.stringify({ type }),
+  });
+  return result !== null;
+}

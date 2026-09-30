@@ -1,8 +1,9 @@
 /**
- * Role-based access control middleware for learner, institution, and recruiter routes.
+ * Role-based access control middleware for learner, reviewer, recruiter, and admin routes.
+ * `institution` remains a legacy alias of reviewer.
  */
 import { Request, Response, NextFunction } from "express";
-import { AppRole } from "../constants/roles";
+import { AppRole, ROLES } from "../constants/roles";
 import { AppError } from "../utils/AppError";
 
 export function requireRole(...allowed: AppRole[]) {
@@ -22,6 +23,11 @@ export function requireRole(...allowed: AppRole[]) {
   };
 }
 
-export const requireLearner = requireRole("learner", "admin");
-export const requireInstitution = requireRole("institution", "admin");
-export const requireRecruiter = requireRole("recruiter", "admin");
+export const REVIEWER_ROLES: AppRole[] = [ROLES.REVIEWER, ROLES.INSTITUTION, ROLES.ADMIN];
+
+export const requireLearner = requireRole(ROLES.LEARNER, ROLES.ADMIN);
+export const requireReviewer = requireRole(...REVIEWER_ROLES);
+/** @deprecated Institution UI is retired; use requireReviewer. Kept as a legacy alias. */
+export const requireInstitution = requireReviewer;
+export const requireRecruiter = requireRole(ROLES.RECRUITER, ROLES.ADMIN);
+export const requireAdmin = requireRole(ROLES.ADMIN);

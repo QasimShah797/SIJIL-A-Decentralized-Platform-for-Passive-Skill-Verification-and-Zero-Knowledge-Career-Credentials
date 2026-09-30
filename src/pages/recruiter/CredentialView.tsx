@@ -4,6 +4,8 @@ import { AppShell } from "@/components/sijil/AppShell";
 import { PageHeader } from "@/components/sijil/PageHeader";
 import { StatusBadge } from "@/components/sijil/StatusBadge";
 import { FieldRow } from "@/components/sijil/FieldRow";
+import { EmptyState } from "@/components/sijil/EmptyState";
+import { PageSkeleton } from "@/components/sijil/SkeletonLoader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -12,12 +14,12 @@ import {
 } from "lucide-react";
 import { fetchPresentation } from "@/lib/db/presentations";
 import { fetchCredentialByUriGlobal } from "@/lib/db/credentials";
+import { mapLedgerStatusToBadge, shareShowsVerified } from "@/lib/ledger-status";
+import { verifyCredentialLedgerApi, type LedgerVerifyResult } from "@/services/api/ledger.api";
 import { useCandidates } from "@/hooks/useCandidates";
 import type { SharedPresentation } from "@/lib/sijil-data";
 import type { CredentialView } from "@/lib/db/credentials";
 import { toast } from "@/hooks/use-toast";
-
-type IntegrityState = "idle" | "passed" | "failed";
 
 export default function RecruiterCredentialView() {
   const { token } = useParams();
@@ -28,7 +30,8 @@ export default function RecruiterCredentialView() {
   const [presentation, setPresentation] = useState<SharedPresentation | null>(null);
   const [cred, setCred] = useState<CredentialView | null>(null);
   const [loading, setLoading] = useState(true);
-  const [integrity, setIntegrity] = useState<IntegrityState>("idle");
+  const [ledgerResult, setLedgerResult] = useState<LedgerVerifyResult | null>(null);
+  const [verifying, setVerifying] = useState(false);
   const [issuerVerified, setIssuerVerified] = useState(false);
 
   useEffect(() => {
@@ -43,14 +46,18 @@ export default function RecruiterCredentialView() {
   }, [token]);
 
   if (loading) {
-    return <AppShell role="recruiter"><div className="text-sm text-muted-foreground">Loading presentation…</div></AppShell>;
+    return <AppShell role="recruiter"><PageSkeleton rows={4} /></AppShell>;
   }
 
   if (!presentation) {
     return (
       <AppShell role="recruiter">
-        <PageHeader title="Presentation not found" description="The shared link is invalid, expired or has been revoked." />
-        <Button variant="outline" onClick={() => navigate(-1)}><ArrowLeft className="h-4 w-4 mr-1.5" />Back</Button>
+        <EmptyState
+          icon={ShieldAlert}
+          title="Presentation not found"
+          description="The shared link is invalid, expired or has been revoked."
+          action={{ label: "Back", onClick: () => navigate(-1) }}
+        />
       </AppShell>
     );
   }
@@ -59,14 +66,23 @@ export default function RecruiterCredentialView() {
   if (!cred) {
     return (
       <AppShell role="recruiter">
-        <PageHeader title="Credential not found" description="The linked credential could not be loaded." />
-        <Button variant="outline" onClick={() => navigate(-1)}><ArrowLeft className="h-4 w-4 mr-1.5" />Back</Button>
+        <EmptyState
+          icon={ShieldAlert}
+          title="Credential not found"
+          description="The linked credential could not be loaded."
+          action={{ label: "Back", onClick: () => navigate(-1) }}
+        />
       </AppShell>
     );
   }
 
   const isExpired = new Date(presentation.expiresAt).getTime() < Date.now();
   const status = presentation.revoked ? "Revoked" : isExpired ? "Expired" : "Active";
+  const ledgerBadge = ledgerResult ? mapLedgerStatusToBadge(ledgerResult.status, ledgerResult.detail) : null;
+  const ledgerVerified = shareShowsVerified({
+    ledgerStatus: ledgerResult?.status,
+    detail: ledgerResult?.detail,
+  });
 
   // Recruiter only ever sees fields the learner explicitly disclosed.
   const has = (id: string) => presentation.disclosedFields.some((f) => f.id === id);
@@ -77,17 +93,23 @@ export default function RecruiterCredentialView() {
   const candSkills = candidateSkills[presentation.candidateId] || [];
   const matchedSkill = candSkills.find((s) => get("skill")?.toLowerCase().includes(s.skill.toLowerCase().split(" ")[0]));
 
-  const runIntegrityCheck = () => {
-    // Mock cryptographic check: hash + issuer DID + verificationMethod consistency.
-    const ok = !!presentation.proof.proofValue && !presentation.revoked && !isExpired;
-    setIntegrity(ok ? "passed" : "failed");
-    toast({
-      title: ok ? "Integrity check passed" : "Integrity check failed",
-      description: ok
-        ? "Hash matches · issuer DID resolved · proof signature valid · not revoked"
-        : "Credential is revoked, expired or has been tampered with.",
-      variant: ok ? "default" : "destructive",
-    });
+  const runIntegrityCheck = async () => {
+    setVerifying(true);
+    try {
+      const next = await verifyCredentialLedgerApi(presentation.credentialId || cred.id);
+      setLedgerResult(next);
+      const badge = mapLedgerStatusToBadge(next.status, next.detail);
+      const shown = shareShowsVerified({ ledgerStatus: next.status, detail: next.detail });
+      toast({
+        title: badge.label,
+        description: shown
+          ? "Hash matches · issuer DID resolved · proof signature valid · ledger anchored"
+          : `Ledger status ${badge.label}`,
+        variant: shown ? "default" : "destructive",
+      });
+    } finally {
+      setVerifying(false);
+    }
   };
 
   const verifyIssuer = () => {
@@ -119,7 +141,10 @@ export default function RecruiterCredentialView() {
             </div>
           </div>
           <div className="flex flex-wrap gap-1.5">
-            <StatusBadge variant={status === "Active" ? "verified" : "destructive"}>{status}</StatusBadge>
+            <StatusBadge variant={status === "Active" ? "info" : "destructive"}>{status}</StatusBadge>
+            {ledgerBadge ? (
+              <StatusBadge variant={ledgerBadge.variant}>{ledgerBadge.label}</StatusBadge>
+            ) : null}
             <StatusBadge variant="info"><Lock className="h-3 w-3" /> Selective disclosure</StatusBadge>
             <StatusBadge variant="neutral">Recipient: {presentation.recipient}</StatusBadge>
           </div>
@@ -183,26 +208,22 @@ export default function RecruiterCredentialView() {
               <FieldRow
                 label="Credential status"
                 value={
-                  integrity === "passed"
-                    ? <StatusBadge variant="verified" icon={<CheckCircle2 className="h-3 w-3" />}>Valid</StatusBadge>
-                    : integrity === "failed"
-                      ? <StatusBadge variant="destructive" icon={<ShieldAlert className="h-3 w-3" />}>Invalid</StatusBadge>
-                      : <StatusBadge variant="info">Not yet checked</StatusBadge>
+                  ledgerBadge
+                    ? <StatusBadge variant={ledgerBadge.variant} icon={ledgerVerified ? <CheckCircle2 className="h-3 w-3" /> : <ShieldAlert className="h-3 w-3" />}>{ledgerBadge.label}</StatusBadge>
+                    : <StatusBadge variant="info">Not yet checked</StatusBadge>
                 }
               />
               <FieldRow
                 label="Integrity check"
                 value={
-                  integrity === "passed"
-                    ? <StatusBadge variant="verified">Passed · hash matches</StatusBadge>
-                    : integrity === "failed"
-                      ? <StatusBadge variant="destructive">Failed · tampered or revoked</StatusBadge>
-                      : <StatusBadge variant="neutral">Pending</StatusBadge>
+                  ledgerBadge
+                    ? <StatusBadge variant={ledgerBadge.variant}>{ledgerBadge.label}</StatusBadge>
+                    : <StatusBadge variant="neutral">Pending</StatusBadge>
                 }
               />
               <div className="pt-3">
-                <Button onClick={runIntegrityCheck}>
-                  <ShieldCheck className="h-4 w-4 mr-1.5" /> Run cryptographic verification
+                <Button onClick={() => void runIntegrityCheck()} disabled={verifying}>
+                  <ShieldCheck className="h-4 w-4 mr-1.5" /> {verifying ? "Verifying…" : "Run cryptographic verification"}
                 </Button>
               </div>
             </CardContent>

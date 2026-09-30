@@ -136,7 +136,7 @@ async function upsertRecruiterRows(
 
   const { error: roleError } = await supabase.from("user_roles").upsert(
     { user_id: userId, role: RECRUITER.role },
-    { onConflict: "user_id,role" },
+    { onConflict: "user_id" },
   );
   if (roleError) throw roleError;
 

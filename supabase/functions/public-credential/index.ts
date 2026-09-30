@@ -34,6 +34,9 @@ Deno.serve(async (req) => {
         resume: null,
         webView: null,
         walletExport,
+        ledgerStatus: verification.ledgerStatus,
+        ledgerDetail: verification.ledgerDetail,
+        ledger: verification.ledger,
       },
     }, 200, { "Cache-Control": "no-store" });
   }
@@ -42,7 +45,7 @@ Deno.serve(async (req) => {
     success: true,
     data: {
       status: "valid",
-      verified: true,
+      verified: verification.verified,
       verifiedAt: verification.verifiedAt,
       competencyId: row.competency_id,
       selectedFields: row.selected_fields,
@@ -57,6 +60,9 @@ Deno.serve(async (req) => {
         payloadHash: row.payload_hash,
       },
       walletExport,
+      ledgerStatus: verification.ledgerStatus,
+      ledgerDetail: verification.ledgerDetail,
+      ledger: verification.ledger,
     },
   });
 });

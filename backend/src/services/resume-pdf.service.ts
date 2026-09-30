@@ -131,7 +131,9 @@ export async function renderAtsResumePdf(resume: AtsResumeView, shareToken: stri
     writeSide(resume.headline, 9, font, rgb(0.75, 0.86, 1));
   }
   sideY -= 10;
-  const contact = [resume.contact.location, resume.contact.phone, resume.contact.email].filter(Boolean);
+  const contact = [resume.contact.location, resume.contact.phone, resume.contact.email].filter(
+    (item): item is string => typeof item === "string" && item.length > 0,
+  );
   for (const item of contact) writeSide(item, 8, font, rgb(0.86, 0.92, 1));
 
   if (resume.education.length) {

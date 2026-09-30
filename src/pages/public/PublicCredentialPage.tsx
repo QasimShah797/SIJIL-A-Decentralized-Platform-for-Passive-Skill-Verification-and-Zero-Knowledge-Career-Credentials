@@ -3,6 +3,9 @@ import { useParams } from "react-router-dom";
 import { AtsResume } from "@/components/public/AtsResume";
 import { ShareRevokedState, ShareUnavailableState } from "@/components/public/ShareRevokedState";
 import { PublicSurfaceLayout } from "@/components/sijil/PublicSurfaceLayout";
+import { StatusBadge } from "@/components/sijil/StatusBadge";
+import { PageSkeleton } from "@/components/sijil/SkeletonLoader";
+import { mapLedgerStatusToBadge, shareShowsVerified } from "@/lib/ledger-status";
 import type { PublicCredentialResponse } from "@/lib/public-credential";
 import { getPublicCredentialApi, publicResumePhotoUrl } from "@/services/api/public-credential.api";
 
@@ -35,11 +38,20 @@ export default function PublicCredentialPage() {
     };
   }, [shareToken]);
 
+  const ledgerBadge = credential
+    ? mapLedgerStatusToBadge(credential.ledgerStatus, credential.ledgerDetail)
+    : null;
+  const ledgerVerified = shareShowsVerified({
+    ledgerStatus: credential?.ledgerStatus,
+    verified: credential?.verified,
+    detail: credential?.ledgerDetail,
+  });
+
   return (
     <PublicSurfaceLayout accent="strong">
       <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
         {loading ? (
-          <p className="text-sm text-muted-foreground">Loading credential…</p>
+          <PageSkeleton rows={4} />
         ) : error === "missing" || !credential ? (
           <ShareUnavailableState status="missing" />
         ) : credential.status === "revoked" ? (
@@ -53,6 +65,9 @@ export default function PublicCredentialPage() {
             <p className="text-sm text-muted-foreground">
               Shared SIJIL resume · only disclosed fields are shown
             </p>
+            {ledgerBadge ? (
+              <StatusBadge variant={ledgerBadge.variant}>{ledgerBadge.label}</StatusBadge>
+            ) : null}
             <AtsResume
               resume={{
                 ...credential.resume,
@@ -61,7 +76,7 @@ export default function PublicCredentialPage() {
                   : credential.resume.photoUrl,
               }}
               photoFallbackUrl={credential.resume.photoUrl}
-              verified={credential.verified}
+              verified={ledgerVerified}
             />
           </div>
         ) : (

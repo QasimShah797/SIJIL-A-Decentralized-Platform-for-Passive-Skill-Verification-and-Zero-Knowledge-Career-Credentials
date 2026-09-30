@@ -50,7 +50,6 @@ export async function cleanupCompetencyRelatedData(
     rawTable("peer_review_invites").delete().eq("skill_id", skillId),
     supabase.from("institution_attestation_requests").delete().eq("learner_user_id", userId).eq("skill_id", skillId),
     supabase.from("attestations").delete().eq("learner_user_id", userId).eq("skill_id", skillId),
-    supabase.from("credentials").delete().eq("user_id", userId).eq("skill_name", normalizedName),
     supabase.from("lms_evidence").delete().eq("user_id", userId).eq("linked_skill_id", skillId),
     supabase
       .from("github_repos")

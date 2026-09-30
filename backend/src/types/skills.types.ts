@@ -63,6 +63,6 @@ export interface UpdateSkillInput {
   name?: string;
   domain?: string;
   description?: string;
-  status?: string;
-  pipelineStage?: string;
 }
+
+export type SkillLearnerEventType = "sync_evidence" | "attestation_submitted";

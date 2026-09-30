@@ -1,17 +1,10 @@
 /**
- * Cryptographic hash utilities for mock proof generation (SHA-256).
- * Placeholder for future blockchain / ZKP integration.
+ * Cryptographic hash utilities (SHA-256).
  */
-import { createHash, randomBytes } from "node:crypto";
+import { createHash } from "node:crypto";
 
 export function generateSha256Hash(input: string): string {
   return createHash("sha256").update(input).digest("hex");
-}
-
-export function generateProofHash(payload: Record<string, unknown>): string {
-  const salt = randomBytes(16).toString("hex");
-  const canonical = JSON.stringify({ ...payload, salt, ts: Date.now() });
-  return generateSha256Hash(canonical);
 }
 
 export function generateCredentialUri(userId: string, skillName: string): string {

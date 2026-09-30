@@ -4,6 +4,7 @@
 import { Request, Response, NextFunction } from "express";
 import { ZodError } from "zod";
 import { AppError } from "../utils/AppError";
+import { LedgerDisabledError } from "../services/ledger.errors";
 import { sendError } from "../utils/apiResponse";
 import { env } from "../config/env";
 
@@ -15,6 +16,10 @@ export function errorMiddleware(
 ): Response {
   if (err instanceof AppError) {
     return sendError(res, err.message, err.statusCode);
+  }
+
+  if (err instanceof LedgerDisabledError) {
+    return sendError(res, err.message, 503);
   }
 
   if (err instanceof ZodError) {

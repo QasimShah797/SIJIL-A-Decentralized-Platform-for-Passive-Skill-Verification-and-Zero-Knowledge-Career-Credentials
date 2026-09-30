@@ -16,6 +16,19 @@ export interface CredentialRow {
   supporting_records: number;
   skill_name: string | null;
   proof: Record<string, unknown> | null;
+  credential_document?: Record<string, unknown> | null;
+  credential_hash?: string | null;
+  revoked_at?: string | null;
+  revocation_reason?: string | null;
+  anchor_status?: string;
+  anchor_tx_id?: string | null;
+  anchored_at?: string | null;
+  anchor_attempts?: number;
+  anchor_last_error?: string | null;
+  revoke_status?: string;
+  revoke_attempts?: number;
+  revoke_last_error?: string | null;
+  revoke_tx_id?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -33,6 +46,9 @@ export interface CredentialView {
   supportingRecords: number;
   skill: string;
   proof?: Record<string, unknown>;
+  anchorStatus?: string;
+  anchorTxId?: string | null;
+  anchoredAt?: string | null;
 }
 
 export interface IssueCredentialInput {

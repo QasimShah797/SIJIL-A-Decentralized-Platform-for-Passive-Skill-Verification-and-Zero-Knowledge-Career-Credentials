@@ -1,5 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
-import { syncDeclaredSkillEvidenceStatuses } from "@/lib/db/skills";
+import { applySkillEventApi, syncSkillEvidenceStatusApi } from "@/services/api/skills.api";
 import {
   clearAllGitHubConnectionState,
   ensureGitHubContextForUser,
@@ -266,20 +266,14 @@ export async function linkRepoToSkill(
   if (!userId) return;
 
   if (skillId) {
-    const { error: skillError } = await supabase
-      .from("declared_skills")
-      .update({
-        status: "Evidence Linked",
-        pipeline_stage: "evidence_linked",
-        last_related_activity_at: new Date().toISOString(),
-      })
-      .eq("user_id", userId)
-      .eq("id", skillId);
-    if (skillError) throw skillError;
+    const applied = await applySkillEventApi(skillId, "sync_evidence");
+    if (!applied) {
+      throw new Error("Backend required to update skill evidence pipeline stage");
+    }
     return;
   }
 
-  await syncDeclaredSkillEvidenceStatuses(userId);
+  await syncSkillEvidenceStatusApi();
 }
 
 export { clearAllGitHubConnectionState, ensureGitHubContextForUser };

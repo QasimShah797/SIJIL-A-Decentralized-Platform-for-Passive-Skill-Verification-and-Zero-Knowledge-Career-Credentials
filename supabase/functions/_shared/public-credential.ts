@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.95.0";
+import { canonicalizeJson } from "./canonicalize.ts";
 
 export type PublicShareStatus = "valid" | "revoked" | "expired" | "invalid";
 
@@ -27,14 +28,6 @@ export function serviceClient() {
     Deno.env.get("SUPABASE_URL")!,
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   );
-}
-
-function canonicalizeJson(value: unknown): string {
-  if (value === null || typeof value !== "object") return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map((item) => canonicalizeJson(item)).join(",")}]`;
-  const record = value as Record<string, unknown>;
-  const keys = Object.keys(record).sort();
-  return `{${keys.map((key) => `${JSON.stringify(key)}:${canonicalizeJson(record[key])}`).join(",")}}`;
 }
 
 export async function sha256Hex(input: string): Promise<string> {
@@ -104,16 +97,42 @@ export async function verifyPresentation(row: PresentationRow): Promise<{
   status: PublicShareStatus;
   verified: boolean;
   verifiedAt: string;
+  ledgerStatus: string;
+  ledgerDetail: string | null;
+  ledger: {
+    credentialId: string;
+    hash: string | null;
+    anchorTxId: string | null;
+    anchoredAt: string | null;
+    verifiedAt: string;
+  } | null;
 }> {
   const verifiedAt = new Date().toISOString();
-  if (row.revoked_at) return { status: "revoked", verified: false, verifiedAt };
+  const emptyLedger = {
+    ledgerStatus: "ledger_unavailable",
+    ledgerDetail: null as string | null,
+    ledger: null as {
+      credentialId: string;
+      hash: string | null;
+      anchorTxId: string | null;
+      anchoredAt: string | null;
+      verifiedAt: string;
+    } | null,
+  };
+
+  if (row.revoked_at) {
+    return { status: "revoked", verified: false, verifiedAt, ...emptyLedger, ledgerStatus: "revoked" };
+  }
   if (row.expires_at && new Date(row.expires_at).getTime() < Date.now()) {
-    return { status: "expired", verified: false, verifiedAt };
+    return { status: "expired", verified: false, verifiedAt, ...emptyLedger };
   }
 
   const payloadHash = await sha256Hex(canonicalizeJson(row.disclosed_payload));
   const payloadHashMatches = payloadHash === row.payload_hash;
-  const secret = Deno.env.get("PRESENTATION_SIGNING_SECRET") ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+  const secret = Deno.env.get("PRESENTATION_SIGNING_SECRET");
+  if (!secret) {
+    return { status: "invalid", verified: false, verifiedAt, ...emptyLedger };
+  }
   const learnerDid = row.verification_method?.split("#")[0] ?? null;
   const proofMaterial = canonicalizeJson({
     learnerDid,
@@ -126,10 +145,121 @@ export async function verifyPresentation(row: PresentationRow): Promise<{
   const expected = `0x${await hmacSha256Hex(secret, proofMaterial)}`;
   const proofValid = Boolean(row.proof_value) && row.proof_value === expected;
 
-  if (payloadHashMatches && proofValid) {
-    return { status: "valid", verified: true, verifiedAt };
+  const shareValid = payloadHashMatches && proofValid;
+  const ledgerInfo = await fetchBackendCredentialVerify(row);
+
+  if (ledgerInfo.ledgerStatus === "revoked") {
+    return {
+      status: "revoked",
+      verified: false,
+      verifiedAt,
+      ledgerStatus: ledgerInfo.ledgerStatus,
+      ledgerDetail: ledgerInfo.ledgerDetail,
+      ledger: ledgerInfo.ledger,
+    };
   }
-  return { status: "invalid", verified: false, verifiedAt };
+
+  if (!shareValid) {
+    return {
+      status: "invalid",
+      verified: false,
+      verifiedAt,
+      ledgerStatus: ledgerInfo.ledgerStatus,
+      ledgerDetail: ledgerInfo.ledgerDetail,
+      ledger: ledgerInfo.ledger,
+    };
+  }
+
+  const verified = ledgerInfo.ledgerStatus === "verified"
+    && ledgerInfo.ledgerDetail !== "legacy_unverified_evidence";
+  return {
+    status: verified ? "valid" : "invalid",
+    verified,
+    verifiedAt,
+    ledgerStatus: ledgerInfo.ledgerStatus,
+    ledgerDetail: ledgerInfo.ledgerDetail,
+    ledger: ledgerInfo.ledger,
+  };
+}
+
+type BackendVerifyPayload = {
+  status: string;
+  detail?: string;
+  credentialId: string;
+  hash: string | null;
+  anchorTxId: string | null;
+  anchoredAt: string | null;
+  verifiedAt: string;
+};
+
+async function fetchBackendCredentialVerify(row: PresentationRow): Promise<{
+  ledgerStatus: string;
+  ledgerDetail: string | null;
+  ledger: BackendVerifyPayload | null;
+}> {
+  const base = Deno.env.get("BACKEND_PUBLIC_URL")?.replace(/\/$/, "");
+  if (!base) {
+    return { ledgerStatus: "ledger_unavailable", ledgerDetail: null, ledger: null };
+  }
+
+  const credentialId = await resolveCredentialIdForPresentation(row);
+  if (!credentialId) {
+    return { ledgerStatus: "not_found", ledgerDetail: null, ledger: null };
+  }
+
+  try {
+    const response = await fetch(
+      `${base}/api/public/credentials/${encodeURIComponent(credentialId)}/verify`,
+      { signal: AbortSignal.timeout(8_000) },
+    );
+    if (!response.ok) {
+      return { ledgerStatus: "ledger_unavailable", ledgerDetail: null, ledger: null };
+    }
+    const body = await response.json() as {
+      success?: boolean;
+      data?: BackendVerifyPayload;
+    };
+    const data = body.data;
+    if (!body.success || !data || typeof data.status !== "string") {
+      return { ledgerStatus: "ledger_unavailable", ledgerDetail: null, ledger: null };
+    }
+    return {
+      ledgerStatus: data.status,
+      ledgerDetail: typeof data.detail === "string" ? data.detail : null,
+      ledger: {
+        credentialId: data.credentialId,
+        hash: data.hash,
+        anchorTxId: data.anchorTxId,
+        anchoredAt: data.anchoredAt,
+        verifiedAt: data.verifiedAt,
+      },
+    };
+  } catch {
+    return { ledgerStatus: "ledger_unavailable", ledgerDetail: null, ledger: null };
+  }
+}
+
+async function resolveCredentialIdForPresentation(row: PresentationRow): Promise<string | null> {
+  const client = serviceClient();
+  const { data: skill } = await client
+    .from("declared_skills")
+    .select("name")
+    .eq("id", row.competency_id)
+    .eq("user_id", row.learner_id)
+    .maybeSingle();
+  const skillName = typeof skill?.name === "string" ? skill.name : null;
+  if (!skillName) return null;
+
+  const { data: cred } = await client
+    .from("credentials")
+    .select("id")
+    .eq("user_id", row.learner_id)
+    .eq("skill_name", skillName)
+    .order("valid_from", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  return typeof cred?.id === "string" ? cred.id : null;
 }
 
 export function walletExportAvailability() {

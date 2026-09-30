@@ -10,6 +10,7 @@ import {
   SupportingRecordRow,
 } from "../types/evidence.types";
 import { EVIDENCE_STATUS, PIPELINE_STAGE, SKILL_STATUS } from "../constants/status";
+import { hashEvidenceRecord, skillEvidenceStoragePath, SKILL_EVIDENCE_BUCKET } from "../utils/evidence-hash";
 
 function rowToView(row: SupportingRecordRow, status: string = EVIDENCE_STATUS.PENDING): EvidenceView {
   return {
@@ -27,15 +28,34 @@ export class EvidenceService {
   async submit(userId: string, input: SubmitEvidenceInput): Promise<EvidenceView> {
     await skillsService.getById(userId, input.skillId);
 
+    const source = input.source || "Upload";
+    const url = input.url ?? null;
+    const filePath = skillEvidenceStoragePath(url);
+    let fileBytes: Buffer | undefined;
+    if (filePath) {
+      const { data, error: downloadErr } = await supabaseService.client.storage
+        .from(SKILL_EVIDENCE_BUCKET)
+        .download(filePath);
+      if (downloadErr || !data) {
+        throw new AppError("Could not read evidence file from storage", 400);
+      }
+      fileBytes = Buffer.from(await data.arrayBuffer());
+    }
+    const contentHash = hashEvidenceRecord(
+      { source, title: input.title, url },
+      fileBytes,
+    );
+
     const { data, error } = await supabaseService.client
       .from("supporting_records")
       .insert({
         user_id: userId,
         skill_id: input.skillId,
-        source: input.source || "Upload",
+        source,
         title: input.title,
-        url: input.url ?? null,
+        url,
         occurred_at: new Date().toISOString(),
+        content_hash: contentHash,
       })
       .select("*")
       .single();

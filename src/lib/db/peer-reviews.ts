@@ -1,11 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import type { PeerReview, ReviewInvitation } from "@/lib/sijil-data";
 import { resolvePeerReviewDate } from "@/lib/peer-review-date";
-import {
-  countWalletEvidence,
-  deriveWalletSourceBadges,
-  type WalletEvidenceSummary,
-} from "@/lib/wallet-competency-shared";
+import { syncWalletCompetencyApi } from "@/services/api/wallet.api";
 
 export type SecureReviewInvitation = {
   id: string;
@@ -40,83 +36,10 @@ function contributorGithubLogin(contributorId: string | null | undefined): strin
   return contributorId.replace("@", "").trim() || null;
 }
 
-function walletClient() {
-  return supabase as unknown as {
-    from: (table: string) => any;
-  };
-}
-
 function rawTable(table: string) {
   return (supabase as unknown as {
-    from: (name: string) => any;
+    from: (name: string) => ReturnType<typeof supabase.from>;
   }).from(table);
-}
-
-function asObject(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : null;
-}
-
-function asList(value: unknown): Record<string, unknown>[] {
-  return Array.isArray(value)
-    ? value.filter((item): item is Record<string, unknown> => !!item && typeof item === "object")
-    : [];
-}
-
-function toWalletReview(review: PeerReview): Record<string, unknown> {
-  return {
-    id: review.id,
-    reviewerName: review.reviewerName,
-    reviewerRole: review.reviewerRole,
-    source: review.source,
-    origin: review.origin,
-    skill: review.skill,
-    projectId: review.projectId,
-    projectName: review.projectName,
-    evidenceLabel: review.evidenceLabel,
-    evidenceUrl: review.evidenceUrl,
-    rating: review.rating,
-    comment: review.comment,
-    recommendation: review.recommendation,
-    date: review.date,
-    contextStatus: review.contextStatus,
-    contributorVerification: review.contributorVerification,
-    trustWeight: review.trustWeight,
-    imported: review.imported,
-  };
-}
-
-function rebuildWalletSummary(summary: WalletEvidenceSummary): WalletEvidenceSummary {
-  const sourceBadges = deriveWalletSourceBadges({
-    github: [
-      ...summary.github.repos,
-      ...summary.github.activities,
-      ...summary.github.evidenceRecords,
-      ...summary.github.reviews,
-    ],
-    lms: [
-      ...summary.lms.evidence,
-      ...summary.lms.courses,
-      ...summary.lms.assignments,
-      ...summary.lms.grades,
-      ...summary.lms.importedEvidence,
-    ],
-    practicalTasks: summary.practicalTask.attemptHistory,
-    reviews: [...summary.peerReviews, ...summary.teacherFeedback],
-  });
-
-  return {
-    ...summary,
-    sourceBadges,
-    evidenceCount: countWalletEvidence({
-      github: summary.github,
-      lms: summary.lms,
-      practicalTasks: summary.practicalTask.attemptHistory,
-      peerReviews: summary.peerReviews,
-      teacherFeedback: summary.teacherFeedback,
-    }),
-  };
 }
 
 async function syncWalletReviewState(params: {
@@ -125,115 +48,20 @@ async function syncWalletReviewState(params: {
   competencyName?: string | null;
   review: PeerReview;
 }): Promise<void> {
-  const client = walletClient();
-  let walletRow: Record<string, unknown> | null = null;
-
-  if (params.skillId) {
-    const { data, error } = await client
-      .from("wallet_competency_records")
-      .select("*")
-      .eq("learner_id", params.learnerUserId)
-      .eq("competency_id", params.skillId)
-      .maybeSingle();
-
-    if (!error && data) {
-      walletRow = data as Record<string, unknown>;
-    }
+  void params.review;
+  let competencyId = params.skillId ?? null;
+  if (!competencyId && params.competencyName) {
+    const { data } = await supabase
+      .from("declared_skills")
+      .select("id, name")
+      .eq("user_id", params.learnerUserId);
+    const match = (data ?? []).find(
+      (row) => String(row.name ?? "").trim().toLowerCase() === params.competencyName?.trim().toLowerCase(),
+    );
+    competencyId = (match?.id as string | undefined) ?? null;
   }
-
-  if (!walletRow && params.competencyName) {
-    const { data, error } = await client
-      .from("wallet_competency_records")
-      .select("*")
-      .eq("learner_id", params.learnerUserId);
-
-    if (!error) {
-      walletRow = ((data ?? []) as Record<string, unknown>[]).find((row) => {
-        const summary = asObject(row.evidence_summary);
-        const competency = asObject(summary?.competency);
-        return String(row.competency_name ?? "").trim().toLowerCase() === params.competencyName?.trim().toLowerCase()
-          || String(competency?.name ?? "").trim().toLowerCase() === params.competencyName?.trim().toLowerCase();
-      }) ?? null;
-    }
-  }
-
-  if (!walletRow) return;
-
-  const rawSummary = asObject(walletRow.evidence_summary);
-  if (!rawSummary) return;
-
-  const github = asObject(rawSummary.github);
-  const lms = asObject(rawSummary.lms);
-  const practicalTask = asObject(rawSummary.practicalTask);
-  const learner = asObject(rawSummary.learner);
-  const competency = asObject(rawSummary.competency);
-  const institutionReview = asObject(rawSummary.institutionReview);
-  const evidenceTimestamps = asObject(rawSummary.evidenceTimestamps);
-  const nextReview = toWalletReview(params.review);
-
-  const peerReviews = [
-    nextReview,
-    ...asList(rawSummary.peerReviews).filter((item) => String(item.id ?? "") !== params.review.id),
-  ];
-
-  const nextSummary = rebuildWalletSummary({
-    competency: {
-      id: String(competency?.id ?? walletRow.competency_id ?? ""),
-      name: String(competency?.name ?? walletRow.competency_name ?? ""),
-      domain: String(competency?.domain ?? "General"),
-      description: String(competency?.description ?? ""),
-    },
-    learner: {
-      id: String(learner?.id ?? walletRow.learner_id ?? ""),
-      did: typeof learner?.did === "string" ? learner.did : null,
-    },
-    github: {
-      repos: asList(github?.repos),
-      activities: asList(github?.activities),
-      evidenceRecords: asList(github?.evidenceRecords),
-      reviews: asList(github?.reviews),
-    },
-    lms: {
-      evidence: asList(lms?.evidence),
-      courses: asList(lms?.courses),
-      assignments: asList(lms?.assignments),
-      grades: asList(lms?.grades),
-      importedEvidence: asList(lms?.importedEvidence),
-    },
-    practicalTask: {
-      latestAttempt: asObject(practicalTask?.latestAttempt) as WalletEvidenceSummary["practicalTask"]["latestAttempt"],
-      attemptHistory: Array.isArray(practicalTask?.attemptHistory)
-        ? practicalTask.attemptHistory as WalletEvidenceSummary["practicalTask"]["attemptHistory"]
-        : [],
-    },
-    peerReviews,
-    teacherFeedback: asList(rawSummary.teacherFeedback),
-    institutionReview: {
-      status: typeof institutionReview?.status === "string" ? institutionReview.status : null,
-      feedback: typeof institutionReview?.feedback === "string" ? institutionReview.feedback : null,
-      reviewedAt: typeof institutionReview?.reviewedAt === "string" ? institutionReview.reviewedAt : null,
-    },
-    evidenceTimestamps: {
-      github: Array.isArray(evidenceTimestamps?.github) ? evidenceTimestamps.github as string[] : [],
-      lms: Array.isArray(evidenceTimestamps?.lms) ? evidenceTimestamps.lms as string[] : [],
-      practicalTask: Array.isArray(evidenceTimestamps?.practicalTask) ? evidenceTimestamps.practicalTask as string[] : [],
-      peerReviews: [
-        params.review.date,
-        ...(Array.isArray(evidenceTimestamps?.peerReviews) ? evidenceTimestamps.peerReviews as string[] : []),
-      ].filter(Boolean),
-      teacherFeedback: Array.isArray(evidenceTimestamps?.teacherFeedback) ? evidenceTimestamps.teacherFeedback as string[] : [],
-    },
-    sourceBadges: [],
-    evidenceCount: 0,
-  });
-
-  await client
-    .from("wallet_competency_records")
-    .update({
-      status: "Review Available",
-      evidence_summary: nextSummary,
-    })
-    .eq("id", walletRow.id);
+  if (!competencyId) return;
+  await syncWalletCompetencyApi(competencyId);
 }
 
 function mapInvitationStatus(raw: string): ReviewInvitation["status"] {

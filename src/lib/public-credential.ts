@@ -111,6 +111,14 @@ export type WalletExportAvailability = {
   google: boolean;
 };
 
+export type PublicCredentialLedger = {
+  credentialId: string;
+  hash: string | null;
+  anchorTxId: string | null;
+  anchoredAt: string | null;
+  verifiedAt: string;
+};
+
 export type PublicCredentialResponse = {
   status: PublicShareStatus;
   verified: boolean;
@@ -121,6 +129,9 @@ export type PublicCredentialResponse = {
   resume: AtsResumeView | null;
   webView: PublicCredentialWebView | null;
   walletExport: WalletExportAvailability;
+  ledgerStatus?: string | null;
+  ledgerDetail?: string | null;
+  ledger?: PublicCredentialLedger | null;
 };
 
 export type PublicCompetencyResponse = {
@@ -134,6 +145,8 @@ export type PublicCompetencyResponse = {
     description?: string;
   } | null;
   ledger: EvidenceLedgerItem[] | null;
+  ledgerStatus?: string | null;
+  ledgerDetail?: string | null;
 };
 
 const ATS_HEADINGS = [

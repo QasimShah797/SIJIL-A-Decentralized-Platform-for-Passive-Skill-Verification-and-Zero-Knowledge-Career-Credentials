@@ -7,7 +7,10 @@ import { getUserSupabase } from "../config/supabase";
 import { AppError } from "../utils/AppError";
 import { resolveLearnerDisplayName } from "../utils/learnerDisplayName";
 import { CredentialView } from "../types/credentials.types";
-import { credentialsService } from "./credentials.service";
+import type { CredentialVerifyResult } from "./credential-verify";
+import { verifyPublicCredential } from "./credential-verify.service";
+import { recruiterVerifyCredential } from "./recruiter-verify";
+import { canReadLearnerData, type AuthCaller } from "./learner-access";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 type ShareRow = Record<string, unknown>;
@@ -703,107 +706,55 @@ async function countPeerReviews(candidateId: string, accessToken?: string): Prom
 }
 
 export class RecruiterService {
-  async verifyCredential(credentialId: string): Promise<VerifyCredentialResult> {
-    const { data: presentation } = await supabaseService.client
-      .from("presentations")
-      .select(`
-        *,
-        credentials ( credential_uri, name, issuer_name, issuer_did, holder_did, valid_from, verification_status, attestation_status, supporting_records, skill_name, proof, credential_types )
-      `)
-      .eq("token", credentialId)
-      .maybeSingle();
-
-    if (presentation) {
-      const isExpired = new Date(presentation.expires_at as string).getTime() < Date.now();
-      const status = presentation.revoked
-        ? "Revoked"
-        : isExpired
-          ? "Expired"
-          : "Active";
-
-      const cred = presentation.credentials as Record<string, unknown> | null;
-      const disclosed = (presentation.disclosed_fields as { id: string; label: string; value: string }[]) ?? [];
-
-      const partialCredential: Partial<CredentialView> = {};
-      for (const field of disclosed) {
-        switch (field.id) {
-          case "credentialName":
-            partialCredential.name = field.value;
-            break;
-          case "skill":
-            partialCredential.skill = field.value;
-            break;
-          case "issuer":
-            partialCredential.issuer = field.value;
-            break;
-          case "validFrom":
-            partialCredential.validFrom = field.value;
-            break;
-          case "holderDid":
-            partialCredential.holderDid = field.value;
-            break;
-          case "issuerDid":
-            partialCredential.issuerDid = field.value;
-            break;
-          default:
-            break;
-        }
-      }
-
-      if (cred) {
-        partialCredential.id = cred.credential_uri as string;
-        partialCredential.verification = cred.verification_status as string;
-        partialCredential.attestation = cred.attestation_status as string;
-      }
-
-      return {
-        credential: partialCredential,
-        disclosedFields: disclosed,
-        presentationStatus: status,
-        candidateId: presentation.candidate_user_id as string,
-      };
-    }
-
-    const full = await credentialsService.getByUri(credentialId);
-    return {
-      credential: {
-        id: full.id,
-        name: full.name,
-        skill: full.skill,
-        issuer: full.issuer,
-        validFrom: full.validFrom,
-        verification: full.verification,
-        attestation: full.attestation,
+  async verifyCredential(credentialId: string): Promise<CredentialVerifyResult> {
+    return recruiterVerifyCredential(credentialId, {
+      lookupPresentation: async (token) => {
+        const { data: presentation } = await supabaseService.client
+          .from("presentations")
+          .select("credentials ( id, credential_uri )")
+          .eq("token", token)
+          .maybeSingle();
+        if (!presentation) return null;
+        const raw = presentation.credentials as
+          | { id?: string; credential_uri?: string }
+          | { id?: string; credential_uri?: string }[]
+          | null;
+        const cred = Array.isArray(raw) ? raw[0] : raw;
+        return cred?.id ?? cred?.credential_uri ?? null;
       },
-      disclosedFields: [],
-      presentationStatus: "Active",
-    };
+      verify: verifyPublicCredential,
+    });
   }
 
-  async getCandidate(candidateId: string, accessToken?: string): Promise<CandidateDetailView | null> {
-    const profile = await fetchDirectoryProfile(candidateId);
+  async getCandidate(
+    candidateId: string,
+    caller: AuthCaller,
+    accessToken?: string,
+  ): Promise<CandidateDetailView | null> {
+    const sharedCredentials = await listActiveSharedCredentials(candidateId, accessToken);
+    const hasActiveShare = sharedCredentials.length > 0;
+    if (!canReadLearnerData({ caller, ownerId: candidateId, hasActiveShare })) {
+      throw new AppError("Not authorized to read this candidate", 403);
+    }
 
-    const [sharedCredentials, reviewCount, directoryName] = await Promise.all([
-      listActiveSharedCredentials(candidateId, accessToken),
-      countPeerReviews(candidateId, accessToken),
-      resolveDirectoryDisplayName(candidateId, profile),
-    ]);
+    if (sharedCredentials.length === 0) return null;
 
-    if (!profile && sharedCredentials.length === 0) return null;
-
-    const name = pickRecruiterDisplayName(extractDisclosedLearnerName(sharedCredentials), directoryName);
-
+    const name = extractDisclosedLearnerName(sharedCredentials) ?? "Learner";
     const topSkill = sharedCredentials.find((item) => item.skill)?.skill ?? "—";
     const evidence = sharedCredentials.reduce((total, item) => total + countDisclosedEvidence(item), 0);
+    const institution = sharedCredentials
+      .flatMap((item) => item.disclosedFields)
+      .find((field) => field.id === "issuer" || field.id === "institution")
+      ?.value ?? "—";
 
     return {
       id: candidateId,
       name,
       topSkill,
       evidence,
-      reviews: reviewCount,
+      reviews: 0,
       attestation: attestationFromShared(sharedCredentials),
-      institution: (profile?.institution_name as string | undefined) ?? "—",
+      institution,
       credentialCount: sharedCredentials.length,
       sharedCredentials,
     };

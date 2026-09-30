@@ -40,6 +40,9 @@ const defaultIcons: Partial<Record<StatusVariant, ReactNode>> = {
 /** Maps pipeline / attestation strings to unified badge variants */
 export function statusToVariant(status: string): StatusVariant {
   const s = status.toLowerCase();
+  if (s.includes("unverified") || s.includes("unavailable")) {
+    return "warning";
+  }
   if (s.includes("verified") || s.includes("approved") || s.includes("valid") || s.includes("passed") || s.includes("complete")) {
     return "verified";
   }
