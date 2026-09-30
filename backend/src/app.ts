@@ -12,6 +12,8 @@ import { notFoundMiddleware } from "./middleware/notFound.middleware";
 
 const app = express();
 
+app.set("trust proxy", env.TRUST_PROXY);
+
 app.use(helmet());
 app.use(cors({ origin: env.CORS_ORIGIN, credentials: true }));
 app.use(morgan(env.NODE_ENV === "development" ? "dev" : "combined"));

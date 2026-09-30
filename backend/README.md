@@ -58,7 +58,7 @@ Personal data never goes on chain. `FABRIC_ENABLED=false` (default) skips the wo
 
 Legacy credentials issued before `evidenceHashes` existed keep the ledger/signature status and add `detail: "legacy_unverified_evidence"`; they are not reported as `tampered`.
 
-Public `GET /public/credentials/:id/verify` is rate-limited to **20 requests per IP per minute**. File downloads are capped at **10 MB** with an **8s** timeout. Successful lookups are cached in memory for **5 minutes** keyed by `credentialId` + `credential_hash` and dropped on revoke.
+Public `GET /public/credentials/:id/verify` is rate-limited to **20 requests per IP per minute** (`req.ip`; `X-Forwarded-For` is ignored unless `TRUST_PROXY=true`). File downloads are capped at **10 MB** with an **8s** timeout. Terminal results (`verified`, `tampered`, `revoked`, `not_found`) are cached in memory for **5 minutes** keyed by `credentialId` + `credential_hash` and dropped on revoke. `pending_anchor`, `ledger_unavailable`, and `evidence_unavailable` are not cached.
 
 ## Install
 
@@ -119,6 +119,7 @@ Seed a learner before e2e: sign up at `/signup/learner`, copy the user UUID from
 | `SUPABASE_ANON_KEY` | Anon key — JWT verification |
 | `CORS_ORIGIN` | Frontend origin (default `http://localhost:8080`) |
 | `FRONTEND_URL` | Frontend origin for invite / share links |
+| `TRUST_PROXY` | `true` only behind a trusted reverse proxy so Express `req.ip` may use `X-Forwarded-For`. Default `false`. |
 | `PRESENTATION_SIGNING_SECRET` | HMAC secret for signed selective disclosure (min **32** chars). Required. Do not reuse the service role key. |
 | `ISSUER_ED25519_PRIVATE_KEY` | Base64 PKCS#8 Ed25519 PEM. Required in production. |
 | `ISSUER_ED25519_PUBLIC_KEY` | Base64 SPKI Ed25519 PEM |

@@ -18,7 +18,7 @@ import {
   SKILL_EVIDENCE_BUCKET,
   evidenceFileTooLarge,
 } from "../utils/evidence-hash";
-import { publicVerifyCache } from "./verify-cache";
+import { publicVerifyCache, shouldCacheVerifyResult } from "./verify-cache";
 
 const uuidSchema = z.string().uuid();
 
@@ -159,10 +159,14 @@ async function loadEvidenceIntegrity(row: CredentialRow): Promise<{
 export async function verifyPublicCredential(idOrUri: string): Promise<CredentialVerifyResult> {
   const row = await loadCredentialByIdOrUri(idOrUri);
   if (!row) {
-    return evaluateCredentialVerification(null, {
+    const missing = await evaluateCredentialVerification(null, {
       verifySignature: () => false,
       ledger: getLedgerService(),
     });
+    if (shouldCacheVerifyResult(missing.status)) {
+      publicVerifyCache.set(idOrUri, null, missing);
+    }
+    return missing;
   }
 
   const cached = publicVerifyCache.get(row.id, row.credential_hash);
@@ -179,7 +183,9 @@ export async function verifyPublicCredential(idOrUri: string): Promise<Credentia
     },
     ledger: getLedgerService(),
   });
-  publicVerifyCache.set(row.id, row.credential_hash, result);
+  if (shouldCacheVerifyResult(result.status)) {
+    publicVerifyCache.set(row.id, row.credential_hash, result);
+  }
   return result;
 }
 

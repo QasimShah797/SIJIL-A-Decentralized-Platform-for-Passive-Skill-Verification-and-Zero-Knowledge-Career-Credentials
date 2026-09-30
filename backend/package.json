@@ -14,7 +14,7 @@
     "generate:issuer-key": "tsx scripts/generate-issuer-key.ts",
     "grant-role": "tsx scripts/grant-role.ts",
     "e2e:ledger": "tsx scripts/e2e-ledger.ts",
-    "test": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json && tsx --test src/services/credential-integrity.test.ts src/services/ledger.service.test.ts src/services/anchor-outbox.test.ts src/services/credential-verify.test.ts src/services/issuance-gate.test.ts src/services/learner-access.test.ts src/services/recruiter-verify.test.ts src/services/recruiter-disclose.test.ts src/services/verify-cache.test.ts src/utils/evidence-hash.test.ts src/controllers/health.controller.test.ts src/middleware/role.middleware.test.ts src/middleware/rateLimit.middleware.test.ts src/constants/roles.test.ts"
+    "test": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json && tsx --test src/services/credential-integrity.test.ts src/services/ledger.service.test.ts src/services/anchor-outbox.test.ts src/services/credential-verify.test.ts src/services/issuance-gate.test.ts src/services/learner-access.test.ts src/services/recruiter-verify.test.ts src/services/recruiter-disclose.test.ts src/services/verify-cache.test.ts src/services/grant-role.test.ts src/utils/evidence-hash.test.ts src/utils/ed25519.test.ts src/controllers/health.controller.test.ts src/middleware/role.middleware.test.ts src/middleware/rateLimit.middleware.test.ts src/constants/roles.test.ts"
   },
   "dependencies": {
     "@grpc/grpc-js": "^1.14.5",
