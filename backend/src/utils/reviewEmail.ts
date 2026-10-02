@@ -2,47 +2,15 @@
  * Peer review invitation emails via Gmail SMTP (Nodemailer).
  * Falls back to console logging when SMTP is not configured.
  */
-import nodemailer from "nodemailer";
-import type { Transporter } from "nodemailer";
 import { env } from "../config/env";
 import { PEER_REVIEW_TOKEN_TTL_DAYS } from "../constants/peer-review";
+import { escapeHtml } from "./emailHtml";
+import { sendSijilMail } from "./mailer";
 
 export type ReviewEmailOptions = {
   reviewerName?: string;
   skillName?: string;
 };
-
-let transporter: Transporter | null = null;
-
-function isSmtpConfigured(): boolean {
-  return Boolean(env.SMTP_USER && env.SMTP_PASS);
-}
-
-function getTransporter(): Transporter {
-  if (!isSmtpConfigured()) {
-    throw new Error("SMTP is not configured");
-  }
-  if (!transporter) {
-    transporter = nodemailer.createTransport({
-      host: env.SMTP_HOST,
-      port: env.SMTP_PORT,
-      secure: env.SMTP_PORT === 465,
-      auth: {
-        user: env.SMTP_USER,
-        pass: env.SMTP_PASS,
-      },
-    });
-  }
-  return transporter;
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
 
 function buildPlainTextBody(
   learnerName: string,
@@ -182,28 +150,16 @@ export async function sendReviewRequestEmail(
   const text = buildPlainTextBody(learnerName, evidenceName, reviewLink, options);
   const html = buildHtmlBody(learnerName, evidenceName, reviewLink, options);
 
-  if (!isSmtpConfigured()) {
-    console.warn(
-      "[SIJIL Review Email] SMTP not configured — set SMTP_USER and SMTP_PASS in backend/.env to send real emails.",
-    );
-    console.log(`\n[SIJIL Review Email — console fallback]\nTo: ${to}\nSubject: ${subject}\n\n${text}\n`);
-    return;
-  }
-
-  const from = env.EMAIL_FROM ?? `SIJIL <${env.SMTP_USER}>`;
-
   try {
-    await getTransporter().sendMail({
-      from,
-      to: to.trim(),
+    await sendSijilMail({
+      to,
       subject,
       text,
       html,
+      logLabel: "SIJIL Review Email",
     });
-    console.log(`[SIJIL Review Email] Sent review invitation to ${to} for "${evidenceName}"`);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown SMTP error";
-    console.error(`[SIJIL Review Email] Failed to send to ${to}:`, message);
     throw new Error(`Failed to send review invitation email: ${message}`);
   }
 }

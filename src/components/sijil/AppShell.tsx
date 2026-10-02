@@ -1,6 +1,7 @@
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useState } from "react";
 import {
+  CalendarClock,
   LayoutDashboard,
   UserCircle,
   Plug,
@@ -35,7 +36,10 @@ type NavGroup = { label: string; items: NavItem[] };
 const recruiterNavGroups: NavGroup[] = [
   {
     label: "Workspace",
-    items: [{ to: "/recruiter/search", icon: LayoutDashboard, label: "Dashboard", mobileTab: true }],
+    items: [
+      { to: "/recruiter/search", icon: LayoutDashboard, label: "Dashboard", mobileTab: true },
+      { to: "/recruiter/interviews", icon: CalendarClock, label: "Interviews", mobileTab: true },
+    ],
   },
   {
     label: "Review",

@@ -36,6 +36,7 @@ import RecruiterLogin from "./pages/login/RecruiterLogin";
 import RecruiterSearch from "./pages/recruiter/Search";
 import RecruiterCandidateSummary from "./pages/recruiter/CandidateSummary";
 import RecruiterCompare from "./pages/recruiter/Compare";
+import RecruiterInterviews from "./pages/recruiter/Interviews";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -100,6 +101,7 @@ const App = () => (
           <Route path="/learner/credential/:id/share" element={<LR><LearnerSelectiveDisclosure /></LR>} />
 
           <Route path="/recruiter/search" element={<RR><RecruiterSearch /></RR>} />
+          <Route path="/recruiter/interviews" element={<RR><RecruiterInterviews /></RR>} />
           <Route path="/recruiter/candidate/:id" element={<RR><RecruiterCandidateSummary /></RR>} />
           <Route path="/recruiter/compare" element={<RR><RecruiterCompare /></RR>} />
           <Route path="/recruiter/verify/:token" element={<CompetencyPresentationView />} />

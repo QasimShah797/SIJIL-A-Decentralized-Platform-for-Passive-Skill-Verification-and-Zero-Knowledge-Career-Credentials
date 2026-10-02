@@ -87,6 +87,7 @@ async function insertLearnerProfileRow(
   userId: string,
   firstName: string,
   lastName: string,
+  email?: string,
   institutionName?: string,
   program?: string,
 ): Promise<void> {
@@ -97,6 +98,7 @@ async function insertLearnerProfileRow(
     user_id: userId,
     first_name: firstName || "Learner",
     last_name: lastName || "",
+    university_email: email?.trim().toLowerCase() || null,
     institution_name: institutionName?.trim() || null,
     program: program?.trim() || null,
     holder_did: holderDid,
@@ -193,14 +195,18 @@ export async function signupLearner(input: LearnerSignupInput): Promise<{ userId
   }
 
   await ensureLearnerRole(userId);
-  await insertLearnerProfileRow(userId, firstName, lastName, input.institutionName, input.program);
+  await insertLearnerProfileRow(userId, firstName, lastName, email, input.institutionName, input.program);
 
   return { userId };
 }
 
 /** Bootstrap learner role + profile for a Google/GitHub OAuth user. */
-export async function provisionOAuthLearner(userId: string, fullName: string): Promise<void> {
+export async function provisionOAuthLearner(
+  userId: string,
+  fullName: string,
+  email?: string | null,
+): Promise<void> {
   const { firstName, lastName } = splitFullName(fullName);
   await ensureLearnerRole(userId);
-  await insertLearnerProfileRow(userId, firstName, lastName);
+  await insertLearnerProfileRow(userId, firstName, lastName, email ?? undefined);
 }

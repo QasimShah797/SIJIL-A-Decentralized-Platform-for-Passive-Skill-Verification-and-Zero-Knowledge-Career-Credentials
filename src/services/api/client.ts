@@ -48,6 +48,11 @@ export async function apiRequest<T>(
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Network error";
+    if (/failed to fetch|networkerror|load failed/i.test(message)) {
+      throw new ApiUnavailableError(
+        "Cannot reach the SIJIL API. Start the backend with `npm run dev` in the backend folder (http://localhost:5000).",
+      );
+    }
     throw new ApiUnavailableError(message);
   }
 

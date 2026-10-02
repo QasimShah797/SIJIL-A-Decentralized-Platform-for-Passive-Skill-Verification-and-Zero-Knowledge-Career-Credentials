@@ -12,6 +12,14 @@ const server = app.listen(env.PORT, () => {
   startAnchorWorker();
 });
 
+server.on("error", (err: NodeJS.ErrnoException) => {
+  if (err.code === "EADDRINUSE") {
+    console.error(`[SIJIL Backend] Port ${env.PORT} is already in use`);
+    process.exit(1);
+  }
+  throw err;
+});
+
 process.on("SIGTERM", () => {
   stopAnchorWorker();
   server.close(() => process.exit(0));

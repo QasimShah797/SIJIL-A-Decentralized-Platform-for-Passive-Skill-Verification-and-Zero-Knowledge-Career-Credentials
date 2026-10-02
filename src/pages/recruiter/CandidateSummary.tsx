@@ -10,11 +10,13 @@ import { PageSkeleton } from "@/components/sijil/SkeletonLoader";
 
 import { RecruiterSkillEvidenceItem, recruiterSkillCards } from "@/components/recruiter/RecruiterSkillEvidence";
 
+import { ScheduleInterviewDialog } from "@/components/recruiter/ScheduleInterviewDialog";
+
 import { Accordion } from "@/components/ui/accordion";
 
 import { Button } from "@/components/ui/button";
 
-import { ArrowLeft, Lock, ShieldCheck, Wallet } from "lucide-react";
+import { ArrowLeft, CalendarClock, Lock, ShieldCheck, Wallet } from "lucide-react";
 
 import { fetchPeerReviews } from "@/lib/db/peer-reviews";
 
@@ -79,6 +81,8 @@ export default function CandidateSummary() {
   const [loading, setLoading] = useState(true);
 
   const [error, setError] = useState<string | null>(null);
+
+  const [scheduleOpen, setScheduleOpen] = useState(false);
 
 
 
@@ -267,11 +271,23 @@ export default function CandidateSummary() {
 
             <header className="border-b border-border/70 pb-8">
 
-              <h1 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
 
-                {candidate.name}
+                <h1 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
 
-              </h1>
+                  {candidate.name}
+
+                </h1>
+
+                <Button onClick={() => setScheduleOpen(true)}>
+
+                  <CalendarClock className="mr-1.5 h-4 w-4" />
+
+                  Schedule Interview
+
+                </Button>
+
+              </div>
 
               {identityLine && (
 
@@ -392,6 +408,18 @@ export default function CandidateSummary() {
           </aside>
 
         </div>
+
+        <ScheduleInterviewDialog
+
+          open={scheduleOpen}
+
+          onOpenChange={setScheduleOpen}
+
+          candidateId={candidate.id}
+
+          candidateName={candidate.name}
+
+        />
 
       </div>
 

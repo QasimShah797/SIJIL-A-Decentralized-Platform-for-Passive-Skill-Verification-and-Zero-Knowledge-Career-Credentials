@@ -302,7 +302,7 @@ export async function completeOAuthLearnerSignIn(user: User): Promise<string> {
 
   let access = await verifyLearnerAccess(user.id);
   if (!access.ok) {
-    await provisionOAuthLearner(user.id, oauthDisplayName(user));
+    await provisionOAuthLearner(user.id, oauthDisplayName(user), user.email);
     access = await verifyLearnerAccess(user.id);
   }
 

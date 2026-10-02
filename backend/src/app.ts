@@ -15,7 +15,10 @@ const app = express();
 app.set("trust proxy", env.TRUST_PROXY);
 
 app.use(helmet());
-app.use(cors({ origin: env.CORS_ORIGIN, credentials: true }));
+app.use(cors({
+  origin: env.CORS_ORIGIN.split(",").map((origin) => origin.trim()).filter(Boolean),
+  credentials: true,
+}));
 app.use(morgan(env.NODE_ENV === "development" ? "dev" : "combined"));
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));

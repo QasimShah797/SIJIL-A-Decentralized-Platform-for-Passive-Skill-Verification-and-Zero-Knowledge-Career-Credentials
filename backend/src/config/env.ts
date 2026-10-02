@@ -39,7 +39,7 @@ const envSchema = z.object({
       "Set SUPABASE_SERVICE_ROLE_KEY in backend/.env (Supabase Dashboard → API → service_role)",
     ),
   SUPABASE_ANON_KEY: z.string().min(1),
-  CORS_ORIGIN: z.string().default("http://localhost:8080"),
+  CORS_ORIGIN: z.string().default("http://localhost:8080,http://localhost:8081"),
   FRONTEND_URL: z.string().default("http://localhost:8080"),
   PRESENTATION_SIGNING_SECRET: z.string().min(32, "PRESENTATION_SIGNING_SECRET must be at least 32 characters"),
   ISSUER_ED25519_PRIVATE_KEY: z.string().min(1).optional(),
