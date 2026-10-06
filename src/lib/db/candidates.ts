@@ -17,6 +17,7 @@ import {
 } from "@/lib/shared-presentation";
 import type { SharedCredentialView } from "@/lib/shared-presentation";
 import type { CandidateSkill } from "@/lib/sijil-data";
+import { analyzeDisclosedPayloads, type EvidenceStats, type SkillEvidenceStat } from "@/lib/recruiter-evidence";
 
 export type CandidateView = {
   id: string;
@@ -33,6 +34,8 @@ export type CandidateView = {
   searchableSkills?: string[];
   verifiedSkills?: string[];
   skillEvidence?: SkillEvidenceSignal[];
+  evidenceStats?: EvidenceStats;
+  skillStats?: SkillEvidenceStat[];
 };
 
 async function settle<T>(run: () => Promise<T>, fallback: T): Promise<T> {
@@ -264,11 +267,14 @@ async function fetchCandidatesFromActiveShares(): Promise<CandidateView[]> {
       });
       const activeShares = shares.filter((item): item is NonNullable<typeof item> => item !== null);
       const career = resolveCareerFields(profile, activeShares);
+      const analysis = analyzeDisclosedPayloads(activeShares.map((share) => share.disclosedPayload));
       return {
         id: detail.id,
         name: detail.name,
         topSkill: detail.topSkill,
-        evidence: detail.evidence,
+        evidence: analysis.stats.evidenceTotal,
+        evidenceStats: analysis.stats,
+        skillStats: analysis.skills,
         reviews: detail.reviews,
         attestation: detail.attestation,
         institution: detail.institution,

@@ -24,5 +24,7 @@ verify_jwt = false
 [functions.google-wallet-pass]
 verify_jwt = false
 
+# The function checks the bearer token and recruiter role itself.
+# The gateway JWT check rejects the browser session before that runs.
 [functions.recruiter-match]
-verify_jwt = true
+verify_jwt = false

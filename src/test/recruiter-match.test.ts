@@ -378,4 +378,39 @@ describe("recruiter match", () => {
     expect(resolved.text).not.toMatch(/Aaiza Islam/);
     expect(resolved.matches?.[0].reasons.some((reason) => reason === "3 shared skills")).toBe(true);
   });
+
+  it("names the stronger learner when asked who is better for a skill", () => {
+    const qasim = candidate("q1", {
+      name: "Syed Qasim Ali Shah",
+      topSkill: "Java",
+      searchableSkills: ["Java"],
+      skillEvidence: [{ skill: "Java", githubRecords: 2, lmsRecords: 0, reviews: 0, practicalTask: "Submitted" }],
+    });
+    const aaiza = candidate("a1", {
+      name: "Aaiza Islam",
+      topSkill: "Java",
+      searchableSkills: ["Java"],
+      attestation: "Pending",
+      skillEvidence: [{ skill: "Java", githubRecords: 1, lmsRecords: 0, reviews: 0, practicalTask: "—" }],
+    });
+    const resolved = resolveInterpretedAsk(
+      {
+        intent: "match",
+        skills: ["Java"],
+        requireLms: false,
+        requireGithub: false,
+        requireTask: false,
+        requireReviews: false,
+        learnerNames: [],
+        reply: "You want the better Java developer.",
+      },
+      [aaiza, qasim],
+      {},
+      ["Java"],
+      "which candidate is better for java development?",
+    );
+    expect(resolved.matches?.[0].candidate.id).toBe("q1");
+    expect(resolved.text).toMatch(/Syed Qasim Ali Shah is the stronger match for Java/);
+    expect(resolved.text).toMatch(/ahead of Aaiza Islam/);
+  });
 });

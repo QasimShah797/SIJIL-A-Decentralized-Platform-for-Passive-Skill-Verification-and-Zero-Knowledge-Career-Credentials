@@ -415,7 +415,7 @@ export async function geminiJson<T>(
 type AiProvider = "gemini" | "groq";
 type AiPurpose = "classify" | "task" | "eval";
 
-const DEFAULT_GROQ_MODEL = "llama-3.3-70b-versatile";
+const DEFAULT_GROQ_MODEL = "openai/gpt-oss-120b";
 
 /** Strip dashboard copy/paste noise like "(optional)" from model IDs. */
 export function sanitizeModelId(raw: string | undefined | null, fallback: string): string {

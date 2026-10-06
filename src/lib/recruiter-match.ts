@@ -284,6 +284,25 @@ export function isCompareAsk(raw: string): boolean {
   return hasWord(text, "compare") || hasWord(text, "vs") || hasWord(text, "versus") || hasWord(text, "against");
 }
 
+export function isPreferenceAsk(raw: string): boolean {
+  const text = normalize(raw);
+  return /\b(better|best|stronger|strongest)\b/.test(text)
+    || /\bwhich (candidate|learner)\b/.test(text)
+    || /\bwho is\b/.test(text);
+}
+
+function preferenceAnswer(ask: string, matches: RankedMatch[]): string {
+  if (matches.length === 0) return `Nobody currently matches “${ask}” on shared evidence.`;
+  const leader = matches[0];
+  if (matches.length === 1) {
+    return `${leader.candidate.name} is the only shared learner who matches “${ask}”.`;
+  }
+  const runner = matches[1];
+  const edge = leader.reasons.find((reason) => !runner.reasons.includes(reason));
+  const why = edge ? ` ${leader.candidate.name.split(" ")[0]} has this on the shared profile: ${edge}.` : "";
+  return `${leader.candidate.name} is the stronger match for ${ask} on shared evidence, ahead of ${runner.candidate.name} (${leader.score}% vs ${runner.score}%).${why}`;
+}
+
 function nameScore(query: string, candidateName: string): number {
   const queryTokens = normalize(query).split(" ").filter((token) => token.length > 1 && !COMPARE_STOP.has(token));
   const nameTokens = normalize(candidateName).split(" ").filter((token) => token.length > 1);
@@ -767,6 +786,9 @@ export function resolveInterpretedAsk(
   const ask = requirement.skills.length
     ? requirement.skills.join(", ")
     : requirement.institution ?? "that proof";
+  if (isPreferenceAsk(raw)) {
+    return { matches, text: preferenceAnswer(ask, matches) };
+  }
   const grounded = interpreted.reply.trim()
     ? (matches.length === 0
       ? `Nobody currently matches “${ask}” on shared evidence.`

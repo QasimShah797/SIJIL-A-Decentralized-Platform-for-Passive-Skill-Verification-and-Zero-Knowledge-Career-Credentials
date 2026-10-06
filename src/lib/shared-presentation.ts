@@ -3,6 +3,8 @@
  * Recruiters may only see fields a learner explicitly shared in an active presentation.
  */
 
+import { evidenceStatsFromPayloads } from "@/lib/recruiter-evidence";
+
 export type DisclosedClaim = {
   id: string;
   label: string;
@@ -116,23 +118,7 @@ export function flattenDisclosedPayload(
 }
 
 export function countDisclosedEvidence(credential: SharedCredentialView): number {
-  const summary = credential.disclosedFields.find((field) => field.id === "evidenceSummary");
-  if (summary) {
-    const match = summary.value.match(/(\d+)/);
-    if (match) return Number(match[1]);
-  }
-
-  const evidence = asRecord(credential.disclosedPayload.evidence);
-  if (!evidence) return 0;
-
-  return Object.values(evidence).reduce<number>((total, item) => {
-    if (Array.isArray(item)) return total + item.length;
-    const nested = asRecord(item);
-    if (!nested) return total;
-    return total + Object.values(nested).reduce<number>((inner, value) => (
-      inner + (Array.isArray(value) ? value.length : 0)
-    ), 0);
-  }, 0);
+  return evidenceStatsFromPayloads([credential.disclosedPayload]).evidenceTotal;
 }
 
 export function attestationFromShared(
@@ -304,7 +290,7 @@ export function buildCandidateDetail(params: {
     id: params.id,
     name: resolvedName,
     topSkill,
-    evidence: sharedCredentials.reduce((total, item) => total + countDisclosedEvidence(item), 0),
+    evidence: evidenceStatsFromPayloads(sharedCredentials.map((item) => item.disclosedPayload)).evidenceTotal,
     reviews: params.reviews,
     attestation: attestationFromShared(sharedCredentials),
     institution: resolvedInstitution,

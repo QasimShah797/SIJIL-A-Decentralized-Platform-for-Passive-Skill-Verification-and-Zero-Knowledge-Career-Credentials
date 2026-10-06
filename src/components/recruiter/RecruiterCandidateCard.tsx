@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { CandidateAvatar } from "@/components/recruiter/CandidateAvatar";
 import type { CandidateView } from "@/lib/db/candidates";
+import { getEvidenceStats } from "@/lib/recruiter-evidence";
 import { cn } from "@/lib/utils";
 
 export type RecruiterCandidateCardCandidate = CandidateView;
@@ -121,12 +122,12 @@ export function RecruiterCandidateCard({
           <div className="flex items-center gap-1.5">
             <Wallet className="h-3.5 w-3.5 text-primary" aria-hidden />
             <dt className="sr-only">Credentials</dt>
-            <dd><span className="font-semibold text-foreground">{candidate.credentialCount}</span> credentials</dd>
+            <dd><span className="font-semibold text-foreground">{getEvidenceStats(candidate).credentials || candidate.credentialCount}</span> credentials</dd>
           </div>
           <div className="flex items-center gap-1.5">
             <ShieldCheck className="h-3.5 w-3.5 text-success" aria-hidden />
             <dt className="sr-only">Evidence</dt>
-            <dd><span className="font-semibold text-foreground">{candidate.evidence}</span> evidence</dd>
+            <dd><span className="font-semibold text-foreground">{getEvidenceStats(candidate).evidenceTotal}</span> evidence</dd>
           </div>
         </dl>
         <Button size="sm" className="rounded-xl focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2" onClick={onOpenSummary}>

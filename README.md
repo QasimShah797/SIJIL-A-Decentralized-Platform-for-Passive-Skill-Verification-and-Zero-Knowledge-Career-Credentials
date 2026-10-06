@@ -177,6 +177,14 @@ Edge Function secrets (not frontend `.env`):
 
 - `PRESENTATION_SIGNING_SECRET`
 - `BACKEND_PUBLIC_URL` — public SIJIL API origin used by `public-credential` to call `/api/public/credentials/:id/verify` (e.g. `http://localhost:5000`)
+- `GEMINI_API_KEY` — Gemini key for practical-task generation and recruiter SIJIL Match. Set it only as a Supabase secret. The browser never receives it.
+
+Recruiter Match reads shared presentations with the recruiter's own JWT, so row-level security still hides anything a learner did not disclose.
+
+```bash
+supabase secrets set GEMINI_API_KEY=<your-gemini-key>
+supabase functions deploy recruiter-match --project-ref <your-project-ref>
+```
 
 ## Deployment
 

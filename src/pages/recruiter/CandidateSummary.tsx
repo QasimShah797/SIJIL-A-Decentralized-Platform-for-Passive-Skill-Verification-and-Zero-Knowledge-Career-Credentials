@@ -28,6 +28,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import type { PeerReview } from "@/lib/sijil-data";
 
+import { getEvidenceStats } from "@/lib/recruiter-evidence";
 import { dedupeLatestSharedCredentials, type CandidateDetailView, type SharedCredentialView } from "@/lib/shared-presentation";
 
 
@@ -357,9 +358,9 @@ export default function CandidateSummary() {
 
               <SidebarStat label="Attestation" value={candidate.attestation} highlight />
 
-              <SidebarStat label="Shared credentials" value={String(candidate.credentialCount)} />
+              <SidebarStat label="Shared credentials" value={String(getEvidenceStats(candidate).credentials || candidate.credentialCount)} />
 
-              <SidebarStat label="Disclosed evidence" value={String(candidate.evidence)} />
+              <SidebarStat label="Disclosed evidence" value={String(getEvidenceStats(candidate).evidenceTotal)} />
 
               <SidebarStat label="Active presentations" value={String(sharedCredentials.length)} />
 

@@ -14,6 +14,8 @@ export default function RecruiterSearch() {
   const navigate = useNavigate();
   const { candidates, candidateSkills, loading, error, refresh } = useCandidates();
   const [selected, setSelected] = useState<string[]>([]);
+  const [focusIds, setFocusIds] = useState<string[] | null>(null);
+  const visible = focusIds ? candidates.filter((candidate) => focusIds.includes(candidate.id)) : candidates;
 
   const toggleSelect = (id: string) =>
     setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : s.length >= 4 ? s : [...s, id]));
@@ -54,9 +56,21 @@ export default function RecruiterSearch() {
             <SijilMatchBot
               candidates={candidates}
               candidateSkills={candidateSkills}
+              selectedIds={selected}
+              onClearSelection={() => setSelected([])}
+              onResultIds={setFocusIds}
               onOpenCandidate={(id) => navigate(`/recruiter/candidate/${id}`)}
               onCompare={(leftId, rightId) => navigate(`/recruiter/compare?ids=${leftId},${rightId}`)}
             />
+            {focusIds ? (
+              <button
+                type="button"
+                onClick={() => setFocusIds(null)}
+                className="mt-3 text-xs font-medium text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                Show all
+              </button>
+            ) : null}
           </div>
 
           <div className="grid w-full gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -70,16 +84,19 @@ export default function RecruiterSearch() {
                 />
               </div>
             )}
-            {!error && candidates.length === 0 && (
+            {!error && visible.length === 0 && (
               <div className="md:col-span-2 xl:col-span-3">
                 <EmptyState
                   icon={Users}
-                  title="No candidates yet"
-                  description="Learners appear here after they share a credential with recruiters."
+                  title={focusIds ? "No candidates in this answer" : "No candidates yet"}
+                  description={focusIds
+                    ? "Clear the answer filter to see every shared learner."
+                    : "Learners appear here after they share a credential with recruiters."}
+                  action={focusIds ? { label: "Show all", onClick: () => setFocusIds(null) } : undefined}
                 />
               </div>
             )}
-            {candidates.map((c) => (
+            {visible.map((c) => (
               <RecruiterCandidateCard
                 key={c.id}
                 candidate={c}
