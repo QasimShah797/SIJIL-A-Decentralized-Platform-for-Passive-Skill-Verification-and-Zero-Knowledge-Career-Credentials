@@ -377,6 +377,32 @@ function shareAllowsLms(fields: string[]): boolean {
     || fields.includes("complete_evidence_package");
 }
 
+/** Skill names shown on the recruiter profile, one per shared competency. */
+export function disclosedSkillNames(shares: SharedCredentialView[]): string[] {
+  const seen = new Set<string>();
+  const names: string[] = [];
+  const add = (value: string | null | undefined) => {
+    const trimmed = value?.trim() ?? "";
+    const key = trimmed.toLowerCase();
+    if (!trimmed || trimmed === "—" || seen.has(key)) return;
+    seen.add(key);
+    names.push(trimmed);
+  };
+
+  for (const share of shares) {
+    const payload = share.disclosedPayload ?? {};
+    const competency = asRecord(payload.competency);
+    const skillRows = asRecords(payload.skills);
+    if (skillRows.length > 0) {
+      for (const row of skillRows) add(asText(row.name));
+    } else {
+      add(share.skill ?? share.title ?? asText(competency?.name));
+    }
+  }
+
+  return names;
+}
+
 /** Recruiter-visible GitHub / LMS / task counts from what the learner shared. */
 export function skillEvidenceFromShares(shares: SharedCredentialView[]): SkillEvidenceSignal[] {
   const byName = new Map<string, SkillEvidenceSignal>();

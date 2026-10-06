@@ -11,6 +11,7 @@ import {
   mapWalletShareToView,
   mergeSkillEvidence,
   pickRecruiterDisplayName,
+  disclosedSkillNames,
   skillEvidenceFromShares,
   type SkillEvidenceSignal,
 } from "@/lib/shared-presentation";
@@ -30,16 +31,9 @@ export type CandidateView = {
   skillsSummary?: string | null;
   careerGoal?: string | null;
   searchableSkills?: string[];
+  verifiedSkills?: string[];
   skillEvidence?: SkillEvidenceSignal[];
 };
-
-function attestationFromCredentials(creds: { attestation: string }[]): "Approved" | "Partial" | "Pending" {
-  if (!creds.length) return "Pending";
-  const approved = creds.filter((c) => c.attestation === "Approved").length;
-  if (approved === creds.length) return "Approved";
-  if (approved > 0) return "Partial";
-  return "Pending";
-}
 
 async function settle<T>(run: () => Promise<T>, fallback: T): Promise<T> {
   try {
@@ -287,6 +281,7 @@ async function fetchCandidatesFromActiveShares(): Promise<CandidateView[]> {
           skillsSummary: career.skillsSummary,
           topSkill: detail.topSkill,
         }),
+        verifiedSkills: disclosedSkillNames(activeShares),
         skillEvidence: skillEvidenceFromShares(activeShares),
       };
     });
@@ -302,55 +297,23 @@ export async function fetchCandidates(): Promise<CandidateView[]> {
     fetchCandidatesFromActiveShares(),
   ]);
 
-  if (!profiles.length) {
-    return sharedCandidates;
-  }
+  if (!sharedCandidates.length) return [];
 
-  const userIds = profiles.map((p) => p.user_id);
-  const [skillsMap, credsMap, reviewsMap] = await Promise.all([
-    settle(() => fetchDeclaredSkillsForUsers(userIds), {}),
-    settle(() => fetchCredentialsForUsers(userIds), {}),
-    settle(() => fetchPeerReviewsForUsers(userIds), {}),
-  ]);
-
-  const profileCandidates = profiles.map((p) => {
-    const skills = skillsMap[p.user_id] ?? [];
-    const creds = credsMap[p.user_id] ?? [];
-    const reviews = reviewsMap[p.user_id] ?? [];
-    const sharedMatch = sharedCandidates.find((candidate) => candidate.id === p.user_id);
-    const career = {
-      skillsSummary: coalesceText(p.skillsSummary, sharedMatch?.skillsSummary),
-      careerGoal: coalesceText(p.careerGoal, sharedMatch?.careerGoal),
-    };
-    const topSkill = skills[0]?.name ?? creds[0]?.skill ?? sharedMatch?.topSkill ?? "—";
-    const evidence = skills.reduce((n, s) => n + (s.lastRelatedActivityAt ? 1 : 0), 0)
-      + creds.reduce((n, c) => n + c.supportingRecords, 0);
-
-    return {
-      id: p.user_id,
-      name: pickRecruiterDisplayName(sharedMatch?.name, p.name),
-      topSkill,
-      evidence: Math.max(evidence, sharedMatch?.evidence ?? 0),
-      reviews: Math.max(reviews.length, sharedMatch?.reviews ?? 0),
-      attestation: sharedMatch?.attestation ?? attestationFromCredentials(creds),
-      institution: p.institution !== "—" ? p.institution : (sharedMatch?.institution ?? p.institution),
-      credentialCount: Math.max(creds.length, sharedMatch?.credentialCount ?? 0),
-      avatarUrl: p.avatarUrl ?? sharedMatch?.avatarUrl ?? null,
-      skillsSummary: coalesceText(career.skillsSummary, sharedMatch?.skillsSummary),
-      careerGoal: coalesceText(career.careerGoal, sharedMatch?.careerGoal),
-      searchableSkills: mergeSearchableSkills(
-        collectCandidateSearchSkills({
-          declaredSkills: skills.map((skill) => skill.name),
-          skillsSummary: coalesceText(career.skillsSummary, sharedMatch?.skillsSummary),
-          topSkill,
-        }),
-        sharedMatch?.searchableSkills,
-      ),
-      skillEvidence: mergeSkillEvidence(sharedMatch?.skillEvidence),
-    };
-  });
-
-  return mergeCandidateLists(profileCandidates, sharedCandidates);
+  const profileById = new Map(profiles.map((profile) => [profile.user_id, profile]));
+  return sharedCandidates
+    .filter((candidate) => candidate.credentialCount > 0)
+    .map((shared) => {
+      const profile = profileById.get(shared.id);
+      if (!profile) return shared;
+      return {
+        ...shared,
+        name: pickRecruiterDisplayName(shared.name, profile.name),
+        institution: shared.institution !== "—" ? shared.institution : profile.institution,
+        avatarUrl: coalesceText(shared.avatarUrl, profile.avatarUrl),
+        skillsSummary: coalesceText(shared.skillsSummary, profile.skillsSummary),
+        careerGoal: coalesceText(shared.careerGoal, profile.careerGoal),
+      };
+    });
 }
 
 export async function fetchCandidateSkillsMap(): Promise<Record<string, CandidateSkill[]>> {

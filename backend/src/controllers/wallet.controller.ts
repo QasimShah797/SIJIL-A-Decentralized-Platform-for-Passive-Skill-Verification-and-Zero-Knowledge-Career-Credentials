@@ -42,7 +42,10 @@ export async function syncWalletCompetency(req: Request, res: Response): Promise
 export async function shareWalletCompetency(req: Request, res: Response): Promise<Response> {
   const { competencyId } = competencyIdParamSchema.parse(req.params);
   const input = shareWalletCompetencySchema.parse(req.body);
-  const result = await runWithServiceDb(() =>
+  // Read the learner's own skills with their session. The service client is only
+  // used inside the service for the presentation write, which RLS does not allow
+  // the browser to perform.
+  const result = await runWithUserDb(req.accessToken, () =>
     walletService.shareCompetency(req.user!.id, competencyId, input),
   );
   return sendSuccess(res, result, "Selective disclosure presentation created", 201);
@@ -50,7 +53,7 @@ export async function shareWalletCompetency(req: Request, res: Response): Promis
 
 export async function revokeWalletShare(req: Request, res: Response): Promise<Response> {
   const { shareId } = shareIdParamSchema.parse(req.params);
-  await runWithServiceDb(() => walletService.revokeShare(req.user!.id, shareId));
+  await runWithUserDb(req.accessToken, () => walletService.revokeShare(req.user!.id, shareId));
   return sendSuccess(res, null, "Presentation revoked");
 }
 

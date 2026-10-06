@@ -108,6 +108,21 @@ function db() {
   return getRequestSupabase();
 }
 
+function isRlsError(message: string): boolean {
+  return /row-level security|permission denied|42501/i.test(message);
+}
+
+/** Learner session first, then the service client when RLS blocks the write. */
+async function writeWithOwnerOrService<T>(
+  run: (client: ReturnType<typeof getRequestSupabase>) => PromiseLike<{ data: T; error: { message?: string } | null }>,
+): Promise<{ data: T; error: { message?: string } | null }> {
+  const owned = await run(db());
+  if (!owned.error) return owned;
+  const message = owned.error.message ?? "";
+  if (!isRlsError(message)) return owned;
+  return run(getServiceSupabase());
+}
+
 function asRecord(value: unknown): DbRow | null {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as DbRow)
@@ -966,9 +981,11 @@ async function persistWalletRecord(record: WalletCompetencyRecordView): Promise<
     updated_at: record.updatedAt,
   };
 
-  const result = await getServiceSupabase()
-    .from("wallet_competency_records")
-    .upsert(payload, { onConflict: "learner_id,competency_id" });
+  const result = await writeWithOwnerOrService((client) =>
+    client
+      .from("wallet_competency_records")
+      .upsert(payload, { onConflict: "learner_id,competency_id" }),
+  );
 
   if (result?.error) {
     const message = asText(result.error.message);
@@ -1633,12 +1650,14 @@ async function revokeDuplicateShares(
     .map((row) => asText(row.id))
     .filter(Boolean);
   if (extras.length === 0) return;
-  await getServiceSupabase()
-    .from("selective_disclosure_presentations")
-    .update({ revoked_at: new Date().toISOString() })
-    .eq("learner_id", userId)
-    .eq("competency_id", competencyId)
-    .in("id", extras);
+  await writeWithOwnerOrService((client) =>
+    client
+      .from("selective_disclosure_presentations")
+      .update({ revoked_at: new Date().toISOString() })
+      .eq("learner_id", userId)
+      .eq("competency_id", competencyId)
+      .in("id", extras),
+  );
 }
 
 export class WalletService {
@@ -1722,18 +1741,22 @@ export class WalletService {
     };
 
     const { data, error } = existing
-      ? await getServiceSupabase()
-        .from("selective_disclosure_presentations")
-        .update(shareRow)
-        .eq("id", existing.id)
-        .eq("learner_id", userId)
-        .select("id, expires_at")
-        .single()
-      : await getServiceSupabase()
-        .from("selective_disclosure_presentations")
-        .insert({ ...shareRow, created_at: now })
-        .select("id, expires_at")
-        .single();
+      ? await writeWithOwnerOrService((client) =>
+        client
+          .from("selective_disclosure_presentations")
+          .update(shareRow)
+          .eq("id", existing.id)
+          .eq("learner_id", userId)
+          .select("id, expires_at")
+          .single(),
+      )
+      : await writeWithOwnerOrService((client) =>
+        client
+          .from("selective_disclosure_presentations")
+          .insert({ ...shareRow, created_at: now })
+          .select("id, expires_at")
+          .single(),
+      );
 
     if (error) {
       throwDbError(error, "Could not create share link");
@@ -1754,11 +1777,13 @@ export class WalletService {
   }
 
   async revokeShare(userId: string, shareId: string): Promise<void> {
-    const { error } = await getServiceSupabase()
-      .from("selective_disclosure_presentations")
-      .update({ revoked_at: new Date().toISOString() })
-      .eq("id", shareId)
-      .eq("learner_id", userId);
+    const { error } = await writeWithOwnerOrService((client) =>
+      client
+        .from("selective_disclosure_presentations")
+        .update({ revoked_at: new Date().toISOString() })
+        .eq("id", shareId)
+        .eq("learner_id", userId),
+    );
 
     if (error) throwDbError(error, "Could not revoke share link");
   }

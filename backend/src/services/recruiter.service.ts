@@ -62,6 +62,7 @@ export interface CandidateView {
   skillsSummary?: string | null;
   careerGoal?: string | null;
   searchableSkills?: string[];
+  verifiedSkills?: string[];
   skillEvidence?: {
     skill: string;
     githubRecords: number;
@@ -406,6 +407,31 @@ function asRecords(value: unknown): Record<string, unknown>[] {
     : [];
 }
 
+function disclosedSkillNames(shares: SharedCredentialView[]): string[] {
+  const seen = new Set<string>();
+  const names: string[] = [];
+  const add = (value: string | null | undefined) => {
+    const trimmed = value?.trim() ?? "";
+    const key = trimmed.toLowerCase();
+    if (!trimmed || trimmed === "—" || seen.has(key)) return;
+    seen.add(key);
+    names.push(trimmed);
+  };
+
+  for (const share of shares) {
+    const payload = share.disclosedPayload ?? {};
+    const competency = asRecord(payload.competency);
+    const skillRows = asRecords(payload.skills);
+    if (skillRows.length > 0) {
+      for (const row of skillRows) add(asText(row.name));
+    } else {
+      add(share.skill ?? share.title ?? asText(competency?.name));
+    }
+  }
+
+  return names;
+}
+
 function countGithubBlock(value: unknown): { count: number; languages: string[] } {
   const github = asRecord(value);
   if (!github) return { count: 0, languages: [] };
@@ -644,6 +670,7 @@ function buildCandidateFromShares(
       skillsSummary: careerFields.skillsSummary,
       topSkill,
     }),
+    verifiedSkills: disclosedSkillNames(shares),
     skillEvidence: skillEvidenceFromShares(shares),
   };
 }
@@ -792,7 +819,6 @@ export class RecruiterService {
     }
 
     const learnerIds = new Set<string>([
-      ...profileById.keys(),
       ...walletSharesByLearner.keys(),
       ...credentialSharesByLearner.keys(),
     ]);
@@ -818,26 +844,7 @@ export class RecruiterService {
       const directoryName = await resolveDirectoryDisplayName(learnerId, profile);
       const displayName = pickRecruiterDisplayName(extractDisclosedLearnerName(shared), directoryName);
 
-      if (shared.length > 0) {
-        return buildCandidateFromShares(learnerId, shared, profile, reviewCount, displayName);
-      }
-
-      const cardFields = profileCardFields(profile);
-      return {
-        id: learnerId,
-        name: displayName,
-        topSkill: "—",
-        evidence: 0,
-        reviews: reviewCount,
-        attestation: "Pending" as const,
-        institution: (profile?.institution_name as string | undefined) ?? "—",
-        credentialCount: 0,
-        ...cardFields,
-        searchableSkills: collectCandidateSearchSkills({
-          skillsSummary: cardFields.skillsSummary,
-          topSkill: "—",
-        }),
-      };
+      return buildCandidateFromShares(learnerId, shared, profile, reviewCount, displayName);
     }));
 
     const q = query.q?.trim().toLowerCase();

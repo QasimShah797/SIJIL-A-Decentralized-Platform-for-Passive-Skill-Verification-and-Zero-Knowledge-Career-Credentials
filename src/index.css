@@ -10,13 +10,13 @@
 
     /* SIJIL — Brand blue #023E8A */
 
-    --background: 38 32% 95%;
+    --background: 214 42% 96%;
 
     --foreground: 214 80% 18%;
 
 
 
-    --card: 40 38% 98%;
+    --card: 0 0% 100%;
 
     --card-foreground: 214 80% 18%;
 
@@ -82,6 +82,10 @@
 
     --info-soft: 214 50% 95%;
 
+    --violet: 262 52% 40%;
+
+    --violet-soft: 262 55% 95%;
+
 
 
     --border: 38 20% 86%;
@@ -108,7 +112,11 @@
 
     );
 
-    --gradient-subtle: linear-gradient(180deg, hsl(38 32% 96%) 0%, hsl(214 35% 93%) 100%);
+    --gradient-subtle: linear-gradient(180deg, hsl(214 45% 97%) 0%, hsl(214 40% 93%) 100%);
+
+    --sidebar-gradient: linear-gradient(180deg, hsl(214 97% 32%) 0%, hsl(214 97% 22%) 100%);
+
+    --shadow-glow: 0 0 0 4px hsl(214 97% 27% / 0.16), 0 10px 28px -12px hsl(214 97% 27% / 0.35);
 
     --gradient-credential: linear-gradient(
 
@@ -230,6 +238,10 @@
 
     --info-soft: 265 35% 16%;
 
+    --violet: 262 70% 78%;
+
+    --violet-soft: 262 32% 18%;
+
     --border: 265 22% 18%;
 
     --input: 265 22% 18%;
@@ -273,6 +285,12 @@
       hsl(162 35% 24%) 100%
 
     );
+
+    --gradient-subtle: linear-gradient(180deg, hsl(265 30% 9%) 0%, hsl(214 40% 12%) 100%);
+
+    --sidebar-gradient: linear-gradient(180deg, hsl(214 80% 28%) 0%, hsl(214 97% 16%) 100%);
+
+    --shadow-glow: 0 0 0 4px hsl(214 85% 52% / 0.28), 0 10px 28px -12px hsl(214 85% 52% / 0.4);
 
 
 

@@ -1,7 +1,7 @@
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useMemo } from "react";
 import { AppShell } from "@/components/sijil/AppShell";
-import { PageHeader } from "@/components/sijil/PageHeader";
+import { Breadcrumb } from "@/components/sijil/Breadcrumb";
 import { StatusBadge } from "@/components/sijil/StatusBadge";
 import { EmptyState } from "@/components/sijil/EmptyState";
 import { PageSkeleton } from "@/components/sijil/SkeletonLoader";
@@ -39,13 +39,17 @@ export default function RecruiterCompare() {
   if (selected.length < 2) {
     return (
       <AppShell role="recruiter">
-        <PageHeader
-          title="Compare candidates"
-          breadcrumbs={[
-            { label: "Dashboard", href: "/recruiter/search" },
-            { label: "Compare" },
-          ]}
-        />
+        <div className="mb-8 rounded-2xl border border-border/60 bg-[image:var(--gradient-subtle)] px-5 py-6 shadow-sm sm:px-8 sm:py-8">
+          <Breadcrumb
+            className="mb-3"
+            items={[
+              { label: "Dashboard", href: "/recruiter/search" },
+              { label: "Compare" },
+            ]}
+          />
+          <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-success">Talent workspace</p>
+          <h1 className="mt-3 text-[2rem] font-semibold leading-none tracking-tight text-foreground">Compare candidates</h1>
+        </div>
         <EmptyState
           icon={GitCompare}
           title="Select candidates to compare"
@@ -58,27 +62,40 @@ export default function RecruiterCompare() {
 
   return (
     <AppShell role="recruiter">
-      <PageHeader
-        title="Compare candidates"
-        description={`Side-by-side comparison of evidence and attestation for ${selected.length} candidate(s)${skillFilter ? ` · skill filter: ${skillFilter}` : ""}.`}
-        breadcrumbs={[
-          { label: "Dashboard", href: "/recruiter/search" },
-          { label: "Compare" },
-        ]}
-        actions={
-          <Button variant="outline" onClick={() => navigate("/recruiter/search")}>
-            <ArrowLeft className="h-4 w-4 mr-1.5" />Back to dashboard
+      <div className="mb-8 rounded-2xl border border-border/60 bg-[image:var(--gradient-subtle)] px-5 py-6 shadow-sm sm:px-8 sm:py-8">
+        <Breadcrumb
+          className="mb-3"
+          items={[
+            { label: "Dashboard", href: "/recruiter/search" },
+            { label: "Compare" },
+          ]}
+        />
+        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-success">Talent workspace</p>
+        <div className="mt-3 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+          <div>
+            <div className="flex flex-wrap items-center gap-3">
+              <h1 className="text-[2rem] font-semibold leading-none tracking-tight text-foreground">Compare candidates</h1>
+              <p className="rounded-full border border-border/70 bg-card/80 px-3 py-1 text-xs font-medium text-foreground shadow-sm">
+                {selected.length} candidates
+              </p>
+            </div>
+            <p className="mt-3 max-w-2xl text-sm leading-relaxed text-muted-foreground">
+              {`Side-by-side comparison of evidence and attestation for ${selected.length} candidate(s)${skillFilter ? ` · skill filter: ${skillFilter}` : ""}.`}
+            </p>
+          </div>
+          <Button variant="outline" className="rounded-xl bg-card focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2" onClick={() => navigate("/recruiter/search")}>
+            <ArrowLeft className="mr-1.5 h-4 w-4" />Back to dashboard
           </Button>
-        }
-      />
+        </div>
+      </div>
 
-      <Card className="mb-6">
+      <Card className="mb-6 overflow-hidden rounded-2xl border-border/60 shadow-sm">
         <CardHeader><CardTitle className="text-base">Candidate snapshot</CardTitle></CardHeader>
         <CardContent className="p-0 overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="bg-muted/40 text-xs uppercase text-muted-foreground">
+            <thead className="bg-muted/50 text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
               <tr>
-                <th className="sticky left-0 z-10 bg-muted/40 text-left px-4 py-2">Candidate</th>
+                <th className="sticky left-0 z-10 bg-muted/50 px-4 py-3 text-left">Candidate</th>
                 <th className="text-left px-4 py-2">Institution</th>
                 <th className="text-left px-4 py-2">Credentials</th>
                 <th className="text-left px-4 py-2">Total evidence</th>
@@ -89,11 +106,11 @@ export default function RecruiterCompare() {
             </thead>
             <tbody>
               {selected.map((c) => (
-                <tr key={c.id} className="border-t">
-                  <td className="sticky left-0 z-10 bg-card px-4 py-3 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.08)]">
+                <tr key={c.id} className="border-t border-border/60 transition-colors hover:bg-muted/30">
+                  <td className="sticky left-0 z-10 bg-card px-4 py-4">
                     <div className="flex items-center gap-3">
-                      <CandidateAvatar name={c.name} avatarUrl={c.avatarUrl} className="h-10 w-10" />
-                      <span className="font-medium">{c.name}</span>
+                      <CandidateAvatar name={c.name} avatarUrl={c.avatarUrl} className="h-12 w-12 ring-2 ring-primary/15" />
+                      <span className="font-semibold" title={c.name}>{c.name}</span>
                     </div>
                   </td>
                   <td className="px-4 py-3">{c.institution}</td>
@@ -104,8 +121,8 @@ export default function RecruiterCompare() {
                     <StatusBadge variant={c.attestation === "Approved" ? "verified" : "warning"}>{c.attestation}</StatusBadge>
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <Button size="sm" variant="outline" onClick={() => navigate(`/recruiter/candidate/${c.id}`)}>
-                      Open <ArrowRight className="h-3.5 w-3.5 ml-1" />
+                    <Button size="sm" className="group rounded-xl focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2" onClick={() => navigate(`/recruiter/candidate/${c.id}`)}>
+                      Open <ArrowRight className="ml-1 h-3.5 w-3.5 transition-transform duration-200 group-hover:translate-x-0.5" />
                     </Button>
                   </td>
                 </tr>
@@ -115,7 +132,7 @@ export default function RecruiterCompare() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="overflow-hidden rounded-2xl border-border/60 shadow-sm">
         <CardHeader>
           <CardTitle className="text-base">Skill-level comparison</CardTitle>
           <p className="text-xs text-muted-foreground">
@@ -124,9 +141,9 @@ export default function RecruiterCompare() {
         </CardHeader>
         <CardContent className="p-0 overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="bg-muted/40 text-xs uppercase text-muted-foreground">
+            <thead className="bg-muted/50 text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
               <tr>
-                <th className="sticky left-0 z-10 bg-muted/40 text-left px-4 py-2 min-w-[140px]">Skill</th>
+                <th className="sticky left-0 z-10 min-w-[140px] bg-muted/50 px-4 py-3 text-left">Skill</th>
                 {selected.map((c) => (
                   <th key={c.id} className="text-left px-4 py-2 min-w-[180px]">{c.name}</th>
                 ))}
@@ -137,8 +154,8 @@ export default function RecruiterCompare() {
                 <tr><td colSpan={selected.length + 1} className="px-4 py-6 text-center text-muted-foreground">No matching skills.</td></tr>
               )}
               {skillSet.map((skill) => (
-                <tr key={skill} className="border-t align-top">
-                  <td className="sticky left-0 z-10 bg-card px-4 py-3 font-medium shadow-[2px_0_4px_-2px_rgba(0,0,0,0.08)]">{skill}</td>
+                <tr key={skill} className="border-t border-border/60 align-top transition-colors hover:bg-muted/30">
+                  <td className="sticky left-0 z-10 bg-card px-4 py-4 font-medium">{skill}</td>
                   {selected.map((c) => {
                     const s = (candidateSkills[c.id] || []).find((x) => x.skill === skill);
                     if (!s) return <td key={c.id} className="px-4 py-3 text-xs text-muted-foreground">—</td>;

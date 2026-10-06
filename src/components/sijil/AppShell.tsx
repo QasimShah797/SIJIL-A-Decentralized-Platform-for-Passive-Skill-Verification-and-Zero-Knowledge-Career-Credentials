@@ -97,10 +97,10 @@ function SidebarLink({
       to={item.to}
       onClick={onNavigate}
       className={cn(
-        "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors",
+        "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring",
         active
-          ? "bg-primary/10 font-medium text-primary shadow-sm"
-          : "text-sidebar-foreground/80 hover:bg-sidebar-accent/70 hover:text-sidebar-accent-foreground",
+          ? "relative bg-white/15 font-medium text-sidebar-accent-foreground shadow-sm before:absolute before:left-0 before:top-2 before:h-[calc(100%-1rem)] before:w-1 before:rounded-full before:bg-sidebar-primary"
+          : "text-sidebar-foreground/85 hover:bg-white/10 hover:text-sidebar-accent-foreground",
       )}
     >
       <item.icon className="h-4 w-4 shrink-0 opacity-80" />
@@ -120,7 +120,7 @@ function NavGroupSection({
 }) {
   return (
     <div className="mb-5">
-      <p className="mb-2 px-3 text-[11px] font-medium uppercase tracking-wider text-sidebar-foreground/50">
+      <p className="mb-2 px-3 text-[10px] font-medium uppercase tracking-[0.16em] text-sidebar-foreground/60">
         {group.label}
       </p>
       <nav className="space-y-0.5">
@@ -203,7 +203,7 @@ export function AppShell({ role, children }: { role: Role; children: React.React
 
   const sidebarContent = (
     <>
-      <div className="border-b border-sidebar-border px-5 py-5">
+      <div className="border-b border-sidebar-border px-6 py-6">
         <div className="text-[11px] text-sidebar-foreground/60">{roleLabel} workspace</div>
         <div className="mt-2">
           <SidebarBrand />
@@ -246,12 +246,12 @@ export function AppShell({ role, children }: { role: Role; children: React.React
   return (
     <div className="flex min-h-screen w-full bg-background">
       {/* Desktop sidebar */}
-      <aside className="sticky top-0 z-30 hidden h-screen w-[17.5rem] shrink-0 flex-col overflow-y-auto border-r border-sidebar-border bg-sidebar text-sidebar-foreground shadow-[inset_-1px_0_0_hsl(var(--border)/0.4)] lg:flex">
+      <aside className="sticky top-0 z-30 hidden h-screen w-[17.5rem] shrink-0 flex-col overflow-y-auto border-r border-sidebar-border bg-[image:var(--sidebar-gradient)] text-sidebar-foreground lg:flex">
         {sidebarContent}
       </aside>
 
       <main className="flex min-h-screen min-w-0 flex-1 flex-col pb-16 lg:pb-0">
-        <header className="sticky top-0 z-20 flex h-14 items-center justify-between border-b border-border/60 bg-card/80 px-4 backdrop-blur-md sm:px-6">
+        <header className="sticky top-0 z-20 flex h-14 items-center justify-between border-b border-border/70 bg-background/75 px-4 backdrop-blur-xl sm:px-6">
           <div className="flex items-center gap-2">
             <Sheet open={drawerOpen} onOpenChange={setDrawerOpen}>
               <SheetTrigger asChild>
@@ -259,7 +259,7 @@ export function AppShell({ role, children }: { role: Role; children: React.React
                   <Menu className="h-5 w-5" />
                 </Button>
               </SheetTrigger>
-              <SheetContent side="left" className="w-64 p-0 bg-sidebar text-sidebar-foreground">
+              <SheetContent side="left" className="w-64 bg-[image:var(--sidebar-gradient)] p-0 text-sidebar-foreground">
                 <SheetHeader className="sr-only">
                   <SheetTitle>Navigation</SheetTitle>
                 </SheetHeader>
@@ -288,7 +288,7 @@ export function AppShell({ role, children }: { role: Role; children: React.React
               </button>
             )}
             {didShort && (
-              <span className="mono hidden text-xs text-muted-foreground md:inline">{didShort}</span>
+              <span className="mono hidden rounded-full border border-border/70 bg-muted/70 px-2.5 py-1 text-[11px] text-muted-foreground md:inline">{didShort}</span>
             )}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>

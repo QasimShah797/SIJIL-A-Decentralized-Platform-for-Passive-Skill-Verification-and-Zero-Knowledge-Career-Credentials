@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { CalendarClock, MapPin, Phone, Video } from "lucide-react";
 import { AppShell } from "@/components/sijil/AppShell";
-import { PageHeader } from "@/components/sijil/PageHeader";
+import { Breadcrumb } from "@/components/sijil/Breadcrumb";
 import { StatusBadge } from "@/components/sijil/StatusBadge";
 import { EmptyState } from "@/components/sijil/EmptyState";
 import { PageSkeleton } from "@/components/sijil/SkeletonLoader";
@@ -18,6 +18,7 @@ import {
   type ScheduledInterviewView,
 } from "@/lib/interview";
 import { toast } from "@/hooks/use-toast";
+import { cn } from "@/lib/utils";
 
 const FILTERS = [
   { id: "upcoming", label: "Upcoming" },
@@ -126,22 +127,37 @@ export default function RecruiterInterviews() {
 
   return (
     <AppShell role="recruiter">
-      <PageHeader
-        title="Interviews"
-        description="Interviews you have scheduled with candidates. Cancelling sends the candidate an email."
-        breadcrumbs={[
-          { label: "Dashboard", href: "/recruiter/search" },
-          { label: "Interviews" },
-        ]}
-      />
+      <div className="mb-8 rounded-2xl border border-border/60 bg-[image:var(--gradient-subtle)] px-5 py-6 shadow-sm sm:px-8 sm:py-8">
+        <Breadcrumb
+          className="mb-3"
+          items={[
+            { label: "Dashboard", href: "/recruiter/search" },
+            { label: "Interviews" },
+          ]}
+        />
+        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-success">Talent workspace</p>
+        <div className="mt-3 flex flex-wrap items-center gap-3">
+          <h1 className="text-[2rem] font-semibold leading-none tracking-tight text-foreground">Interviews</h1>
+          <p className="rounded-full border border-border/70 bg-card/80 px-3 py-1 text-xs font-medium text-foreground shadow-sm">
+            {visible.length} shown
+          </p>
+        </div>
+        <p className="mt-3 max-w-2xl text-sm leading-relaxed text-muted-foreground">
+          Interviews you have scheduled with candidates. Cancelling sends the candidate an email.
+        </p>
+      </div>
 
-      <div className="mb-5 flex flex-wrap gap-2">
+      <div className="mb-6 flex flex-wrap gap-2">
         {FILTERS.map((item) => (
           <Button
             key={item.id}
             type="button"
             size="sm"
             variant={filter === item.id ? "default" : "outline"}
+            className={cn(
+              "rounded-full px-4 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+              filter !== item.id && "bg-card",
+            )}
             onClick={() => setFilter(item.id)}
           >
             {item.label}
@@ -168,12 +184,12 @@ export default function RecruiterInterviews() {
           action={{ label: "Back to dashboard", onClick: () => navigate("/recruiter/search") }}
         />
       ) : (
-        <div className="space-y-3">
+        <div className="grid gap-4">
           {visible.map((interview) => {
             const Icon = modeIcon(interview.mode);
             const cancelled = interview.status === "cancelled";
             return (
-              <Card key={interview.id}>
+              <Card key={interview.id} className="rounded-2xl border-border/60 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:shadow-lg">
                 <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-start sm:justify-between">
                   <div className="min-w-0 space-y-2">
                     <div className="flex flex-wrap items-center gap-2">
@@ -204,7 +220,7 @@ export default function RecruiterInterviews() {
                   <div className="flex shrink-0 flex-wrap gap-2">
                     <Button
                       size="sm"
-                      variant="outline"
+                      className="rounded-xl focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                       onClick={() => navigate(`/recruiter/candidate/${interview.candidateUserId}`)}
                     >
                       View candidate
@@ -213,6 +229,7 @@ export default function RecruiterInterviews() {
                       <Button
                         size="sm"
                         variant="outline"
+                        className="rounded-xl bg-card focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                         disabled={busyId === interview.id}
                         onClick={() => void sendEmail(interview.id)}
                       >
@@ -223,6 +240,7 @@ export default function RecruiterInterviews() {
                       <Button
                         size="sm"
                         variant="destructive"
+                        className="rounded-xl focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                         disabled={busyId === interview.id}
                         onClick={() => setCancellingId(interview.id)}
                       >

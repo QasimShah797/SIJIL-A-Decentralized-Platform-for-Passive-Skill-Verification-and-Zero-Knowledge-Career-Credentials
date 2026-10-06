@@ -45,6 +45,10 @@ export default {
           foreground: "hsl(var(--info-foreground))",
           soft: "hsl(var(--info-soft))",
         },
+        violet: {
+          DEFAULT: "hsl(var(--violet))",
+          soft: "hsl(var(--violet-soft))",
+        },
         muted: {
           DEFAULT: "hsl(var(--muted))",
           foreground: "hsl(var(--muted-foreground))",

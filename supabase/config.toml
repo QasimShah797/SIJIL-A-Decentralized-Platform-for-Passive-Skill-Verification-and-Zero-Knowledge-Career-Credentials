@@ -23,3 +23,6 @@ verify_jwt = false
 
 [functions.google-wallet-pass]
 verify_jwt = false
+
+[functions.recruiter-match]
+verify_jwt = true

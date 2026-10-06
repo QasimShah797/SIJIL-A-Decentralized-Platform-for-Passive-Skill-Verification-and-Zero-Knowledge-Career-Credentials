@@ -1,26 +1,53 @@
 import { Building2, ShieldCheck, Users, Wallet } from "lucide-react";
 import type { CandidateView } from "@/lib/db/candidates";
+import { cn } from "@/lib/utils";
+
+const tones = {
+  blue: "bg-info-soft text-info",
+  emerald: "bg-success-soft text-success",
+  violet: "bg-violet-soft text-violet",
+  amber: "bg-warning-soft text-warning",
+} as const;
 
 function StatCard({
   label,
   value,
   hint,
   icon: Icon,
+  tone,
+  emphasized = false,
 }: {
   label: string;
   value: number;
   hint: string;
   icon: typeof Users;
+  tone: keyof typeof tones;
+  emphasized?: boolean;
 }) {
   return (
-    <div className="rounded-2xl border border-border/70 bg-card px-4 py-4 shadow-sm">
-      <div className="flex items-start justify-between gap-3">
+    <div
+      className={cn(
+        "rounded-2xl border px-5 py-5 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:shadow-lg",
+        emphasized
+          ? "border-transparent bg-[image:var(--gradient-primary)] text-sidebar-foreground shadow-md"
+          : "border-border/60 bg-card text-card-foreground",
+      )}
+    >
+      <div className="flex items-start justify-between gap-4">
         <div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{label}</p>
-          <p className="mt-1.5 text-2xl font-semibold tracking-tight text-foreground">{value}</p>
-          <p className="mt-1 text-xs text-muted-foreground">{hint}</p>
+          <p className={cn(
+            "text-[11px] font-semibold uppercase tracking-[0.16em]",
+            emphasized ? "text-sidebar-foreground/80" : "text-muted-foreground",
+          )}>
+            {label}
+          </p>
+          <p className="mt-3 text-4xl font-semibold tracking-tight">{value}</p>
+          <p className={cn("mt-2 text-xs", emphasized ? "text-sidebar-foreground/75" : "text-muted-foreground")}>{hint}</p>
         </div>
-        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
+        <div className={cn(
+          "flex h-10 w-10 items-center justify-center rounded-xl",
+          emphasized ? "bg-white/15 text-sidebar-foreground" : tones[tone],
+        )}>
           <Icon className="h-4 w-4" />
         </div>
       </div>
@@ -36,30 +63,35 @@ export function RecruiterDashboardStats({ candidates }: { candidates: CandidateV
   ).size;
 
   return (
-    <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+    <div className="mb-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
       <StatCard
         icon={Users}
         label="Directory"
         value={candidates.length}
         hint="Learners with shared profiles"
+        tone="blue"
+        emphasized
       />
       <StatCard
         icon={ShieldCheck}
         label="Verified"
         value={verified}
         hint="Institution attestation approved"
+        tone="emerald"
       />
       <StatCard
         icon={Wallet}
         label="Credentials"
         value={credentials}
         hint="Active shared competency packs"
+        tone="violet"
       />
       <StatCard
         icon={Building2}
         label="Institutions"
         value={institutions}
         hint="Distinct campuses in view"
+        tone="amber"
       />
     </div>
   );

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { CandidateView } from "@/lib/db/candidates";
 import type { CandidateSkill } from "@/lib/sijil-data";
-import { compareLearners, findComparePair, isCompareAsk, parseRequirement, rankCandidatesForRequirement, resolveCompareAsk } from "@/lib/recruiter-match";
+import { compareLearners, findComparePair, isCompareAsk, parseInterpretedAsk, parseRequirement, rankCandidatesForRequirement, requirementFromInterpretation, resolveCompareAsk, resolveInterpretedAsk } from "@/lib/recruiter-match";
 
 const candidate = (id: string, extras: Partial<CandidateView> = {}): CandidateView => ({
   id,
@@ -184,5 +184,198 @@ describe("recruiter match", () => {
     );
     expect(ranked.map((item) => item.candidate.id)).toEqual(["with-lms"]);
     expect(ranked[0].reasons.some((reason) => /LMS/i.test(reason))).toBe(true);
+  });
+
+  it("maps a Gemini interpretation of Flutter onto Dart with GitHub proof", () => {
+    const interpreted = parseInterpretedAsk({
+      intent: "match",
+      skills: ["Flutter", "GitHub"],
+      requireLms: false,
+      requireGithub: true,
+      requireTask: false,
+      requireReviews: false,
+      learnerNames: [],
+      reply: "You want learners who shared Dart and a GitHub project.",
+    });
+    expect(interpreted).not.toBeNull();
+    const requirement = requirementFromInterpretation(interpreted!, ["TypeScript", "Dart"]);
+    expect(requirement.skills).toEqual(["Dart"]);
+    expect(requirement.requireGithub).toBe(true);
+
+    const resolved = resolveInterpretedAsk(
+      interpreted!,
+      [
+        candidate("has-dart", {
+          topSkill: "Dart",
+          searchableSkills: ["Dart"],
+          skillEvidence: [{ skill: "Dart", githubRecords: 2, lmsRecords: 0, reviews: 0, practicalTask: "—" }],
+        }),
+        candidate("only-ts", {
+          searchableSkills: ["TypeScript"],
+          skillEvidence: [{ skill: "TypeScript", githubRecords: 4, lmsRecords: 0, reviews: 0, practicalTask: "—" }],
+        }),
+      ],
+      {},
+      ["TypeScript", "Dart"],
+    );
+    expect(resolved.matches?.map((item) => item.candidate.id)).toEqual(["has-dart"]);
+    expect(resolved.text).toMatch(/Dart/i);
+    expect(resolved.text).toMatch(/shared evidence/i);
+  });
+
+  it("compares the two learners Gemini named", () => {
+    const qasim = candidate("q1", { name: "Syed Qasim Ali Shah", searchableSkills: ["Dart"] });
+    const aaiza = candidate("a1", { name: "Aaiza Islam", searchableSkills: ["TypeScript"] });
+    const resolved = resolveInterpretedAsk(
+      {
+        intent: "compare",
+        skills: [],
+        requireLms: false,
+        requireGithub: false,
+        requireTask: false,
+        requireReviews: false,
+        learnerNames: ["Qasim", "Aaiza"],
+        reply: "You want Qasim and Aaiza compared.",
+      },
+      [qasim, aaiza],
+      {},
+      ["Dart", "TypeScript"],
+    );
+    expect([resolved.compare?.left.id, resolved.compare?.right.id].sort()).toEqual(["a1", "q1"]);
+  });
+
+  it("asks for a clearer question when Gemini cannot tell what to search", () => {
+    const resolved = resolveInterpretedAsk(
+      {
+        intent: "clarify",
+        skills: [],
+        requireLms: false,
+        requireGithub: false,
+        requireTask: false,
+        requireReviews: false,
+        learnerNames: [],
+        reply: "Tell me a competency or two learner names.",
+      },
+      [candidate("q1", { name: "Syed Qasim Ali Shah" })],
+      {},
+      ["Dart"],
+    );
+    expect(resolved.matches).toBeUndefined();
+    expect(resolved.compare).toBeUndefined();
+    expect(resolved.text).toMatch(/competency/i);
+  });
+
+  it("lists learners from an institution even when Gemini asks for a skill", () => {
+    const qasim = candidate("q1", { name: "Syed Qasim Ali Shah", institution: "CUST", searchableSkills: ["Dart"] });
+    const aaiza = candidate("a1", { name: "Aaiza Islam", institution: "CUST", searchableSkills: ["TypeScript"] });
+    const other = candidate("o1", { name: "Other Learner", institution: "NUST", searchableSkills: ["Java"] });
+    const resolved = resolveInterpretedAsk(
+      {
+        intent: "clarify",
+        skills: [],
+        requireLms: false,
+        requireGithub: false,
+        requireTask: false,
+        requireReviews: false,
+        learnerNames: [],
+        reply: "I need more information. Please specify what skills you are looking for.",
+      },
+      [qasim, aaiza, other],
+      {},
+      ["Dart", "TypeScript", "Java"],
+      "learner that are from institution of cust",
+    );
+    expect(resolved.matches?.map((item) => item.candidate.id).sort()).toEqual(["a1", "q1"]);
+    expect(resolved.text).toMatch(/Aaiza Islam/);
+    expect(resolved.text).toMatch(/Syed Qasim Ali Shah/);
+    expect(resolved.text).toMatch(/CUST/);
+    expect(resolved.text).not.toMatch(/more information|You want learners/i);
+  });
+
+  it("says when nobody shared from the institution in the question", () => {
+    const resolved = resolveInterpretedAsk(
+      {
+        intent: "clarify",
+        skills: [],
+        requireLms: false,
+        requireGithub: false,
+        requireTask: false,
+        requireReviews: false,
+        learnerNames: [],
+        reply: "You want learners from NUST.",
+      },
+      [candidate("q1", { name: "Syed Qasim Ali Shah", institution: "CUST" })],
+      {},
+      ["Dart"],
+      "learner from nust",
+    );
+    expect(resolved.matches).toEqual([]);
+    expect(resolved.text).toMatch(/No shared learner is from NUST/);
+    expect(resolved.text).toMatch(/CUST/);
+  });
+
+  it("lists each campus when the question does not name one", () => {
+    const resolved = resolveInterpretedAsk(
+      {
+        intent: "clarify",
+        skills: [],
+        requireLms: false,
+        requireGithub: false,
+        requireTask: false,
+        requireReviews: false,
+        learnerNames: [],
+        institution: "AN",
+        reply: "You want learners from an institution.",
+      },
+      [
+        candidate("q1", { name: "Syed Qasim Ali Shah", institution: "CUST" }),
+        candidate("a1", { name: "Aaiza Islam", institution: "CUST" }),
+      ],
+      {},
+      ["Dart"],
+      "Learners from an institution",
+    );
+    expect(resolved.text).toMatch(/CUST/);
+    expect(resolved.text).toMatch(/Syed Qasim Ali Shah/);
+    expect(resolved.text).toMatch(/Aaiza Islam/);
+    expect(resolved.text).not.toMatch(/\bAN\b/);
+  });
+
+  it("lists learners with at least the requested number of shared skills", () => {
+    const broad = candidate("q1", {
+      name: "Syed Qasim Ali Shah",
+      searchableSkills: ["Dart", "Java", "TypeScript"],
+      verifiedSkills: ["Dart", "Java", "TypeScript"],
+    });
+    const narrow = candidate("a1", {
+      name: "Aaiza Islam",
+      searchableSkills: ["Typescript", "Javascript", "Frontend Development", "Backend Development"],
+      verifiedSkills: ["Typescript", "Javascript"],
+      skillEvidence: [
+        { skill: "Typescript", githubRecords: 1, lmsRecords: 1, reviews: 0, practicalTask: "—" },
+        { skill: "Javascript", githubRecords: 0, lmsRecords: 1, reviews: 0, practicalTask: "—" },
+        { skill: "HTML", githubRecords: 1, lmsRecords: 0, reviews: 0, practicalTask: "—" },
+      ],
+    });
+    const resolved = resolveInterpretedAsk(
+      {
+        intent: "clarify",
+        skills: [],
+        requireLms: false,
+        requireGithub: false,
+        requireTask: false,
+        requireReviews: false,
+        learnerNames: [],
+        reply: "I understood you are looking for learners who have 3 or more skills.",
+      },
+      [broad, narrow],
+      {},
+      ["Dart", "Java", "TypeScript"],
+      "learner having 3 or more skills",
+    );
+    expect(resolved.matches?.map((item) => item.candidate.id)).toEqual(["q1"]);
+    expect(resolved.text).toMatch(/Syed Qasim Ali Shah/);
+    expect(resolved.text).not.toMatch(/Aaiza Islam/);
+    expect(resolved.matches?.[0].reasons.some((reason) => reason === "3 shared skills")).toBe(true);
   });
 });

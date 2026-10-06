@@ -13,7 +13,7 @@ export function PageSkeleton({ rows = 3 }: { rows?: number }) {
       </div>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {Array.from({ length: 4 }).map((_, i) => (
-          <SkeletonBlock key={i} className="h-24 rounded-2xl" />
+          <SkeletonBlock key={i} className="h-32 rounded-2xl" />
         ))}
       </div>
       <div className="space-y-3">

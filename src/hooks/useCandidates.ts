@@ -52,6 +52,7 @@ export function useCandidates() {
           skillsSummary: coalesceCandidateText(candidate.skillsSummary, fallback.skillsSummary),
           careerGoal: coalesceCandidateText(candidate.careerGoal, fallback.careerGoal),
           searchableSkills: [...new Set([...(candidate.searchableSkills ?? []), ...(fallback.searchableSkills ?? [])])],
+          verifiedSkills: candidate.verifiedSkills?.length ? candidate.verifiedSkills : fallback.verifiedSkills,
           skillEvidence: fallback.skillEvidence?.length
             ? fallback.skillEvidence
             : candidate.skillEvidence,
@@ -91,7 +92,8 @@ export function useCandidates() {
         });
       }
 
-      c = applyCandidateCardFields(c, cardFields);
+      c = applyCandidateCardFields(c, cardFields)
+        .filter((candidate) => (candidate.credentialCount ?? 0) > 0);
 
       setCandidates(c);
       setCandidateSkills(cs);
