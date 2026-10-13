@@ -1,18 +1,23 @@
-import { useNavigate } from "react-router-dom";
+﻿import { useNavigate } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
 import { AppShell } from "@/components/sijil/AppShell";
 import { PageSkeleton } from "@/components/sijil/SkeletonLoader";
 import { Button } from "@/components/ui/button";
-import { Building2, GitCompare, Search, Sparkles, Users, X } from "lucide-react";
+import { Building2, ChevronDown, GitCompare, Search, Sparkles, Users, X } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { EmptyState } from "@/components/sijil/EmptyState";
 import { RecruiterCandidateCard } from "@/components/recruiter/RecruiterCandidateCard";
 import { RecruiterDashboardStats, type RecruiterStatFilter } from "@/components/recruiter/RecruiterDashboardStats";
 import {
   RecruiterDashboardRail,
-  RecruiterPipelineCard,
   RecruiterRecentActivity,
   RecruiterRecentlyShared,
-  RecruiterShortlistCard,
   RecruiterUpcomingInterviews,
   readRecruiterShortlist,
   writeRecruiterShortlist,
@@ -37,7 +42,7 @@ export default function RecruiterSearch() {
     const names = new Set<string>();
     for (const candidate of candidates) {
       const name = candidate.institution.trim();
-      if (name && name !== "—") names.add(name);
+      if (name && name !== "â€”") names.add(name);
     }
     return [...names].sort((a, b) => a.localeCompare(b));
   }, [candidates]);
@@ -131,16 +136,152 @@ export default function RecruiterSearch() {
       <div className="min-w-0 space-y-6 pb-24">
       <RecruiterDashboardStats candidates={candidates} active={statFilter} onSelect={selectStat} />
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <RecruiterPipelineCard candidates={candidates} interviews={interviews} />
-        <RecruiterShortlistCard
+      <section className="rounded-2xl border border-border/60 bg-card p-5 shadow-sm">
+        <div className="mb-4 flex items-center gap-3">
+          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
+            <Sparkles className="h-4 w-4" />
+          </span>
+          <div>
+            <h2 className="text-base font-semibold text-foreground">Ask SIJIL Match</h2>
+            <p className="text-xs text-muted-foreground">Rank and compare from disclosed evidence.</p>
+          </div>
+        </div>
+        <SijilMatchBot
           candidates={candidates}
+          candidateSkills={candidateSkills}
           selectedIds={selected}
-          onRemove={(id) => setSelected((current) => current.filter((item) => item !== id))}
-          onOpen={(id) => navigate(`/recruiter/candidate/${id}`)}
-          onCompare={goCompare}
+          onClearSelection={() => setSelected([])}
+          onResultIds={setFocusIds}
+          onOpenCandidate={(id) => navigate(`/recruiter/candidate/${id}`)}
+          onCompare={(leftId, rightId) => navigate(`/recruiter/compare?ids=${leftId},${rightId}`)}
         />
-      </div>
+      </section>
+
+      <section id="recruiter-directory" className="min-w-0 rounded-2xl border border-border/60 bg-card p-5 shadow-sm">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex items-center gap-3">
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
+              <Users className="h-4 w-4" />
+            </span>
+            <div>
+              <h2 className="flex items-center gap-2 text-base font-semibold text-foreground">
+                Candidates
+                <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-semibold tabular-nums text-primary">
+                  {visible.length}
+                </span>
+              </h2>
+              <p className="text-xs text-muted-foreground">Open a profile or select people to compare.</p>
+            </div>
+          </div>
+          <div className="relative min-w-0 lg:w-72">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search name, skill, campus"
+              className="h-10 w-full rounded-xl border border-border/70 bg-background pl-9 pr-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            />
+          </div>
+        </div>
+
+        <div id="directory-campuses" className={cn("mt-4 flex flex-wrap items-center gap-2 rounded-xl border border-border/70 bg-muted/40 p-2", statFilter === "institutions" && "ring-2 ring-primary/30")}>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className="inline-flex h-9 items-center gap-2 rounded-lg border border-border/70 bg-background px-3 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                {statFilter === "verified" ? "Verified" : statFilter === "credentials" ? "With credentials" : "All"}
+                <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-44">
+              <DropdownMenuRadioGroup
+                value={statFilter === "verified" || statFilter === "credentials" ? statFilter : "all"}
+                onValueChange={(value) => setStatFilter(value as RecruiterStatFilter)}
+              >
+                <DropdownMenuRadioItem value="all">All</DropdownMenuRadioItem>
+                <DropdownMenuRadioItem value="verified">Verified</DropdownMenuRadioItem>
+                <DropdownMenuRadioItem value="credentials">With credentials</DropdownMenuRadioItem>
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {campuses.length > 0 ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className="inline-flex h-9 items-center gap-2 rounded-lg border border-border/70 bg-background px-3 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
+                  {campus ?? "All campuses"}
+                  <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-56">
+                <DropdownMenuRadioGroup value={campus ?? "all"} onValueChange={(value) => setCampus(value === "all" ? null : value)}>
+                  <DropdownMenuRadioItem value="all">All campuses</DropdownMenuRadioItem>
+                  {campuses.map((name) => (
+                    <DropdownMenuRadioItem key={name} value={name}>{name}</DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : null}
+
+          {focusIds ? (
+            <button
+              type="button"
+              onClick={() => setFocusIds(null)}
+              className="ml-auto text-xs font-medium text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              Clear match filter
+            </button>
+          ) : null}
+        </div>
+
+        <div className="mt-4 grid w-full gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {error && (
+            <div className="md:col-span-2 xl:col-span-3">
+              <EmptyState
+                icon={Users}
+                title="Could not load candidates"
+                description={error}
+                action={{ label: "Try again", onClick: () => void refresh() }}
+              />
+            </div>
+          )}
+          {!error && visible.length === 0 && (
+            <div className="md:col-span-2 xl:col-span-3">
+              <EmptyState
+                icon={Users}
+                title={focusIds ? "No candidates in this answer" : candidates.length === 0 ? "No candidates yet" : "No matches"}
+                description={focusIds
+                  ? "Clear the answer filter to see every shared learner."
+                  : candidates.length === 0
+                    ? "Learners appear here after they share a credential with recruiters."
+                    : "Try another filter, campus, or search."}
+                action={focusIds
+                  ? { label: "Show all", onClick: () => setFocusIds(null) }
+                  : candidates.length > 0
+                    ? { label: "Clear filters", onClick: () => { setStatFilter("all"); setCampus(null); setQuery(""); } }
+                    : undefined}
+              />
+            </div>
+          )}
+          {visible.map((c) => (
+            <RecruiterCandidateCard
+              key={c.id}
+              candidate={c}
+              embedded
+              selected={selected.includes(c.id)}
+              onSelectedChange={() => toggleSelect(c.id)}
+              onOpenSummary={() => navigate(`/recruiter/candidate/${c.id}`)}
+            />
+          ))}
+        </div>
+      </section>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <RecruiterUpcomingInterviews
@@ -154,165 +295,6 @@ export default function RecruiterSearch() {
         candidates={candidates}
         onOpen={(id) => navigate(`/recruiter/candidate/${id}`)}
       />
-        <section className="rounded-2xl border border-border/60 bg-card p-5 shadow-sm">
-          <div className="mb-4 flex items-center gap-3">
-            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
-              <Sparkles className="h-4 w-4" />
-            </span>
-            <div>
-              <h2 className="text-base font-semibold text-foreground">Ask SIJIL Match</h2>
-              <p className="text-xs text-muted-foreground">Rank and compare from disclosed evidence.</p>
-            </div>
-          </div>
-          <SijilMatchBot
-            candidates={candidates}
-            candidateSkills={candidateSkills}
-            selectedIds={selected}
-            onClearSelection={() => setSelected([])}
-            onResultIds={setFocusIds}
-            onOpenCandidate={(id) => navigate(`/recruiter/candidate/${id}`)}
-            onCompare={(leftId, rightId) => navigate(`/recruiter/compare?ids=${leftId},${rightId}`)}
-          />
-        </section>
-
-        <section id="recruiter-directory" className="min-w-0">
-          <div className="mb-4 rounded-2xl border border-border/60 bg-card p-5 shadow-sm">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-              <div className="flex items-center gap-3">
-                <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                  <Users className="h-4 w-4" />
-                </span>
-                <div>
-                  <h2 className="flex items-center gap-2 text-base font-semibold text-foreground">
-                    Candidates
-                    <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-semibold tabular-nums text-primary">
-                      {visible.length}
-                    </span>
-                  </h2>
-                  <p className="text-xs text-muted-foreground">Open a profile or select people to compare.</p>
-                </div>
-              </div>
-              <div className="relative min-w-0 lg:w-72">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <input
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                  placeholder="Search name, skill, campus"
-                  className="h-10 w-full rounded-xl border border-border/70 bg-background pl-9 pr-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                />
-              </div>
-            </div>
-
-            <div className="mt-4 flex flex-wrap gap-2">
-              {([
-                { id: "all" as const, label: "All" },
-                { id: "verified" as const, label: "Verified" },
-                { id: "credentials" as const, label: "With credentials" },
-              ]).map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  aria-pressed={statFilter === item.id && !campus}
-                  onClick={() => selectStat(item.id)}
-                  className={cn(
-                    "rounded-full px-3 py-1.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                    statFilter === item.id && !campus
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-muted text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  {item.label}
-                </button>
-              ))}
-            </div>
-
-            {campuses.length > 0 && (
-              <div id="directory-campuses" className={cn("mt-3 flex flex-wrap items-center gap-2", statFilter === "institutions" && "rounded-xl bg-primary/5 p-2")}>
-                <span className="inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  <Building2 className="h-3.5 w-3.5" />
-                  Campus
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setCampus(null)}
-                  className={cn(
-                    "rounded-full px-3 py-1 text-xs font-medium",
-                    campus === null ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  All
-                </button>
-                {campuses.map((name) => (
-                  <button
-                    key={name}
-                    type="button"
-                    aria-pressed={campus === name}
-                    onClick={() => {
-                      setCampus(campus === name ? null : name);
-                      setStatFilter("institutions");
-                    }}
-                    className={cn(
-                      "rounded-full px-3 py-1 text-xs font-medium",
-                      campus === name ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:text-foreground",
-                    )}
-                  >
-                    {name}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {focusIds ? (
-              <button
-                type="button"
-                onClick={() => setFocusIds(null)}
-                className="mt-3 text-xs font-medium text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                Clear match filter · show everyone
-              </button>
-            ) : null}
-          </div>
-
-          <div className="grid w-full gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {error && (
-              <div className="md:col-span-2 xl:col-span-3">
-                <EmptyState
-                  icon={Users}
-                  title="Could not load candidates"
-                  description={error}
-                  action={{ label: "Try again", onClick: () => void refresh() }}
-                />
-              </div>
-            )}
-            {!error && visible.length === 0 && (
-              <div className="md:col-span-2 xl:col-span-3">
-                <EmptyState
-                  icon={Users}
-                  title={focusIds ? "No candidates in this answer" : candidates.length === 0 ? "No candidates yet" : "No matches"}
-                  description={focusIds
-                    ? "Clear the answer filter to see every shared learner."
-                    : candidates.length === 0
-                      ? "Learners appear here after they share a credential with recruiters."
-                      : "Try another filter, campus, or search."}
-                  action={focusIds
-                    ? { label: "Show all", onClick: () => setFocusIds(null) }
-                    : candidates.length > 0
-                      ? { label: "Clear filters", onClick: () => { setStatFilter("all"); setCampus(null); setQuery(""); } }
-                      : undefined}
-                />
-              </div>
-            )}
-            {visible.map((c) => (
-              <RecruiterCandidateCard
-                key={c.id}
-                candidate={c}
-                selected={selected.includes(c.id)}
-                onSelectedChange={() => toggleSelect(c.id)}
-                onOpenSummary={() => navigate(`/recruiter/candidate/${c.id}`)}
-              />
-            ))}
-          </div>
-        </section>
       </div>
       <aside className="space-y-4 xl:sticky xl:top-20 xl:self-start">
         <RecruiterDashboardRail

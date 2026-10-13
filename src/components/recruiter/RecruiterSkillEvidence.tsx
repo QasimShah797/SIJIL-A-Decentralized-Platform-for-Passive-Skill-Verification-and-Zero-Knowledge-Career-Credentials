@@ -1,10 +1,4 @@
 import { useEffect, useMemo, useState } from "react";
-import { ChevronDown } from "lucide-react";
-import {
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from "@/components/ui/accordion";
 import {
   CompetencyPackageCard,
   EvidenceInspectorCard,
@@ -35,13 +29,6 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 
 function asText(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
-}
-
-function formatShortDate(value: string | null): string | null {
-  if (!value) return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-  return date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 }
 
 export function recruiterSkillCards(credentials: SharedCredentialView[]): RecruiterSkillCard[] {
@@ -83,7 +70,13 @@ export function recruiterSkillCards(credentials: SharedCredentialView[]): Recrui
   return cards;
 }
 
-export function RecruiterSkillEvidenceItem({ card }: { card: RecruiterSkillCard }) {
+export function displayRecruiterSkillName(name: string) {
+  const trimmed = name.trim();
+  if (!trimmed || trimmed !== trimmed.toLowerCase()) return trimmed;
+  return trimmed.replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+export function RecruiterCompetencyDetail({ card }: { card: RecruiterSkillCard }) {
   const [source, setSource] = useState<InspectorSource>("github");
   const inspector = useMemo(() => {
     const ledger = buildEvidenceLedger(card.payload, card.competencyId, card.selectedFields);
@@ -96,48 +89,24 @@ export function RecruiterSkillEvidenceItem({ card }: { card: RecruiterSkillCard 
     }
   }, [inspector.availableSources, source]);
 
-  const meta = [
-    card.domain,
-    formatShortDate(card.createdAt) ? `Issued ${formatShortDate(card.createdAt)}` : null,
-    formatShortDate(card.expiresAt) ? `Valid through ${formatShortDate(card.expiresAt)}` : null,
-  ].filter(Boolean).join(" · ");
-
   return (
-    <AccordionItem value={card.id} className="border-border/60">
-      <AccordionTrigger className="group py-4 hover:no-underline [&>svg:last-child]:hidden">
-        <div className="flex w-full min-w-0 items-start gap-3 text-left">
-          <div className="min-w-0 flex-1 space-y-1">
-            <p className="text-base font-semibold leading-snug text-foreground">{card.name}</p>
-            {meta ? (
-              <p className="text-sm leading-relaxed text-muted-foreground">{meta}</p>
-            ) : null}
-          </div>
-          <ChevronDown
-            className="mt-1 h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200 group-data-[state=open]:rotate-180"
-            aria-hidden
-          />
-        </div>
-      </AccordionTrigger>
-      <AccordionContent className="pb-4 pt-0">
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.95fr)]">
-          <CompetencyPackageCard
-            competencyName={card.name}
-            github={inspector.github}
-            lmsRows={inspector.lmsRows}
-            taskLabel={inspector.taskDetail}
-          />
-          <EvidenceInspectorCard
-            source={source}
-            onSourceChange={setSource}
-            availableSources={inspector.availableSources}
-            githubRepos={inspector.githubRepos}
-            lmsAssignments={inspector.lmsAssignments}
-            taskDetail={inspector.taskDetail}
-            reviews={inspector.reviews}
-            verifyUrl={inspector.verifyUrl}
-          />
-        </div>
-      </AccordionContent>
-    </AccordionItem>
+    <div className="grid gap-4 xl:grid-cols-2">
+      <CompetencyPackageCard
+        competencyName={displayRecruiterSkillName(card.name)}
+        github={inspector.github}
+        lmsRows={inspector.lmsRows}
+        taskLabel={inspector.taskDetail}
+      />
+      <EvidenceInspectorCard
+        source={source}
+        onSourceChange={setSource}
+        availableSources={inspector.availableSources}
+        githubRepos={inspector.githubRepos}
+        lmsAssignments={inspector.lmsAssignments}
+        taskDetail={inspector.taskDetail}
+        reviews={inspector.reviews}
+        verifyUrl={inspector.verifyUrl}
+      />
+    </div>
   );
 }

@@ -15,6 +15,7 @@ type RecruiterCandidateCardProps = {
   selected?: boolean;
   onSelectedChange?: () => void;
   onOpenSummary: () => void;
+  embedded?: boolean;
   className?: string;
 };
 
@@ -47,6 +48,7 @@ export function RecruiterCandidateCard({
   selected = false,
   onSelectedChange,
   onOpenSummary,
+  embedded = false,
   className,
 }: RecruiterCandidateCardProps) {
   const { visible, extra } = skillChips(candidate);
@@ -56,8 +58,11 @@ export function RecruiterCandidateCard({
     <article
       onClick={onOpenSummary}
       className={cn(
-        "group flex h-full w-full cursor-pointer flex-col rounded-2xl border border-border/60 bg-card p-5 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-lg",
-        selected && "border-primary bg-primary/5 shadow-md",
+        "group flex h-full w-full min-w-0 cursor-pointer flex-col overflow-hidden border p-5 transition duration-200",
+        embedded
+          ? "rounded-xl border-border/60 bg-background hover:border-primary/40 hover:bg-primary/[0.03]"
+          : "rounded-2xl border-border/60 bg-card shadow-sm hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-lg",
+        selected && "border-primary bg-primary/5",
         className,
       )}
     >
@@ -120,20 +125,20 @@ export function RecruiterCandidateCard({
         {careerGoal || "No career goal shared yet."}
       </p>
 
-      <div className="mt-auto flex items-center justify-between gap-3 border-t border-border/70 pt-4 mt-5">
-        <dl className="flex gap-4 text-xs text-muted-foreground">
+      <div className="mt-auto flex flex-col gap-3 border-t border-border/70 pt-4">
+        <dl className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
           <div className="flex items-center gap-1.5">
-            <Wallet className="h-3.5 w-3.5 text-primary" aria-hidden />
+            <Wallet className="h-3.5 w-3.5 shrink-0 text-primary" aria-hidden />
             <dt className="sr-only">Credentials</dt>
-            <dd><span className="font-semibold text-foreground">{getEvidenceStats(candidate).credentials || candidate.credentialCount}</span> credentials</dd>
+            <dd className="whitespace-nowrap"><span className="font-semibold text-foreground">{getEvidenceStats(candidate).credentials || candidate.credentialCount}</span> credentials</dd>
           </div>
           <div className="flex items-center gap-1.5">
-            <ShieldCheck className="h-3.5 w-3.5 text-success" aria-hidden />
+            <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-success" aria-hidden />
             <dt className="sr-only">Evidence</dt>
-            <dd><span className="font-semibold text-foreground">{getEvidenceStats(candidate).evidenceTotal}</span> evidence</dd>
+            <dd className="whitespace-nowrap"><span className="font-semibold text-foreground">{getEvidenceStats(candidate).evidenceTotal}</span> evidence</dd>
           </div>
         </dl>
-        <Button size="sm" className="rounded-xl focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2" onClick={(event) => { event.stopPropagation(); onOpenSummary(); }}>
+        <Button size="sm" className="h-9 w-full shrink-0 rounded-xl focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2" onClick={(event) => { event.stopPropagation(); onOpenSummary(); }}>
           Review <ArrowRight className="ml-1 h-3.5 w-3.5 transition-transform duration-200 group-hover:translate-x-0.5" />
         </Button>
       </div>

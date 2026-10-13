@@ -2,6 +2,7 @@ import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useState } from "react";
 import {
   CalendarClock,
+  CheckCircle2,
   LayoutDashboard,
   UserCircle,
   Plug,
@@ -19,6 +20,7 @@ import { Role, getDecayingSkills } from "@/lib/sijil-data";
 import { useAuth } from "@/hooks/useAuth";
 import { useLearnerProfile, useDeclaredSkills } from "@/hooks/useLearnerData";
 import { useRecruiterProfile } from "@/hooks/useRecruiterProfile";
+import { recruiterVerificationLabel } from "@/lib/db/recruiter-profile";
 import { ThemeToggle } from "@/components/sijil/ThemeToggle";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import {
@@ -280,12 +282,12 @@ export function AppShell({
                 <div className="flex h-full flex-col">{sidebarContent}</div>
               </SheetContent>
             </Sheet>
-            <div className="text-sm">
-              <span className="font-semibold text-foreground">{roleLabel}</span>
-              <span className="hidden text-muted-foreground sm:inline">
-                {role === "recruiter" ? " · Talent workspace" : " · Verification workspace"}
-              </span>
-            </div>
+            {role === "learner" ? (
+              <div className="text-sm">
+                <span className="font-semibold text-foreground">{roleLabel}</span>
+                <span className="hidden text-muted-foreground sm:inline"> · Verification workspace</span>
+              </div>
+            ) : null}
           </div>
           <div className="flex items-center gap-1 sm:gap-2">
             <ThemeToggle />
@@ -306,29 +308,59 @@ export function AppShell({
             )}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <button
-                  type="button"
-                  className="flex h-9 w-9 items-center justify-center rounded-full border transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  aria-label="Account menu"
-                >
-                  {role === "learner" && profile?.avatarUrl ? (
-                    <img
-                      src={profile.avatarUrl}
-                      alt=""
-                      className="h-9 w-9 rounded-full object-cover"
-                    />
-                  ) : role === "recruiter" && recruiterProfile?.avatarUrl ? (
-                    <img
-                      src={recruiterProfile.avatarUrl}
-                      alt=""
-                      className="h-9 w-9 rounded-full object-cover"
-                    />
-                  ) : (
-                    <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
-                      {avatar}
+                {role === "recruiter" ? (
+                  <button
+                    type="button"
+                    className="flex items-center gap-2 rounded-xl border border-[#e2e8f0] bg-white py-1 pl-1 pr-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#023E8A]"
+                    aria-label="Account menu"
+                  >
+                    {recruiterProfile?.avatarUrl ? (
+                      <img src={recruiterProfile.avatarUrl} alt="" className="h-8 w-8 rounded-full object-cover" />
+                    ) : (
+                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#023E8A] text-xs font-semibold text-white">
+                        {avatar}
+                      </div>
+                    )}
+                    <div className="hidden min-w-0 text-left sm:block">
+                      <p className="max-w-[9rem] truncate text-xs font-semibold text-[#023E8A]">
+                        {recruiterProfile?.fullName ?? "Recruiter"}
+                      </p>
+                      <p className="text-[10px] text-[#64748b]">Recruiter</p>
                     </div>
-                  )}
-                </button>
+                    <span
+                      className={cn(
+                        "hidden items-center gap-0.5 rounded-full px-2 py-0.5 text-[10px] font-medium sm:inline-flex",
+                        recruiterProfile?.verificationStatus === "verified" ||
+                          recruiterProfile?.verificationStatus === "company_domain_verified"
+                          ? "bg-[#ccfbf1] text-[#0f766e]"
+                          : "bg-[#fff7ed] text-[#c2410c]",
+                      )}
+                    >
+                      <CheckCircle2 className="h-3 w-3" />
+                      {recruiterProfile
+                        ? recruiterVerificationLabel(recruiterProfile.verificationStatus)
+                        : "Recruiter"}
+                    </span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="flex h-9 w-9 items-center justify-center rounded-full border transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    aria-label="Account menu"
+                  >
+                    {profile?.avatarUrl ? (
+                      <img
+                        src={profile.avatarUrl}
+                        alt=""
+                        className="h-9 w-9 rounded-full object-cover"
+                      />
+                    ) : (
+                      <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
+                        {avatar}
+                      </div>
+                    )}
+                  </button>
+                )}
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-48">
                 {role === "learner" && (
