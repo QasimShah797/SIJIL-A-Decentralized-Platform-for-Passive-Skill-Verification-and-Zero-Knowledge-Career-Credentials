@@ -373,7 +373,6 @@ export function LearnerWorkspaceShell({
   const isDark = variant === "dashboard";
   const groups = isDark ? dashboardNav() : profileNav();
   const decayCount = getDecayingSkills(skills).length;
-  const didShort = profile?.did ? `${profile.did.slice(0, 12)}…${profile.did.slice(-4)}` : "";
 
   const handleSignOut = () => {
     void signOut().then(() => navigate("/"));
@@ -464,10 +463,6 @@ export function LearnerWorkspaceShell({
                   {decayCount}
                 </span>
               </button>
-            )}
-
-            {!isDark && didShort && (
-              <span className="mono hidden text-xs text-[#64748b] md:inline">{didShort}</span>
             )}
 
             {isDark && profile && (

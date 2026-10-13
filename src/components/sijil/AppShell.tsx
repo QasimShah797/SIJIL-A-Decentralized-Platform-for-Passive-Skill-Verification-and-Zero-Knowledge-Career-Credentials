@@ -209,8 +209,6 @@ export function AppShell({
     role === "learner"
       ? (profile?.avatar ?? "?")
       : (recruiterProfile?.initials ?? user?.email?.slice(0, 2).toUpperCase() ?? "RC");
-  const didShort = profile?.did ? `${profile.did.slice(0, 12)}…${profile.did.slice(-4)}` : "";
-
   const handleSignOut = () => {
     void signOut().then(() =>
       navigate(role === "recruiter" ? "/login/recruiter" : "/"),
@@ -302,9 +300,6 @@ export function AppShell({
                   {decayCount}
                 </span>
               </button>
-            )}
-            {didShort && (
-              <span className="mono hidden rounded-full border border-border/70 bg-muted/70 px-2.5 py-1 text-[11px] text-muted-foreground md:inline">{didShort}</span>
             )}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>

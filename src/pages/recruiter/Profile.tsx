@@ -6,6 +6,7 @@ import {
   Building2,
   Calendar,
   Camera,
+  Copy,
   Globe,
   Link2,
   Lock,
@@ -28,11 +29,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/hooks/useAuth";
+import { useLearnerProfile } from "@/hooks/useLearnerData";
 import { useCandidates } from "@/hooks/useCandidates";
 import { RECRUITER_PROFILE_UPDATED, useRecruiterProfile } from "@/hooks/useRecruiterProfile";
 import { toast } from "@/hooks/use-toast";
 import { listInterviewsApi } from "@/services/api/interview.api";
-import { formatProfileDate } from "@/components/learner/ProfilePagePanels";
+import { formatProfileDate, shortDid } from "@/components/learner/ProfilePagePanels";
 import {
   hiringFocusTags,
   normalizeOptionalWebsite,
@@ -138,6 +140,7 @@ function isUpcoming(scheduledAt: string, status: string) {
 export default function RecruiterProfile() {
   const { user } = useAuth();
   const { profile, loading, error, refresh } = useRecruiterProfile();
+  const { profile: identity } = useLearnerProfile();
   const { candidates } = useCandidates();
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -295,8 +298,8 @@ export default function RecruiterProfile() {
   return (
     <AppShell role="recruiter" contentClassName="!max-w-none flex min-h-0 flex-col p-0">
       <div className="learner-shell-dashboard flex min-h-[calc(100vh-3.5rem)] flex-1 flex-col lg:flex-row">
-        <div className="min-w-0 flex-1 p-4 sm:p-6 lg:p-8">
-          <div id="profile-top" className="space-y-6">
+        <div className="min-w-0 flex-1 px-4 pb-6 pt-3 sm:px-6 lg:px-8 lg:pb-8 lg:pt-4">
+          <div id="profile-top" className="space-y-3">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div>
                 <h1 className="text-2xl font-bold text-[#023E8A] sm:text-[1.65rem]">My Profile</h1>
@@ -305,9 +308,6 @@ export default function RecruiterProfile() {
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-                <span className="mono flex items-center gap-1.5 rounded-lg border border-[#e2e8f0] bg-white px-3 py-1.5 text-xs text-[#64748b]">
-                  Since {formatProfileDate(profile.createdAt)}
-                </span>
                 {editing ? (
                   <>
                     <Button variant="outline" className="rounded-xl" onClick={cancelEdit} disabled={busy}>
@@ -326,7 +326,7 @@ export default function RecruiterProfile() {
             </div>
 
             <div className="learner-stat-card p-6">
-              <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
                   <div className="relative mx-auto sm:mx-0">
                     {avatarPreviewUrl || profile.avatarUrl ? (
@@ -380,6 +380,20 @@ export default function RecruiterProfile() {
                     <p className="mt-2 text-xs text-[#64748b]">Member since {formatProfileDate(profile.createdAt)}</p>
                   </div>
                 </div>
+                <div className="flex flex-col gap-4 lg:items-end">
+                  {identity?.did ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void navigator.clipboard.writeText(identity.did);
+                        toast({ title: "DID copied to clipboard" });
+                      }}
+                      className="mono flex items-center gap-1.5 self-end rounded-lg border border-[#e2e8f0] bg-white px-3 py-1.5 text-xs text-[#64748b] hover:text-[#023E8A]"
+                    >
+                      DID: {shortDid(identity.did)}
+                      <Copy className="h-3 w-3 shrink-0" />
+                    </button>
+                  ) : null}
                 <div className="grid grid-cols-2 gap-4 border-t border-[#e2e8f0] pt-4 sm:grid-cols-4 lg:border-t-0 lg:pt-0">
                   {[
                     { label: "Directory", value: String(candidates.length) },
@@ -392,6 +406,7 @@ export default function RecruiterProfile() {
                       <p className="text-xs text-[#64748b]">{label}</p>
                     </div>
                   ))}
+                </div>
                 </div>
               </div>
             </div>
@@ -582,7 +597,7 @@ export default function RecruiterProfile() {
           </div>
         </div>
 
-        <aside className="w-full shrink-0 space-y-4 border-t border-[#e2e8f0] bg-[#f8fafc] p-4 sm:p-6 lg:w-[320px] lg:border-l lg:border-t-0 lg:p-6">
+        <aside className="w-full shrink-0 space-y-4 border-t border-[#e2e8f0] bg-[#f8fafc] px-4 pb-4 pt-3 sm:px-6 lg:w-[320px] lg:border-l lg:border-t-0 lg:p-6 lg:pt-4">
           <RecruiterProfileRightRail profile={profile} />
         </aside>
       </div>
