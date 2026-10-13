@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { fetchCandidates, fetchCandidateSkillsMap, mergeCandidateLists, applyCandidateCardFields, fetchCandidateCardFieldsByIds, coalesceCandidateText, type CandidateView } from "@/lib/db/candidates";
+import { fetchCandidates, fetchCandidateSkillsMap, mergeCandidateLists, applyCandidateCardFields, fetchCandidateCardFieldsByIds, coalesceCandidateText, latestTimestamp, type CandidateView } from "@/lib/db/candidates";
 import { apiRequest, isApiEnabled } from "@/services/api/client";
 import { getCandidateProfileFieldsApi } from "@/services/api/recruiter.api";
 import type { CandidateSkill } from "@/lib/sijil-data";
@@ -56,6 +56,7 @@ export function useCandidates() {
           skillEvidence: fallback.skillEvidence?.length
             ? fallback.skillEvidence
             : candidate.skillEvidence,
+          sharedAt: latestTimestamp(candidate.sharedAt, fallback.sharedAt),
         };
       });
 

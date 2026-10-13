@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils";
 import { Role, getDecayingSkills } from "@/lib/sijil-data";
 import { useAuth } from "@/hooks/useAuth";
 import { useLearnerProfile, useDeclaredSkills } from "@/hooks/useLearnerData";
+import { useRecruiterProfile } from "@/hooks/useRecruiterProfile";
 import { ThemeToggle } from "@/components/sijil/ThemeToggle";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import {
@@ -40,6 +41,10 @@ const recruiterNavGroups: NavGroup[] = [
       { to: "/recruiter/search", icon: LayoutDashboard, label: "Dashboard", mobileTab: true },
       { to: "/recruiter/interviews", icon: CalendarClock, label: "Interviews", mobileTab: true },
     ],
+  },
+  {
+    label: "Profile",
+    items: [{ to: "/recruiter/profile", icon: UserCircle, label: "My Profile" }],
   },
   {
     label: "Review",
@@ -171,11 +176,20 @@ function SidebarBrand() {
   );
 }
 
-export function AppShell({ role, children }: { role: Role; children: React.ReactNode }) {
+export function AppShell({
+  role,
+  children,
+  contentClassName,
+}: {
+  role: Role;
+  children: React.ReactNode;
+  contentClassName?: string;
+}) {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const { user, signOut } = useAuth();
   const { profile } = useLearnerProfile();
+  const { profile: recruiterProfile } = useRecruiterProfile(role === "recruiter");
   const { skills } = useDeclaredSkills();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const roleLabel = role === "learner" ? "Learner" : "Recruiter";
@@ -192,7 +206,7 @@ export function AppShell({ role, children }: { role: Role; children: React.React
   const avatar =
     role === "learner"
       ? (profile?.avatar ?? "?")
-      : (user?.email?.slice(0, 2).toUpperCase() ?? "RC");
+      : (recruiterProfile?.initials ?? user?.email?.slice(0, 2).toUpperCase() ?? "RC");
   const didShort = profile?.did ? `${profile.did.slice(0, 12)}…${profile.did.slice(-4)}` : "";
 
   const handleSignOut = () => {
@@ -303,6 +317,12 @@ export function AppShell({ role, children }: { role: Role; children: React.React
                       alt=""
                       className="h-9 w-9 rounded-full object-cover"
                     />
+                  ) : role === "recruiter" && recruiterProfile?.avatarUrl ? (
+                    <img
+                      src={recruiterProfile.avatarUrl}
+                      alt=""
+                      className="h-9 w-9 rounded-full object-cover"
+                    />
                   ) : (
                     <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
                       {avatar}
@@ -323,6 +343,14 @@ export function AppShell({ role, children }: { role: Role; children: React.React
                     <DropdownMenuSeparator />
                   </>
                 )}
+                {role === "recruiter" && (
+                  <>
+                    <DropdownMenuItem onClick={() => navigate("/recruiter/profile")}>
+                      My Profile
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                  </>
+                )}
                 <DropdownMenuItem onClick={handleSignOut} className="text-destructive focus:text-destructive">
                   <LogOut className="mr-2 h-4 w-4" />
                   Sign out
@@ -331,7 +359,7 @@ export function AppShell({ role, children }: { role: Role; children: React.React
             </DropdownMenu>
           </div>
         </header>
-        <div className="workspace-content flex-1 animate-fade-in p-4 sm:p-6 lg:p-8">{children}</div>
+        <div className={cn("workspace-content flex-1 animate-fade-in p-4 sm:p-6 lg:p-8", contentClassName)}>{children}</div>
       </main>
 
       <MobileBottomTabs items={mobileTabItems} pathname={pathname} />

@@ -2,97 +2,131 @@ import { Building2, ShieldCheck, Users, Wallet } from "lucide-react";
 import type { CandidateView } from "@/lib/db/candidates";
 import { cn } from "@/lib/utils";
 
-const tones = {
-  blue: "bg-info-soft text-info",
-  emerald: "bg-success-soft text-success",
-  violet: "bg-violet-soft text-violet",
-  amber: "bg-warning-soft text-warning",
-} as const;
+const SPARKLINE_SERIES = [
+  {
+    stroke: "#2dd4bf",
+    fill: "rgba(45, 212, 191, 0.2)",
+    curve: "M0 29 C10 29 18 22 28 24 S48 28 58 20 S78 12 88 15 S108 9 120 11",
+  },
+  {
+    stroke: "#34d399",
+    fill: "rgba(52, 211, 153, 0.18)",
+    curve: "M0 27 C12 27 20 31 32 25 S52 19 62 23 S82 17 92 14 S110 18 120 13",
+  },
+  {
+    stroke: "#22d3ee",
+    fill: "rgba(34, 211, 238, 0.18)",
+    curve: "M0 31 C14 29 22 23 34 25 S54 19 66 21 S86 13 98 16 S112 10 120 12",
+  },
+  {
+    stroke: "#fbbf24",
+    fill: "rgba(251, 191, 36, 0.16)",
+    curve: "M0 25 C11 23 22 29 36 23 S56 17 68 21 S88 15 100 19 S114 14 120 17",
+  },
+];
+
+const iconTints = [
+  "bg-[#e8eef7] text-[#023E8A]",
+  "bg-[#ecfdf5] text-[#059669]",
+  "bg-[#ecfeff] text-[#0891b2]",
+  "bg-[#fef9c3] text-[#ca8a04]",
+];
+
+function SparklineArea({ tint = 0 }: { tint?: number }) {
+  const series = SPARKLINE_SERIES[tint % SPARKLINE_SERIES.length];
+  const areaPath = `${series.curve} L120 40 L0 40 Z`;
+
+  return (
+    <svg viewBox="0 0 120 40" className="mt-3 h-11 w-full overflow-visible" preserveAspectRatio="none" aria-hidden>
+      <path d={areaPath} fill={series.fill} />
+      <path d={series.curve} fill="none" stroke={series.stroke} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
 
 function StatCard({
   label,
   value,
   hint,
   icon: Icon,
-  tone,
-  emphasized = false,
+  tint,
+  active,
+  onClick,
 }: {
   label: string;
   value: number;
   hint: string;
   icon: typeof Users;
-  tone: keyof typeof tones;
-  emphasized?: boolean;
+  tint: number;
+  active: boolean;
+  onClick: () => void;
 }) {
   return (
-    <div
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
       className={cn(
-        "rounded-2xl border px-5 py-5 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:shadow-lg",
-        emphasized
-          ? "border-transparent bg-[image:var(--gradient-primary)] text-sidebar-foreground shadow-md"
-          : "border-border/60 bg-card text-card-foreground",
+        "learner-stat-card p-5 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#023E8A]",
+        active && "ring-2 ring-[#023E8A]",
       )}
     >
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <p className={cn(
-            "text-[11px] font-semibold uppercase tracking-[0.16em]",
-            emphasized ? "text-sidebar-foreground/80" : "text-muted-foreground",
-          )}>
-            {label}
-          </p>
-          <p className="mt-3 text-4xl font-semibold tracking-tight">{value}</p>
-          <p className={cn("mt-2 text-xs", emphasized ? "text-sidebar-foreground/75" : "text-muted-foreground")}>{hint}</p>
-        </div>
-        <div className={cn(
-          "flex h-10 w-10 items-center justify-center rounded-xl",
-          emphasized ? "bg-white/15 text-sidebar-foreground" : tones[tone],
-        )}>
-          <Icon className="h-4 w-4" />
-        </div>
+      <div className={cn("flex h-10 w-10 items-center justify-center rounded-xl", iconTints[tint % iconTints.length])}>
+        <Icon className="h-5 w-5" />
       </div>
-    </div>
+      <p className="mt-4 text-2xl font-bold text-[#023E8A]">{value}</p>
+      <p className="text-sm font-medium text-[#334155]">{label}</p>
+      <p className="mt-0.5 text-xs text-[#64748b]">{hint}</p>
+      <SparklineArea tint={tint} />
+    </button>
   );
 }
 
-export function RecruiterDashboardStats({ candidates }: { candidates: CandidateView[] }) {
+export type RecruiterStatFilter = "all" | "verified" | "credentials" | "institutions";
+
+export function RecruiterDashboardStats({
+  candidates,
+  active,
+  onSelect,
+}: {
+  candidates: CandidateView[];
+  active: RecruiterStatFilter;
+  onSelect: (filter: RecruiterStatFilter) => void;
+}) {
   const verified = candidates.filter((candidate) => candidate.attestation === "Approved").length;
   const credentials = candidates.reduce((total, candidate) => total + (candidate.credentialCount ?? 0), 0);
   const institutions = new Set(
     candidates.map((candidate) => candidate.institution.trim()).filter((name) => name && name !== "—"),
   ).size;
 
+  const items: {
+    id: RecruiterStatFilter;
+    label: string;
+    value: number;
+    hint: string;
+    icon: typeof Users;
+    tint: number;
+  }[] = [
+    { id: "all", label: "Directory", value: candidates.length, hint: "Learners with shared profiles", icon: Users, tint: 0 },
+    { id: "verified", label: "Verified", value: verified, hint: "Institution attestation approved", icon: ShieldCheck, tint: 1 },
+    { id: "credentials", label: "Credentials", value: credentials, hint: "Active shared competency packs", icon: Wallet, tint: 2 },
+    { id: "institutions", label: "Institutions", value: institutions, hint: "Distinct campuses in view", icon: Building2, tint: 3 },
+  ];
+
   return (
-    <div className="mb-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-      <StatCard
-        icon={Users}
-        label="Directory"
-        value={candidates.length}
-        hint="Learners with shared profiles"
-        tone="blue"
-        emphasized
-      />
-      <StatCard
-        icon={ShieldCheck}
-        label="Verified"
-        value={verified}
-        hint="Institution attestation approved"
-        tone="emerald"
-      />
-      <StatCard
-        icon={Wallet}
-        label="Credentials"
-        value={credentials}
-        hint="Active shared competency packs"
-        tone="violet"
-      />
-      <StatCard
-        icon={Building2}
-        label="Institutions"
-        value={institutions}
-        hint="Distinct campuses in view"
-        tone="amber"
-      />
+    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      {items.map((item) => (
+        <StatCard
+          key={item.id}
+          icon={item.icon}
+          label={item.label}
+          value={item.value}
+          hint={item.hint}
+          tint={item.tint}
+          active={active === item.id}
+          onClick={() => onSelect(item.id)}
+        />
+      ))}
     </div>
   );
 }

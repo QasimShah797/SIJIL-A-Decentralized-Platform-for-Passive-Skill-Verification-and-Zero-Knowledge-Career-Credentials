@@ -54,8 +54,9 @@ export function RecruiterCandidateCard({
 
   return (
     <article
+      onClick={onOpenSummary}
       className={cn(
-        "group flex h-full w-full flex-col rounded-2xl border border-border/60 bg-card p-5 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:shadow-lg",
+        "group flex h-full w-full cursor-pointer flex-col rounded-2xl border border-border/60 bg-card p-5 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-lg",
         selected && "border-primary bg-primary/5 shadow-md",
         className,
       )}
@@ -63,12 +64,14 @@ export function RecruiterCandidateCard({
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
           {onSelectedChange && (
-            <Checkbox
-              checked={selected}
-              onCheckedChange={onSelectedChange}
-              aria-label="Select to compare"
-              className="h-5 w-5 rounded-md border-primary"
-            />
+            <div onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
+              <Checkbox
+                checked={selected}
+                onCheckedChange={onSelectedChange}
+                aria-label="Select to compare"
+                className="h-5 w-5 rounded-md border-primary"
+              />
+            </div>
           )}
           <CandidateAvatar
             name={candidate.name}
@@ -130,7 +133,7 @@ export function RecruiterCandidateCard({
             <dd><span className="font-semibold text-foreground">{getEvidenceStats(candidate).evidenceTotal}</span> evidence</dd>
           </div>
         </dl>
-        <Button size="sm" className="rounded-xl focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2" onClick={onOpenSummary}>
+        <Button size="sm" className="rounded-xl focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2" onClick={(event) => { event.stopPropagation(); onOpenSummary(); }}>
           Review <ArrowRight className="ml-1 h-3.5 w-3.5 transition-transform duration-200 group-hover:translate-x-0.5" />
         </Button>
       </div>

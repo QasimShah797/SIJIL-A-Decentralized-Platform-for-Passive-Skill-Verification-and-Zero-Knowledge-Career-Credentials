@@ -97,6 +97,212 @@ export function sourceMix(reviews: PeerReview[]): SourceSlice[] {
     }));
 }
 
+export type ReviewMeasure = {
+  id: string;
+  label: string;
+  value: string;
+  detail: string;
+};
+
+export type ReviewGlanceStat = {
+  id: string;
+  label: string;
+  value: string;
+  suffix?: string;
+};
+
+export type ReviewGlance = {
+  headline: string;
+  stats: ReviewGlanceStat[];
+};
+
+function reviewRating(review: PeerReview): number | null {
+  const raw = (review as PeerReview & Record<string, unknown>).rating;
+  const value = typeof raw === "number" ? raw : Number(raw);
+  if (!Number.isFinite(value) || value < 1 || value > 5) return null;
+  return value;
+}
+
+function reviewerKey(review: PeerReview): string {
+  const extra = review as PeerReview & Record<string, unknown>;
+  const name = review.reviewerName
+    || (typeof extra.reviewer_name === "string" ? extra.reviewer_name : "");
+  return name.trim().toLowerCase() || review.id;
+}
+
+function daysSince(date: Date): string {
+  const days = Math.floor((Date.now() - date.getTime()) / 86_400_000);
+  if (days <= 0) return "Today";
+  if (days === 1) return "Yesterday";
+  if (days < 30) return `${days} days ago`;
+  return date.toLocaleDateString();
+}
+
+/** One-line status plus a few figures, without repeating the same story in every cell. */
+export function reviewGlance(
+  reviews: PeerReview[],
+  coverage: CoverageStats,
+  invitations: ReviewInvitation[],
+): ReviewGlance {
+  const ratings = reviews.map(reviewRating).filter((value): value is number => value != null);
+  const average = ratings.length
+    ? (ratings.reduce((sum, value) => sum + value, 0) / ratings.length).toFixed(1)
+    : null;
+  const withRecommendation = reviews.filter((review) => Boolean(review.recommendation));
+  const recommended = withRecommendation.filter((review) => review.recommendation === "Recommended").length;
+  const highTrust = reviews.filter((review) => review.trustWeight === "High Trust").length;
+  const asked = coverage.reviewed + coverage.invited;
+  const quiet = invitations.filter(
+    (invitation) => invitation.status !== "Completed" && isStaleInvite(invitation.sentAt),
+  ).length;
+
+  let headline = "No reviews yet.";
+  if (reviews.length === 0 && asked === 0) {
+    headline = "No reviews yet. Invite a contributor to start.";
+  } else if (asked > 0 && average) {
+    headline = `${coverage.reviewed} of ${asked} invited people replied, averaging ${average}/5.`;
+  } else if (asked > 0) {
+    headline = `${coverage.reviewed} of ${asked} invited people replied.`;
+  } else if (average) {
+    headline = `${reviews.length} reviews on file, averaging ${average}/5.`;
+  } else if (reviews.length > 0) {
+    headline = `${reviews.length} reviews on file.`;
+  }
+
+  return {
+    headline,
+    stats: [
+      {
+        id: "reply",
+        label: "Replied",
+        value: asked === 0 ? "—" : `${coverage.reviewed}/${asked}`,
+      },
+      {
+        id: "score",
+        label: "Score",
+        value: average ?? "—",
+        suffix: average ? "/5" : undefined,
+      },
+      {
+        id: "recommend",
+        label: "Recommended",
+        value: withRecommendation.length === 0 ? "—" : `${recommended}/${withRecommendation.length}`,
+      },
+      {
+        id: "trust",
+        label: "High trust",
+        value: reviews.length === 0 ? "—" : `${highTrust}/${reviews.length}`,
+      },
+      {
+        id: "quiet",
+        label: "No reply",
+        value: String(quiet),
+      },
+    ],
+  };
+}
+
+/** Plain counts that explain what the review set is actually showing. */
+export function reviewMeasures(
+  reviews: PeerReview[],
+  coverage: CoverageStats,
+  invitations: ReviewInvitation[],
+): ReviewMeasure[] {
+  const ratings = reviews.map(reviewRating).filter((value): value is number => value != null);
+  const average = ratings.length
+    ? (ratings.reduce((sum, value) => sum + value, 0) / ratings.length).toFixed(1)
+    : null;
+  const withRecommendation = reviews.filter((review) => Boolean(review.recommendation));
+  const recommended = withRecommendation.filter((review) => review.recommendation === "Recommended").length;
+  const verified = reviews.filter((review) => review.contextStatus === "Context Verified").length;
+  const highTrust = reviews.filter((review) => review.trustWeight === "High Trust").length;
+  const reviewers = new Set(reviews.map(reviewerKey)).size;
+  const skills = new Set(reviews.map((review) => review.skill).filter(Boolean)).size;
+  const latest = reviews.map(asDate).sort((a, b) => b.getTime() - a.getTime())[0];
+  const eligible = Math.max(0, coverage.total - coverage.ineligible);
+  const asked = coverage.reviewed + coverage.invited;
+  const quiet = invitations.filter(
+    (invitation) => invitation.status !== "Completed" && isStaleInvite(invitation.sentAt),
+  ).length;
+
+  return [
+    {
+      id: "reply",
+      label: "Reply rate",
+      value: asked === 0 ? "—" : `${coverage.reviewed} of ${asked}`,
+      detail: asked === 0
+        ? "No contributor on this project has been invited yet."
+        : `${coverage.reviewed} invited ${coverage.reviewed === 1 ? "person replied" : "people replied"}. ${coverage.invited} still waiting.`,
+    },
+    {
+      id: "verified",
+      label: "Context verified",
+      value: reviews.length === 0 ? "—" : `${verified} of ${reviews.length}`,
+      detail: "Reviews tied to a confirmed project and a real contributor, not an anonymous note.",
+    },
+    {
+      id: "score",
+      label: "Average score",
+      value: average ? `${average} / 5` : "—",
+      detail: ratings.length
+        ? `Mean rating across ${ratings.length} scored ${ratings.length === 1 ? "review" : "reviews"}.`
+        : "No numeric ratings have been submitted yet.",
+    },
+    {
+      id: "recommend",
+      label: "Recommended",
+      value: withRecommendation.length === 0 ? "—" : `${recommended} of ${withRecommendation.length}`,
+      detail: "Reviewers who said the skill is strong enough to stand on.",
+    },
+    {
+      id: "trust",
+      label: "High trust",
+      value: reviews.length === 0 ? "—" : `${highTrust} of ${reviews.length}`,
+      detail: "From a teacher, mentor, teammate, or verified project collaborator.",
+    },
+    {
+      id: "coverage",
+      label: "Project coverage",
+      value: eligible === 0 ? "—" : `${coverage.reviewed} of ${eligible}`,
+      detail: eligible === 0
+        ? "This project has no eligible contributors yet."
+        : `${coverage.pending} still need an invite. ${coverage.invited} are waiting on a reply.`,
+    },
+    {
+      id: "people",
+      label: "Distinct reviewers",
+      value: String(reviewers),
+      detail: reviewers === 0
+        ? "No one has written a review yet."
+        : `${reviewers} different ${reviewers === 1 ? "person has" : "people have"} reviewed this work.`,
+    },
+    {
+      id: "skills",
+      label: "Skills attested",
+      value: String(skills),
+      detail: skills === 0
+        ? "No declared skill has a review yet."
+        : `${skills} ${skills === 1 ? "competency has" : "competencies have"} at least one review.`,
+    },
+    {
+      id: "latest",
+      label: "Last review",
+      value: latest ? daysSince(latest) : "—",
+      detail: latest
+        ? `The newest review arrived ${daysSince(latest).toLowerCase()}.`
+        : "Nothing has been submitted yet.",
+    },
+    {
+      id: "quiet",
+      label: "Quiet invites",
+      value: String(quiet),
+      detail: quiet === 0
+        ? "No invite has gone unanswered for 7 days."
+        : `${quiet} ${quiet === 1 ? "invite has" : "invites have"} had no reply for 7 days or more.`,
+    },
+  ];
+}
+
 export function reviewsByWeek(reviews: PeerReview[], weeks = 8): WeekPoint[] {
   const start = startOfWeek(subWeeks(new Date(), weeks - 1), { weekStartsOn: 1 });
   return Array.from({ length: weeks }, (_, index) => {

@@ -70,6 +70,7 @@ export interface CandidateView {
     reviews: number;
     practicalTask: "Submitted" | "Auto-Submitted" | "—";
   }[];
+  sharedAt?: string | null;
 }
 
 export interface CandidateDetailView extends CandidateView {
@@ -672,6 +673,10 @@ function buildCandidateFromShares(
     }),
     verifiedSkills: disclosedSkillNames(shares),
     skillEvidence: skillEvidenceFromShares(shares),
+    sharedAt: shares.reduce<string | null>((latest, item) => {
+      if (!latest) return item.createdAt;
+      return new Date(item.createdAt).getTime() > new Date(latest).getTime() ? item.createdAt : latest;
+    }, null),
   };
 }
 

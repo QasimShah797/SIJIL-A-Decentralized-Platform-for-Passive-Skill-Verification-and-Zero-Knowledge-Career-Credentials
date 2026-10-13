@@ -1,4 +1,4 @@
-import { Eye, Mail, RefreshCw } from "lucide-react";
+import { Eye, Mail, RefreshCw, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { ProjectContributor } from "@/lib/sijil-data";
@@ -59,7 +59,7 @@ function ContributorRowView({
           </div>
         )}
         <div className="min-w-0">
-          <p className="truncate font-medium text-[#0f172a]">{contributor.name}</p>
+          <p className="truncate font-semibold text-[#023E8A]">{contributor.name}</p>
           <p className="mt-0.5 truncate text-xs text-[#64748b]">
             {displayHandle ? `@${displayHandle}` : contributor.role}
           </p>
@@ -143,60 +143,54 @@ export function PeerReviewContributorsBoard({
     ? rows.filter((row) => contributorStory(row).group !== "skip")
     : visibleRows;
   const grouped = groupContributorRows(sourceRows);
-  const eligible = Math.max(1, coverage.total - coverage.ineligible);
-  const reviewedPct = Math.round((coverage.reviewed / eligible) * 100);
-  const waitingPct = Math.round((coverage.invited / eligible) * 100);
-  const pendingPct = Math.max(0, 100 - reviewedPct - waitingPct);
+  const eligible = Math.max(0, coverage.total - coverage.ineligible);
 
-  const sections: { key: "action" | "waiting" | "done" | "skip"; title: string }[] = [
-    { key: "action", title: "Needs you" },
-    { key: "waiting", title: "Waiting" },
-    { key: "done", title: "Reviewed" },
+  const sections: { key: "action" | "waiting" | "done" | "skip"; title: string; bar: string }[] = [
+    { key: "action", title: "Needs you", bar: "bg-[#023E8A]" },
+    { key: "waiting", title: "Waiting", bar: "bg-[#CA8A04]" },
+    { key: "done", title: "Reviewed", bar: "bg-[#059669]" },
   ];
 
   if (filter === "all" && groupContributorRows(rows).skip.length > 0) {
-    sections.push({ key: "skip", title: "Not eligible" });
+    sections.push({ key: "skip", title: "Not eligible", bar: "bg-[#94a3b8]" });
     grouped.skip = groupContributorRows(rows).skip;
   }
 
   return (
     <div id="peer-contributors" className="learner-stat-card overflow-hidden">
       <div className="border-b border-[#e2e8f0] px-5 py-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <p className="text-sm font-semibold text-[#023E8A]">Contributors</p>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#e8eef7] text-[#023E8A]">
+              <Users className="h-4 w-4" />
+            </span>
+            <p className="text-base font-semibold text-[#023E8A]">Contributors</p>
           </div>
           <p className="rounded-full bg-[#e8eef7] px-3 py-1 text-xs font-semibold text-[#023E8A]">
             {coverage.reviewed} of {eligible} reviewed
           </p>
         </div>
 
-        <div className="mt-4">
-          <div className="flex h-2.5 overflow-hidden rounded-full bg-[#e2e8f0]">
-            <div className="bg-[#059669] transition-all" style={{ width: `${reviewedPct}%` }} title="Reviewed" />
-            <div className="bg-[#f59e0b] transition-all" style={{ width: `${waitingPct}%` }} title="Waiting" />
-            <div className="bg-[#023E8A] transition-all" style={{ width: `${pendingPct}%` }} title="Needs invite" />
-          </div>
-          <div className="mt-3 grid gap-2 sm:grid-cols-3">
-            {([
-              { id: "pending" as const, label: "Needs invite", count: coverage.pending, color: "#023E8A" },
-              { id: "invited" as const, label: "Waiting", count: coverage.invited, color: "#d97706" },
-              { id: "reviewed" as const, label: "Reviewed", count: coverage.reviewed, color: "#059669" },
-            ]).map((step) => (
-              <button
-                key={step.id}
-                type="button"
-                onClick={() => onFilter(filter === step.id ? "all" : step.id)}
-                className={cn(
-                  "rounded-xl border px-3 py-2.5 text-left transition-colors",
-                  filter === step.id ? "border-[#023E8A] bg-[#eff6ff]" : "border-[#e2e8f0] bg-white hover:bg-[#f8fafc]",
-                )}
-              >
-                <p className="text-[10px] font-semibold uppercase tracking-wide text-[#64748b]">{step.label}</p>
-                <p className="mt-0.5 text-lg font-bold tabular-nums" style={{ color: step.color }}>{step.count}</p>
-              </button>
-            ))}
-          </div>
+        <div className="mt-4 grid gap-2 sm:grid-cols-3">
+          {([
+            { id: "pending" as const, label: "Needs invite", count: coverage.pending, tone: "border-[#bfdbfe] bg-[#f8fbff] text-[#023E8A]", on: "ring-2 ring-[#023E8A]/25" },
+            { id: "invited" as const, label: "Waiting", count: coverage.invited, tone: "border-[#fde68a] bg-[#fffbeb] text-[#CA8A04]", on: "ring-2 ring-[#CA8A04]/30" },
+            { id: "reviewed" as const, label: "Reviewed", count: coverage.reviewed, tone: "border-[#bbf7d0] bg-[#f0fdf4] text-[#059669]", on: "ring-2 ring-[#059669]/25" },
+          ]).map((step) => (
+            <button
+              key={step.id}
+              type="button"
+              onClick={() => onFilter(filter === step.id ? "all" : step.id)}
+              className={cn(
+                "rounded-xl border px-3 py-2.5 text-left transition-shadow",
+                step.tone,
+                filter === step.id && step.on,
+              )}
+            >
+              <p className="text-[10px] font-semibold uppercase tracking-wide opacity-80">{step.label}</p>
+              <p className="mt-0.5 text-lg font-bold tabular-nums">{step.count}</p>
+            </button>
+          ))}
         </div>
       </div>
 
@@ -214,8 +208,11 @@ export function PeerReviewContributorsBoard({
           if (!list.length) return null;
           return (
             <div key={section.key} className="border-t border-[#e2e8f0]">
-              <div className="flex items-center justify-between gap-3 bg-[#f8fafc] px-5 py-2">
-                <p className="text-xs font-semibold text-[#023E8A]">{section.title}</p>
+              <div className="flex items-center justify-between gap-3 bg-[#f8fafc] px-5 py-2.5">
+                <p className="flex items-center gap-2 text-xs font-semibold text-[#023E8A]">
+                  <span className={cn("h-2 w-2 rounded-full", section.bar)} />
+                  {section.title}
+                </p>
                 <span className="text-xs tabular-nums text-[#94a3b8]">{list.length}</span>
               </div>
               <div className="divide-y divide-[#f1f5f9]">

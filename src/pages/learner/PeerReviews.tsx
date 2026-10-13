@@ -9,17 +9,15 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Mail, Copy, Link as LinkIcon, ExternalLink } from "lucide-react";
+import { Mail, Copy, Link as LinkIcon, ExternalLink, MessageSquare } from "lucide-react";
 import {
   computeTrustSignals,
   type PeerReview, type ProjectContributor,
   type ReviewInvitation,
 } from "@/lib/sijil-data";
 import { useAuth } from "@/hooks/useAuth";
-import { useDeclaredSkills, useLearnerProfile } from "@/hooks/useLearnerData";
-import { shortDid } from "@/components/learner/ProfilePagePanels";
+import { useDeclaredSkills } from "@/hooks/useLearnerData";
 import {
-  PeerReviewsBreadcrumbBar,
   PeerReviewsHero,
   PeerReviewsStatsGrid,
   PeerReviewNextAction,
@@ -33,15 +31,12 @@ import {
   type ReviewFeedFilter,
 } from "@/components/peer-reviews/PeerReviewsPagePanels";
 import { PeerReviewContributorsBoard } from "@/components/peer-reviews/PeerReviewContributorsBoard";
-import { PeerReviewInsightsPanel } from "@/components/peer-reviews/PeerReviewsCharts";
 import {
   coverageFromRows,
   filterContributorRows,
   filterReviews,
   isStaleInvite,
   nextAction,
-  reviewsByWeek,
-  sourceMix,
   type ContributorViewFilter,
   type ReviewSort,
   type TrustFilter,
@@ -206,9 +201,7 @@ function contributorToInviteReviewer(
 export default function PeerReviewsPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { profile } = useLearnerProfile();
   const { skills: declaredSkills, loading: skillsLoading } = useDeclaredSkills();
-  const didShort = profile?.did ? shortDid(profile.did) : undefined;
   const [loading, setLoading] = useState(true);
   const [projects, setProjects] = useState<PeerReviewProject[]>([]);
   const [reviews, setReviews] = useState<PeerReview[]>([]);
@@ -243,7 +236,6 @@ export default function PeerReviewsPage() {
   const selectedProject = projects.find((p) => p.id === selectedProjectId);
   const [skillForProject, setSkillForProject] = useState<string>("");
   const [reviewFilter, setReviewFilter] = useState<ReviewFeedFilter>("all");
-  const [sourceName, setSourceName] = useState("all");
   const [trustFilter, setTrustFilter] = useState<TrustFilter>("all");
   const [reviewSearch, setReviewSearch] = useState("");
   const [reviewSort, setReviewSort] = useState<ReviewSort>("newest");
@@ -426,13 +418,11 @@ export default function PeerReviewsPage() {
     () => nextAction(contributorRows, reviews, invitations),
     [contributorRows, reviews, invitations],
   );
-  const sourceSlices = useMemo(() => sourceMix(reviews), [reviews]);
-  const weekPoints = useMemo(() => reviewsByWeek(reviews), [reviews]);
   const [focusedReviewId, setFocusedReviewId] = useState<string | null>(null);
 
   const visibleReviews = useMemo(
-    () => filterReviews(reviews, reviewFilter, trustFilter, reviewSearch, reviewSort, sourceName),
-    [reviews, reviewFilter, trustFilter, reviewSearch, reviewSort, sourceName],
+    () => filterReviews(reviews, reviewFilter, trustFilter, reviewSearch, reviewSort),
+    [reviews, reviewFilter, trustFilter, reviewSearch, reviewSort],
   );
 
   const pendingInviteCount = apiStats?.pendingInvites
@@ -856,8 +846,6 @@ export default function PeerReviewsPage() {
 
   return (
     <LearnerWorkspaceShell variant="dashboard">
-      <PeerReviewsBreadcrumbBar didShort={didShort} />
-
       {loading ? (
         <div className="mb-6"><PageSkeleton rows={4} /></div>
       ) : declaredSkills.length === 0 ? (
@@ -889,17 +877,6 @@ export default function PeerReviewsPage() {
             onInviteRemaining={() => void inviteRemaining()}
             onResendStale={() => void resendStale()}
             onImport={() => void importExisting()}
-          />
-          <PeerReviewInsightsPanel
-            points={weekPoints}
-            slices={sourceSlices}
-            activeSource={sourceName}
-            onSelectSource={(name) => {
-              setSourceName(name);
-              if (name === "all") setReviewFilter("all");
-              else if (name === "SIJIL") setReviewFilter("sijil");
-              else setReviewFilter("imported");
-            }}
           />
           <PeerReviewProjectToolbar
             projects={projects}
@@ -937,15 +914,13 @@ export default function PeerReviewsPage() {
                 ? "Invite a contributor or import from GitHub."
                 : "Try a different search or filter."}
               header={(
-                <div className="flex flex-col gap-3 border-b border-[#e2e8f0] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-                  <h2 className="text-sm font-semibold text-[#023E8A]">
+                <div className="flex flex-col gap-3 border-b border-[#e2e8f0] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+                  <h2 className="flex items-center gap-3 text-base font-semibold text-[#023E8A]">
+                    <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#e8eef7] text-[#023E8A]">
+                      <MessageSquare className="h-4 w-4" />
+                    </span>
                     Reviews
-                    <span className="ml-2 font-normal tabular-nums text-[#94a3b8]">{visibleReviews.length}</span>
-                    {sourceName !== "all" && (
-                      <span className="ml-2 rounded-full bg-[#e8eef7] px-2 py-0.5 text-[10px] font-medium text-[#023E8A]">
-                        {sourceName}
-                      </span>
-                    )}
+                    <span className="rounded-full bg-[#e8eef7] px-2.5 py-0.5 text-xs font-semibold tabular-nums">{visibleReviews.length}</span>
                   </h2>
                   <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
                     <ReviewFeedToolbar
@@ -956,10 +931,7 @@ export default function PeerReviewsPage() {
                     />
                     <ReviewFeedTabs
                       value={reviewFilter}
-                      onChange={(value) => {
-                        setReviewFilter(value);
-                        setSourceName("all");
-                      }}
+                      onChange={setReviewFilter}
                       counts={{
                         all: reviews.length,
                         imported: reviews.filter((review) => review.imported).length,

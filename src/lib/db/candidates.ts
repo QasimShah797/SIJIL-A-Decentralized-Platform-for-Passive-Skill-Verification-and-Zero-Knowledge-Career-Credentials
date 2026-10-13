@@ -36,6 +36,8 @@ export type CandidateView = {
   skillEvidence?: SkillEvidenceSignal[];
   evidenceStats?: EvidenceStats;
   skillStats?: SkillEvidenceStat[];
+  /** Latest active share time, when the directory row includes one. */
+  sharedAt?: string | null;
 };
 
 async function settle<T>(run: () => Promise<T>, fallback: T): Promise<T> {
@@ -60,6 +62,19 @@ function coalesceText(...values: (string | null | undefined)[]): string | null {
 
 function mergeSearchableSkills(...lists: (string[] | undefined)[]): string[] {
   return [...new Set(lists.flatMap((list) => list ?? []))];
+}
+
+export function latestTimestamp(...values: (string | null | undefined)[]): string | null {
+  let best: string | null = null;
+  let bestMs = -1;
+  for (const value of values) {
+    if (!value) continue;
+    const ms = new Date(value).getTime();
+    if (Number.isNaN(ms) || ms < bestMs) continue;
+    bestMs = ms;
+    best = value;
+  }
+  return best;
 }
 
 export function mergeCandidateLists(base: CandidateView[], extra: CandidateView[]): CandidateView[] {
@@ -88,6 +103,7 @@ export function mergeCandidateLists(base: CandidateView[], extra: CandidateView[
       evidence: Math.max(primary.evidence, secondary.evidence),
       reviews: Math.max(primary.reviews, secondary.reviews),
       attestation: primary.attestation !== "Pending" ? primary.attestation : secondary.attestation,
+      sharedAt: latestTimestamp(primary.sharedAt, secondary.sharedAt),
     });
   }
   return [...byId.values()].sort((a, b) => {
@@ -289,6 +305,7 @@ async function fetchCandidatesFromActiveShares(): Promise<CandidateView[]> {
         }),
         verifiedSkills: disclosedSkillNames(activeShares),
         skillEvidence: skillEvidenceFromShares(activeShares),
+        sharedAt: latestTimestamp(...activeShares.map((share) => share.createdAt)),
       };
     });
   } catch (error) {

@@ -1,10 +1,11 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Link } from "react-router-dom";
 import {
+  BadgeCheck,
   ChevronDown,
-  ChevronRight,
+  Clock,
   Download,
   ExternalLink,
+  FolderGit2,
   Github,
   GraduationCap,
   MessageSquare,
@@ -32,7 +33,6 @@ import type {
   ReviewSort,
   TrustFilter,
 } from "@/lib/peer-review-insights";
-import { PeerReviewCoverageMeter } from "@/components/peer-reviews/PeerReviewsCharts";
 
 export type ReviewFeedFilter = "all" | "imported" | "sijil";
 
@@ -79,27 +79,6 @@ export function PeerReviewStatusPill({
   );
 }
 
-export function PeerReviewsBreadcrumbBar({ didShort }: { didShort?: string }) {
-  return (
-    <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-      <nav className="flex flex-wrap items-center gap-1.5 text-xs text-[#64748b]">
-        <Link to="/learner/profile" className="hover:text-[#023E8A]">
-          Learner
-        </Link>
-        <ChevronRight className="h-3 w-3" aria-hidden />
-        <span>Identity</span>
-        <ChevronRight className="h-3 w-3" aria-hidden />
-        <span className="font-semibold text-[#023E8A]">Peer Reviews</span>
-      </nav>
-      {didShort ? (
-        <span className="mono rounded-lg border border-[#e2e8f0] bg-white px-2.5 py-1 text-[10px] text-[#64748b]">
-          {didShort}
-        </span>
-      ) : null}
-    </div>
-  );
-}
-
 export function PeerReviewsHero({
   onImport,
   importDisabled,
@@ -110,10 +89,13 @@ export function PeerReviewsHero({
   syncing?: boolean;
 }) {
   return (
-    <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+    <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
       <div>
-        <h1 className="text-2xl font-bold text-[#0f172a]">Peer Reviews</h1>
-        {syncing && <p className="mt-1 text-[11px] text-[#023E8A]">Syncing GitHub…</p>}
+        <h1 className="text-2xl font-bold text-[#023E8A] sm:text-[1.65rem]">Peer Reviews</h1>
+        <p className="mt-1 text-sm text-[#64748b]">
+          Reviews, invites, and contributor replies for your linked projects.
+        </p>
+        {syncing && <p className="mt-1 text-[11px] font-medium text-[#023E8A]">Syncing GitHub…</p>}
       </div>
       <Button
         variant="outline"
@@ -150,6 +132,8 @@ export function PeerReviewsStatsGrid({
       id: "total",
       label: "Reviews",
       value: String(total),
+      icon: MessageSquare,
+      iconClass: "bg-[#e8eef7] text-[#023E8A]",
       active: false,
       onClick: () => onSelectTrust("all"),
     },
@@ -157,6 +141,8 @@ export function PeerReviewsStatsGrid({
       id: "verified",
       label: "Verified",
       value: String(verifiedContext),
+      icon: ShieldCheck,
+      iconClass: "bg-[#ccfbf1] text-[#0f766e]",
       active: false,
       onClick: () => onSelectTrust("all"),
     },
@@ -164,6 +150,8 @@ export function PeerReviewsStatsGrid({
       id: "high",
       label: "High trust",
       value: String(highTrust),
+      icon: BadgeCheck,
+      iconClass: "bg-[#ecfdf5] text-[#059669]",
       active: activeTrust === "high",
       onClick: () => onSelectTrust(activeTrust === "high" ? "all" : "high"),
     },
@@ -171,27 +159,37 @@ export function PeerReviewsStatsGrid({
       id: "pending",
       label: "Pending",
       value: String(pending),
+      icon: Clock,
+      iconClass: "bg-[#fef9c3] text-[#CA8A04]",
       active: false,
       onClick: onFocusInvites,
     },
   ];
 
   return (
-    <div className="mb-5 grid grid-cols-2 gap-3 xl:grid-cols-4">
-      {items.map((item) => (
-        <button
-          key={item.id}
-          type="button"
-          onClick={item.onClick}
-          className={cn(
-            "learner-stat-card pr-stat-card px-4 py-3 text-left transition-shadow hover:shadow-md",
-            item.active && "ring-2 ring-[#023E8A]/20",
-          )}
-        >
-          <p className="text-[11px] text-[#64748b]">{item.label}</p>
-          <p className="mt-1 text-2xl font-bold text-[#023E8A]">{item.value}</p>
-        </button>
-      ))}
+    <div className="mb-6 grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-[#e2e8f0] bg-[#e2e8f0] shadow-[0_1px_2px_rgba(2,62,138,0.06)] sm:grid-cols-4">
+      {items.map((item) => {
+        const Icon = item.icon;
+        return (
+          <button
+            key={item.id}
+            type="button"
+            onClick={item.onClick}
+            className={cn(
+              "pr-stat-card flex items-center gap-3 bg-white px-5 py-4 text-left transition-colors hover:bg-[#f8fafc]",
+              item.active && "bg-[#eff6ff]",
+            )}
+          >
+            <span className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-xl", item.iconClass)}>
+              <Icon className="h-4 w-4" />
+            </span>
+            <span className="min-w-0">
+              <span className="block text-2xl font-bold leading-none text-[#023E8A]">{item.value}</span>
+              <span className="mt-1 block text-xs text-[#64748b]">{item.label}</span>
+            </span>
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -224,8 +222,8 @@ export function PeerReviewNextAction({
         : onImport;
 
   return (
-    <div className={cn("mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border px-4 py-3", tone)}>
-      <p className="text-sm font-medium text-[#0f172a]">{action.title}</p>
+    <div className={cn("mb-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3 shadow-sm", tone)}>
+      <p className="text-sm font-semibold text-[#023E8A]">{action.title}</p>
       <Button
         className="rounded-xl bg-[#023E8A] hover:bg-[#012A5C]"
         onClick={run}
@@ -288,8 +286,11 @@ export function PeerReviewProjectToolbar({
 }) {
   return (
     <div className="learner-stat-card mb-6 overflow-hidden">
-      <div className="border-b border-[#e2e8f0] px-5 py-4">
-        <p className="text-sm font-semibold text-[#023E8A]">Project</p>
+      <div className="flex items-center gap-3 border-b border-[#e2e8f0] px-5 py-4">
+        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#e8eef7] text-[#023E8A]">
+          <FolderGit2 className="h-4 w-4" />
+        </span>
+        <p className="text-base font-semibold text-[#023E8A]">Project</p>
       </div>
       <div className="grid gap-4 p-5 sm:grid-cols-2">
         <div>
@@ -347,7 +348,11 @@ export function PeerReviewProjectToolbar({
               </a>
             )}
           </div>
-          {coverage && <PeerReviewCoverageMeter coverage={coverage} />}
+          {coverage && (
+            <p className="text-xs text-[#64748b]">
+              {coverage.reviewed} of {Math.max(0, coverage.total - coverage.ineligible)} eligible contributors reviewed
+            </p>
+          )}
         </div>
       )}
     </div>
@@ -492,23 +497,32 @@ export function PeerReviewCard({
     : (r.projectName || "");
   const skillLabel = r.skill || "";
   const pullRequestNumber = typeof r.pull_request_number === "number" ? r.pull_request_number : null;
+  const rating = typeof r.rating === "number" && r.rating >= 1 && r.rating <= 5 ? r.rating : null;
+  const recommendation = typeof r.recommendation === "string" ? r.recommendation : null;
 
   return (
     <article id={`review-${r.id}`} className="scroll-mt-24">
       <button
         type="button"
         onClick={() => comment && setOpen((value) => !value)}
-        className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-[#f8fafc]"
+        className="flex w-full items-center gap-3 px-5 py-3.5 text-left hover:bg-[#f8fafc]"
       >
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#e8eef7] text-[11px] font-bold text-[#023E8A]">
           {peerReviewInitials(String(reviewerName))}
         </div>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium text-[#0f172a]">{reviewerName}</p>
-          <p className="truncate text-[11px] text-[#64748b]">
-            {[skillLabel, repositoryName, pullRequestNumber != null ? `PR #${pullRequestNumber}` : null]
-              .filter(Boolean)
-              .join(" · ")}
+          <p className="truncate text-sm font-semibold text-[#023E8A]">{reviewerName}</p>
+          <p className="mt-0.5 flex min-w-0 items-center gap-1.5">
+            {skillLabel ? (
+              <span className="shrink-0 rounded-full bg-[#e8eef7] px-2 py-0.5 text-[10px] font-semibold text-[#023E8A]">
+                {skillLabel}
+              </span>
+            ) : null}
+            <span className="truncate text-[11px] text-[#64748b]">
+              {[repositoryName, pullRequestNumber != null ? `PR #${pullRequestNumber}` : null]
+                .filter(Boolean)
+                .join(" · ")}
+            </span>
           </p>
         </div>
         <span className="hidden sm:inline-flex">
@@ -516,6 +530,16 @@ export function PeerReviewCard({
             {reviewSource}
           </PeerReviewStatusPill>
         </span>
+        {rating != null && (
+          <span className="shrink-0 text-xs font-semibold tabular-nums text-[#023E8A]">{rating}/5</span>
+        )}
+        {recommendation && (
+          <span className="hidden lg:inline-flex">
+            <PeerReviewStatusPill tone={recommendation === "Recommended" ? "verified" : "attention"}>
+              {recommendation}
+            </PeerReviewStatusPill>
+          </span>
+        )}
         <PeerReviewStatusPill tone={trustTone(r.trustWeight)}>
           {r.trustWeight === "High Trust" ? "High" : r.trustWeight === "Medium Trust" ? "Medium" : r.trustWeight ?? "—"}
         </PeerReviewStatusPill>
