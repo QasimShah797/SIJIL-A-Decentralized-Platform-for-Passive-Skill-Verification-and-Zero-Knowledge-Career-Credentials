@@ -68,4 +68,43 @@ describe("issuance gate", () => {
     });
     assert.equal(result.ok, true);
   });
+
+  it("allows a wallet-ready skill with GitHub supporting evidence", () => {
+    const result = evaluateIssuanceEligibility({
+      skillOwnerId: learnerA,
+      requestUserId: learnerA,
+      pipelineStage: PIPELINE_STAGE.WALLET_READY,
+      evidence: [{ source: "GitHub", title: "sijil", url: "https://github.com/org/sijil" }],
+    });
+    assert.equal(result.ok, true);
+  });
+
+  it("rejects GitHub evidence when the stored stage is not wallet-ready", () => {
+    const result = evaluateIssuanceEligibility({
+      skillOwnerId: learnerA,
+      requestUserId: learnerA,
+      pipelineStage: PIPELINE_STAGE.EVIDENCE_LINKED,
+      evidence: [{ source: "GitHub", title: "sijil", url: "https://github.com/org/sijil" }],
+    });
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.status, 409);
+      assert.match(result.message, /not verified or attested/i);
+    }
+  });
+
+  it("allows GitHub evidence with a nullable content_hash", () => {
+    const result = evaluateIssuanceEligibility({
+      skillOwnerId: learnerA,
+      requestUserId: learnerA,
+      pipelineStage: PIPELINE_STAGE.WALLET_READY,
+      evidence: [{
+        source: "GitHub",
+        title: "sijil",
+        url: "https://github.com/org/sijil",
+        contentHash: null,
+      }],
+    });
+    assert.equal(result.ok, true);
+  });
 });

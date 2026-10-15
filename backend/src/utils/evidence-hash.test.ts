@@ -54,6 +54,24 @@ describe("evidence content hashes", () => {
     assert.equal(evidenceHashesMatch([original], [live.hash]), false);
   });
 
+  it("treats a missing content_hash as metadata recompute, not tamper", () => {
+    const live = resolveLiveEvidenceHash({
+      content_hash: null,
+      source: "GitHub",
+      title: "sijil",
+      url: "https://github.com/org/sijil",
+    });
+    assert.equal(live.matchesStored, true);
+    assert.equal(
+      live.hash,
+      hashEvidenceMetadata({
+        source: "GitHub",
+        title: "sijil",
+        url: "https://github.com/org/sijil",
+      }),
+    );
+  });
+
   it("extracts the skill-evidence storage path from a public URL", () => {
     const path = skillEvidenceStoragePath(
       "https://example.supabase.co/storage/v1/object/public/skill-evidence/user-1/skill-1/file.pdf",
