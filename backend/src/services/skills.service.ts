@@ -17,6 +17,7 @@ import { githubSyncService } from "./github-sync.service";
 import { evidenceRecordsService } from "./evidence-records.service";
 import { evaluateSkillProjectMatch } from "../utils/evidence-matching";
 import { cleanupCompetencyRelatedData } from "./competency-cleanup.service";
+import { upsertLinkedGitHubReposForUser } from "./github-supporting-record.service";
 
 function parseBreakdown(row: Record<string, unknown>): Record<string, number> {
   const direct = row.language_breakdown;
@@ -193,10 +194,11 @@ export class SkillsService {
   }
 
   async update(userId: string, skillId: string, input: UpdateSkillInput): Promise<SkillView> {
-    const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    const patch: Record<string, unknown> = {};
     if (input.name !== undefined) patch.name = input.name;
     if (input.domain !== undefined) patch.domain = input.domain;
     if (input.description !== undefined) patch.description = input.description;
+    if (!Object.keys(patch).length) return this.getById(userId, skillId);
 
     const { data, error } = await supabaseService.client
       .from("declared_skills")
@@ -288,7 +290,6 @@ export class SkillsService {
         pipeline_stage: PIPELINE_STAGE.INSTITUTION_PENDING,
         status: "pending_institution_attestation",
         last_related_activity_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
       })
       .eq("user_id", userId)
       .eq("id", skillId);
@@ -307,6 +308,8 @@ export class SkillsService {
     const { data: skills, error: skillsError } = await query;
     if (skillsError) throw new AppError(skillsError.message, 500);
     if (!skills?.length) return;
+
+    await upsertLinkedGitHubReposForUser(userId, skillId);
 
     const [
       { data: githubRepos },
@@ -374,7 +377,6 @@ export class SkillsService {
               status: SKILL_STATUS.EVIDENCE_LINKED,
               pipeline_stage: PIPELINE_STAGE.EVIDENCE_LINKED,
               last_related_activity_at: now,
-              updated_at: now,
             })
             .eq("user_id", userId)
             .eq("id", skill.id);
@@ -391,7 +393,6 @@ export class SkillsService {
             .update({
               status: SKILL_STATUS.CLAIMED,
               pipeline_stage: PIPELINE_STAGE.DECLARED,
-              updated_at: now,
             })
             .eq("user_id", userId)
             .eq("id", skill.id);

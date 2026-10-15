@@ -265,7 +265,6 @@ export class CredentialsService {
         pipeline_stage: PIPELINE_STAGE.IN_WALLET,
         status: SKILL_STATUS.CREDENTIAL_ISSUED,
         last_credential_sync_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
       })
       .eq("user_id", userId)
       .eq("id", input.skillId);

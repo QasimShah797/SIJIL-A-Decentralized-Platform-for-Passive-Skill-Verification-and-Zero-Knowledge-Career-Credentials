@@ -17,6 +17,17 @@ function firstEnv(...keys: string[]): string | undefined {
   return undefined;
 }
 
+/** dotenv stores KEY= as ""; Zod .optional() accepts only undefined, not empty string. */
+function emptyToUndefined(val: unknown): unknown {
+  if (val === undefined || val === null) return undefined;
+  if (typeof val === "string" && val.trim() === "") return undefined;
+  if (typeof val === "string") return val.trim();
+  return val;
+}
+
+const optionalNonEmptyString = z.preprocess(emptyToUndefined, z.string().min(1).optional());
+const optionalEmail = z.preprocess(emptyToUndefined, z.string().email().optional());
+
 const booleanFromEnv = z.preprocess((val: unknown) => {
   if (val === true || val === false) return val;
   if (val === undefined || val === "") return false;
@@ -42,33 +53,33 @@ const envSchema = z.object({
   CORS_ORIGIN: z.string().default("http://localhost:8080,http://localhost:8081"),
   FRONTEND_URL: z.string().default("http://localhost:8080"),
   PRESENTATION_SIGNING_SECRET: z.string().min(32, "PRESENTATION_SIGNING_SECRET must be at least 32 characters"),
-  ISSUER_ED25519_PRIVATE_KEY: z.string().min(1).optional(),
-  ISSUER_ED25519_PUBLIC_KEY: z.string().min(1).optional(),
+  ISSUER_ED25519_PRIVATE_KEY: optionalNonEmptyString,
+  ISSUER_ED25519_PUBLIC_KEY: optionalNonEmptyString,
   SMTP_HOST: z.string().default("smtp.gmail.com"),
   SMTP_PORT: z.coerce.number().default(587),
-  SMTP_USER: z.string().email().optional(),
-  SMTP_PASS: z.string().min(1).optional(),
-  EMAIL_FROM: z.string().min(1).optional(),
-  GITHUB_OAUTH_CLIENT_ID: z.string().min(1).optional(),
-  GITHUB_OAUTH_CLIENT_SECRET: z.string().min(1).optional(),
-  APPLE_PASS_CERT: z.string().min(1).optional(),
-  APPLE_PASS_KEY: z.string().min(1).optional(),
-  APPLE_PASS_TYPE_ID: z.string().min(1).optional(),
-  APPLE_PASS_TEAM_ID: z.string().min(1).optional(),
-  APPLE_PASS_WWDR: z.string().min(1).optional(),
-  APPLE_PASS_KEY_PASSPHRASE: z.string().min(1).optional(),
-  GOOGLE_WALLET_ISSUER_ID: z.string().min(1).optional(),
-  GOOGLE_WALLET_SA_KEY: z.string().min(1).optional(),
+  SMTP_USER: optionalEmail,
+  SMTP_PASS: optionalNonEmptyString,
+  EMAIL_FROM: optionalNonEmptyString,
+  GITHUB_OAUTH_CLIENT_ID: optionalNonEmptyString,
+  GITHUB_OAUTH_CLIENT_SECRET: optionalNonEmptyString,
+  APPLE_PASS_CERT: optionalNonEmptyString,
+  APPLE_PASS_KEY: optionalNonEmptyString,
+  APPLE_PASS_TYPE_ID: optionalNonEmptyString,
+  APPLE_PASS_TEAM_ID: optionalNonEmptyString,
+  APPLE_PASS_WWDR: optionalNonEmptyString,
+  APPLE_PASS_KEY_PASSPHRASE: optionalNonEmptyString,
+  GOOGLE_WALLET_ISSUER_ID: optionalNonEmptyString,
+  GOOGLE_WALLET_SA_KEY: optionalNonEmptyString,
   FABRIC_ENABLED: booleanFromEnv,
-  FABRIC_PEER_ENDPOINT: z.string().min(1).optional(),
-  FABRIC_MSP_ID: z.string().min(1).optional(),
-  FABRIC_CHANNEL: z.string().min(1).optional(),
-  FABRIC_CHAINCODE: z.string().min(1).optional(),
-  FABRIC_CONTRACT_NAME: z.string().min(1).default("CredentialAnchor"),
-  FABRIC_CERT_PATH: z.string().min(1).optional(),
-  FABRIC_KEY_PATH: z.string().min(1).optional(),
-  FABRIC_TLS_CERT_PATH: z.string().min(1).optional(),
-  FABRIC_TLS_OVERRIDE_HOST: z.string().min(1).optional(),
+  FABRIC_PEER_ENDPOINT: optionalNonEmptyString,
+  FABRIC_MSP_ID: optionalNonEmptyString,
+  FABRIC_CHANNEL: optionalNonEmptyString,
+  FABRIC_CHAINCODE: optionalNonEmptyString,
+  FABRIC_CONTRACT_NAME: z.preprocess(emptyToUndefined, z.string().min(1).default("CredentialAnchor")),
+  FABRIC_CERT_PATH: optionalNonEmptyString,
+  FABRIC_KEY_PATH: optionalNonEmptyString,
+  FABRIC_TLS_CERT_PATH: optionalNonEmptyString,
+  FABRIC_TLS_OVERRIDE_HOST: optionalNonEmptyString,
   FABRIC_ANCHOR_INTERVAL_MS: z.coerce.number().int().positive().default(15_000),
   FABRIC_ANCHOR_BATCH_SIZE: z.coerce.number().int().positive().default(10),
   FABRIC_ANCHOR_MAX_ATTEMPTS: z.coerce.number().int().positive().default(8),

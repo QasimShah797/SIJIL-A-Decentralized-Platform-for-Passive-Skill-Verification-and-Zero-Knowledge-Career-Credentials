@@ -2,7 +2,7 @@
 # Bring up Fabric test-network (channel sijil) and deploy CredentialAnchor chaincode.
 set -euo pipefail
 
-FABRIC_VERSION="2.5.12"
+FABRIC_VERSION="2.5.15"
 CA_VERSION="1.5.15"
 CHANNEL_NAME="sijil"
 CC_NAME="credentialanchor"

@@ -68,7 +68,6 @@ export class EvidenceService {
         status: SKILL_STATUS.EVIDENCE_LINKED,
         pipeline_stage: PIPELINE_STAGE.EVIDENCE_LINKED,
         last_related_activity_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
       })
       .eq("user_id", userId)
       .eq("id", input.skillId);

@@ -95,10 +95,13 @@ type AttemptContext = {
 } | null | undefined;
 
 export function evidenceLabelForAttempt(stage: string, attempt: AttemptContext): string {
+  const passed = attempt?.status === "passed" || attempt?.passed === true;
+  if (passed && stage !== "wallet_ready" && stage !== "in_wallet") {
+    return "Practical task passed";
+  }
   if (stage !== "practical_task" || !attempt) {
     return evidenceLabelForStage(stage);
   }
-  if (attempt.status === "passed" || attempt.passed) return "Practical task passed";
   if (attempt.status === "submitted" || attempt.status === "auto_submitted") {
     return "Practical task submitted";
   }
@@ -107,10 +110,11 @@ export function evidenceLabelForAttempt(stage: string, attempt: AttemptContext):
 }
 
 export function nextStepForAttempt(stage: string, attempt: AttemptContext): string {
+  const passed = attempt?.status === "passed" || attempt?.passed === true;
+  if (passed && stage !== "wallet_ready" && stage !== "in_wallet") {
+    return "Link qualifying GitHub evidence before this competency can be issued";
+  }
   if (stage === "practical_task" && attempt) {
-    if (attempt.status === "passed" || attempt.passed) {
-      return nextStepForStage("wallet_ready");
-    }
     if (attempt.status === "submitted" || attempt.status === "auto_submitted") {
       return "Awaiting practical task evaluation";
     }
@@ -152,8 +156,12 @@ export function resolveEffectivePipelineStage(
 ): PipelineStage {
   const stored = (skill.pipelineStage ?? "declared") as PipelineStage;
 
+  // Wallet-ready is a backend eligibility state, never inferred from a passed attempt.
   if (opts.inWallet || stored === "in_wallet") return "in_wallet";
   if (stored === "wallet_ready") return "wallet_ready";
+  void opts.attemptPassed;
+  void opts.attestationStatus;
+
   if (
     stored === "institution_attestation_rejected" ||
     stored === "institution_rejected" ||
@@ -162,14 +170,11 @@ export function resolveEffectivePipelineStage(
     return "practical_task";
   }
   if (stored === "institution_attestation_pending" || stored === "verification_pending") {
-    return opts.attemptPassed ? "wallet_ready" : "peer_review";
+    return stored;
   }
+  if (stored === "peer_review") return "peer_review";
+  if (stored === "practical_task") return "practical_task";
 
-  if (opts.attestationStatus === "approved" || opts.attestationStatus === "Attestation Approved") {
-    return "wallet_ready";
-  }
-
-  if (opts.attemptPassed) return "wallet_ready";
   if (opts.attemptInProgress) return "practical_task";
   if (opts.peerReviewCount && opts.peerReviewCount > 0) return "peer_review";
   if (opts.hasEvidence || stored === "evidence_linked") return "evidence_linked";
