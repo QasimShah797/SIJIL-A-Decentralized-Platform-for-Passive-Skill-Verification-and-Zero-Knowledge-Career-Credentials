@@ -96,7 +96,6 @@ type ShareRow = {
 type ContextCandidate = {
   id: string;
   name: string;
-  campus: string;
   approval: string;
   skills: string[];
   credentials: number;
@@ -132,7 +131,6 @@ function buildCandidate(id: string, shares: ShareRow[], profile: Record<string, 
   return {
     id,
     name: (asText(profile?.full_name) ?? "Learner").slice(0, 80),
-    campus: (asText(profile?.institution_name) ?? "—").slice(0, 80),
     approval,
     skills: [...skills.values()].slice(0, 12),
     ...(() => {
@@ -351,13 +349,13 @@ Deno.serve(async (req) => {
         candidates: [],
         comparison: null,
         notDisclosed: [],
-        followUps: ["Who has shared a credential?", "Show learners from a campus"],
+        followUps: ["Who has shared a credential?", "Who has the strongest verified evidence?"],
       });
     }
 
     const { data: profiles } = await userClient
       .from("learner_profiles")
-      .select("user_id, full_name, institution_name")
+      .select("user_id, full_name")
       .in("user_id", learnerIds);
     const profileById = new Map((profiles ?? []).map((row) => [String(row.user_id), row as Record<string, unknown>]));
     const context = learnerIds.map((id) => buildCandidate(id, byLearner.get(id) ?? [], profileById.get(id), question));
@@ -371,7 +369,7 @@ Rules:
 1. Use only this context. If a fact is absent, list it in notDisclosed. Never invent skills, scores, employers, or dates.
 2. evidenceTotal, verified, and corroborating are the candidate totals. matchedVerified and matchedCorroborating are evidence on skills that match the question. evidenceTotal equals verified plus corroborating. Copy basis.evidence from evidenceTotal and basis.verifiedEvidence from verified. Do not treat commits or files as evidence.
 3. For rankings, set rank starting at 1. The headline names who has the strongest shared evidence and the skills that drove it. Do not mention teachers or an Evidence Profile.
-4. Refuse criteria about name, gender, ethnicity, religion, age, appearance, or campus. Rank only on disclosed skills and evidence. Use the name only to identify the person.
+4. Refuse criteria about name, gender, ethnicity, religion, age, appearance, campus, or institution. Rank only on disclosed skills and evidence. Use the name only to identify the person.
 5. Be concise and neutral. You support a human decision; you do not make the hiring decision.
 6. candidate ids must be copied from the context. intent is one of compare, find, rank, gap, summary, other.
 7. followUps has at most 3 short questions. Do not add fields outside the schema.

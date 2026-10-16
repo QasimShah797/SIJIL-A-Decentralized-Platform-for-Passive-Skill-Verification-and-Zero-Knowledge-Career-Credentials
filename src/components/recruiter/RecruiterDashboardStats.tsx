@@ -1,4 +1,4 @@
-import { Building2, ShieldCheck, Users, Wallet } from "lucide-react";
+import { ShieldCheck, Users, Wallet } from "lucide-react";
 import type { CandidateView } from "@/lib/db/candidates";
 import { cn } from "@/lib/utils";
 
@@ -82,7 +82,7 @@ function StatCard({
   );
 }
 
-export type RecruiterStatFilter = "all" | "verified" | "credentials" | "institutions";
+export type RecruiterStatFilter = "all" | "verified" | "credentials";
 
 export function RecruiterDashboardStats({
   candidates,
@@ -95,9 +95,6 @@ export function RecruiterDashboardStats({
 }) {
   const verified = candidates.filter((candidate) => candidate.attestation === "Approved").length;
   const credentials = candidates.reduce((total, candidate) => total + (candidate.credentialCount ?? 0), 0);
-  const institutions = new Set(
-    candidates.map((candidate) => candidate.institution.trim()).filter((name) => name && name !== "—"),
-  ).size;
 
   const items: {
     id: RecruiterStatFilter;
@@ -108,13 +105,12 @@ export function RecruiterDashboardStats({
     tint: number;
   }[] = [
     { id: "all", label: "Directory", value: candidates.length, hint: "Learners with shared profiles", icon: Users, tint: 0 },
-    { id: "verified", label: "Verified", value: verified, hint: "Institution attestation approved", icon: ShieldCheck, tint: 1 },
+    { id: "verified", label: "Verified", value: verified, hint: "Learners with approved credentials", icon: ShieldCheck, tint: 1 },
     { id: "credentials", label: "Credentials", value: credentials, hint: "Active shared competency packs", icon: Wallet, tint: 2 },
-    { id: "institutions", label: "Institutions", value: institutions, hint: "Distinct campuses in view", icon: Building2, tint: 3 },
   ];
 
   return (
-    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
       {items.map((item) => (
         <StatCard
           key={item.id}

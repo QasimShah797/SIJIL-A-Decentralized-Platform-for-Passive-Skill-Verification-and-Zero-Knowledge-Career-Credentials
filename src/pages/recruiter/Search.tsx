@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AppShell } from "@/components/sijil/AppShell";
 import { PageSkeleton } from "@/components/sijil/SkeletonLoader";
 import { Button } from "@/components/ui/button";
-import { Building2, ChevronDown, GitCompare, Search, Sparkles, Users, X } from "lucide-react";
+import { ChevronDown, GitCompare, Search, Sparkles, Users, X } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -26,8 +26,6 @@ import { SijilMatchBot } from "@/components/recruiter/SijilMatchBot";
 import { useCandidates } from "@/hooks/useCandidates";
 import { listInterviewsApi } from "@/services/api/interview.api";
 import type { ScheduledInterviewView } from "@/lib/interview";
-import { cn } from "@/lib/utils";
-
 export default function RecruiterSearch() {
   const navigate = useNavigate();
   const { candidates, candidateSkills, loading, error, refresh } = useCandidates();
@@ -35,17 +33,7 @@ export default function RecruiterSearch() {
   const [interviews, setInterviews] = useState<ScheduledInterviewView[]>([]);
   const [focusIds, setFocusIds] = useState<string[] | null>(null);
   const [statFilter, setStatFilter] = useState<RecruiterStatFilter>("all");
-  const [campus, setCampus] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-
-  const campuses = useMemo(() => {
-    const names = new Set<string>();
-    for (const candidate of candidates) {
-      const name = candidate.institution.trim();
-      if (name && name !== "â€”") names.add(name);
-    }
-    return [...names].sort((a, b) => a.localeCompare(b));
-  }, [candidates]);
 
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -53,11 +41,9 @@ export default function RecruiterSearch() {
       if (focusIds && !focusIds.includes(candidate.id)) return false;
       if (statFilter === "verified" && candidate.attestation !== "Approved") return false;
       if (statFilter === "credentials" && (candidate.credentialCount ?? 0) <= 0) return false;
-      if (campus && candidate.institution.trim() !== campus) return false;
       if (!needle) return true;
       const haystack = [
         candidate.name,
-        candidate.institution,
         candidate.topSkill,
         candidate.careerGoal,
         ...(candidate.searchableSkills ?? []),
@@ -65,7 +51,7 @@ export default function RecruiterSearch() {
       ].join(" ").toLowerCase();
       return haystack.includes(needle);
     });
-  }, [candidates, focusIds, statFilter, campus, query]);
+  }, [candidates, focusIds, statFilter, query]);
 
   useEffect(() => {
     writeRecruiterShortlist(selected);
@@ -96,14 +82,7 @@ export default function RecruiterSearch() {
   }, []);
 
   const selectStat = (filter: RecruiterStatFilter) => {
-    const next = filter !== "all" && statFilter === filter ? "all" : filter;
-    setStatFilter(next);
-    if (next !== "institutions") setCampus(null);
-    if (next === "institutions") {
-      window.setTimeout(() => {
-        document.getElementById("directory-campuses")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-      }, 40);
-    }
+    setStatFilter(filter !== "all" && statFilter === filter ? "all" : filter);
   };
 
   const toggleSelect = (id: string) =>
@@ -125,8 +104,7 @@ export default function RecruiterSearch() {
   return (
     <AppShell role="recruiter">
       <div className="mb-6">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-success">Talent workspace</p>
-        <h1 className="mt-2 text-2xl font-bold tracking-tight text-foreground sm:text-[1.75rem]">Candidate directory</h1>
+        <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-[1.75rem]">Candidate directory</h1>
         <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
           Review learners who shared credentials. Shortlists stay limited to disclosed evidence.
         </p>
@@ -178,13 +156,13 @@ export default function RecruiterSearch() {
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search name, skill, campus"
+              placeholder="Search name or skill"
               className="h-10 w-full rounded-xl border border-border/70 bg-background pl-9 pr-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
             />
           </div>
         </div>
 
-        <div id="directory-campuses" className={cn("mt-4 flex flex-wrap items-center gap-2 rounded-xl border border-border/70 bg-muted/40 p-2", statFilter === "institutions" && "ring-2 ring-primary/30")}>
+        <div className="mt-4 flex flex-wrap items-center gap-2 rounded-xl border border-border/70 bg-muted/40 p-2">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button
@@ -206,29 +184,6 @@ export default function RecruiterSearch() {
               </DropdownMenuRadioGroup>
             </DropdownMenuContent>
           </DropdownMenu>
-
-          {campuses.length > 0 ? (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  type="button"
-                  className="inline-flex h-9 items-center gap-2 rounded-lg border border-border/70 bg-background px-3 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
-                  {campus ?? "All campuses"}
-                  <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-56">
-                <DropdownMenuRadioGroup value={campus ?? "all"} onValueChange={(value) => setCampus(value === "all" ? null : value)}>
-                  <DropdownMenuRadioItem value="all">All campuses</DropdownMenuRadioItem>
-                  {campuses.map((name) => (
-                    <DropdownMenuRadioItem key={name} value={name}>{name}</DropdownMenuRadioItem>
-                  ))}
-                </DropdownMenuRadioGroup>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          ) : null}
 
           {focusIds ? (
             <button
@@ -261,11 +216,11 @@ export default function RecruiterSearch() {
                   ? "Clear the answer filter to see every shared learner."
                   : candidates.length === 0
                     ? "Learners appear here after they share a credential with recruiters."
-                    : "Try another filter, campus, or search."}
+                    : "Try another filter or search."}
                 action={focusIds
                   ? { label: "Show all", onClick: () => setFocusIds(null) }
                   : candidates.length > 0
-                    ? { label: "Clear filters", onClick: () => { setStatFilter("all"); setCampus(null); setQuery(""); } }
+                    ? { label: "Clear filters", onClick: () => { setStatFilter("all"); setQuery(""); } }
                     : undefined}
               />
             </div>

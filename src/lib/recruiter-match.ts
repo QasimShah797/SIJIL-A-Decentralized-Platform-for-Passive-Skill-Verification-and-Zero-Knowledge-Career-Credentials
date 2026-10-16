@@ -202,24 +202,12 @@ export function rankCandidatesForRequirement(
     if (requirement.requireTask && !taskPassed) continue;
     if (requirement.requireReviews && reviews === 0) continue;
     if (requirement.skills.length > 0 && hits.length < requirement.skills.length) continue;
-    const institution = requirement.institution ? normalize(requirement.institution) : "";
-    const candidateInstitution = normalize(candidate.institution);
-    const institutionHit = Boolean(
-      institution
-      && candidateInstitution
-      && (candidateInstitution.includes(institution) || institution.includes(candidateInstitution) || hasWord(candidateInstitution, institution)),
-    );
-    if (institution && !institutionHit) continue;
     const verified = verifiedSkillNames(candidate);
     if (requirement.minSkillCount && verified.length < requirement.minSkillCount) continue;
 
     let score = 0;
     const reasons: string[] = [];
 
-    if (institutionHit && requirement.institution) {
-      score += 35;
-      reasons.push(`Shared from ${candidate.institution}`);
-    }
     if (requirement.minSkillCount) {
       score += 35;
       reasons.push(`${verified.length} shared skills`);
@@ -246,7 +234,7 @@ export function rankCandidatesForRequirement(
     }
     if (candidate.attestation === "Approved") {
       score += 10;
-      reasons.push("Institution attestation is approved");
+      reasons.push("Credential verification is approved");
     }
 
     if (score < 25) continue;
@@ -475,96 +463,6 @@ function sameSkill(left: string, right: string): boolean {
   return false;
 }
 
-const INSTITUTION_STOP = new Set([
-  "institution", "university", "college", "from", "the", "of", "and",
-  "learner", "learners", "candidate", "candidates", "student", "students",
-  "that", "are", "who", "with", "show", "list", "all", "any", "want", "need",
-  "please", "shared", "profile", "profiles", "yes", "ok", "okay",
-  "a", "an",
-]);
-
-function institutionPhrase(raw: string): string | null {
-  const text = normalize(raw);
-  const patterns = [
-    /(?:institution|university|college)\s+of\s+([a-z0-9][a-z0-9 ]{0,40})/,
-    /(?:from|at)\s+([a-z0-9][a-z0-9 ]{0,40})/,
-  ];
-  for (const pattern of patterns) {
-    const match = text.match(pattern);
-    if (!match) continue;
-    const phrase = match[1]
-      .split(" ")
-      .filter((token) => token && !INSTITUTION_STOP.has(token) && !NOT_SKILLS.has(token))
-      .slice(0, 4)
-      .join(" ");
-    if (phrase.length >= 2) return phrase;
-  }
-  return null;
-}
-
-function unboundInstitution(phrase: string | null, knownSkills: string[]): string | null {
-  if (!phrase) return null;
-  const key = normalize(phrase);
-  if (!key || key.length < 3 || NOT_SKILLS.has(key) || INSTITUTION_STOP.has(key)) return null;
-  if ([...knownSkills, ...BUILTIN_SKILLS].some((skill) => sameSkill(phrase, skill))) return null;
-  return key.length <= 8 ? key.toUpperCase() : phrase;
-}
-
-function wantsInstitutionRollup(raw: string, candidates: CandidateView[], knownSkills: string[]): boolean {
-  const text = normalize(raw);
-  if (!/\b(institution|university|college|campus)\b/.test(text)) return false;
-  const named = matchInstitution(raw, candidates.map((candidate) => candidate.institution))
-    ?? unboundInstitution(institutionPhrase(raw), knownSkills);
-  return !named;
-}
-
-function listLearnersByInstitution(candidates: CandidateView[]): string {
-  const groups = new Map<string, string[]>();
-  for (const candidate of candidates) {
-    const institution = candidate.institution?.trim();
-    if (!institution || institution === "—") continue;
-    const names = groups.get(institution) ?? [];
-    names.push(candidate.name);
-    groups.set(institution, names);
-  }
-  if (groups.size === 0) return "No shared learner has an institution on their profile.";
-  return [...groups.entries()].map(([institution, names]) => {
-    const listed = names.length === 1
-      ? names[0]
-      : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
-    return `${listed} ${names.length === 1 ? "is" : "are"} from ${institution}`;
-  }).join(". ") + ".";
-}
-
-function institutionAnswer(institution: string, matches: RankedMatch[], directory: string[]): string {
-  if (matches.length === 0) {
-    const elsewhere = [...new Set(directory.map((name) => name.trim()).filter((name) => name && name !== "—" && normalize(name) !== normalize(institution)))];
-    const where = elsewhere.length ? ` Shared learners are from ${elsewhere.join(", ")}.` : "";
-    return `No shared learner is from ${institution}.${where}`;
-  }
-  const names = matches.map((match) => match.candidate.name);
-  const listed = names.length === 1
-    ? names[0]
-    : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
-  return `${listed} ${matches.length === 1 ? "is the shared learner" : "are the shared learners"} from ${institution}.`;
-}
-
-export function matchInstitution(raw: string, institutions: string[]): string | null {
-  const text = normalize(raw);
-  if (!text) return null;
-  const ranked = institutions
-    .map((name) => ({ name: name.trim(), key: normalize(name) }))
-    .filter((item) => item.key && item.key !== "—")
-    .sort((a, b) => b.key.length - a.key.length);
-
-  for (const item of ranked) {
-    if (text.includes(item.key)) return item.name;
-    const tokens = item.key.split(" ").filter((token) => token.length >= 3 && !INSTITUTION_STOP.has(token));
-    if (tokens.some((token) => hasWord(text, token))) return item.name;
-  }
-  return null;
-}
-
 function hasSearchableAsk(requirement: MatchRequirement): boolean {
   return requirement.skills.length > 0
     || requirement.requireGithub
@@ -654,7 +552,7 @@ export function requirementFromInterpretation(
     requireGithub: interpreted.requireGithub,
     requireTask: interpreted.requireTask,
     requireReviews: interpreted.requireReviews,
-    institution: interpreted.institution ?? null,
+    institution: null,
     minSkillCount: interpreted.minSkillCount ?? null,
   };
 }
@@ -670,30 +568,6 @@ function applySkillCountAsk(interpreted: InterpretedAsk, raw: string): Interpret
   };
 }
 
-function applyInstitutionAsk(
-  interpreted: InterpretedAsk,
-  raw: string,
-  candidates: CandidateView[],
-  knownSkills: string[],
-): InterpretedAsk {
-  const institutions = [...new Set(candidates.map((candidate) => candidate.institution).filter((name) => name && name !== "—"))];
-  const phrase = institutionPhrase(raw);
-  const fromQuestion = matchInstitution(raw, institutions)
-    ?? matchInstitution(interpreted.institution ?? "", institutions)
-    ?? (phrase ? matchInstitution(phrase, institutions) : null)
-    ?? unboundInstitution(phrase, knownSkills);
-  if (!fromQuestion) {
-    return { ...interpreted, institution: matchInstitution(interpreted.institution ?? "", institutions) };
-  }
-  return {
-    ...interpreted,
-    intent: interpreted.intent === "compare" ? "compare" : "match",
-    institution: fromQuestion,
-    skills: interpreted.skills.filter((skill) => !matchInstitution(skill, [fromQuestion])),
-    reply: interpreted.reply,
-  };
-}
-
 export function resolveInterpretedAsk(
   interpreted: InterpretedAsk,
   candidates: CandidateView[],
@@ -701,19 +575,7 @@ export function resolveInterpretedAsk(
   knownSkills: string[],
   raw = "",
 ): { compare?: LearnerCompare; matches?: RankedMatch[]; text: string } {
-  interpreted = applyInstitutionAsk(interpreted, raw, candidates, knownSkills);
   interpreted = applySkillCountAsk(interpreted, raw);
-  if (wantsInstitutionRollup(raw, candidates, knownSkills)) {
-    const matches = candidates
-      .filter((candidate) => candidate.institution && candidate.institution !== "—")
-      .map((candidate) => ({
-        candidate,
-        score: 35,
-        reasons: [`Shared from ${candidate.institution}`],
-        matchedSkill: candidate.topSkill ?? null,
-      }));
-    return { matches, text: listLearnersByInstitution(candidates) };
-  }
   const requirement = requirementFromInterpretation(interpreted, knownSkills);
   const searchable = hasSearchableAsk(requirement);
   const clarifyText = interpreted.reply.trim()
@@ -770,22 +632,12 @@ export function resolveInterpretedAsk(
   }
 
   const matches = rankCandidatesForRequirement(requirement, candidates, skillsById);
-  if (requirement.minSkillCount && requirement.skills.length === 0 && !requirement.institution && !requirement.requireGithub && !requirement.requireLms && !requirement.requireTask && !requirement.requireReviews) {
+  if (requirement.minSkillCount && requirement.skills.length === 0 && !requirement.requireGithub && !requirement.requireLms && !requirement.requireTask && !requirement.requireReviews) {
     return { matches, text: skillCountAnswer(requirement.minSkillCount, matches) };
-  }
-  if (requirement.institution && requirement.skills.length === 0 && !requirement.requireGithub && !requirement.requireLms && !requirement.requireTask && !requirement.requireReviews) {
-    return {
-      matches,
-      text: institutionAnswer(
-        requirement.institution,
-        matches,
-        candidates.map((candidate) => candidate.institution),
-      ),
-    };
   }
   const ask = requirement.skills.length
     ? requirement.skills.join(", ")
-    : requirement.institution ?? "that proof";
+    : "that proof";
   if (isPreferenceAsk(raw)) {
     return { matches, text: preferenceAnswer(ask, matches) };
   }
@@ -810,10 +662,6 @@ export function resolveRecruiterAsk(
     return resolveCompareAsk(raw, candidates, skillsById, knownSkills);
   }
   const requirement = parseRequirement(raw, knownSkills);
-  requirement.institution = matchInstitution(
-    raw,
-    candidates.map((candidate) => candidate.institution),
-  );
   const matches = rankCandidatesForRequirement(requirement, candidates, skillsById);
   return { text: composeMatchReply(requirement, matches), matches };
 }

@@ -10,7 +10,7 @@ import {
 } from "@/components/recruiter/RecruiterSkillEvidence";
 import { ScheduleInterviewDialog } from "@/components/recruiter/ScheduleInterviewDialog";
 import { Button } from "@/components/ui/button";
-import { BookOpen, Building2, CalendarClock, GraduationCap, Lock, MapPin, ShieldCheck, Wallet } from "lucide-react";
+import { BookOpen, CalendarClock, GraduationCap, Lock, MapPin, ShieldCheck, Wallet } from "lucide-react";
 import { fetchPeerReviews } from "@/lib/db/peer-reviews";
 import { fetchCandidateDetail } from "@/lib/db/shared-credentials";
 import { computeTrustSignals } from "@/lib/sijil-data";
@@ -21,10 +21,6 @@ import { dedupeLatestSharedCredentials, type CandidateDetailView, type SharedCre
 import { cn } from "@/lib/utils";
 
 const IDENTITY_FIELD_IDS = new Set([
-  "institution",
-  "institutionName",
-  "institution_name",
-  "issuer",
   "program",
   "department",
   "careerGoal",
@@ -40,7 +36,6 @@ const IDENTITY_FIELD_IDS = new Set([
 
 type IdentityFields = {
   track: string;
-  institution: string;
   program: string;
   location: string;
 };
@@ -126,7 +121,6 @@ export default function CandidateSummary() {
   const evidence = getEvidenceStats(candidate);
   const identityItems = [
     { label: "Track", value: identity.track, icon: GraduationCap },
-    { label: "Institution", value: identity.institution, icon: Building2 },
     { label: "Program", value: identity.program, icon: BookOpen },
     { label: "Location", value: identity.location, icon: MapPin },
   ].filter((item) => item.value);
@@ -151,7 +145,7 @@ export default function CandidateSummary() {
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_300px]">
           <div className="min-w-0 space-y-6">
             {identityItems.length > 0 ? (
-              <dl className={cn("grid gap-4", identityItems.length > 1 ? "sm:grid-cols-2" : "", identityItems.length > 2 ? "xl:grid-cols-4" : "")}>
+              <dl className={cn("grid gap-4", identityItems.length > 1 ? "sm:grid-cols-2" : "", identityItems.length > 2 ? "xl:grid-cols-3" : "")}>
                 {identityItems.map((item) => (
                   <div key={item.label} className="learner-stat-card p-5">
                     <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#e8eef7] text-[#023E8A]">
@@ -229,7 +223,7 @@ export default function CandidateSummary() {
             <div className="learner-stat-card p-5">
               <h3 className="text-sm font-semibold text-[#023E8A]">Verification summary</h3>
               <dl className="mt-4 space-y-3">
-                <SummaryRow label="Attestation" value={candidate.attestation} />
+                <SummaryRow label="Verification" value={candidate.attestation} />
                 <SummaryRow label="Shared credentials" value={String(evidence.credentials || candidate.credentialCount)} />
                 <SummaryRow label="Disclosed evidence" value={String(evidence.evidenceTotal)} />
                 <SummaryRow label="Active presentations" value={String(sharedCredentials.length)} />
@@ -286,13 +280,11 @@ function sortCredentialsByRecency(credentials: SharedCredentialView[]): SharedCr
 }
 
 const TRACK_FIELD_IDS = new Set(["track", "role", "careerGoal", "career_goal"]);
-const INSTITUTION_FIELD_IDS = new Set(["institution", "institutionName", "institution_name", "issuer"]);
 const PROGRAM_FIELD_IDS = new Set(["program", "department"]);
 const LOCATION_FIELD_IDS = new Set(["city", "country", "cityCountry", "city_country", "location"]);
 
 function buildDisclosedIdentity(credentials: SharedCredentialView[]): IdentityFields {
   const tracks = new Set<string>();
-  const institutions = new Set<string>();
   const programs = new Set<string>();
   const locations = new Set<string>();
 
@@ -306,7 +298,6 @@ function buildDisclosedIdentity(credentials: SharedCredentialView[]): IdentityFi
     for (const field of credential.disclosedFields) {
       if (!IDENTITY_FIELD_IDS.has(field.id)) continue;
       if (TRACK_FIELD_IDS.has(field.id)) collect(tracks, field.value);
-      else if (INSTITUTION_FIELD_IDS.has(field.id)) collect(institutions, field.value);
       else if (PROGRAM_FIELD_IDS.has(field.id)) collect(programs, field.value);
       else if (LOCATION_FIELD_IDS.has(field.id)) collect(locations, field.value);
     }
@@ -316,14 +307,12 @@ function buildDisclosedIdentity(credentials: SharedCredentialView[]): IdentityFi
     collect(tracks, asText(competency?.domain));
 
     const learner = asRecord(payload.learner);
-    collect(institutions, asText(learner?.institution));
     collect(programs, asText(learner?.program));
     collect(locations, asText(learner?.cityCountry) ?? asText(learner?.location));
   }
 
   return {
     track: joinIdentityValues(tracks),
-    institution: joinIdentityValues(institutions),
     program: joinIdentityValues(programs),
     location: joinIdentityValues(locations),
   };

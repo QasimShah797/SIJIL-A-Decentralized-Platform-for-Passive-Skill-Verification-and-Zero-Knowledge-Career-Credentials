@@ -27,6 +27,12 @@ const chipTones = [
   "border-primary/15 bg-secondary text-secondary-foreground",
 ];
 
+function campusName(value: string | null | undefined) {
+  const name = value?.trim();
+  if (!name || name === "—") return null;
+  return name;
+}
+
 function skillChips(candidate: CandidateView): { visible: string[]; extra: number } {
   const names = [
     ...(candidate.searchableSkills ?? []),
@@ -53,6 +59,7 @@ export function RecruiterCandidateCard({
 }: RecruiterCandidateCardProps) {
   const { visible, extra } = skillChips(candidate);
   const careerGoal = candidate.careerGoal?.trim();
+  const campus = campusName(candidate.institution);
 
   return (
     <article
@@ -85,7 +92,11 @@ export function RecruiterCandidateCard({
           />
           <div className="min-w-0">
             <h3 className="truncate text-base font-semibold text-foreground" title={candidate.name}>{candidate.name}</h3>
-            <p className="truncate text-xs text-muted-foreground">{candidate.institution}</p>
+            {campus ? (
+              <p className="truncate text-xs text-muted-foreground" title={campus}>
+                {campus}
+              </p>
+            ) : null}
           </div>
         </div>
         {candidate.attestation === "Approved" ? (
