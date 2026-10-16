@@ -4,7 +4,7 @@
 import { z } from "zod";
 import { AppError } from "../utils/AppError";
 import { supabaseService } from "./supabase.service";
-import { getLedgerService } from "./ledger.factory";
+import { getEvaluateLedgerService, getLedgerService } from "./ledger.factory";
 import { verifyCredentialHash } from "./signing.service";
 import {
   evaluateCredentialVerification,
@@ -161,7 +161,7 @@ export async function verifyPublicCredential(idOrUri: string): Promise<Credentia
   if (!row) {
     const missing = await evaluateCredentialVerification(null, {
       verifySignature: () => false,
-      ledger: getLedgerService(),
+      ledger: getEvaluateLedgerService(),
     });
     if (shouldCacheVerifyResult(missing.status)) {
       publicVerifyCache.set(idOrUri, null, missing);
@@ -181,7 +181,7 @@ export async function verifyPublicCredential(idOrUri: string): Promise<Credentia
         return false;
       }
     },
-    ledger: getLedgerService(),
+    ledger: getEvaluateLedgerService(),
   });
   if (shouldCacheVerifyResult(result.status)) {
     publicVerifyCache.set(row.id, row.credential_hash, result);

@@ -76,10 +76,11 @@ function reviewMatchesContributor(
     ?? "",
   ).toLowerCase();
 
+  const extra = contributor as { username?: string; login?: string } | undefined;
   const contributorName = String(
     contributor?.handle
-    ?? contributor?.username
-    ?? contributor?.login
+    ?? extra?.username
+    ?? extra?.login
     ?? contributor?.name
     ?? "",
   ).toLowerCase().replace(/^@/, "");
@@ -517,6 +518,7 @@ export async function sendPeerReviewInvite(input: {
         skillId: input.skillId,
         status: "Sent",
         sentAt: existing.created_at as string,
+        recordSource: "peer",
       },
     };
   }
@@ -567,6 +569,7 @@ export async function sendPeerReviewInvite(input: {
       skillId: (data.skill_id as string) ?? null,
       status: "Sent",
       sentAt: data.created_at as string,
+      recordSource: "peer",
     },
   };
 }

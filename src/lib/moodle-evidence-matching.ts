@@ -314,7 +314,7 @@ export function aggregateLmsEvidenceForCompetency(
     .map((row) => ({
       source: "Moodle Teacher Feedback",
       feedback_text: asNullableText(row.feedback),
-      reviewed_at: asNullableText(row.graded_at) ?? asNullableText(row.synced_at),
+      reviewed_at: asNullableText((row as Record<string, unknown>).graded_at) ?? asNullableText(row.synced_at),
       status: "Available",
       moodle_assignment_id: asText(row.moodle_assignment_id),
     }));
@@ -337,7 +337,7 @@ export function aggregateLmsEvidenceForCompetency(
         evidence_record_id: asText(row.id),
       };
     })
-    .filter((row): row is Record<string, unknown> => row !== null);
+    .filter((row) => row !== null);
 
   const teacherFeedback = dedupeByKey(
     [...feedbackFromTable, ...feedbackFromAssignments, ...feedbackFromEvidenceRecords],

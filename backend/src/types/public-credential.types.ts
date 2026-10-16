@@ -29,6 +29,11 @@ export interface AtsResumeSkill {
   name: string;
   href: string;
   ledger?: EvidenceLedgerItem[];
+  issued?: boolean;
+  ledgerStatus?: string;
+  ledgerDetail?: string | null;
+  blockchainVerified?: boolean;
+  trustLabel?: string;
 }
 
 export interface AtsResumeCertification {

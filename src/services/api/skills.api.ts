@@ -37,19 +37,19 @@ export interface RelatedEvidenceApiView {
 }
 
 export interface DeclaredSkillResultApiView {
-  skill: SkillApiView;
+  skill: DeclaredSkill;
   relatedEvidence: RelatedEvidenceApiView[];
   evidenceStatus: "none" | "matched" | "linked";
 }
 
-function toDeclaredSkill(s: SkillApiView): DeclaredSkill {
+function toDeclaredSkill(s: SkillApiView | DeclaredSkill): DeclaredSkill {
   return {
     id: s.id,
     name: s.name,
     domain: s.domain,
     description: s.description,
     status: s.status,
-    pipelineStage: s.pipelineStage,
+    pipelineStage: s.pipelineStage ?? "declared",
     lastRelatedActivityAt: s.lastRelatedActivityAt,
     lastCredentialSyncAt: s.lastCredentialSyncAt,
   };

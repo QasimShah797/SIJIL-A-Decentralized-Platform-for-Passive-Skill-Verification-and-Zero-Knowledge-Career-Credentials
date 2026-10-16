@@ -84,7 +84,7 @@ export async function shareWalletCompetencyApi(input: {
   competencyId: string;
   selectionMode: WalletShareSelectionMode;
   selectedFields: WalletShareFieldId[];
-  shareScope?: "all" | "selected";
+  shareScope?: "all" | "selected" | "issued";
   expiresInDays?: number;
 }): Promise<ShareWalletCompetencyResult> {
   return apiRequest<ShareWalletCompetencyResult>(

@@ -87,13 +87,13 @@ export function GitHubEvidenceRow({
     (async () => {
       await importExternalReviewsApi(
         project.evidenceRecordId
-          ? { evidenceId: project.evidenceRecordId, projectId: project.id }
-          : { projectId: project.id },
+          ? { evidenceId: project.evidenceRecordId, projectId: project.repoId }
+          : { projectId: project.repoId },
       );
       const summary = await getEvidenceReviewsApi(project.evidenceRecordId);
       setReviewSummary(summary);
     })();
-  }, [project.evidenceRecordId, project.id, linked]);
+  }, [project.evidenceRecordId, project.repoId, linked]);
 
   const loadEligibleReviewers = async () => {
     if (!project.evidenceRecordId) return;

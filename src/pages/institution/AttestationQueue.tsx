@@ -89,7 +89,7 @@ export default function AttestationQueue() {
         searchPlaceholder="Search learner, email, competency, or domain"
         filters={FILTERS.map((f) => ({ id: f.id, label: f.label }))}
         activeFilter={filter}
-        onFilterChange={setFilter}
+        onFilterChange={(id) => setFilter(id as typeof filter)}
       />
 
       <Card>

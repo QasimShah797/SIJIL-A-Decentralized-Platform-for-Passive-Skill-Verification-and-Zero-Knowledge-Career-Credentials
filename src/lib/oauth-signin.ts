@@ -160,12 +160,11 @@ export async function startSocialSignIn(provider: SocialAuthProvider): Promise<S
   }
 
   const { data, error } = await supabase.auth.signInWithOAuth({
-    provider,
+    provider: "google",
     options: {
       redirectTo: getAuthCallbackUrl(),
       skipBrowserRedirect: true,
-      scopes: provider === "github" ? "read:user user:email" : undefined,
-      queryParams: provider === "google" ? { prompt: "select_account" } : undefined,
+      queryParams: { prompt: "select_account" },
     },
   });
 

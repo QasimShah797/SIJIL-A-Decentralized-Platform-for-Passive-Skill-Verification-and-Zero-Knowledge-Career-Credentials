@@ -1,12 +1,19 @@
 import { supabase } from "@/integrations/supabase/client";
 
-export type AppRole = "learner" | "recruiter" | "admin";
+export type AppRole = "learner" | "recruiter" | "admin" | "institution";
 
 export const ROLE_HOME: Record<AppRole, string> = {
   learner: "/learner/profile",
   recruiter: "/recruiter/search",
   admin: "/learner/profile",
+  institution: "/",
 };
+
+export function isDeniedAccess<R extends { ok: true } | { ok: false; reason: string }>(
+  result: R,
+): result is Extract<R, { ok: false }> {
+  return result.ok === false;
+}
 
 export async function fetchUserRoles(userId: string): Promise<AppRole[]> {
   try {

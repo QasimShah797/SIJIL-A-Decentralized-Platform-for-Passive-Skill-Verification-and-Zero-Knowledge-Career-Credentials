@@ -587,8 +587,8 @@ export function OneClickShareCard({
   toggles: ShareToggle[];
   onToggle: (id: WalletShareFieldId, next: boolean) => void;
   photoPreviewUrl?: string | null;
-  shareScope: "all" | "selected";
-  onShareScopeChange: (scope: "all" | "selected") => void;
+  shareScope: "all" | "selected" | "issued";
+  onShareScopeChange: (scope: "all" | "selected" | "issued") => void;
   selectedCompetencyName?: string;
   competencyCount?: number;
   expiresInDays: number;
@@ -612,7 +612,7 @@ export function OneClickShareCard({
         Choose the competency scope and the fields recruiters can see.
       </p>
 
-      <div className="mt-4 grid grid-cols-2 gap-2">
+      <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
         <button
           type="button"
           onClick={() => onShareScopeChange("all")}
@@ -643,6 +643,21 @@ export function OneClickShareCard({
           <span className="block text-sm font-medium">Selected only</span>
           <span className="mt-0.5 block text-[11px] text-[#64748b]">
             {selectedCompetencyName ? `Only ${selectedCompetencyName}` : "Only the competency currently open"}
+          </span>
+        </button>
+        <button
+          type="button"
+          onClick={() => onShareScopeChange("issued")}
+          className={cn(
+            "rounded-xl border px-3 py-2.5 text-left",
+            shareScope === "issued"
+              ? "border-[#023E8A] bg-[#eff6ff] text-[#023E8A]"
+              : "border-[#e2e8f0] bg-white text-[#334155]",
+          )}
+        >
+          <span className="block text-sm font-medium">Issued credentials only</span>
+          <span className="mt-0.5 block text-[11px] text-[#64748b]">
+            Exclude unissued skills from the public resume
           </span>
         </button>
       </div>

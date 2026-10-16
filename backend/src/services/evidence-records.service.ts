@@ -9,8 +9,12 @@ import { supabaseService } from "./supabase.service";
 import { skillsService } from "./skills.service";
 
 import { AppError } from "../utils/AppError";
+import { isMissingRelationError } from "../utils/supabase-errors";
 
-import { hashEvidenceRecord } from "../utils/evidence-hash";
+import {
+  deleteGitHubSupportingRecord,
+  upsertGitHubSupportingRecord,
+} from "./github-supporting-record.service";
 
 import {
 
@@ -273,7 +277,7 @@ export class EvidenceRecordsService {
 
 
 
-    if (linksErr) throw new AppError(linksErr.message, 500);
+    if (linksErr && !isMissingRelationError(linksErr)) throw new AppError(linksErr.message, 500);
 
     let repoList: Array<Record<string, unknown>> = [];
     let linkList: Array<Record<string, unknown>> = links ?? [];
@@ -518,8 +522,6 @@ export class EvidenceRecordsService {
 
           last_related_activity_at: new Date().toISOString(),
 
-          updated_at: new Date().toISOString(),
-
         })
 
         .eq("user_id", userId)
@@ -537,8 +539,6 @@ export class EvidenceRecordsService {
           status: SKILL_STATUS.CLAIMED,
 
           pipeline_stage: PIPELINE_STAGE.DECLARED,
-
-          updated_at: new Date().toISOString(),
 
         })
 
@@ -744,29 +744,13 @@ export class EvidenceRecordsService {
 
 
 
-    await supabaseService.client.from("supporting_records").insert({
+    await upsertGitHubSupportingRecord(userId, skillId, {
 
-      user_id: userId,
+      title: typeof record.repository_name === "string" ? record.repository_name : null,
 
-      skill_id: skillId,
+      url: typeof record.repository_url === "string" ? record.repository_url : null,
 
-      source: EVIDENCE_SOURCE.GITHUB,
-
-      title: record.repository_name as string,
-
-      url: record.repository_url as string,
-
-      occurred_at: record.last_updated ?? new Date().toISOString(),
-
-      content_hash: hashEvidenceRecord({
-
-        source: EVIDENCE_SOURCE.GITHUB,
-
-        title: String(record.repository_name ?? ""),
-
-        url: typeof record.repository_url === "string" ? record.repository_url : null,
-
-      }),
+      occurredAt: typeof record.last_updated === "string" ? record.last_updated : null,
 
     });
 
@@ -1022,6 +1006,12 @@ export class EvidenceRecordsService {
 
     await this.refreshSkillEvidenceStatus(userId, skillId);
 
+    await deleteGitHubSupportingRecord(
+      userId,
+      skillId,
+      typeof record.repository_url === "string" ? record.repository_url : null,
+    );
+
 
 
     const { data: updated } = await supabaseService.client
@@ -1050,7 +1040,7 @@ export class EvidenceRecordsService {
 
       .from("github_repos")
 
-      .select("id, repo_id, linked_skill_id")
+      .select("id, repo_id, linked_skill_id, github_url")
 
       .eq("user_id", userId)
 
@@ -1111,6 +1101,12 @@ export class EvidenceRecordsService {
         .eq("github_repo_id", repo.id)
 
         .eq("skill_id", targetSkillId);
+
+      await deleteGitHubSupportingRecord(
+        userId,
+        targetSkillId,
+        typeof repo.github_url === "string" ? repo.github_url : null,
+      );
 
       await this.refreshSkillEvidenceStatus(userId, targetSkillId);
 

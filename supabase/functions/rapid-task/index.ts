@@ -10,6 +10,7 @@ import {
 } from "../_shared/github-task-pipeline.ts";
 import {
   buildAnswerKeyEntries,
+  buildLocalFallbackMcqTest,
   generateMcqTask,
   parseMcqGenerateBody,
   scoreMcqSubmission,
@@ -22,6 +23,15 @@ import {
   type WalletAttemptHistoryItem,
 } from "../_shared/wallet-competency.ts";
 import { collectPlatformEvidenceForTask } from "../_shared/platform-task-evidence.ts";
+import {
+  evaluateWalletReadyPromotion,
+  GITHUB_EVIDENCE_SOURCE,
+  hasQualifyingGitHubEvidenceRows,
+  IN_WALLET_STAGE,
+  normalizeGitHubRepoUrl,
+  qualifyingGitHubTitle,
+  WALLET_READY_STAGE,
+} from "../_shared/wallet-ready-promotion.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -32,6 +42,22 @@ function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
     headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      },
+    );
   });
 }
 
@@ -160,6 +186,115 @@ function pickLatestInstitutionReview(rows: QueryRow[]) {
   return sortRowsByLatestDate(rows, ["reviewed_at", "submitted_to_institution_at", "created_at"])[0] ?? null;
 }
 
+
+async function ensureGitHubSupportingRecords(
+  admin: AdminClient,
+  userId: string,
+  skillId: string,
+): Promise<{
+  repos: Array<{ title?: string | null; url?: string | null }>;
+  supporting: Array<{ source?: string | null; title?: string | null; url?: string | null }>;
+}> {
+  const connection = await safeFetchSingle<QueryRow>("github_connections promotion", () =>
+    admin
+      .from("github_connections")
+      .select("github_username")
+      .eq("user_id", userId)
+      .maybeSingle(),
+  );
+  const connectedUsername = (textValue(connection?.github_username) || "").trim().toLowerCase();
+
+  const repos = connectedUsername
+    ? await safeFetchArray<QueryRow>("github_repos promotion", () =>
+      admin
+        .from("github_repos")
+        .select("repo_name, github_url, last_updated, linked_skill_id, github_username")
+        .eq("user_id", userId)
+        .eq("linked_skill_id", skillId),
+    )
+    : [];
+
+  const ownedSkill = await safeFetchSingle<QueryRow>("declared_skills promotion", () =>
+    admin
+      .from("declared_skills")
+      .select("id, pipeline_stage")
+      .eq("id", skillId)
+      .eq("user_id", userId)
+      .maybeSingle(),
+  );
+
+  const qualifyingRepos = repos.flatMap((row) => {
+    const rowUsername = (textValue(row.github_username) || "").trim().toLowerCase();
+    if (rowUsername !== connectedUsername) return [];
+    const title = qualifyingGitHubTitle(textValue(row.repo_name) || null);
+    const url = normalizeGitHubRepoUrl(textValue(row.github_url) || null);
+    if (!title || !url) return [];
+    return [{
+      title,
+      url,
+      occurredAt: textValue(row.last_updated) || new Date().toISOString(),
+    }];
+  });
+
+  if (ownedSkill?.id) {
+    const existing = await safeFetchArray<QueryRow>("supporting_records promotion", () =>
+      admin
+        .from("supporting_records")
+        .select("id, source, title, url")
+        .eq("user_id", userId)
+        .eq("skill_id", skillId)
+        .eq("source", GITHUB_EVIDENCE_SOURCE),
+    );
+
+    for (const repo of qualifyingRepos) {
+      const duplicate = existing.find((row) => normalizeGitHubRepoUrl(textValue(row.url) || null) === repo.url);
+      if (duplicate?.id) {
+        await admin
+          .from("supporting_records")
+          .update({
+            title: repo.title,
+            url: repo.url,
+            occurred_at: repo.occurredAt,
+          })
+          .eq("id", duplicate.id)
+          .eq("user_id", userId)
+          .eq("skill_id", skillId);
+        continue;
+      }
+      const { data: inserted } = await admin
+        .from("supporting_records")
+        .insert({
+          user_id: userId,
+          skill_id: skillId,
+          source: GITHUB_EVIDENCE_SOURCE,
+          title: repo.title,
+          url: repo.url,
+          occurred_at: repo.occurredAt,
+        })
+        .select("id, source, title, url")
+        .maybeSingle();
+      if (inserted) existing.push(inserted);
+    }
+  }
+
+  const supporting = await safeFetchArray<QueryRow>("supporting_records promotion read", () =>
+    admin
+      .from("supporting_records")
+      .select("source, title, url")
+      .eq("user_id", userId)
+      .eq("skill_id", skillId),
+  );
+
+  return {
+    repos: qualifyingRepos,
+    supporting: supporting.map((row) => ({
+      source: textValue(row.source) || null,
+      title: textValue(row.title) || null,
+      url: textValue(row.url) || null,
+    })),
+  };
+}
+
 async function upsertWalletCompetencyRecord(params: {
   admin: AdminClient;
   userId: string;
@@ -204,7 +339,7 @@ async function upsertWalletCompetencyRecord(params: {
     githubActivities,
     githubEvidenceRecords,
     githubReviews,
-    lmsEvidence,
+    lmsEvidenceRaw,
     moodleAssignmentsRaw,
     moodleCoursesRaw,
     moodleGradesRaw,
@@ -549,8 +684,8 @@ Deno.serve(async (req) => {
   try {
     const body = await req.json();
     const GITHUB_TOKEN = Deno.env.get("GITHUB_TOKEN") ?? undefined;
-    const CLASSIFY_MODEL = Deno.env.get("GEMINI_CLASSIFY_MODEL") ?? "gemini-2.5-flash";
-    const TASK_MODEL = Deno.env.get("GEMINI_TASK_MODEL") ?? "gemini-2.5-flash";
+    const CLASSIFY_MODEL = Deno.env.get("GEMINI_CLASSIFY_MODEL") ?? "gemini-2.5-flash-lite";
+    const TASK_MODEL = Deno.env.get("GEMINI_TASK_MODEL") ?? "gemini-2.5-flash-lite";
 
     if (body.action === "generate") {
       const { skill, repos, variationSeed } = parseGenerateRequest(body);
@@ -564,33 +699,82 @@ Deno.serve(async (req) => {
 
         const parsed = parseMcqGenerateBody(body);
         const skillId = parsed.skillId;
-        const platformEvidence = await collectPlatformEvidenceForTask(
-          admin,
-          userId,
-          skillId,
-          skillName,
-        );
+        let platformEvidence = {
+          githubRepos: repos,
+          promptBlock: "",
+          sources: {
+            github: [] as string[],
+            lms: [] as string[],
+            moodle: [] as string[],
+            uploads: [] as string[],
+            linkedin: null as string | null,
+          },
+        };
+        try {
+          platformEvidence = await withTimeout(
+            collectPlatformEvidenceForTask(admin, userId, skillId, skillName),
+            4000,
+            "platform evidence",
+          );
+        } catch (err) {
+          console.error("platform evidence skipped:", err instanceof Error ? err.message : String(err));
+        }
         const reposForEvidence = platformEvidence.githubRepos.length
           ? platformEvidence.githubRepos
           : repos;
 
-        const { classification, evidence, evidenceMeta } = await collectSkillEvidence({
-          skill: { name: skillName },
-          repos: reposForEvidence,
-          githubToken: GITHUB_TOKEN,
-          classifyModel: CLASSIFY_MODEL,
-        });
+        let classification = {
+          language: skillName,
+          frameworks: [] as string[],
+          patterns_observed: [] as string[],
+          complexity_level: "intermediate",
+          evidence_quality: "limited",
+          confidence: 0.4,
+          reason: "Timed out collecting evidence; using local fallback classification.",
+        };
+        let evidence = { files: [] as Array<{ path: string; content: string; size: number }>, languages: {} as Record<string, number> };
+        let evidenceMeta = { repo: null as string | null, fileCount: 0 };
+        try {
+          const collected = await withTimeout(
+            collectSkillEvidence({
+              skill: { name: skillName },
+              repos: reposForEvidence,
+              githubToken: GITHUB_TOKEN,
+              classifyModel: CLASSIFY_MODEL,
+            }),
+            8000,
+            "github evidence",
+          );
+          classification = collected.classification;
+          evidence = collected.evidence;
+          evidenceMeta = collected.evidenceMeta;
+        } catch (err) {
+          console.error("github evidence skipped:", err instanceof Error ? err.message : String(err));
+        }
 
-        const { test, fallback } = await generateMcqTask({
-          skillName,
-          classification,
-          evidenceFiles: evidence.files,
-          evidenceLanguages: evidence.languages,
-          repo: evidenceMeta.repo,
-          taskModel: TASK_MODEL,
-          variationSeed: variationSeed ?? crypto.randomUUID(),
-          platformEvidence: platformEvidence.promptBlock,
-        });
+        let test = buildLocalFallbackMcqTest(skillName);
+        test.durationMinutes = 15;
+        let fallback = true;
+        try {
+          const generated = await withTimeout(
+            generateMcqTask({
+              skillName,
+              classification,
+              evidenceFiles: evidence.files,
+              evidenceLanguages: evidence.languages,
+              repo: evidenceMeta.repo,
+              taskModel: TASK_MODEL,
+              variationSeed: variationSeed ?? crypto.randomUUID(),
+              platformEvidence: platformEvidence.promptBlock,
+            }),
+            15000,
+            "mcq generate",
+          );
+          test = generated.test;
+          fallback = generated.fallback;
+        } catch (err) {
+          console.error("mcq generate fell back locally:", err instanceof Error ? err.message : String(err));
+        }
 
         const learnerQuestions = test.questions.map(stripQuestionForLearner);
         const answerKey = buildAnswerKeyEntries(test.questions);
@@ -772,136 +956,73 @@ Deno.serve(async (req) => {
           return json({ error: updateErr.message }, 500);
         }
 
-        let attestationRequestId: string | null = null;
+        let walletReady = false;
+        let promotionReason: string | null = null;
 
-        const storedEvidence = attempt.evidence_package as Record<string, unknown> | null;
-        const storedClassification = attempt.classification as Record<string, unknown> | null;
+        const skillId = textValue(attempt.skill_id) || null;
+        if (skillId) {
+          const skillRow = await safeFetchSingle<QueryRow>("declared_skills stage", () =>
+            admin
+              .from("declared_skills")
+              .select("id, pipeline_stage, status")
+              .eq("id", skillId)
+              .eq("user_id", userId)
+              .maybeSingle(),
+          );
 
-        const evidencePackage = {
-          competency: {
-            skillId: attempt.skill_id,
-            name: attempt.competency_name,
-            domain: attempt.competency_domain,
-          },
-          practicalTask: {
-            type: "MCQ",
-            attemptId,
-            percentage,
-            correctCount,
-            totalQuestions,
-            submittedAt,
-            passed,
-          },
-          mcqQuestions: attempt.questions,
-          learnerAnswers: answers,
-          githubEvidence: storedEvidence?.githubEvidence || storedEvidence || null,
-          classification: storedClassification || null,
-        };
+          const evidence = await ensureGitHubSupportingRecords(admin, userId, skillId);
+          const hasGitHub = hasQualifyingGitHubEvidenceRows(evidence.repos, evidence.supporting);
+          const decision = evaluateWalletReadyPromotion({
+            callerUserId: userId,
+            attemptOwnerId: String(attempt.learner_user_id ?? ""),
+            skillId,
+            attemptStatus: "in_progress",
+            scoredPassed: passed,
+            scoredPercent: percentage,
+            hasQualifyingGitHubEvidence: hasGitHub,
+            storedPipelineStage: textValue(skillRow?.pipeline_stage) || null,
+            clientClaimedPassed: body.passed === true,
+            storedAttemptPassed: attempt.passed === true,
+          });
 
-        const { data: learnerProfile } = await admin
-          .from("learner_profiles")
-          .select("first_name, last_name, university_email, institution_name, student_id, program, batch")
-          .eq("user_id", userId)
-          .maybeSingle();
-
-        const { data: authUser } = await admin.auth.admin.getUserById(userId);
-        const learnerEmail = learnerProfile?.university_email ?? authUser?.user?.email ?? "";
-        const learnerName = [learnerProfile?.first_name, learnerProfile?.last_name]
-          .filter(Boolean)
-          .join(" ")
-          || String(authUser?.user?.user_metadata?.full_name ?? "");
-
-        let existingAttestationQuery = admin
-          .from("institution_attestation_requests")
-          .select("id")
-          .eq("learner_user_id", userId)
-          .eq("status", "pending");
-
-        existingAttestationQuery = attempt.skill_id
-          ? existingAttestationQuery.eq("skill_id", attempt.skill_id)
-          : existingAttestationQuery.is("skill_id", null);
-
-        const { data: existingAttestation } = await existingAttestationQuery.maybeSingle();
-
-        if (!existingAttestation) {
-          const institutionName =
-            (storedEvidence?.institution_name as string | undefined)
-            || learnerProfile?.institution_name
-            || "Capital University of Science and Technology";
-
-          const { data: attestationRequest, error: attestationError } = await admin
-            .from("institution_attestation_requests")
-            .insert({
-              learner_user_id: userId,
-              learner_name: learnerName,
-              learner_email: learnerEmail,
-              skill_id: attempt.skill_id || null,
-              competency_name: attempt.competency_name,
-              competency_domain: attempt.competency_domain,
-              institution_name: institutionName,
-              status: "pending",
-              current_stage: "institution_attestation_pending",
-              evidence_package: evidencePackage,
-              practical_task_result: {
-                type: "MCQ",
-                title: attempt.title ?? `${attempt.competency_name} MCQ`,
-                attemptId,
-                percentage,
-                scorePercent: percentage,
-                correctCount,
-                totalQuestions,
-                submittedAt,
-                passed,
-              },
-              mcq_result: {
-                attemptId,
-                percentage,
-                correctCount,
-                totalQuestions,
-                passed,
-              },
-              test_percentage: percentage,
-              github_evidence: storedEvidence?.githubEvidence
-                ? [storedEvidence.githubEvidence as Record<string, unknown>]
-                : [],
-              submitted_to_institution_at: submittedAt,
-            })
-            .select("id")
-            .single();
-
-          if (attestationError) {
-            console.error("Attestation request insert error:", attestationError);
-          } else if (attestationRequest?.id) {
-            attestationRequestId = attestationRequest.id;
-            await admin
-              .from("mcq_task_attempts")
+          if (decision.promote && skillRow && textValue(skillRow.pipeline_stage) !== IN_WALLET_STAGE) {
+            const now = new Date().toISOString();
+            const { error: stageErr } = await admin
+              .from("declared_skills")
               .update({
-                institution_attestation_request_id: attestationRequest.id,
-                sent_to_institution_at: submittedAt,
+                pipeline_stage: WALLET_READY_STAGE,
+                status: "Wallet Ready",
+                last_related_activity_at: now,
               })
-              .eq("id", attemptId);
+              .eq("id", skillId)
+              .eq("user_id", userId)
+              .neq("pipeline_stage", IN_WALLET_STAGE);
+            if (stageErr) {
+              console.error("wallet_ready promotion failed:", stageErr.message);
+              promotionReason = "stage_update_failed";
+            } else {
+              walletReady = true;
+            }
+          } else if (!decision.promote) {
+            promotionReason = decision.reason;
+          }
+
+          try {
+            await upsertWalletCompetencyRecord({
+              admin,
+              userId,
+              skillId,
+              competencyName: attempt.competency_name ?? "",
+              competencyDomain: attempt.competency_domain ?? "General",
+            });
+          } catch (walletErr) {
+            console.error(
+              "wallet_competency_records upsert threw:",
+              walletErr instanceof Error ? walletErr.message : String(walletErr),
+            );
           }
         } else {
-          attestationRequestId = existingAttestation.id;
-        }
-
-        if (attempt.skill_id) {
-          await admin
-            .from("declared_skills")
-            .update({
-              pipeline_stage: "institution_attestation_pending",
-              status: "pending_institution_attestation",
-            })
-            .eq("id", attempt.skill_id)
-            .eq("user_id", userId);
-
-          await upsertWalletCompetencyRecord({
-            admin,
-            userId,
-            skillId: attempt.skill_id,
-            competencyName: attempt.competency_name ?? "",
-            competencyDomain: attempt.competency_domain ?? "General",
-          });
+          promotionReason = "missing_skill";
         }
 
         return json({
@@ -912,10 +1033,14 @@ Deno.serve(async (req) => {
           passed,
           resultLabel,
           passThreshold: 60,
-          attestationSent: attestationRequestId != null,
-          message: passed
-            ? `Test submitted successfully. Your result is ${percentage}% — Passed. Sent to your institution for attestation.`
-            : `Test submitted successfully. Your result is ${percentage}% — Needs Improvement. Sent to your institution for attestation.`,
+          walletReady,
+          promotionReason,
+          attestationSent: false,
+          message: walletReady
+            ? `Test submitted successfully. Your result is ${percentage}% — Passed. This competency is wallet-ready.`
+            : passed
+              ? `Test submitted successfully. Your result is ${percentage}% — Passed. Qualifying linked GitHub evidence is required for wallet-ready.`
+              : `Test submitted successfully. Your result is ${percentage}% — Needs Improvement.`,
         });
       }
 

@@ -207,8 +207,7 @@ export default function ContextReviewRequest() {
     }
   };
 
-  const flowStep: ReviewFlowStep =
-    pageState === "review_form" ? "review" : pageState === "submitted" ? "done" : "identity";
+  const flowStep: ReviewFlowStep = pageState === "review_form" ? "review" : "identity";
 
   return (
     <Shell>

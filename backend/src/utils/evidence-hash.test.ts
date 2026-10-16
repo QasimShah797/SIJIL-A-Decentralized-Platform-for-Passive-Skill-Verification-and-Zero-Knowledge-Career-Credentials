@@ -21,6 +21,27 @@ describe("evidence content hashes", () => {
     assert.notEqual(hash, hashEvidenceBytes(Buffer.from("tampered.pdf")));
   });
 
+  it("hashes GitHub supporting records from source, title, and url only", () => {
+    const issuance = hashEvidenceMetadata({
+      source: "GitHub",
+      title: "sijil",
+      url: "https://github.com/org/sijil",
+    });
+    const verify = hashEvidenceMetadata({
+      source: "GitHub",
+      title: "sijil",
+      url: "https://github.com/org/sijil",
+      repositoryName: null,
+      repositoryUrl: null,
+    });
+    assert.equal(issuance, verify);
+    assert.equal(issuance, hashEvidenceRecord({
+      source: "GitHub",
+      title: "sijil",
+      url: "https://github.com/org/sijil",
+    }));
+  });
+
   it("hashes canonical metadata for GitHub/link records", () => {
     const meta = {
       source: "GitHub",
@@ -52,6 +73,24 @@ describe("evidence content hashes", () => {
     });
     assert.equal(live.matchesStored, false);
     assert.equal(evidenceHashesMatch([original], [live.hash]), false);
+  });
+
+  it("treats a missing content_hash as metadata recompute, not tamper", () => {
+    const live = resolveLiveEvidenceHash({
+      content_hash: null,
+      source: "GitHub",
+      title: "sijil",
+      url: "https://github.com/org/sijil",
+    });
+    assert.equal(live.matchesStored, true);
+    assert.equal(
+      live.hash,
+      hashEvidenceMetadata({
+        source: "GitHub",
+        title: "sijil",
+        url: "https://github.com/org/sijil",
+      }),
+    );
   });
 
   it("extracts the skill-evidence storage path from a public URL", () => {

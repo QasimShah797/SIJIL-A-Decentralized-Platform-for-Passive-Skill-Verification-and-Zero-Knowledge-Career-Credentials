@@ -41,7 +41,7 @@ Fabric test-network  channel sijil / CredentialAnchor
       (opaque credentialId, hash, DIDs, status only)
 ```
 
-Personal data never goes on chain. `FABRIC_ENABLED=false` (default) skips the worker; verify then returns `pending_anchor` or `ledger_unavailable` rather than `verified`.
+Personal data never goes on chain. `FABRIC_ENABLED=false` (default) skips the **submit** worker. Public verify uses a read-only evaluate client when peer paths are configured; if the peer is unreachable it returns `pending_anchor` or `ledger_unavailable` rather than `verified`.
 
 ### Verification statuses
 

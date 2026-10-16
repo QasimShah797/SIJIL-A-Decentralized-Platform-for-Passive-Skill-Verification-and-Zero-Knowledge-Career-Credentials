@@ -60,8 +60,7 @@ async function fetchMoodleEvidenceForSkill(
 ): Promise<MoodleTrailEvidence[]> {
   const currentSite = normalizeMoodleSiteUrl(MOODLE_SITE_URL);
 
-  const siteFilter = (query: ReturnType<typeof supabase.from>) =>
-    query.eq("moodle_site_url", currentSite);
+  const siteFilter = (query: any) => query.eq("moodle_site_url", currentSite);
 
   const [lmsAll, assignments, courses, feedback] = await Promise.all([
     safeQuery(
@@ -221,7 +220,7 @@ function pushEvidenceRow(
   rows.push(params);
 }
 
-async function safeQuery<T>(fn: () => Promise<T>, fallback: T): Promise<T> {
+async function safeQuery(fn: () => unknown, fallback: unknown): Promise<any> {
   try {
     return await fn();
   } catch (error) {

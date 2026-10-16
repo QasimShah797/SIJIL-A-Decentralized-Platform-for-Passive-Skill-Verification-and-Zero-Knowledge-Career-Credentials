@@ -55,7 +55,7 @@ export function skillsFromPayload(
   const skills: AtsResumeView["skills"] = [];
   const seen = new Set<string>();
 
-  const push = (competencyId: string, name: string) => {
+  const push = (competencyId: string, name: string, row?: Record<string, unknown>) => {
     const trimmed = name.trim();
     const key = `${competencyId}:${trimmed.toLowerCase()}`;
     if (!trimmed || seen.has(key)) return;
@@ -64,19 +64,24 @@ export function skillsFromPayload(
       competencyId,
       name: trimmed,
       href: publicCompetencyPath(shareToken, competencyId),
+      issued: row?.issued === true,
+      ledgerStatus: typeof row?.ledgerStatus === "string" ? row.ledgerStatus : undefined,
+      ledgerDetail: typeof row?.ledgerDetail === "string" ? row.ledgerDetail : null,
+      blockchainVerified: row?.issued === true && row?.ledgerStatus === "verified" && row?.ledgerDetail !== "legacy_unverified_evidence",
+      trustLabel: typeof row?.trustLabel === "string" ? row.trustLabel : undefined,
     });
   };
 
   for (const row of asRecords(payload.skills)) {
     const name = asText(row.name);
     const competencyId = asText(row.competencyId) || fallbackCompetencyId || name;
-    if (name) push(competencyId, name);
+    if (name) push(competencyId, name, row);
   }
 
   const competency = competencyFromPayload(payload);
   const primaryName = asText(competency.name);
   if (primaryName) {
-    push(asText(competency.competencyId) || fallbackCompetencyId || primaryName, primaryName);
+    push(asText(competency.competencyId) || fallbackCompetencyId || primaryName, primaryName, competency);
   }
 
   return skills;

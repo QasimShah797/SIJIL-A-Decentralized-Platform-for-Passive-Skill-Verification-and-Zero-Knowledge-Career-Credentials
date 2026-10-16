@@ -216,7 +216,7 @@ export async function syncGitHubPortfolio(
   try {
     const session = await supabase.auth.getSession();
     if (session.data.session?.user.id) {
-      await syncDeclaredSkillEvidenceStatuses(session.data.session.user.id);
+      await syncSkillEvidenceStatusApi();
     }
   } catch {
     // Status sync should not block portfolio sync.

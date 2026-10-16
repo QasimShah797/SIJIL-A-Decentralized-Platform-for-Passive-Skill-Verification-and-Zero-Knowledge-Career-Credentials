@@ -9,7 +9,7 @@ import { PasswordInput } from "@/components/auth/PasswordInput";
 import { toast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
-import { ROLE_HOME } from "@/lib/auth-helpers";
+import { ROLE_HOME, isDeniedAccess } from "@/lib/auth-helpers";
 import { verifyLearnerAccess } from "@/lib/learner-auth";
 import { formatSupabaseError } from "@/lib/utils";
 
@@ -90,7 +90,7 @@ export function LearnerSignInForm({
       if (!data?.user) return;
 
       const access = await verifyLearnerAccess(data.user.id);
-      if (!access.ok) {
+      if (isDeniedAccess(access)) {
         await supabase.auth.signOut();
         if (access.reason === "wrong_role") {
           toast({

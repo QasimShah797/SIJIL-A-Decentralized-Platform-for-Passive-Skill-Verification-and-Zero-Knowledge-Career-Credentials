@@ -422,7 +422,7 @@ export default function WalletPage() {
   const [shareToken, setShareToken] = useState<string | null>(null);
   const [expiresInDays, setExpiresInDays] = useState(30);
   const [enabledFields, setEnabledFields] = useState<WalletShareFieldId[]>(["competency_name"]);
-  const [shareScope, setShareScope] = useState<"all" | "selected">("all");
+  const [shareScope, setShareScope] = useState<"all" | "selected" | "issued">("all");
   const [submitting, setSubmitting] = useState(false);
 
   const loadRecords = async () => {
@@ -680,6 +680,8 @@ export default function WalletPage() {
         title: "Share link created",
         description: shareScope === "selected"
           ? `Only ${activeRecord.competencyName} included for recruiters.`
+          : shareScope === "issued"
+            ? "Only issued credentials included for recruiters."
           : `${records.length} competenc${records.length === 1 ? "y" : "ies"} included for recruiters.`,
       });
     } catch (shareError) {

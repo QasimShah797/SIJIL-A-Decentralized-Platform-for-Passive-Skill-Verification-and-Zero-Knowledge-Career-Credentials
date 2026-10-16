@@ -603,7 +603,10 @@ async function fetchDerivedWalletCompetencyRecords(
         lms: sortStringsByLatest([
           ...aggregatedLms.evidence.map((row) => asNullableText(row.fetched_at)),
           ...aggregatedLms.courses.map((row) => asNullableText(row.synced_at)),
-          ...aggregatedLms.assignments.map((row) => asNullableText(row.submitted_at) ?? asNullableText(row.graded_at) ?? asNullableText(row.synced_at)),
+          ...aggregatedLms.assignments.map((row) => {
+            const extra = row as Record<string, unknown>;
+            return asNullableText(extra.submitted_at) ?? asNullableText(extra.graded_at) ?? asNullableText(row.synced_at);
+          }),
           ...aggregatedLms.grades.map((row) => asNullableText(row.synced_at)),
           ...aggregatedLms.importedEvidence.map((row) => asNullableText(row.imported_at)),
         ]),

@@ -1,4 +1,5 @@
-import type { WalletCompetencyRecordView, WalletEvidenceSummary } from "@/lib/wallet-competency-shared";
+import type { WalletCompetencyRecordView } from "@/lib/db/wallet-competency-records";
+import type { WalletEvidenceSummary } from "@/lib/wallet-competency-shared";
 import { parseEvidenceMetadata } from "@/lib/wallet-evidence-mapping";
 
 export type WalletModalLmsRecord = {
