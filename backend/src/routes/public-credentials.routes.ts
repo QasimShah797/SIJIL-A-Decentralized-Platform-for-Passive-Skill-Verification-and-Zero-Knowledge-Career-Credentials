@@ -12,12 +12,26 @@ import {
 } from "../controllers/wallet.controller";
 import { getIssuer } from "../controllers/issuers.controller";
 import { verifyPublicCredentialById } from "../controllers/credential-verify.controller";
+import {
+  getPublicLearnerPresentation,
+  verifyPublicLearnerPresentation,
+} from "../controllers/ssi-presentation.controller";
 import { PUBLIC_VERIFY_RATE_LIMIT, rateLimit } from "../middleware/rateLimit.middleware";
 
 const router = Router();
 
 router.use(optionalAuthMiddleware);
 router.get("/issuers/:did", asyncHandler(getIssuer));
+router.get(
+  "/vp/:id",
+  rateLimit(PUBLIC_VERIFY_RATE_LIMIT),
+  asyncHandler(getPublicLearnerPresentation),
+);
+router.post(
+  "/vp/:id/verify",
+  rateLimit(PUBLIC_VERIFY_RATE_LIMIT),
+  asyncHandler(verifyPublicLearnerPresentation),
+);
 router.get("/wallet-export/config", asyncHandler(getWalletExportConfig));
 router.get(
   "/credentials/:credentialId/verify",

@@ -1,7 +1,8 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { generateKeyPairSync } from "node:crypto";
-import { signSha256Hash, verifySha256Hash } from "./ed25519";
+import { generateKeyPairSync, sign } from "node:crypto";
+import { signSha256Hash, verifyEd25519Utf8, verifySha256Hash } from "./ed25519";
+import { encodeDidKeyFromRawPublicKey } from "./did-key";
 
 const hashHex = "ab".repeat(32);
 
@@ -69,5 +70,20 @@ describe("verifySha256Hash canonical proofValue", () => {
     buf[32] ^= 0x01;
     const flipped = buf.toString("base64url");
     assert.equal(verifySha256Hash(hashHex, flipped, publicPem), false);
+  });
+});
+
+describe("verifyEd25519Utf8 (learner message signatures)", () => {
+  it("accepts Ed25519 over UTF-8 bytes and rejects a digest-style verify of the same signature", () => {
+    const { publicKey, privateKey } = generateKeyPairSync("ed25519");
+    const der = publicKey.export({ type: "spki", format: "der" }) as Buffer;
+    const raw = new Uint8Array(der.subarray(der.byteLength - 32));
+    const message = Buffer.from("SIJIL-SSI-PRESENT-v1\nnonce=abc", "utf8");
+    const signature = sign(null, message, privateKey).toString("base64url");
+    assert.equal(verifyEd25519Utf8(raw, message, signature), true);
+    const flipped = Buffer.from(signature, "base64url");
+    flipped[0] ^= 0x01;
+    assert.equal(verifyEd25519Utf8(raw, message, flipped.toString("base64url")), false);
+    assert.equal(encodeDidKeyFromRawPublicKey(raw).startsWith("did:key:z"), true);
   });
 });

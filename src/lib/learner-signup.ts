@@ -1,6 +1,5 @@
 import type { AuthError } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
-import { holderDidFromUserId } from "@/lib/did";
 import { isMissingColumnError, stripNonDbColumns } from "@/lib/db/learner-profile-columns";
 
 export type LearnerSignupInput = {
@@ -91,7 +90,6 @@ async function insertLearnerProfileRow(
   institutionName?: string,
   program?: string,
 ): Promise<void> {
-  const holderDid = holderDidFromUserId(userId);
   const now = new Date().toISOString();
 
   const fullPayload = stripNonDbColumns({
@@ -101,7 +99,6 @@ async function insertLearnerProfileRow(
     university_email: email?.trim().toLowerCase() || null,
     institution_name: institutionName?.trim() || null,
     program: program?.trim() || null,
-    holder_did: holderDid,
     profile_completed: false,
     account_activated_at: now,
   });

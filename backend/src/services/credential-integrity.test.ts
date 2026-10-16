@@ -29,6 +29,12 @@ describe("credential integrity", () => {
     assert.equal(canonicalizeJson(vector.input), vector.canonical);
   });
 
+  it("puts the same holder DID on credentialSubject.id and the issuance input", () => {
+    const holderDid = "did:key:z6Mk" + "d".repeat(44);
+    const built = buildCredentialDocument({ ...sampleInput, holderDid });
+    assert.equal(built.document.credentialSubject.id, holderDid);
+  });
+
   it("includes sorted evidence hashes in the unsigned document", () => {
     const built = buildCredentialDocument({
       ...sampleInput,

@@ -1,0 +1,20 @@
+{
+  "protocol": "SIJIL-SSI-PRESENT-v1",
+  "cryptosuite": "sijil-ed25519-jcs-utf8-2026",
+  "note": "Exact UTF-8 bytes signed by the learner: the canonical string. Not eddsa-jcs-2022 (no SHA-256 digest step).",
+  "claims": {
+    "challengeId": "11111111-2222-4333-8444-555555555555",
+    "nonce": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "audience": "https://sijil.example/recruiter/verify-vp",
+    "holderDid": "did:key:z6Mkj4M7z8UBANjpLqsPzCBEN9GGP9eDRvmGw7JPAp4yeNxR",
+    "credentials": [
+      {
+        "id": "6916c346-333b-4bd5-9f15-b75b1f54e50b",
+        "hash": "8ef4bb60f3e06e8d8c501e1bf64b5e9aa23194b617eece3575459523533e4a1a"
+      }
+    ],
+    "issuedAt": "2026-10-16T19:00:00.000Z",
+    "expiresAt": "2026-10-16T19:15:00.000Z"
+  },
+  "canonical": "{\"audience\":\"https://sijil.example/recruiter/verify-vp\",\"challengeId\":\"11111111-2222-4333-8444-555555555555\",\"credentials\":[{\"hash\":\"8ef4bb60f3e06e8d8c501e1bf64b5e9aa23194b617eece3575459523533e4a1a\",\"id\":\"6916c346-333b-4bd5-9f15-b75b1f54e50b\"}],\"expiresAt\":\"2026-10-16T19:15:00.000Z\",\"holderDid\":\"did:key:z6Mkj4M7z8UBANjpLqsPzCBEN9GGP9eDRvmGw7JPAp4yeNxR\",\"issuedAt\":\"2026-10-16T19:00:00.000Z\",\"nonce\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\",\"protocol\":\"SIJIL-SSI-PRESENT-v1\",\"purpose\":\"present-credentials\"}"
+}

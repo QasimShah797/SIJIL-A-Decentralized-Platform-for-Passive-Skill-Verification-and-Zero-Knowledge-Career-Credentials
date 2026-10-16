@@ -1,7 +1,11 @@
 /**
- * Ed25519 sign/verify over a SHA-256 digest (node:crypto). No env access.
+ * Ed25519 sign/verify (node:crypto). No env access.
+ *
+ * Issuer credentials: Ed25519 over SHA-256 digest bytes (eddsa-jcs-2022).
+ * Learner SSI: Ed25519 over UTF-8 message bytes (Phase 1 bind + Phase 3 presentations).
  */
 import { createPrivateKey, createPublicKey, sign, verify } from "node:crypto";
+import { publicKeyToSpkiDer } from "./did-key";
 
 export function decodeIssuerPem(value: string): string {
   const trimmed = value.trim();
@@ -36,6 +40,24 @@ export function verifySha256Hash(
   try {
     const key = createPublicKey(publicKeyPem);
     return verify(null, Buffer.from(hashHex, "hex"), key, Buffer.from(proofValue, "base64url"));
+  } catch {
+    return false;
+  }
+}
+
+export function verifyEd25519Utf8(
+  rawPublicKey: Uint8Array,
+  message: Buffer,
+  signatureB64Url: string,
+): boolean {
+  if (!isCanonicalEd25519ProofValue(signatureB64Url)) return false;
+  try {
+    const key = createPublicKey({
+      key: publicKeyToSpkiDer(rawPublicKey),
+      format: "der",
+      type: "spki",
+    });
+    return verify(null, message, key, Buffer.from(signatureB64Url, "base64url"));
   } catch {
     return false;
   }
