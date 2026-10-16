@@ -4,6 +4,8 @@
  * without leaking fields the learner did not share.
  */
 
+import { skillTrustFromRow } from "./share-trust";
+
 export type PublicShareStatus = "valid" | "revoked" | "expired" | "invalid";
 
 export type TrustTier = "lms_preverified" | "corroborating";
@@ -35,6 +37,11 @@ export type AtsResumeSkill = {
   name: string;
   href: string;
   ledger?: EvidenceLedgerItem[];
+  issued?: boolean;
+  ledgerStatus?: string;
+  ledgerDetail?: string | null;
+  blockchainVerified?: boolean;
+  trustLabel?: string;
 };
 
 export type AtsResumeCertification = {
@@ -213,28 +220,30 @@ export function skillsFromPayload(
   const skills: AtsResumeSkill[] = [];
   const seen = new Set<string>();
 
-  const push = (competencyId: string, name: string) => {
+  const push = (competencyId: string, name: string, row?: Record<string, unknown>) => {
     const trimmed = name.trim();
     const key = `${competencyId}:${trimmed.toLowerCase()}`;
     if (!trimmed || seen.has(key)) return;
     seen.add(key);
+    const trust = row ? skillTrustFromRow(row) : skillTrustFromRow({});
     skills.push({
       competencyId,
       name: trimmed,
       href: publicCompetencyPath(shareToken, competencyId),
+      ...trust,
     });
   };
 
   for (const row of asRecords(payload.skills)) {
     const name = asText(row.name);
     const competencyId = asText(row.competencyId) || fallbackCompetencyId || name;
-    if (name) push(competencyId, name);
+    if (name) push(competencyId, name, row);
   }
 
   const competency = competencyFromPayload(payload);
   const primaryName = asText(competency.name);
   if (primaryName) {
-    push(asText(competency.competencyId) || fallbackCompetencyId || primaryName, primaryName);
+    push(asText(competency.competencyId) || fallbackCompetencyId || primaryName, primaryName, competency);
   }
 
   return skills;
@@ -457,8 +466,8 @@ export function buildEvidenceLedger(
   const matchedSkill = skillRows.find((row) => asText(row.competencyId) === competencyId);
   const primaryId = asText(competencyFromPayload(payload).competencyId);
   const isPrimary = competencyId === primaryId || (!matchedSkill && Boolean(competencyId));
-  const hasSkillSnapshot = isRecord(matchedSkill?.evidence);
-  const skillEvidence = hasSkillSnapshot ? matchedSkill.evidence : {};
+  const skillEvidence = isRecord(matchedSkill?.evidence) ? matchedSkill.evidence : {};
+  const hasSkillSnapshot = Object.keys(skillEvidence).length > 0;
   const packageEvidence = isRecord(complete) && Object.keys(complete).length > 0
     ? complete
     : (hasSkillSnapshot ? skillEvidence : evidence);

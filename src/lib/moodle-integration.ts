@@ -337,7 +337,7 @@ export async function repairMoodleEvidenceRecords(): Promise<{
   }
 
   const payload = await invokeMoodleFunction({ action: "repair_moodle_evidence_records" });
-  const result = (payload as { result?: Record<string, unknown> }).result ?? payload;
+  const result = (((payload as { result?: unknown }).result ?? payload) ?? {}) as Record<string, unknown>;
 
   return {
     assignmentsFound: Number(result.assignmentsFound ?? 0),
@@ -414,9 +414,8 @@ export async function testMoodleConnection(): Promise<{
 /** Legacy course-only import when an old edge function lacks sync_activities. */
 export async function legacyImportMoodleCourses(): Promise<number> {
   const payload = await invokeMoodleFunction({ action: "get_courses" });
-  const courses = Array.isArray((payload as { courses?: unknown[] }).courses)
-    ? (payload as { courses: unknown[] }).courses
-    : [];
+  const payloadRecord = payload as Record<string, unknown>;
+  const courses = Array.isArray(payloadRecord.courses) ? payloadRecord.courses : [];
   return courses.length;
 }
 
@@ -656,7 +655,7 @@ async function buildCourseActivitiesFromRows(
         .order("synced_at", { ascending: false });
       if (currentSite) fallbackQuery = fallbackQuery.eq("moodle_site_url", currentSite);
       const fallback = await fallbackQuery;
-      assignments = fallback.data;
+      assignments = (fallback.data ?? []).map((row) => ({ ...row, feedback: null }));
       assignErr = fallback.error;
     }
     if (assignErr) throw assignErr;

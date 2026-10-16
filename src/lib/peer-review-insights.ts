@@ -70,12 +70,13 @@ export function trustMix(reviews: PeerReview[]): TrustMixSlice[] {
   const medium = reviews.filter((review) => review.trustWeight === "Medium Trust").length;
   const blocked = reviews.filter((review) => review.trustWeight === "Blocked").length;
   const other = Math.max(0, reviews.length - high - medium - blocked);
-  return [
+  const slices: TrustMixSlice[] = [
     { key: "high", name: "High trust", value: high, color: TRUST_COLORS.high },
     { key: "medium", name: "Medium trust", value: medium, color: TRUST_COLORS.medium },
     { key: "blocked", name: "Blocked", value: blocked, color: TRUST_COLORS.blocked },
     { key: "other", name: "Unweighted", value: other, color: TRUST_COLORS.other },
-  ].filter((slice) => slice.value > 0);
+  ];
+  return slices.filter((slice) => slice.value > 0);
 }
 
 export function sourceMix(reviews: PeerReview[]): SourceSlice[] {

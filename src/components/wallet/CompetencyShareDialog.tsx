@@ -444,7 +444,7 @@ export function CompetencyShareDialog({
                     <div key={share.id} className="rounded-xl border border-border/60 p-3">
                       <div className="flex flex-wrap items-center justify-between gap-3">
                         <div>
-                          <div className="text-sm font-medium">{share.selectionMode.replaceAll("_", " ")}</div>
+                          <div className="text-sm font-medium">{share.selectionMode.replace(/_/g, " ")}</div>
                           <div className="text-xs text-muted-foreground">
                             Created {formatDate(share.createdAt)} · Expires {formatDate(share.expiresAt)}
                           </div>

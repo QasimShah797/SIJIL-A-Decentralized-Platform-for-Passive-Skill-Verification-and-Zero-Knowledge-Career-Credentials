@@ -80,18 +80,11 @@ function mapGitHubPrReviewToDisplay(
   return {
     id: review.id,
     reviewerName: review.reviewer_name,
-    reviewer_name: review.reviewer_name,
-    reviewerRole: review.reviewer_role,
-    reviewer_role: review.reviewer_role,
+    reviewerRole: "Project Collaborator",
     comment: review.review_text,
-    review_text: review.review_text,
-    source: review.source,
+    source: "GitHub",
     skill,
     date: review.created_at,
-    created_at: review.created_at,
-    repository_name: review.repository_name,
-    pull_request_number: review.pull_request_number,
-    pull_request_title: review.pull_request_title,
     projectName: review.repository_name,
     evidenceLabel: `${review.repository_name} — PR #${review.pull_request_number}`,
     imported: true,
@@ -99,6 +92,7 @@ function mapGitHubPrReviewToDisplay(
     trustWeight: "Medium Trust",
     contextStatus: "Context Verified",
     contributorVerification: "Contributor Verified",
+    rating: 3,
   };
 }
 
@@ -121,48 +115,37 @@ function mergeUniqueReviews(
 function mapWalletRecordsToReviews(records: WalletCompetencyRecordView[]): PeerReview[] {
   return records.flatMap((record) => [
     ...(record.evidencePackage?.teacherFeedback ?? []).map((feedback: Record<string, unknown>, index: number) => ({
-      id: `teacher-${feedback.id ?? feedback.evidence_record_id ?? feedback.moodle_assignment_id ?? index}`,
-      reviewer_name: "Teacher",
-      reviewer_role: "LMS",
-      review_text:
-        feedback.feedback_text
-        ?? feedback.feedback
-        ?? "Teacher feedback",
-      source: "LMS",
+      id: String(`teacher-${feedback.id ?? feedback.evidence_record_id ?? feedback.moodle_assignment_id ?? index}`),
+      reviewerName: "Teacher",
+      reviewerRole: "Teacher" as const,
+      comment: String(feedback.feedback_text ?? feedback.feedback ?? "Teacher feedback"),
+      source: "LMS" as const,
+      origin: "LMS Teacher" as const,
       skill: record.competencyName,
-      created_at:
-        feedback.reviewed_at
-        ?? feedback.synced_at
-        ?? new Date().toISOString(),
+      date: String(feedback.reviewed_at ?? feedback.synced_at ?? new Date().toISOString()),
+      evidenceLabel: record.competencyName,
+      imported: true,
+      trustWeight: "Medium Trust" as const,
+      contextStatus: "Context Verified" as const,
+      rating: 3 as const,
     })),
     ...(record.evidencePackage?.github?.reviews ?? []).map((review: Record<string, unknown>, index: number) => ({
-      id: `github-wallet-${review.id ?? index}`,
-      reviewer_name:
-        review.comment_author
-        ?? review.author
-        ?? review.reviewer_name
-        ?? "GitHub Reviewer",
-      reviewer_role:
-        review.pull_request_number != null || review.pull_request_title != null
-          ? "GitHub PR Review"
-          : "GitHub Review",
-      review_text:
-        review.comment_body
-        ?? review.body
-        ?? review.comment
-        ?? review.review_text
-        ?? "GitHub review",
-      source: "GitHub",
+      id: String(`github-wallet-${review.id ?? index}`),
+      reviewerName: String(review.comment_author ?? review.author ?? review.reviewer_name ?? "GitHub Reviewer"),
+      reviewerRole: "Project Collaborator" as const,
+      comment: String(review.comment_body ?? review.body ?? review.comment ?? review.review_text ?? "GitHub review"),
+      source: "GitHub" as const,
+      origin: "GitHub PR" as const,
       skill: record.competencyName,
-      repository_name: review.repository_name ?? review.repo_name,
-      pull_request_number: review.pull_request_number ?? review.pr_number,
-      pull_request_title: review.pull_request_title ?? review.pr_title,
-      created_at:
-        review.comment_created_at
-        ?? review.created_at
-        ?? new Date().toISOString(),
+      date: String(review.comment_created_at ?? review.created_at ?? new Date().toISOString()),
+      projectName: review.repository_name != null ? String(review.repository_name) : undefined,
+      evidenceLabel: String(review.repository_name ?? review.repo_name ?? record.competencyName),
+      imported: true,
+      trustWeight: "Medium Trust" as const,
+      contextStatus: "Context Verified" as const,
+      rating: 3 as const,
     })),
-  ]) as PeerReview[];
+  ]);
 }
 
 type PeerReviewPageCache = {

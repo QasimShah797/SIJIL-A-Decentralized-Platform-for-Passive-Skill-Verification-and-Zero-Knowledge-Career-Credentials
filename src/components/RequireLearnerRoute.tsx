@@ -2,6 +2,7 @@ import { useEffect, useState, ReactNode } from "react";
 import { Link, Navigate, useLocation } from "react-router-dom";
 import { ShieldAlert } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
+import { isDeniedAccess } from "@/lib/auth-helpers";
 import { verifyLearnerAccess } from "@/lib/learner-auth";
 import sijilLogo from "@/assets/sijil-logo.png";
 
@@ -82,7 +83,7 @@ export function RequireLearnerRoute({
     let cancelled = false;
     verifyLearnerAccess(userId).then((result) => {
       if (cancelled) return;
-      if (!result.ok) {
+      if (isDeniedAccess(result)) {
         setAccess(result.reason);
         return;
       }

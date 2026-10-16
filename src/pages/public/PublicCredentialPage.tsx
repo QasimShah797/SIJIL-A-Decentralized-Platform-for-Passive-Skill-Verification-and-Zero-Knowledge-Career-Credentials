@@ -66,7 +66,12 @@ export default function PublicCredentialPage() {
               Shared SIJIL resume · only disclosed fields are shown
             </p>
             {ledgerBadge ? (
-              <StatusBadge variant={ledgerBadge.variant}>{ledgerBadge.label}</StatusBadge>
+              <div className="flex flex-wrap items-center gap-2">
+                <StatusBadge variant={ledgerBadge.variant}>{ledgerBadge.label}</StatusBadge>
+                <span className="text-xs text-muted-foreground">
+                  Primary competency ledger status. Each skill is labeled separately.
+                </span>
+              </div>
             ) : null}
             <AtsResume
               resume={{

@@ -36,7 +36,7 @@ async function fetchWalletShares(candidateId: string): Promise<SharedCredentialV
     }
 
     return (data ?? [])
-      .map((row: Record<string, unknown>) => mapWalletShareToView(row))
+      .map((row: Record<string, unknown>) => mapWalletShareToView(row as Parameters<typeof mapWalletShareToView>[0]))
       .filter((item): item is SharedCredentialView => item !== null);
   } catch (error) {
     if (isMissingRelationError(error)) return [];

@@ -9,6 +9,7 @@ import { supabaseService } from "./supabase.service";
 import { skillsService } from "./skills.service";
 
 import { AppError } from "../utils/AppError";
+import { isMissingRelationError } from "../utils/supabase-errors";
 
 import {
   deleteGitHubSupportingRecord,
@@ -276,7 +277,7 @@ export class EvidenceRecordsService {
 
 
 
-    if (linksErr) throw new AppError(linksErr.message, 500);
+    if (linksErr && !isMissingRelationError(linksErr)) throw new AppError(linksErr.message, 500);
 
     let repoList: Array<Record<string, unknown>> = [];
     let linkList: Array<Record<string, unknown>> = links ?? [];

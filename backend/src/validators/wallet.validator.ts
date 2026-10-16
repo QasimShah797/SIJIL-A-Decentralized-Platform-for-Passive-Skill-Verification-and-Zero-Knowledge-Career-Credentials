@@ -26,7 +26,7 @@ export const shareWalletCompetencySchema = z.object({
     "custom",
   ]),
   selectedFields: z.array(z.enum(WALLET_SHARE_FIELD_IDS)).min(1),
-  shareScope: z.enum(["all", "selected"]).optional(),
+  shareScope: z.enum(["all", "selected", "issued"]).optional(),
   expiresInDays: z.number().int().positive().max(365).optional(),
 });
 

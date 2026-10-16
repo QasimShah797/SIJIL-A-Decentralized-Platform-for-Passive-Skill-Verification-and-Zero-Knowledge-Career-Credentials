@@ -40,7 +40,7 @@ export async function cleanupCompetencyRelatedData(
 
   await deleteStorageFilesForSkill(userId, skillId);
 
-  const cleanupTasks: Promise<unknown>[] = [
+  const cleanupTasks = [
     supabase.from("peer_reviews").delete().eq("learner_user_id", userId).eq("skill_id", skillId),
     supabase.from("peer_reviews").delete().eq("learner_user_id", userId).eq("skill", normalizedName),
     rawTable("review_invitations").delete().eq("learner_user_id", userId).eq("skill_id", skillId),
@@ -83,5 +83,5 @@ export async function cleanupCompetencyRelatedData(
       .eq("skill_id", skillId),
   ];
 
-  await Promise.allSettled(cleanupTasks);
+  await Promise.allSettled(cleanupTasks as unknown as Promise<unknown>[]);
 }

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { AtsResumeSkill, AtsResumeView } from "@/lib/public-credential";
+import { resumeImpliesAllSkillsVerified, skillTrustLabel } from "@/lib/share-trust";
 
 const SOURCE_LABEL: Record<string, string> = {
   lms: "LMS",
@@ -96,7 +97,7 @@ export function AtsResume({
         {resume.headline ? (
           <p className="mt-2 text-sm text-[#bfdbfe]">{resume.headline}</p>
         ) : null}
-        {verified ? (
+        {verified && resumeImpliesAllSkillsVerified(resume.skills) ? (
           <p className="mt-4 inline-flex rounded-full bg-[#064e3b] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-[#6ee7b7]">
             Verified share
           </p>
@@ -183,6 +184,21 @@ export function AtsResume({
                         <span className="shrink-0 text-[12px] font-semibold text-[#023E8A]">
                           View evidence →
                         </span>
+                      </span>
+                      <span
+                        data-skill-trust
+                        className={`mt-2 inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                          skill.blockchainVerified
+                            ? "bg-[#064e3b] text-[#6ee7b7]"
+                            : "bg-[#f1f5f9] text-[#475569]"
+                        }`}
+                      >
+                        {skill.trustLabel
+                          ?? skillTrustLabel({
+                            issued: skill.issued === true,
+                            ledgerStatus: skill.ledgerStatus ?? "not_found",
+                            detail: skill.ledgerDetail,
+                          })}
                       </span>
                       {sources.length > 0 ? (
                         <span className="mt-2 flex flex-wrap gap-1.5">

@@ -8,7 +8,7 @@ import { PasswordInput } from "@/components/auth/PasswordInput";
 import { toast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
-import { ROLE_HOME } from "@/lib/auth-helpers";
+import { ROLE_HOME, isDeniedAccess } from "@/lib/auth-helpers";
 import { verifyRecruiterAccess } from "@/lib/recruiter-auth";
 import { formatSupabaseError } from "@/lib/utils";
 
@@ -71,7 +71,7 @@ export function RecruiterSignInForm({ embedded = false }: RecruiterSignInFormPro
       if (!data?.user) return;
 
       const access = await verifyRecruiterAccess(data.user.id);
-      if (!access.ok) {
+      if (isDeniedAccess(access)) {
         await supabase.auth.signOut();
         if (access.reason === "wrong_role") {
           toast({
