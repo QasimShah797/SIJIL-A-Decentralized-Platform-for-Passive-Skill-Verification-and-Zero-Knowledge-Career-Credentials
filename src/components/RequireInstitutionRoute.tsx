@@ -2,6 +2,7 @@ import { useEffect, useState, ReactNode } from "react";
 import { Link, Navigate, useLocation } from "react-router-dom";
 import { ShieldAlert } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
+import { isDeniedAccess } from "@/lib/auth-helpers";
 import { verifyInstitutionAccess } from "@/lib/institution-auth";
 import sijilLogo from "@/assets/sijil-logo.png";
 
@@ -72,11 +73,11 @@ export function RequireInstitutionRoute({ children }: { children: ReactNode }) {
     let cancelled = false;
     verifyInstitutionAccess(userId).then((result) => {
       if (cancelled) return;
-      if (result.ok) {
-        setAccess("allowed");
+      if (isDeniedAccess(result)) {
+        setAccess(result.reason);
         return;
       }
-      setAccess(result.reason);
+      setAccess("allowed");
     });
 
     return () => {

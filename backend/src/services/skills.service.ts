@@ -18,6 +18,7 @@ import { evidenceRecordsService } from "./evidence-records.service";
 import { evaluateSkillProjectMatch } from "../utils/evidence-matching";
 import { cleanupCompetencyRelatedData } from "./competency-cleanup.service";
 import { upsertLinkedGitHubReposForUser } from "./github-supporting-record.service";
+import { isMissingRelationError } from "../utils/supabase-errors";
 
 function parseBreakdown(row: Record<string, unknown>): Record<string, number> {
   const direct = row.language_breakdown;
@@ -247,7 +248,9 @@ export class SkillsService {
       .eq("user_id", userId)
       .eq("skill_id", skillId);
 
-    if (linksErr) throw new AppError(linksErr.message, 500);
+    if (linksErr && !isMissingRelationError(linksErr)) {
+      throw new AppError(linksErr.message, 500);
+    }
 
     const relatedEvidence = (links ?? [])
       .map((link) => {

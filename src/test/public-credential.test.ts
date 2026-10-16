@@ -64,6 +64,8 @@ describe("ATS resume mapping", () => {
     expect(resume.skills[0]?.href.startsWith("/credential/")).toBe(true);
     expect(resume.skills.every((skill) => skill.href.includes("/competency/"))).toBe(true);
     expect(resume.skills.find((skill) => skill.name === "React.js")?.ledger?.some((item) => item.source === "github")).toBe(true);
+    expect(resume.skills.every((skill) => skill.blockchainVerified !== true)).toBe(true);
+    expect(resume.skills.every((skill) => skill.trustLabel === "Not verified / No issued credential")).toBe(true);
     expect(text).not.toContain("WORK EXPERIENCE");
   });
 

@@ -168,7 +168,7 @@ export interface WalletCompetencyDetailView {
   shares: WalletShareRecordView[];
 }
 
-export type WalletShareScope = "all" | "selected";
+export type WalletShareScope = "all" | "selected" | "issued";
 
 export interface ShareWalletCompetencyInput {
   selectionMode: WalletShareSelectionMode;

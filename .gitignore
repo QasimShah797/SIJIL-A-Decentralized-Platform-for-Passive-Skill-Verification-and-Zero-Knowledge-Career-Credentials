@@ -5,7 +5,13 @@ node_modules
 .env.local
 .env.*.local
 dist/
+coverage/
 _pptx_temp.zip
+*.log
+.DS_Store
+
+# Supabase CLI local cache
+supabase/.temp/
 
 # Hyperledger Fabric local downloads (binaries, samples, images helpers)
 fabric/fabric-samples/
@@ -17,3 +23,7 @@ fabric/**/node_modules/
 fabric/**/dist/
 fabric/**/coverage/
 fabric/**/*.tar.gz
+**/keystore/
+**/priv_sk
+**/*.pem
+!fabric/chaincode/**/*.md

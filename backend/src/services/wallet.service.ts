@@ -51,6 +51,12 @@ import {
   isIssuedCredentialRevoked,
   verifyPublicCredential,
 } from "./credential-verify.service";
+import {
+  annotateSkillTrust,
+  canCreateIssuedOnlyShare,
+  siblingIdsForShareScope,
+  type WalletShareScope,
+} from "./share-trust";
 
 type DbRow = Record<string, unknown>;
 
@@ -705,10 +711,21 @@ async function hydrateSharedWalletPayload(row: PresentationRow): Promise<Record<
   const fields: WalletShareFieldId[] = row.selected_fields.length > 0
     ? [...row.selected_fields]
     : ["competency_name"];
-  const shareScope = payload.shareScope === "selected" ? "selected" : "all";
+  const shareScope: WalletShareScope = payload.shareScope === "selected"
+    ? "selected"
+    : payload.shareScope === "issued"
+      ? "issued"
+      : "all";
+  const issuedIds = await issuedCompetencyIds(row.learner_id, records);
+  const primaryRecord = records.find((record) => record.competencyId === row.competency_id);
   const scopedRecords = shareScope === "selected"
     ? records.filter((record) => record.competencyId === row.competency_id)
-    : records;
+    : shareScope === "issued"
+      ? [
+          ...(primaryRecord ? [primaryRecord] : []),
+          ...recordsForShareScope(shareScope, primaryRecord ?? records[0], records, issuedIds),
+        ].filter((record, index, list) => list.findIndex((item) => item.competencyId === record.competencyId) === index)
+      : records;
   const includeNames = fields.includes("competency_name")
     || fields.includes("learner_skills_summary")
     || fields.includes("complete_evidence_package");
@@ -726,6 +743,7 @@ async function hydrateSharedWalletPayload(row: PresentationRow): Promise<Record<
         evidence: buildSkillEvidenceSlice(record, fields),
       }));
   }
+  await annotatePayloadSkillTrust(row.learner_id, payload);
 
   const includeGithub = fields.includes("github_evidence") || fields.includes("complete_evidence_package");
   const includeLms = fields.includes("lms_evidence") || fields.includes("complete_evidence_package");
@@ -1522,12 +1540,12 @@ async function withLedgerRevocation(
   return verification;
 }
 
-async function ledgerSnapshotForPresentation(row: PresentationRow): Promise<{
+async function ledgerSnapshotForCompetency(learnerId: string, competencyId: string): Promise<{
   ledgerStatus: string;
   ledgerDetail: string | null;
   ledger: PublicCredentialLedger | null;
 }> {
-  const cred = await findCredentialForLearnerCompetency(row.learner_id, row.competency_id);
+  const cred = await findCredentialForLearnerCompetency(learnerId, competencyId);
   if (!cred) {
     return { ledgerStatus: "not_found", ledgerDetail: null, ledger: null };
   }
@@ -1543,6 +1561,79 @@ async function ledgerSnapshotForPresentation(row: PresentationRow): Promise<{
       verifiedAt: result.verifiedAt,
     },
   };
+}
+
+async function ledgerSnapshotForPresentation(row: PresentationRow): Promise<{
+  ledgerStatus: string;
+  ledgerDetail: string | null;
+  ledger: PublicCredentialLedger | null;
+}> {
+  return ledgerSnapshotForCompetency(row.learner_id, row.competency_id);
+}
+
+async function issuedCompetencyIds(
+  userId: string,
+  records: WalletCompetencyRecordView[],
+): Promise<Set<string>> {
+  const { data, error } = await getServiceSupabase()
+    .from("credentials")
+    .select("skill_name")
+    .eq("user_id", userId)
+    .is("revoked_at", null);
+  if (error) throw new AppError(error.message, 500);
+  const names = new Set(
+    (data ?? [])
+      .map((row) => String(row.skill_name ?? "").trim().toLowerCase())
+      .filter(Boolean),
+  );
+  return new Set(
+    records
+      .filter((record) => names.has(record.competencyName.trim().toLowerCase()))
+      .map((record) => record.competencyId),
+  );
+}
+
+function recordsForShareScope(
+  scope: WalletShareScope,
+  primary: WalletCompetencyRecordView,
+  records: WalletCompetencyRecordView[],
+  issuedIds: Set<string>,
+): WalletCompetencyRecordView[] {
+  const siblingIds = new Set(siblingIdsForShareScope(
+    scope,
+    primary.competencyId,
+    records.map((record) => record.competencyId),
+    issuedIds,
+  ));
+  return records.filter((record) => siblingIds.has(record.competencyId));
+}
+
+async function annotatePayloadSkillTrust(
+  learnerId: string,
+  payload: Record<string, unknown>,
+): Promise<void> {
+  const skills = Array.isArray(payload.skills) ? payload.skills : [];
+  for (const item of skills) {
+    if (!item || typeof item !== "object") continue;
+    const skill = item as Record<string, unknown>;
+    const competencyId = typeof skill.competencyId === "string" ? skill.competencyId : "";
+    if (!competencyId) continue;
+    const cred = await findCredentialForLearnerCompetency(learnerId, competencyId);
+    if (!cred) {
+      Object.assign(skill, annotateSkillTrust({
+        issued: false,
+        ledgerStatus: "not_found",
+      }));
+      continue;
+    }
+    const result = await verifyPublicCredential(cred.id);
+    Object.assign(skill, annotateSkillTrust({
+      issued: true,
+      credentialId: cred.id,
+      ledgerStatus: result.status,
+      detail: result.detail,
+    }));
+  }
 }
 
 function mapPresentationRow(row: DbRow): PresentationRow {
@@ -1675,14 +1766,23 @@ export class WalletService {
     }
     await persistWalletRecord(record);
     const learnerContext = await loadLearnerDisclosureContext(userId);
-    const shareScope = input.shareScope === "selected" ? "selected" : "all";
+    const shareScope: WalletShareScope = input.shareScope === "selected"
+      ? "selected"
+      : input.shareScope === "issued"
+        ? "issued"
+        : "all";
+    const issuedIds = await issuedCompetencyIds(userId, records);
+    if (shareScope === "issued" && !canCreateIssuedOnlyShare(competencyId, issuedIds)) {
+      throw new AppError("Selected competency has no issued credential", 409);
+    }
     const disclosedPayload = buildDisclosedPayload(
       record,
       input.selectedFields,
       learnerContext,
-      shareScope === "all" ? records : [],
+      recordsForShareScope(shareScope, record, records, issuedIds),
     );
     disclosedPayload.shareScope = shareScope;
+    await annotatePayloadSkillTrust(userId, disclosedPayload);
 
     if (Object.keys(disclosedPayload).length === 0) {
       throw new AppError("Selected fields did not produce a shareable payload", 400);
@@ -1840,7 +1940,7 @@ export class WalletService {
       disclosedPayload: row.disclosed_payload,
     }));
     const verifiedAt = new Date().toISOString();
-    const ledgerInfo = await ledgerSnapshotForPresentation(row);
+    const ledgerInfo = await ledgerSnapshotForCompetency(row.learner_id, competencyId);
     const ledgerVerified =
       ledgerInfo.ledgerStatus === "verified" &&
       ledgerInfo.ledgerDetail !== "legacy_unverified_evidence";

@@ -6,6 +6,7 @@ import { PublicSurfaceLayout } from "@/components/sijil/PublicSurfaceLayout";
 import { StatusBadge } from "@/components/sijil/StatusBadge";
 import { PageSkeleton } from "@/components/sijil/SkeletonLoader";
 import { mapLedgerStatusToBadge, shareShowsVerified } from "@/lib/ledger-status";
+import { isBlockchainVerified, skillTrustFromRow } from "@/lib/share-trust";
 import {
   buildEvidenceLedger,
   competencyFromSharePayload,
@@ -58,9 +59,16 @@ async function loadPublicCompetency(shareToken: string, competencyId: string): P
     if (!competency) {
       throw new Error("This competency was not included in the share");
     }
+    const skillRow = Array.isArray(credential.webView.disclosedPayload.skills)
+      ? credential.webView.disclosedPayload.skills.find((item) => {
+        return Boolean(item) && typeof item === "object" && (item as { competencyId?: string }).competencyId === competencyId;
+      }) as Record<string, unknown> | undefined
+      : undefined;
+    const skillTrust = skillTrustFromRow(skillRow ?? { issued: false });
+    const skillLedgerStatus = skillTrust.ledgerStatus;
     return {
       status: "valid",
-      verified,
+      verified: isBlockchainVerified(skillLedgerStatus, skillTrust.ledgerDetail),
       verifiedAt: credential.verifiedAt,
       competency,
       ledger: buildEvidenceLedger(
@@ -68,8 +76,8 @@ async function loadPublicCompetency(shareToken: string, competencyId: string): P
         competencyId,
         credential.selectedFields,
       ),
-      ledgerStatus,
-      ledgerDetail: credential.ledgerDetail ?? null,
+      ledgerStatus: skillLedgerStatus,
+      ledgerDetail: skillTrust.ledgerDetail,
     };
   }
 }

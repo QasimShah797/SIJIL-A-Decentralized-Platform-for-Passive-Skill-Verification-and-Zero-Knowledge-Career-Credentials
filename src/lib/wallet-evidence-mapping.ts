@@ -44,10 +44,13 @@ export function evidenceRecordMatchesSkill(
 }
 
 export function splitEvidenceRecordsBySource(rows: Record<string, unknown>[]) {
-  const normalized = rows.map((row) => ({
-    ...row,
-    metadata: parseEvidenceMetadata(row.metadata),
-  }));
+  const normalized = rows.map((row) => {
+    const next: Record<string, unknown> = {
+      ...row,
+      metadata: parseEvidenceMetadata(row.metadata),
+    };
+    return next;
+  });
 
   return {
     github: normalized.filter((row) => isGithubSource(row.source)),
@@ -120,7 +123,7 @@ export function buildLmsBundleFromEvidenceRecords(
         evidence_record_id: asText(row.id),
       };
     })
-    .filter((row): row is Record<string, unknown> => row !== null);
+    .filter((row) => row !== null);
 
   return {
     evidence,

@@ -147,7 +147,7 @@ async function fetchDisclosedCareerByLearnerIds(
 
     const sharesByLearner = new Map<string, SharedCredentialView[]>();
     for (const row of data ?? []) {
-      const mapped = mapWalletShareToView(row);
+      const mapped = mapWalletShareToView(row as Parameters<typeof mapWalletShareToView>[0]);
       const learnerId = typeof row.learner_id === "string" ? row.learner_id : null;
       if (!learnerId || !mapped) continue;
       const bucket = sharesByLearner.get(learnerId) ?? [];
@@ -182,7 +182,9 @@ export async function fetchCandidateCardFieldsByIds(
     .in("user_id", uniqueIds);
 
   if (error && isMissingColumnError(error)) {
-    ({ data, error } = await supabase.from("learner_profiles").select(baseSelect).in("user_id", uniqueIds));
+    const fallback = await supabase.from("learner_profiles").select(baseSelect).in("user_id", uniqueIds);
+    data = fallback.data as typeof data;
+    error = fallback.error;
   }
 
   if (!error) rows = (data ?? []) as Record<string, unknown>[];
@@ -243,7 +245,7 @@ async function fetchCandidatesFromActiveShares(): Promise<CandidateView[]> {
 
     const sharesByLearner = new Map<string, ReturnType<typeof mapWalletShareToView>[]>();
     for (const row of data ?? []) {
-      const mapped = mapWalletShareToView(row);
+      const mapped = mapWalletShareToView(row as Parameters<typeof mapWalletShareToView>[0]);
       const learnerId = typeof row.learner_id === "string" ? row.learner_id : null;
       if (!learnerId || !mapped) continue;
       const bucket = sharesByLearner.get(learnerId) ?? [];

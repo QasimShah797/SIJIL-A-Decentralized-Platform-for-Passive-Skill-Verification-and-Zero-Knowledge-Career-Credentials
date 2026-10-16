@@ -8,6 +8,7 @@ import { PublicSurfaceLayout } from "@/components/sijil/PublicSurfaceLayout";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { isDeniedAccess } from "@/lib/auth-helpers";
 import { verifyInstitutionAccess } from "@/lib/institution-auth";
 import { formatSupabaseError } from "@/lib/utils";
 import sijilLogo from "@/assets/sijil-logo.png";
@@ -47,7 +48,7 @@ export default function InstitutionLogin() {
       if (!data?.user) return;
 
       const access = await verifyInstitutionAccess(data.user.id);
-      if (!access.ok) {
+      if (isDeniedAccess(access)) {
         await supabase.auth.signOut();
         if (access.reason === "wrong_role") {
           toast({

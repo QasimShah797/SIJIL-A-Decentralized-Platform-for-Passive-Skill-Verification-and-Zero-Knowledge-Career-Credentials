@@ -126,9 +126,30 @@ function TimerProgressRing({ remainingMs, totalMs }: { remainingMs: number; tota
 
 async function invokeRapidTask(body: Record<string, unknown>) {
   const { data, error } = await supabase.functions.invoke("rapid-task", { body });
+  if (!error) {
+    return {
+      data: (data as Record<string, unknown> | null) ?? null,
+      error: null,
+    };
+  }
+
+  let message = error.message || "Edge Function returned a non-2xx status code";
+  const context = (error as { context?: Response }).context;
+  if (context && typeof context.json === "function") {
+    try {
+      const payload = await context.json() as { error?: unknown; details?: unknown };
+      const fnError = payload?.error != null ? String(payload.error) : "";
+      const details = payload?.details != null ? String(payload.details) : "";
+      if (fnError && details) message = `${fnError}: ${details}`;
+      else if (fnError) message = fnError;
+    } catch {
+      // keep the SDK message when the function body is not JSON
+    }
+  }
+
   return {
     data: (data as Record<string, unknown> | null) ?? null,
-    error: error ?? null,
+    error: new Error(message),
   };
 }
 
@@ -734,6 +755,7 @@ export default function PracticalTask() {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setGenerateError(message);
+      setPanelMode("start");
       toast({ title: "Could not generate MCQ", description: message, variant: "destructive" });
     } finally {
       setGeneratingMcqs(false);

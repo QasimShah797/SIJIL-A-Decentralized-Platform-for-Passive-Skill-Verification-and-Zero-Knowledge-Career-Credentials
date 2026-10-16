@@ -270,8 +270,7 @@ export default function ReviewInvite() {
 
   if (!invitation) return null;
 
-  const flowStep: ReviewFlowStep =
-    state === "submitted" ? "done" : state === "review_form" ? "review" : "identity";
+  const flowStep: ReviewFlowStep = state === "review_form" ? "review" : "identity";
 
   const skillLabel = invitation.competency_name ?? "Skill claim";
   const projectLabel = invitation.project_name

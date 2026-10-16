@@ -76,8 +76,6 @@ export async function upsertGitHubSupportingRecord(
     source: EVIDENCE_SOURCE.GITHUB,
     title,
     url,
-    repositoryName: title,
-    repositoryUrl: url,
   });
   const occurredAt = input.occurredAt || new Date().toISOString();
   const duplicate = findDuplicateGitHubSupportingRecord(existing ?? [], url);

@@ -2,6 +2,8 @@
 
 Verifiable competency credentials platform built for learners, institutions, and recruiters.
 
+**New teammate?** Follow **[TEAMMATE_SETUP.md](./TEAMMATE_SETUP.md)** for clone, `.env`, WSL/Docker, Fabric, and safe verification commands. Do not commit `.env` files or private keys.
+
 ## Architecture
 
 ```
@@ -73,8 +75,8 @@ Returned by `GET /api/public/credentials/:id/verify` and shown in the UI.
 
 ```bash
 npm install
-cp .env.example .env
-# Configure VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY, VITE_API_BASE_URL
+cp .env.example .env.local
+# Configure VITE_SUPABASE_URL (anon key only), VITE_API_BASE_URL
 npm run dev
 ```
 

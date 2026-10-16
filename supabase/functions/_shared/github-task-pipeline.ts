@@ -468,14 +468,14 @@ function resolveProviderModel(
   if (provider === "gemini") {
     if (geminiModel) return geminiModel;
     if (purpose === "classify") {
-      return Deno.env.get("GEMINI_CLASSIFY_MODEL") ?? "gemini-2.5-flash";
+      return Deno.env.get("GEMINI_CLASSIFY_MODEL") ?? "gemini-2.5-flash-lite";
     }
     if (purpose === "task") {
-      return Deno.env.get("GEMINI_TASK_MODEL") ?? "gemini-2.5-flash";
+      return Deno.env.get("GEMINI_TASK_MODEL") ?? "gemini-2.5-flash-lite";
     }
     return Deno.env.get("GEMINI_EVAL_MODEL")
       ?? Deno.env.get("GEMINI_TASK_MODEL")
-      ?? "gemini-2.5-flash";
+      ?? "gemini-2.5-flash-lite";
   }
 
   return resolveGroqModel(purpose);
@@ -488,23 +488,27 @@ function providerConfigured(provider: AiProvider): boolean {
 
 export function isRecoverableAIError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
+  const lower = message.toLowerCase();
 
   return (
     message.includes("429")
     || message.includes("503")
     || message.includes("502")
     || message.includes("504")
+    || message.includes("404")
     || message.includes("RESOURCE_EXHAUSTED")
     || message.includes("UNAVAILABLE")
+    || message.includes("NOT_FOUND")
     || message.includes("model_not_found")
-    || message.toLowerCase().includes("quota")
-    || message.toLowerCase().includes("high demand")
-    || message.toLowerCase().includes("does not exist")
-    || message.toLowerCase().includes("do not have access")
-    || message.toLowerCase().includes("rate limit")
-    || message.toLowerCase().includes("overloaded")
-    || message.toLowerCase().includes("temporarily unavailable")
-    || message.toLowerCase().includes("all ai providers failed")
+    || lower.includes("quota")
+    || lower.includes("high demand")
+    || lower.includes("does not exist")
+    || lower.includes("do not have access")
+    || lower.includes("no longer available")
+    || lower.includes("rate limit")
+    || lower.includes("overloaded")
+    || lower.includes("temporarily unavailable")
+    || lower.includes("all ai providers failed")
   );
 }
 
@@ -808,7 +812,7 @@ Rules:
   const geminiModel =
     Deno.env.get("GEMINI_EVAL_MODEL")
     || Deno.env.get("GEMINI_TASK_MODEL")
-    || "gemini-2.5-flash";
+    || "gemini-2.5-flash-lite";
 
   return await llmJson<EvaluationResult>({
     purpose: "eval",

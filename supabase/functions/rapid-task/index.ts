@@ -10,6 +10,7 @@ import {
 } from "../_shared/github-task-pipeline.ts";
 import {
   buildAnswerKeyEntries,
+  buildLocalFallbackMcqTest,
   generateMcqTask,
   parseMcqGenerateBody,
   scoreMcqSubmission,
@@ -41,6 +42,22 @@ function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
     headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      },
+    );
   });
 }
 
@@ -322,7 +339,7 @@ async function upsertWalletCompetencyRecord(params: {
     githubActivities,
     githubEvidenceRecords,
     githubReviews,
-    lmsEvidence,
+    lmsEvidenceRaw,
     moodleAssignmentsRaw,
     moodleCoursesRaw,
     moodleGradesRaw,
@@ -667,8 +684,8 @@ Deno.serve(async (req) => {
   try {
     const body = await req.json();
     const GITHUB_TOKEN = Deno.env.get("GITHUB_TOKEN") ?? undefined;
-    const CLASSIFY_MODEL = Deno.env.get("GEMINI_CLASSIFY_MODEL") ?? "gemini-2.5-flash";
-    const TASK_MODEL = Deno.env.get("GEMINI_TASK_MODEL") ?? "gemini-2.5-flash";
+    const CLASSIFY_MODEL = Deno.env.get("GEMINI_CLASSIFY_MODEL") ?? "gemini-2.5-flash-lite";
+    const TASK_MODEL = Deno.env.get("GEMINI_TASK_MODEL") ?? "gemini-2.5-flash-lite";
 
     if (body.action === "generate") {
       const { skill, repos, variationSeed } = parseGenerateRequest(body);
@@ -682,33 +699,82 @@ Deno.serve(async (req) => {
 
         const parsed = parseMcqGenerateBody(body);
         const skillId = parsed.skillId;
-        const platformEvidence = await collectPlatformEvidenceForTask(
-          admin,
-          userId,
-          skillId,
-          skillName,
-        );
+        let platformEvidence = {
+          githubRepos: repos,
+          promptBlock: "",
+          sources: {
+            github: [] as string[],
+            lms: [] as string[],
+            moodle: [] as string[],
+            uploads: [] as string[],
+            linkedin: null as string | null,
+          },
+        };
+        try {
+          platformEvidence = await withTimeout(
+            collectPlatformEvidenceForTask(admin, userId, skillId, skillName),
+            4000,
+            "platform evidence",
+          );
+        } catch (err) {
+          console.error("platform evidence skipped:", err instanceof Error ? err.message : String(err));
+        }
         const reposForEvidence = platformEvidence.githubRepos.length
           ? platformEvidence.githubRepos
           : repos;
 
-        const { classification, evidence, evidenceMeta } = await collectSkillEvidence({
-          skill: { name: skillName },
-          repos: reposForEvidence,
-          githubToken: GITHUB_TOKEN,
-          classifyModel: CLASSIFY_MODEL,
-        });
+        let classification = {
+          language: skillName,
+          frameworks: [] as string[],
+          patterns_observed: [] as string[],
+          complexity_level: "intermediate",
+          evidence_quality: "limited",
+          confidence: 0.4,
+          reason: "Timed out collecting evidence; using local fallback classification.",
+        };
+        let evidence = { files: [] as Array<{ path: string; content: string; size: number }>, languages: {} as Record<string, number> };
+        let evidenceMeta = { repo: null as string | null, fileCount: 0 };
+        try {
+          const collected = await withTimeout(
+            collectSkillEvidence({
+              skill: { name: skillName },
+              repos: reposForEvidence,
+              githubToken: GITHUB_TOKEN,
+              classifyModel: CLASSIFY_MODEL,
+            }),
+            8000,
+            "github evidence",
+          );
+          classification = collected.classification;
+          evidence = collected.evidence;
+          evidenceMeta = collected.evidenceMeta;
+        } catch (err) {
+          console.error("github evidence skipped:", err instanceof Error ? err.message : String(err));
+        }
 
-        const { test, fallback } = await generateMcqTask({
-          skillName,
-          classification,
-          evidenceFiles: evidence.files,
-          evidenceLanguages: evidence.languages,
-          repo: evidenceMeta.repo,
-          taskModel: TASK_MODEL,
-          variationSeed: variationSeed ?? crypto.randomUUID(),
-          platformEvidence: platformEvidence.promptBlock,
-        });
+        let test = buildLocalFallbackMcqTest(skillName);
+        test.durationMinutes = 15;
+        let fallback = true;
+        try {
+          const generated = await withTimeout(
+            generateMcqTask({
+              skillName,
+              classification,
+              evidenceFiles: evidence.files,
+              evidenceLanguages: evidence.languages,
+              repo: evidenceMeta.repo,
+              taskModel: TASK_MODEL,
+              variationSeed: variationSeed ?? crypto.randomUUID(),
+              platformEvidence: platformEvidence.promptBlock,
+            }),
+            15000,
+            "mcq generate",
+          );
+          test = generated.test;
+          fallback = generated.fallback;
+        } catch (err) {
+          console.error("mcq generate fell back locally:", err instanceof Error ? err.message : String(err));
+        }
 
         const learnerQuestions = test.questions.map(stripQuestionForLearner);
         const answerKey = buildAnswerKeyEntries(test.questions);
@@ -941,13 +1007,20 @@ Deno.serve(async (req) => {
             promotionReason = decision.reason;
           }
 
-          await upsertWalletCompetencyRecord({
-            admin,
-            userId,
-            skillId,
-            competencyName: attempt.competency_name ?? "",
-            competencyDomain: attempt.competency_domain ?? "General",
-          });
+          try {
+            await upsertWalletCompetencyRecord({
+              admin,
+              userId,
+              skillId,
+              competencyName: attempt.competency_name ?? "",
+              competencyDomain: attempt.competency_domain ?? "General",
+            });
+          } catch (walletErr) {
+            console.error(
+              "wallet_competency_records upsert threw:",
+              walletErr instanceof Error ? walletErr.message : String(walletErr),
+            );
+          }
         } else {
           promotionReason = "missing_skill";
         }

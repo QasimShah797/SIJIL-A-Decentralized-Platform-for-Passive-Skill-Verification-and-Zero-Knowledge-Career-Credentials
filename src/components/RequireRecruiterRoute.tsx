@@ -2,6 +2,7 @@ import { useEffect, useState, ReactNode } from "react";
 import { Link, Navigate, useLocation } from "react-router-dom";
 import { ShieldAlert } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
+import { isDeniedAccess } from "@/lib/auth-helpers";
 import { verifyRecruiterAccess } from "@/lib/recruiter-auth";
 import sijilLogo from "@/assets/sijil-logo.png";
 
@@ -72,7 +73,7 @@ export function RequireRecruiterRoute({ children }: { children: ReactNode }) {
     let cancelled = false;
     verifyRecruiterAccess(userId).then((result) => {
       if (cancelled) return;
-      if (!result.ok) {
+      if (isDeniedAccess(result)) {
         setAccess(result.reason);
         return;
       }
