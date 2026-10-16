@@ -25,3 +25,12 @@ export function isMissingRelationError(err: unknown): boolean {
     || msg.includes("schema cache")
   );
 }
+
+export function isUniqueViolation(err: unknown): boolean {
+  if (typeof err === "object" && err !== null) {
+    const code = (err as { code?: string }).code;
+    if (code === "23505") return true;
+  }
+  const msg = String((err as { message?: string })?.message ?? err).toLowerCase();
+  return msg.includes("duplicate key") || msg.includes("unique constraint");
+}
