@@ -618,7 +618,6 @@ export function candidateMatchesSkillQuery(
   const q = query.trim().toLowerCase();
   if (!q) return true;
   if (candidate.name.toLowerCase().includes(q)) return true;
-  if (candidate.institution.toLowerCase().includes(q)) return true;
   if (candidate.topSkill.toLowerCase().includes(q)) return true;
   if (candidate.skillsSummary?.toLowerCase().includes(q)) return true;
   if (candidate.careerGoal?.toLowerCase().includes(q)) return true;

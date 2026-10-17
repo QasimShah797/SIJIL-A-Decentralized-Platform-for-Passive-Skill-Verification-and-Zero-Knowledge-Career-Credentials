@@ -1,6 +1,7 @@
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useState } from "react";
 import {
+  Briefcase,
   CalendarClock,
   CheckCircle2,
   LayoutDashboard,
@@ -41,12 +42,9 @@ const recruiterNavGroups: NavGroup[] = [
     label: "Workspace",
     items: [
       { to: "/recruiter/search", icon: LayoutDashboard, label: "Dashboard", mobileTab: true },
+      { to: "/recruiter/jobs", icon: Briefcase, label: "Jobs", mobileTab: true },
       { to: "/recruiter/interviews", icon: CalendarClock, label: "Interviews", mobileTab: true },
     ],
-  },
-  {
-    label: "Profile",
-    items: [{ to: "/recruiter/profile", icon: UserCircle, label: "My Profile" }],
   },
   {
     label: "Review",
@@ -139,7 +137,15 @@ function NavGroupSection({
   );
 }
 
-function MobileBottomTabs({ items, pathname }: { items: NavItem[]; pathname: string }) {
+function MobileBottomTabs({
+  items,
+  pathname,
+  account,
+}: {
+  items: NavItem[];
+  pathname: string;
+  account?: { to: string; initials: string; avatarUrl: string | null };
+}) {
   return (
     <nav
       className="fixed bottom-0 left-0 right-0 z-40 flex border-t border-border/60 bg-card/95 backdrop-blur-md lg:hidden"
@@ -161,7 +167,75 @@ function MobileBottomTabs({ items, pathname }: { items: NavItem[]; pathname: str
           </NavLink>
         );
       })}
+      {account ? (
+        <NavLink
+          to={account.to}
+          className={cn(
+            "flex min-w-0 flex-1 flex-col items-center gap-0.5 px-1 py-1.5 text-[10px] font-medium transition-colors",
+            navActive(pathname, account.to) ? "text-primary" : "text-muted-foreground",
+          )}
+        >
+          {account.avatarUrl ? (
+            <img src={account.avatarUrl} alt="" className="h-7 w-7 rounded-full object-cover ring-2 ring-primary/20" />
+          ) : (
+            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#023E8A] text-[10px] font-semibold text-white">
+              {account.initials}
+            </span>
+          )}
+          <span className="truncate">Profile</span>
+        </NavLink>
+      ) : null}
     </nav>
+  );
+}
+
+function RecruiterSidebarAccount({
+  name,
+  subtitle,
+  initials,
+  avatarUrl,
+  active,
+  onNavigate,
+  onSignOut,
+}: {
+  name: string;
+  subtitle: string;
+  initials: string;
+  avatarUrl: string | null;
+  active: boolean;
+  onNavigate?: () => void;
+  onSignOut: () => void;
+}) {
+  return (
+    <div className="border-t border-sidebar-border p-3">
+      <div className={cn("flex items-center gap-2 rounded-2xl p-1.5", active && "bg-white/15")}>
+        <NavLink
+          to="/recruiter/profile"
+          onClick={onNavigate}
+          className="flex min-w-0 flex-1 items-center gap-3 rounded-xl px-1.5 py-1 transition-colors hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring"
+        >
+          {avatarUrl ? (
+            <img src={avatarUrl} alt="" className="h-12 w-12 shrink-0 rounded-full object-cover ring-2 ring-white/40" />
+          ) : (
+            <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white text-base font-semibold text-[#023E8A] ring-2 ring-white/40">
+              {initials}
+            </span>
+          )}
+          <span className="min-w-0">
+            <span className="block truncate text-sm font-semibold text-sidebar-accent-foreground">{name}</span>
+            <span className="block truncate text-xs text-sidebar-foreground/70">{subtitle}</span>
+          </span>
+        </NavLink>
+        <button
+          type="button"
+          onClick={onSignOut}
+          aria-label="Sign out"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-sidebar-foreground/70 transition-colors hover:bg-white/10 hover:text-sidebar-accent-foreground"
+        >
+          <LogOut className="h-4 w-4" />
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -244,23 +318,35 @@ export function AppShell({
           ))
         )}
       </div>
-      <div className="border-t border-sidebar-border p-3">
-        <button
-          type="button"
-          onClick={handleSignOut}
-          className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-xs text-sidebar-foreground/60 transition-colors hover:bg-sidebar-accent/70"
-        >
-          <LogOut className="h-3.5 w-3.5" />
-          Sign out
-        </button>
-      </div>
+      {role === "recruiter" ? (
+        <RecruiterSidebarAccount
+          name={recruiterProfile?.fullName?.trim() || "Recruiter"}
+          subtitle={recruiterProfile?.jobTitle?.trim() || "My Profile"}
+          initials={avatar}
+          avatarUrl={recruiterProfile?.avatarUrl ?? null}
+          active={navActive(pathname, "/recruiter/profile")}
+          onNavigate={() => setDrawerOpen(false)}
+          onSignOut={handleSignOut}
+        />
+      ) : (
+        <div className="border-t border-sidebar-border p-3">
+          <button
+            type="button"
+            onClick={handleSignOut}
+            className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-xs text-sidebar-foreground/60 transition-colors hover:bg-sidebar-accent/70"
+          >
+            <LogOut className="h-3.5 w-3.5" />
+            Sign out
+          </button>
+        </div>
+      )}
     </>
   );
 
   return (
     <div className="flex min-h-screen w-full bg-background">
       {/* Desktop sidebar */}
-      <aside className="sticky top-0 z-30 hidden h-screen w-[17.5rem] shrink-0 flex-col overflow-y-auto border-r border-sidebar-border bg-[image:var(--sidebar-gradient)] text-sidebar-foreground lg:flex">
+      <aside className="sticky top-0 z-30 hidden h-screen w-[17.5rem] shrink-0 flex-col overflow-hidden border-r border-sidebar-border bg-[image:var(--sidebar-gradient)] text-sidebar-foreground lg:flex">
         {sidebarContent}
       </aside>
 
@@ -386,10 +472,22 @@ export function AppShell({
             </DropdownMenu>
           </div>
         </header>
-        <div className={cn("workspace-content flex-1 animate-fade-in p-4 sm:p-6 lg:p-8", contentClassName)}>{children}</div>
+        <div className={cn(
+          "workspace-content flex-1 animate-fade-in",
+          role === "recruiter" ? "w-full !max-w-none px-4 pb-4 pt-3 sm:px-6 sm:pb-6 lg:px-6 lg:pb-6 lg:pt-4" : "p-4 sm:p-6 lg:p-8",
+          contentClassName,
+        )}>{children}</div>
       </main>
 
-      <MobileBottomTabs items={mobileTabItems} pathname={pathname} />
+      <MobileBottomTabs
+        items={mobileTabItems}
+        pathname={pathname}
+        account={role === "recruiter" ? {
+          to: "/recruiter/profile",
+          initials: avatar,
+          avatarUrl: recruiterProfile?.avatarUrl ?? null,
+        } : undefined}
+      />
     </div>
   );
 }

@@ -61,9 +61,12 @@ export function RecruiterSignInForm({ embedded = false }: RecruiterSignInFormPro
         password,
       });
       if (error) {
+        const invalid = /invalid login credentials|invalid credentials/i.test(error.message);
         toast({
-          title: "Invalid credentials",
-          description: "The email or password is incorrect. Please try again.",
+          title: invalid ? "Invalid credentials" : "Sign-in failed",
+          description: invalid
+            ? "The email or password is incorrect. Please try again."
+            : error.message,
           variant: "destructive",
         });
         return;

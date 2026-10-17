@@ -60,6 +60,8 @@ import {
   type LmsCourseRow,
   type ShareToggle,
 } from "@/components/wallet/WalletWorkspacePanels";
+import { SsiIdentityCard } from "@/components/wallet/SsiIdentityCard";
+import { SignedPresentationCard } from "@/components/wallet/SignedPresentationCard";
 
 function formatDate(value: string | null | undefined): string {
   if (!value) return "Recent";
@@ -713,6 +715,8 @@ export default function WalletPage() {
   return (
     <LearnerWorkspaceShell variant="dashboard">
       <WalletRefreshBar onRefresh={() => void loadRecords()} loading={loading} />
+      <SsiIdentityCard />
+      <SignedPresentationCard />
 
       {error ? (
         <EmptyState

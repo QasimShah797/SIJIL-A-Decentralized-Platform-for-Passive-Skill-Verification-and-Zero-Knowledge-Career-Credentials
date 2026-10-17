@@ -267,7 +267,7 @@ function MatchResults({
           </Button>
         </div>
       ) : data.candidates.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No shared candidate matched this question. Try a broader skill or campus.</p>
+        <p className="text-sm text-muted-foreground">No shared candidate matched this question. Try a broader skill.</p>
       ) : (
         <div className="space-y-3">
           <Button type="button" variant="secondary" size="sm" className="w-full rounded-xl sm:w-auto" onClick={() => onShow(data.candidates.filter((candidate) => candidate.matchLevel !== "none").map((candidate) => candidate.id))}>

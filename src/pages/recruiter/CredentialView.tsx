@@ -10,7 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
   ArrowLeft, ShieldCheck, ShieldAlert, CheckCircle2, EyeOff, Lock,
-  Github, BookOpen, FileText, FileUp, MessageSquare, Building2,
+  Github, BookOpen, FileText, FileUp, MessageSquare,
 } from "lucide-react";
 import { fetchPresentation } from "@/lib/db/presentations";
 import { fetchCredentialByUriGlobal } from "@/lib/db/credentials";
@@ -114,7 +114,7 @@ export default function RecruiterCredentialView() {
 
   const verifyIssuer = () => {
     setIssuerVerified(true);
-    toast({ title: "Issuer DID resolved", description: `${presentation.proof.verificationMethod} → trusted institution registry` });
+    toast({ title: "Issuer DID resolved", description: `${presentation.proof.verificationMethod} → trusted issuer registry` });
   };
 
   return (
@@ -160,7 +160,7 @@ export default function RecruiterCredentialView() {
               <p className="text-xs text-muted-foreground">Only fields the candidate chose to reveal are shown.</p>
             </CardHeader>
             <CardContent>
-              {presentation.disclosedFields.map((f) => (
+              {presentation.disclosedFields.filter((field) => !isInstitutionClaim(field.id) && !isInstitutionClaim(field.label)).map((f) => (
                 <FieldRow key={f.id} label={f.label} value={f.value} />
               ))}
             </CardContent>
@@ -170,13 +170,13 @@ export default function RecruiterCredentialView() {
           <Card>
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
-                <Building2 className="h-4 w-4" /> Issuer verification
+                <ShieldCheck className="h-4 w-4" /> Issuer verification
               </CardTitle>
             </CardHeader>
             <CardContent>
               <FieldRow label="Issuer" value={get("issuer") || "—"} />
-              <FieldRow label="Issuer DID" value={presentation.proof.verificationMethod.split("#")[0]} mono hint="Resolved against trusted institution registry." />
-              <FieldRow label="Attestation source" value={cred?.attestation === "Approved" ? "Approved by issuing institution" : (cred?.attestation || "—")} />
+              <FieldRow label="Issuer DID" value={presentation.proof.verificationMethod.split("#")[0]} mono hint="Resolved against the trusted issuer registry." />
+              <FieldRow label="Verification" value={cred?.attestation || "—"} />
               <FieldRow
                 label="Issuer signature"
                 value={
@@ -252,7 +252,6 @@ export default function RecruiterCredentialView() {
                   <Trail icon={FileText} label="Practical task" value={matchedSkill?.practicalTask ?? "—"} />
                   <Trail icon={FileUp} label="External certificate" value={matchedSkill?.externalCert ?? "—"} />
                   <Trail icon={MessageSquare} label="Mentor / teacher reviews" value={matchedSkill?.reviews ?? 0} />
-                  <Trail icon={Building2} label="Institutional attestation" value={matchedSkill?.attestation ?? "—"} />
                 </div>
               )}
             </CardContent>
@@ -268,7 +267,7 @@ export default function RecruiterCredentialView() {
                 <div className="text-xs text-muted-foreground">All fields disclosed.</div>
               ) : (
                 <div className="flex flex-wrap gap-1.5">
-                  {presentation.hiddenFields.map((h) => (
+                  {presentation.hiddenFields.filter((field) => !isInstitutionClaim(field)).map((h) => (
                     <StatusBadge key={h} variant="neutral"><EyeOff className="h-3 w-3" /> {h}</StatusBadge>
                   ))}
                 </div>
@@ -292,7 +291,7 @@ export default function RecruiterCredentialView() {
           <Card>
             <CardHeader><CardTitle className="text-base">What this proves</CardTitle></CardHeader>
             <CardContent className="text-sm text-muted-foreground space-y-2">
-              <p>· Credential was issued by a trusted institution.</p>
+              <p>· Credential was issued by a trusted issuer.</p>
               <p>· Disclosed claims have not been altered since signing.</p>
               <p>· Candidate is the rightful holder (DID-bound).</p>
               <p>· Hidden fields remain private — privacy-preserving.</p>
@@ -302,6 +301,10 @@ export default function RecruiterCredentialView() {
       </div>
     </AppShell>
   );
+}
+
+function isInstitutionClaim(value: string) {
+  return /institution/i.test(value);
 }
 
 function Trail({ icon: Icon, label, value }: { icon: any; label: string; value: any }) {

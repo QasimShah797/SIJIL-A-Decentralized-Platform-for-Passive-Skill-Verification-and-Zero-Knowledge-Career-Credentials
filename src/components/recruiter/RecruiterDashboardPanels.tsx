@@ -1,6 +1,7 @@
 import { Link, useNavigate } from "react-router-dom";
 import {
   BadgeCheck,
+  Briefcase,
   CalendarClock,
   ChevronRight,
   GitCompare,
@@ -215,7 +216,9 @@ export function RecruiterShortlistCard({
                   <div className="flex items-start justify-between gap-2">
                     <button type="button" onClick={() => onOpen(candidate.id)} className="min-w-0 text-left">
                       <p className="truncate text-sm font-semibold text-[#023E8A]">{candidate.name}</p>
-                      <p className="truncate text-xs text-[#64748b]">{candidate.institution}</p>
+                      {candidate.topSkill && candidate.topSkill !== "—" ? (
+                        <p className="truncate text-xs text-[#64748b]">{candidate.topSkill}</p>
+                      ) : null}
                     </button>
                     <button
                       type="button"
@@ -326,7 +329,6 @@ export function RecruiterRecentlyShared({
                   <p className="truncate text-sm font-medium text-[#023E8A]">{candidate.name}</p>
                   <p className="truncate text-xs text-[#64748b]">
                     {candidate.topSkill !== "—" ? candidate.topSkill : "Shared profile"}
-                    {candidate.institution && candidate.institution !== "—" ? ` · ${candidate.institution}` : ""}
                   </p>
                 </div>
                 <span className="learner-tag-linked">Shared</span>
@@ -433,6 +435,12 @@ export function RecruiterDashboardRail({
     : false;
 
   const actions = [
+    {
+      label: "Open jobs",
+      sub: "Match skills and hire",
+      icon: Briefcase,
+      onClick: () => navigate("/recruiter/jobs"),
+    },
     {
       label: "View interviews",
       sub: "Upcoming and cancelled",

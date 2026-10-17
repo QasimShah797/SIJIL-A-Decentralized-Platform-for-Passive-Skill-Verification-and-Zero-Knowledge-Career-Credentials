@@ -265,7 +265,7 @@ describe("recruiter match", () => {
     expect(resolved.text).toMatch(/competency/i);
   });
 
-  it("lists learners from an institution even when Gemini asks for a skill", () => {
+  it("does not group learners by institution", () => {
     const qasim = candidate("q1", { name: "Syed Qasim Ali Shah", institution: "CUST", searchableSkills: ["Dart"] });
     const aaiza = candidate("a1", { name: "Aaiza Islam", institution: "CUST", searchableSkills: ["TypeScript"] });
     const other = candidate("o1", { name: "Other Learner", institution: "NUST", searchableSkills: ["Java"] });
@@ -285,14 +285,12 @@ describe("recruiter match", () => {
       ["Dart", "TypeScript", "Java"],
       "learner that are from institution of cust",
     );
-    expect(resolved.matches?.map((item) => item.candidate.id).sort()).toEqual(["a1", "q1"]);
-    expect(resolved.text).toMatch(/Aaiza Islam/);
-    expect(resolved.text).toMatch(/Syed Qasim Ali Shah/);
-    expect(resolved.text).toMatch(/CUST/);
-    expect(resolved.text).not.toMatch(/more information|You want learners/i);
+    expect(resolved.matches).toBeUndefined();
+    expect(resolved.text).toMatch(/skills/i);
+    expect(resolved.text).not.toMatch(/CUST|NUST/);
   });
 
-  it("says when nobody shared from the institution in the question", () => {
+  it("does not answer with a campus when the question names one", () => {
     const resolved = resolveInterpretedAsk(
       {
         intent: "clarify",
@@ -302,19 +300,19 @@ describe("recruiter match", () => {
         requireTask: false,
         requireReviews: false,
         learnerNames: [],
-        reply: "You want learners from NUST.",
+        reply: "Tell me a competency and the proof you need.",
       },
       [candidate("q1", { name: "Syed Qasim Ali Shah", institution: "CUST" })],
       {},
       ["Dart"],
       "learner from nust",
     );
-    expect(resolved.matches).toEqual([]);
-    expect(resolved.text).toMatch(/No shared learner is from NUST/);
-    expect(resolved.text).toMatch(/CUST/);
+    expect(resolved.matches).toBeUndefined();
+    expect(resolved.text).toMatch(/competency/i);
+    expect(resolved.text).not.toMatch(/CUST|NUST/);
   });
 
-  it("lists each campus when the question does not name one", () => {
+  it("does not list campuses when the question does not name one", () => {
     const resolved = resolveInterpretedAsk(
       {
         intent: "clarify",
@@ -325,7 +323,7 @@ describe("recruiter match", () => {
         requireReviews: false,
         learnerNames: [],
         institution: "AN",
-        reply: "You want learners from an institution.",
+        reply: "Tell me a competency and the proof you need.",
       },
       [
         candidate("q1", { name: "Syed Qasim Ali Shah", institution: "CUST" }),
@@ -335,10 +333,9 @@ describe("recruiter match", () => {
       ["Dart"],
       "Learners from an institution",
     );
-    expect(resolved.text).toMatch(/CUST/);
-    expect(resolved.text).toMatch(/Syed Qasim Ali Shah/);
-    expect(resolved.text).toMatch(/Aaiza Islam/);
-    expect(resolved.text).not.toMatch(/\bAN\b/);
+    expect(resolved.matches).toBeUndefined();
+    expect(resolved.text).toMatch(/competency/i);
+    expect(resolved.text).not.toMatch(/CUST|\bAN\b/);
   });
 
   it("lists learners with at least the requested number of shared skills", () => {

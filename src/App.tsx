@@ -32,11 +32,14 @@ import GitHubCallback from "./pages/auth/GitHubCallback";
 import CompetencyPresentationView from "./pages/public/CompetencyPresentationView";
 import PublicCredentialPage from "./pages/public/PublicCredentialPage";
 import PublicCompetencyPage from "./pages/public/PublicCompetencyPage";
+import LearnerPresentationVerifyPage from "./pages/public/LearnerPresentationVerifyPage";
 import RecruiterLogin from "./pages/login/RecruiterLogin";
 import RecruiterSearch from "./pages/recruiter/Search";
 import RecruiterCandidateSummary from "./pages/recruiter/CandidateSummary";
 import RecruiterCompare from "./pages/recruiter/Compare";
 import RecruiterInterviews from "./pages/recruiter/Interviews";
+import RecruiterJobs from "./pages/recruiter/Jobs";
+import RecruiterJobDetail from "./pages/recruiter/JobDetail";
 import RecruiterProfile from "./pages/recruiter/Profile";
 
 const queryClient = new QueryClient({
@@ -102,11 +105,14 @@ const App = () => (
           <Route path="/learner/credential/:id/share" element={<LR><LearnerSelectiveDisclosure /></LR>} />
 
           <Route path="/recruiter/search" element={<RR><RecruiterSearch /></RR>} />
+          <Route path="/recruiter/jobs" element={<RR><RecruiterJobs /></RR>} />
+          <Route path="/recruiter/jobs/:jobId" element={<RR><RecruiterJobDetail /></RR>} />
           <Route path="/recruiter/interviews" element={<RR><RecruiterInterviews /></RR>} />
           <Route path="/recruiter/profile" element={<RR><RecruiterProfile /></RR>} />
           <Route path="/recruiter/candidate/:id" element={<RR><RecruiterCandidateSummary /></RR>} />
           <Route path="/recruiter/compare" element={<RR><RecruiterCompare /></RR>} />
           <Route path="/recruiter/verify/:token" element={<CompetencyPresentationView />} />
+          <Route path="/verify/vp/:id" element={<LearnerPresentationVerifyPage />} />
           <Route path="/credential/:shareToken" element={<PublicCredentialPage />} />
           <Route path="/credential/:shareToken/competency/:competencyId" element={<PublicCompetencyPage />} />
 

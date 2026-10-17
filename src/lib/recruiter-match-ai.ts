@@ -15,7 +15,6 @@ export async function interpretRecruiterQuestion(input: {
   question: string;
   knownSkills: string[];
   learnerNames: string[];
-  institutions?: string[];
   history?: RecruiterMatchTurn[];
 }): Promise<InterpretedAsk> {
   const { data, error } = await supabase.functions.invoke("recruiter-match", {
@@ -23,7 +22,6 @@ export async function interpretRecruiterQuestion(input: {
       question: input.question.slice(0, 600),
       knownSkills: input.knownSkills.slice(0, 60),
       learnerNames: input.learnerNames.slice(0, 60),
-      institutions: (input.institutions ?? []).slice(0, 40),
       history: (input.history ?? []).slice(-6).map((turn) => ({
         role: turn.role,
         text: turn.text.slice(0, 400),

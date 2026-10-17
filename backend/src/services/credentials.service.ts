@@ -34,6 +34,8 @@ import { canReadLearnerData, isActiveShareRow, type AuthCaller } from "./learner
 import { hashEvidenceMetadata, sortedEvidenceHashes } from "../utils/evidence-hash";
 import { credentialFromDisclosedFields, type DisclosedField } from "./recruiter-disclose";
 import { ROLES } from "../constants/roles";
+import { ssiService } from "./ssi.service";
+import type { CredentialDocument } from "./credential-document.service";
 
 function publicAssessmentCommitment(document: unknown): CredentialView["assessmentCommitment"] {
   const read = readAssessmentCommitment(document);
@@ -66,10 +68,28 @@ function issuerDidFromInstitution(institution: string): string {
   return `did:web:issuer.${slug}.edu.pk`;
 }
 
-function holderDidFromUserId(userId: string): string {
-  const compact = userId.replace(/-/g, "");
-  return `did:key:z6Mk${compact.slice(0, 32)}${compact.slice(-8)}`;
+export function assertIssuedDocumentMatchesHolderDid(
+  document: CredentialDocument,
+  holderDid: string,
+): void {
+  if (document.credentialSubject.id !== holderDid) {
+    throw new AppError("credentialSubject.id must match the proven holder DID", 500);
+  }
 }
+
+type CredentialsDb = {
+  from: (table: string) => {
+    select: (columns: string) => any;
+    insert: (row: Record<string, unknown>) => any;
+    update: (row: Record<string, unknown>) => any;
+  };
+};
+
+export type CredentialsServiceDeps = {
+  db?: CredentialsDb;
+  requireProvenHolderDid?: (userId: string) => Promise<string>;
+  signHash?: (hashHex: string) => string;
+};
 
 async function callerHasActiveShare(learnerId: string): Promise<boolean> {
   const [{ data: walletShares }, { data: presentations }] = await Promise.all([
@@ -252,8 +272,19 @@ async function resolveAssessmentCommitment(
 }
 
 export class CredentialsService {
+  private readonly db: CredentialsDb;
+  private readonly requireProvenHolderDid: (userId: string) => Promise<string>;
+  private readonly signHash: (hashHex: string) => string;
+
+  constructor(deps: CredentialsServiceDeps = {}) {
+    this.db = deps.db ?? (supabaseService.client as unknown as CredentialsDb);
+    this.requireProvenHolderDid = deps.requireProvenHolderDid
+      ?? ((id) => ssiService.requireProvenHolderDid(id));
+    this.signHash = deps.signHash ?? signCredentialHash;
+  }
+
   async issue(userId: string, input: IssueCredentialInput): Promise<CredentialView> {
-    const { data: skill, error: skillErr } = await supabaseService.client
+    const { data: skill, error: skillErr } = await this.db
       .from("declared_skills")
       .select("*")
       .eq("id", input.skillId)
@@ -262,7 +293,7 @@ export class CredentialsService {
     if (skillErr) throw new AppError(skillErr.message, 500);
     if (!skill) throw new AppError("Skill not found", 404);
 
-    const { data: evidenceRows, error: evidenceErr } = await supabaseService.client
+    const { data: evidenceRows, error: evidenceErr } = await this.db
       .from("supporting_records")
       .select("source, title, url, content_hash")
       .eq("user_id", userId)
@@ -274,7 +305,7 @@ export class CredentialsService {
       skillOwnerId: String(skill.user_id),
       requestUserId: userId,
       pipelineStage: String(skill.pipeline_stage ?? ""),
-      evidence: (evidenceRows ?? []).map((row) => ({
+      evidence: (evidenceRows ?? []).map((row: Record<string, unknown>) => ({
         source: String(row.source ?? ""),
         title: typeof row.title === "string" ? row.title : undefined,
         url: typeof row.url === "string" ? row.url : null,
@@ -283,7 +314,7 @@ export class CredentialsService {
     });
     if (!gate.ok) throw new AppError(gate.message, gate.status);
 
-    const { data: existing } = await supabaseService.client
+    const { data: existing } = await this.db
       .from("credentials")
       .select("*")
       .eq("user_id", userId)
@@ -294,19 +325,20 @@ export class CredentialsService {
 
     const assessmentCommitment = await resolveAssessmentCommitment(userId, input.skillId);
 
-    const { data: profile } = await supabaseService.client
+    const holderDid = await this.requireProvenHolderDid(userId);
+
+    const { data: profile } = await this.db
       .from("learner_profiles")
       .select("institution_name, holder_did")
       .eq("user_id", userId)
       .maybeSingle();
 
     const institution = (profile?.institution_name as string) ?? "CUST";
-    const holderDid = (profile?.holder_did as string) ?? holderDidFromUserId(userId);
     const issuerDid = issuerDidFromInstitution(institution);
     const credentialUri = generateCredentialUri(userId, skill.name);
 
     const evidenceHashes = sortedEvidenceHashes(
-      (evidenceRows ?? []).map((row) => {
+      (evidenceRows ?? []).map((row: Record<string, unknown>) => {
         if (typeof row.content_hash === "string" && row.content_hash.length > 0) {
           return row.content_hash;
         }
@@ -329,8 +361,9 @@ export class CredentialsService {
       validFrom,
       assessmentCommitment,
     });
+    assertIssuedDocumentMatchesHolderDid(document, holderDid);
 
-    const proofValue = signCredentialHash(sha256Hash);
+    const proofValue = this.signHash(sha256Hash);
     const proof = {
       type: CREDENTIAL_PROOF_TYPE,
       cryptosuite: CREDENTIAL_CRYPTOSUITE,
@@ -340,32 +373,34 @@ export class CredentialsService {
       proofPurpose: "assertionMethod",
     };
 
-    const { data, error } = await supabaseService.client
+    const insertRow = {
+      user_id: userId,
+      credential_uri: credentialUri,
+      name: `${skill.name} Competency Credential`,
+      credential_types: ["VerifiableCredential", "OpenBadgeCredential"],
+      issuer_name: institution,
+      issuer_did: issuerDid,
+      holder_did: holderDid,
+      valid_from: validFrom,
+      verification_status: CREDENTIAL_VERIFICATION.VERIFIED,
+      attestation_status: "Approved",
+      supporting_records: evidenceHashes.length,
+      skill_name: skill.name,
+      proof,
+      credential_document: document,
+      credential_hash: sha256Hash,
+      anchor_status: "pending",
+    };
+
+    const { data, error } = await this.db
       .from("credentials")
-      .insert({
-        user_id: userId,
-        credential_uri: credentialUri,
-        name: `${skill.name} Competency Credential`,
-        credential_types: ["VerifiableCredential", "OpenBadgeCredential"],
-        issuer_name: institution,
-        issuer_did: issuerDid,
-        holder_did: holderDid,
-        valid_from: validFrom,
-        verification_status: CREDENTIAL_VERIFICATION.VERIFIED,
-        attestation_status: "Approved",
-        supporting_records: evidenceHashes.length,
-        skill_name: skill.name,
-        proof,
-        credential_document: document,
-        credential_hash: sha256Hash,
-        anchor_status: "pending",
-      })
+      .insert(insertRow)
       .select("*")
       .single();
 
     if (error) throw new AppError(error.message, 500);
 
-    await supabaseService.client
+    await this.db
       .from("declared_skills")
       .update({
         pipeline_stage: PIPELINE_STAGE.IN_WALLET,
