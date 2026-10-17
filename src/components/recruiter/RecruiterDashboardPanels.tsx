@@ -1,6 +1,7 @@
 import { Link, useNavigate } from "react-router-dom";
 import {
   BadgeCheck,
+  Briefcase,
   CalendarClock,
   ChevronRight,
   GitCompare,
@@ -434,6 +435,12 @@ export function RecruiterDashboardRail({
     : false;
 
   const actions = [
+    {
+      label: "Open jobs",
+      sub: "Match skills and hire",
+      icon: Briefcase,
+      onClick: () => navigate("/recruiter/jobs"),
+    },
     {
       label: "View interviews",
       sub: "Upcoming and cancelled",

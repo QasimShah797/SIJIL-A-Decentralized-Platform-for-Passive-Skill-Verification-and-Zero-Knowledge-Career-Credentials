@@ -1,6 +1,7 @@
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useState } from "react";
 import {
+  Briefcase,
   CalendarClock,
   CheckCircle2,
   LayoutDashboard,
@@ -41,6 +42,7 @@ const recruiterNavGroups: NavGroup[] = [
     label: "Workspace",
     items: [
       { to: "/recruiter/search", icon: LayoutDashboard, label: "Dashboard", mobileTab: true },
+      { to: "/recruiter/jobs", icon: Briefcase, label: "Jobs", mobileTab: true },
       { to: "/recruiter/interviews", icon: CalendarClock, label: "Interviews", mobileTab: true },
     ],
   },

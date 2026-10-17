@@ -38,6 +38,8 @@ import RecruiterSearch from "./pages/recruiter/Search";
 import RecruiterCandidateSummary from "./pages/recruiter/CandidateSummary";
 import RecruiterCompare from "./pages/recruiter/Compare";
 import RecruiterInterviews from "./pages/recruiter/Interviews";
+import RecruiterJobs from "./pages/recruiter/Jobs";
+import RecruiterJobDetail from "./pages/recruiter/JobDetail";
 import RecruiterProfile from "./pages/recruiter/Profile";
 
 const queryClient = new QueryClient({
@@ -103,6 +105,8 @@ const App = () => (
           <Route path="/learner/credential/:id/share" element={<LR><LearnerSelectiveDisclosure /></LR>} />
 
           <Route path="/recruiter/search" element={<RR><RecruiterSearch /></RR>} />
+          <Route path="/recruiter/jobs" element={<RR><RecruiterJobs /></RR>} />
+          <Route path="/recruiter/jobs/:jobId" element={<RR><RecruiterJobDetail /></RR>} />
           <Route path="/recruiter/interviews" element={<RR><RecruiterInterviews /></RR>} />
           <Route path="/recruiter/profile" element={<RR><RecruiterProfile /></RR>} />
           <Route path="/recruiter/candidate/:id" element={<RR><RecruiterCandidateSummary /></RR>} />

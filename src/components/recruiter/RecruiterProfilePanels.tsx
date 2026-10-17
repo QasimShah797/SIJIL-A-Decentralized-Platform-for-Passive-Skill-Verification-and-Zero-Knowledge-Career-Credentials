@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { CalendarClock, ChevronRight, GitCompare, LayoutDashboard } from "lucide-react";
+import { Briefcase, CalendarClock, ChevronRight, GitCompare, LayoutDashboard } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { RecruiterProfileView } from "@/lib/db/recruiter-profile";
 import { cn } from "@/lib/utils";
@@ -101,6 +101,7 @@ export function RecruiterProfileCompletenessCard({ profile }: { profile: Recruit
 export function RecruiterProfileQuickActionsCard() {
   const actions = [
     { label: "Open directory", icon: LayoutDashboard, to: "/recruiter/search" },
+    { label: "Open jobs", icon: Briefcase, to: "/recruiter/jobs" },
     { label: "View interviews", icon: CalendarClock, to: "/recruiter/interviews" },
     { label: "Compare candidates", icon: GitCompare, to: "/recruiter/compare" },
   ];
