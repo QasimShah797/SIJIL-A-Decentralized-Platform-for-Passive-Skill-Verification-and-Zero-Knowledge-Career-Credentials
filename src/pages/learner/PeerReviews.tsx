@@ -202,17 +202,21 @@ export default function PeerReviewsPage() {
   );
 
   const signals = useMemo(() => {
-    if (apiStats) {
+    const local = computeTrustSignals(reviews);
+    if (!apiStats || local.total > apiStats.totalReviews) {
       return {
-        total: apiStats.totalReviews,
-        verifiedContext: apiStats.contextVerified,
-        imported: apiStats.imported,
-        sijil: apiStats.fromSIJILForm,
-        highTrust: apiStats.highTrust,
-        pending: apiStats.pendingInvites,
+        ...local,
+        pending: Math.max(local.pending, apiStats?.pendingInvites ?? 0),
       };
     }
-    return computeTrustSignals(reviews);
+    return {
+      total: apiStats.totalReviews,
+      verifiedContext: apiStats.contextVerified,
+      imported: apiStats.imported,
+      sijil: apiStats.fromSIJILForm,
+      highTrust: apiStats.highTrust,
+      pending: apiStats.pendingInvites,
+    };
   }, [apiStats, reviews]);
 
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
@@ -833,7 +837,7 @@ export default function PeerReviewsPage() {
         <div className="mb-6"><PageSkeleton rows={4} /></div>
       ) : declaredSkills.length === 0 ? (
         <PeerReviewsEmptySkills onGoProfile={() => navigate("/learner/my-profile")} />
-      ) : projects.length === 0 ? (
+      ) : projects.length === 0 && reviews.length === 0 ? (
         <PeerReviewsEmptyProjects onGoIntegrations={() => navigate("/learner/integrations")} />
       ) : (
         <>
@@ -861,21 +865,36 @@ export default function PeerReviewsPage() {
             onResendStale={() => void resendStale()}
             onImport={() => void importExisting()}
           />
-          <PeerReviewProjectToolbar
-            projects={projects}
-            selectedProjectId={selectedProjectId}
-            onSelectProject={(id) => {
-              setSelectedProjectId(id);
-              const next = projects.find((project) => project.id === id);
-              if (next) setSkillForProject(next.linkedSkills[0] ?? skillForProject);
-            }}
-            skillValue={skillForProject}
-            onSkillChange={setSkillForProject}
-            skillOptions={skillOptions}
-            selectedProject={selectedProject}
-          />
+          {projects.length === 0 ? (
+            <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#e2e8f0] bg-white px-4 py-3">
+              <p className="text-sm text-[#64748b]">
+                Link a GitHub repository to request contributor reviews for a project.
+              </p>
+              <Button
+                className="rounded-xl bg-[#023E8A] hover:bg-[#012A5C]"
+                onClick={() => navigate("/learner/integrations")}
+              >
+                Open integrations
+              </Button>
+            </div>
+          ) : (
+            <PeerReviewProjectToolbar
+              projects={projects}
+              selectedProjectId={selectedProjectId}
+              onSelectProject={(id) => {
+                setSelectedProjectId(id);
+                const next = projects.find((project) => project.id === id);
+                if (next) setSkillForProject(next.linkedSkills[0] ?? skillForProject);
+              }}
+              skillValue={skillForProject}
+              onSkillChange={setSkillForProject}
+              skillOptions={skillOptions}
+              selectedProject={selectedProject}
+            />
+          )}
 
           <div className="space-y-6">
+            {projects.length > 0 && (
             <PeerReviewContributorsBoard
               rows={contributorRows}
               visibleRows={visibleContributorRows}
@@ -888,6 +907,7 @@ export default function PeerReviewsPage() {
               onResend={openResendInvite}
               onInvite={(contributor) => void quickSendInvite(contributor)}
             />
+            )}
 
             <PeerReviewFeed
               reviews={visibleReviews}

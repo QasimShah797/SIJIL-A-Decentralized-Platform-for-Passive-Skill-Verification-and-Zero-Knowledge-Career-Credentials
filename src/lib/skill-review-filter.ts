@@ -1,6 +1,8 @@
 /**
  * Keep peer-review and evidence views scoped to currently declared competencies.
  */
+import { matchesCompetency } from "@/lib/moodle-evidence-matching";
+
 export type DeclaredSkillRef = {
   id: string;
   name: string;
@@ -19,8 +21,7 @@ export function reviewMatchesDeclaredSkills(
   const ids = new Set(skills.map((skill) => skill.id));
   if (review.skillId && ids.has(review.skillId)) return true;
 
-  const names = new Set(skills.map((skill) => normalizeSkillName(skill.name)));
-  return names.has(normalizeSkillName(review.skill));
+  return skills.some((skill) => matchesCompetency(review.skill, skill.name));
 }
 
 export function invitationMatchesDeclaredSkills(
@@ -40,10 +41,9 @@ export function projectMatchesDeclaredSkills(
   if (!skills.length) return false;
 
   const ids = new Set(skills.map((skill) => skill.id));
-  const names = new Set(skills.map((skill) => normalizeSkillName(skill.name)));
 
-  if (project.skillLinks?.some((link) => ids.has(link.skillId))) return true;
-  if (project.linkedSkills?.some((name) => names.has(normalizeSkillName(name)))) return true;
+  if (project.skillLinks?.some((link) => ids.has(link.skillId) || skills.some((skill) => matchesCompetency(link.skillName, skill.name)))) return true;
+  if (project.linkedSkills?.some((name) => skills.some((skill) => matchesCompetency(name, skill.name)))) return true;
 
   return false;
 }
@@ -58,13 +58,14 @@ export function filterProjectsForDeclaredSkills<T extends {
   if (!skills.length) return [];
 
   const ids = new Set(skills.map((skill) => skill.id));
-  const names = new Set(skills.map((skill) => normalizeSkillName(skill.name)));
 
   return projects
     .map((project) => {
-      const skillLinks = (project.skillLinks ?? []).filter((link) => ids.has(link.skillId));
+      const skillLinks = (project.skillLinks ?? []).filter((link) =>
+        ids.has(link.skillId) || skills.some((skill) => matchesCompetency(link.skillName, skill.name)),
+      );
       const linkedSkills = (project.linkedSkills ?? []).filter((name) =>
-        names.has(normalizeSkillName(name)),
+        skills.some((skill) => matchesCompetency(name, skill.name)),
       );
       return { ...project, skillLinks, linkedSkills };
     })
