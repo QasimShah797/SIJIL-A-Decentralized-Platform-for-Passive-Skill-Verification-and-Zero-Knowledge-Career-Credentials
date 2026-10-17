@@ -6,6 +6,8 @@ import { Request, Response, NextFunction } from "express";
 import { AppError } from "../utils/AppError";
 
 export const PUBLIC_VERIFY_RATE_LIMIT = { windowMs: 60_000, max: 20 } as const;
+export const WITNESS_RATE_LIMIT = { windowMs: 60_000, max: 6 } as const;
+export const ZKP_VERIFY_RATE_LIMIT = { windowMs: 60_000, max: 10 } as const;
 export const RATE_LIMIT_MAX_KEYS = 10_000;
 
 type Hit = { count: number; resetAt: number };
@@ -31,7 +33,11 @@ export function pruneRateLimitHits(
   }
 }
 
-export function rateLimit(options: { windowMs: number; max: number }): (
+export function rateLimit(options: {
+  windowMs: number;
+  max: number;
+  key?: (req: Request) => string;
+}): (
   req: Request,
   _res: Response,
   next: NextFunction,
@@ -39,7 +45,7 @@ export function rateLimit(options: { windowMs: number; max: number }): (
   const hits = new Map<string, Hit>();
 
   return (req: Request, _res: Response, next: NextFunction): void => {
-    const ip = clientIp(req);
+    const ip = options.key?.(req) || clientIp(req);
     const now = Date.now();
     pruneRateLimitHits(hits, now);
 

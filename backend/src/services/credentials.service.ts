@@ -22,12 +22,25 @@ import { generateCredentialUri } from "../utils/generateHash";
 import { randomUUID } from "node:crypto";
 import { getLedgerService } from "./ledger.factory";
 import { evaluateIssuanceEligibility } from "./issuance-gate";
+import {
+  assertTrustedOpening,
+  readAssessmentCommitment,
+  selectTrustedAssessmentAttempt,
+  type AssessmentAttemptRecord,
+  type AssessmentCommitmentClaim,
+} from "./assessment-binding";
+import { isMissingColumnError, isMissingRelationError } from "../utils/supabase-errors";
 import { canReadLearnerData, isActiveShareRow, type AuthCaller } from "./learner-access";
 import { hashEvidenceMetadata, sortedEvidenceHashes } from "../utils/evidence-hash";
 import { credentialFromDisclosedFields, type DisclosedField } from "./recruiter-disclose";
 import { ROLES } from "../constants/roles";
 import { ssiService } from "./ssi.service";
 import type { CredentialDocument } from "./credential-document.service";
+
+function publicAssessmentCommitment(document: unknown): CredentialView["assessmentCommitment"] {
+  const read = readAssessmentCommitment(document);
+  return read.status === "ok" ? read.claim : undefined;
+}
 
 function rowToView(row: CredentialRow): CredentialView {
   return {
@@ -42,6 +55,7 @@ function rowToView(row: CredentialRow): CredentialView {
     attestation: row.attestation_status,
     supportingRecords: row.supporting_records,
     skill: row.skill_name ?? "—",
+    assessmentCommitment: publicAssessmentCommitment(row.credential_document) ?? undefined,
     proof: (row.proof as Record<string, unknown>) ?? undefined,
     anchorStatus: row.anchor_status ?? undefined,
     anchorTxId: row.anchor_tx_id ?? null,
@@ -168,6 +182,96 @@ async function disclosedCredentialViews(
   return views;
 }
 
+function unavailableAssessmentStore(): AppError {
+  return new AppError("Trusted assessment commitments are not available for issuance", 409);
+}
+
+function mapAttempt(row: Record<string, unknown>): AssessmentAttemptRecord {
+  return {
+    id: typeof row.id === "string" ? row.id : "",
+    learnerUserId: typeof row.learner_user_id === "string" ? row.learner_user_id : "",
+    skillId: typeof row.skill_id === "string" ? row.skill_id : null,
+    status: typeof row.status === "string" ? row.status : "",
+    passed: row.passed === true,
+    percentage: typeof row.percentage === "number" || typeof row.percentage === "string" ? row.percentage : null,
+    commitment: typeof row.commitment === "string" ? row.commitment : null,
+    commitmentScheme: typeof row.commitment_scheme === "string" ? row.commitment_scheme : null,
+    commitmentCircuitId: typeof row.commitment_circuit_id === "string" ? row.commitment_circuit_id : null,
+    commitmentVersion: typeof row.commitment_version === "number" ? row.commitment_version : null,
+    submittedAt: typeof row.submitted_at === "string" ? row.submitted_at : null,
+    createdAt: typeof row.created_at === "string" ? row.created_at : null,
+  };
+}
+
+function mapOpening(row: Record<string, unknown> | null): {
+  score: number;
+  blinding: string;
+  learnerId: string;
+  attemptId: string;
+} | null {
+  if (!row) return null;
+  const score = typeof row.score === "number"
+    ? row.score
+    : typeof row.score === "string" && /^(0|[1-9][0-9]*)$/.test(row.score)
+      ? Number(row.score)
+      : null;
+  if (score === null || !Number.isInteger(score)) return null;
+  if (typeof row.blinding !== "string" || typeof row.learner_user_id !== "string" || typeof row.attempt_id !== "string") {
+    return null;
+  }
+  return {
+    score,
+    blinding: row.blinding,
+    learnerId: row.learner_user_id,
+    attemptId: row.attempt_id,
+  };
+}
+
+async function resolveAssessmentCommitment(
+  db: CredentialsDb,
+  userId: string,
+  skillId: string,
+): Promise<AssessmentCommitmentClaim> {
+  const { data, error } = await db
+    .from("mcq_task_attempts")
+    .select("id, learner_user_id, skill_id, status, passed, percentage, submitted_at, created_at, commitment, commitment_scheme, commitment_circuit_id, commitment_version")
+    .eq("learner_user_id", userId)
+    .eq("skill_id", skillId);
+
+  if (error) {
+    if (isMissingColumnError(error) || isMissingRelationError(error)) throw unavailableAssessmentStore();
+    throw new AppError(error.message, 500);
+  }
+
+  const selected = selectTrustedAssessmentAttempt({
+    learnerId: userId,
+    skillId,
+    attempts: (data ?? []).map((row: unknown) => mapAttempt(row as Record<string, unknown>)),
+  });
+  if (!selected.ok) throw new AppError(selected.message, selected.status);
+
+  const { data: openingRow, error: openingError } = await db
+    .from("assessment_openings")
+    .select("attempt_id, learner_user_id, score, blinding")
+    .eq("attempt_id", selected.attempt.id)
+    .eq("learner_user_id", userId)
+    .maybeSingle();
+
+  if (openingError) {
+    if (isMissingColumnError(openingError) || isMissingRelationError(openingError)) throw unavailableAssessmentStore();
+    throw new AppError(openingError.message, 500);
+  }
+
+  const checked = await assertTrustedOpening({
+    learnerId: userId,
+    attempt: selected.attempt,
+    assessmentCommitment: selected.assessmentCommitment,
+    opening: mapOpening((openingRow as Record<string, unknown> | null) ?? null),
+  });
+  if (!checked.ok) throw new AppError(checked.message, checked.status);
+  return selected.assessmentCommitment;
+}
+
 export class CredentialsService {
   private readonly db: CredentialsDb;
   private readonly requireProvenHolderDid: (userId: string) => Promise<string>;
@@ -221,6 +325,7 @@ export class CredentialsService {
     if (existing) return rowToView(existing as CredentialRow);
 
     const holderDid = await this.requireProvenHolderDid(userId);
+    const assessmentCommitment = await resolveAssessmentCommitment(this.db, userId, input.skillId);
 
     const { data: profile } = await this.db
       .from("learner_profiles")
@@ -254,6 +359,7 @@ export class CredentialsService {
       evidenceCount: evidenceHashes.length,
       evidenceHashes,
       validFrom,
+      assessmentCommitment,
     });
     assertIssuedDocumentMatchesHolderDid(document, holderDid);
 

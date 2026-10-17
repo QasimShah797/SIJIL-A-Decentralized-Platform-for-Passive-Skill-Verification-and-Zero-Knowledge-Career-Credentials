@@ -1,6 +1,8 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { generateKeyPairSync } from "node:crypto";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { PIPELINE_STAGE } from "../constants/status";
 import { encodeDidKeyFromRawPublicKey } from "../utils/did-key";
 import { signSha256Hash, verifySha256Hash } from "../utils/ed25519";
@@ -38,6 +40,8 @@ class MemoryIssueDb {
   evidence: Record<string, unknown>[] = [];
   credentials: Record<string, unknown>[] = [];
   profiles: Record<string, unknown>[] = [];
+  attempts: Record<string, unknown>[] = [];
+  openings: Record<string, unknown>[] = [];
   inserted: Record<string, unknown>[] = [];
   skillUpdates: Record<string, unknown>[] = [];
 
@@ -104,8 +108,54 @@ class MemoryIssueDb {
     if (table === "supporting_records") return this.evidence;
     if (table === "credentials") return this.credentials;
     if (table === "learner_profiles") return this.profiles;
+    if (table === "mcq_task_attempts") return this.attempts;
+    if (table === "assessment_openings") return this.openings;
     return [];
   }
+}
+
+async function seedTrustedAssessment(db: MemoryIssueDb, learnerId: string) {
+  const attemptId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+  const commitmentModule = await import(
+    pathToFileURL(path.resolve(__dirname, "../zkp/commitment.mjs")).href
+  );
+  const { createAssessmentCommitment } = commitmentModule as {
+    createAssessmentCommitment: (input: {
+      score: number;
+      blinding: string;
+      learnerId: string;
+      attemptId: string;
+    }) => Promise<{
+      publicCommitment: { version: number; scheme: string; circuitId: string; commitment: string };
+      opening: { blinding: string };
+    }>;
+  };
+  const created = await createAssessmentCommitment({
+    score: 73,
+    blinding: "42",
+    learnerId,
+    attemptId,
+  });
+  db.attempts.push({
+    id: attemptId,
+    learner_user_id: learnerId,
+    skill_id: SKILL_ID,
+    status: "completed",
+    passed: true,
+    percentage: 73,
+    commitment: created.publicCommitment.commitment,
+    commitment_scheme: created.publicCommitment.scheme,
+    commitment_circuit_id: created.publicCommitment.circuitId,
+    commitment_version: created.publicCommitment.version,
+    submitted_at: "2026-10-17T00:00:00.000Z",
+    created_at: "2026-10-17T00:00:00.000Z",
+  });
+  db.openings.push({
+    attempt_id: attemptId,
+    learner_user_id: learnerId,
+    score: 73,
+    blinding: created.opening.blinding,
+  });
 }
 
 function seedEligible(db: MemoryIssueDb, ownerId = LEARNER) {
@@ -145,6 +195,7 @@ describe("DID-bound credential issuance", () => {
   it("binds a new credential to the proven learner did:key and signs with the issuer key", async () => {
     const db = new MemoryIssueDb();
     seedEligible(db);
+    await seedTrustedAssessment(db, LEARNER);
     const did = realDid();
     const keys = issuerKeys();
     const service = new CredentialsService({
@@ -159,12 +210,17 @@ describe("DID-bound credential issuance", () => {
     const issued = await service.issue(LEARNER, { skillId: SKILL_ID });
     const stored = db.inserted[0];
     const document = stored?.credential_document as {
-      credentialSubject: { id: string };
+      credentialSubject: {
+        id: string;
+        assessmentCommitment?: { commitment: string; circuitId: string };
+      };
     };
 
     assert.equal(issued.holderDid, did);
     assert.equal(stored?.holder_did, did);
     assert.equal(document.credentialSubject.id, did);
+    assert.equal(document.credentialSubject.assessmentCommitment?.circuitId, "score-threshold-v1");
+    assert.equal(typeof document.credentialSubject.assessmentCommitment?.commitment, "string");
     assert.equal(document.credentialSubject.id, stored?.holder_did);
     assert.notEqual(issued.holderDid, db.profiles[0]?.holder_did);
     assert.equal(verifySha256Hash(String(stored?.credential_hash), String((stored?.proof as { proofValue: string }).proofValue), keys.publicPem), true);

@@ -17,11 +17,18 @@ import {
   cancelInterview,
   resendInterviewEmail,
 } from "../controllers/interview.controller";
+import { verifyRecruiterScoreProof } from "../controllers/zkp.controller";
+import { ZKP_VERIFY_RATE_LIMIT, rateLimit } from "../middleware/rateLimit.middleware";
 
 const router = Router();
 
 router.use(authMiddleware, requireRecruiter);
 
+router.post(
+  "/zkp/verify",
+  rateLimit({ ...ZKP_VERIFY_RATE_LIMIT, key: (req) => req.user?.id || req.ip || "unknown" }),
+  asyncHandler(verifyRecruiterScoreProof),
+);
 router.get("/verify/:credentialId", asyncHandler(verifyCredential));
 router.get("/candidate/:candidateId", asyncHandler(getCandidate));
 router.get("/search", asyncHandler(searchCandidates));
