@@ -5,7 +5,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { commitmentModulePath, resolveZkpArtifactDir } from "./zkp-artifacts";
+import { PINNED_VERIFICATION_KEY_SHA256, commitmentModulePath, resolveZkpArtifactDir } from "./zkp-artifacts";
 import { AppError } from "../utils/AppError";
 import { recomputeStoredDocumentHash } from "./credential-verify";
 import { loadCredentialByIdOrUri } from "./credential-verify.service";
@@ -81,6 +81,7 @@ export function readPinnedArtifactHashes(
       zkey: typeof parsed.zkey === "string" ? parsed.zkey : "",
       verificationKey: typeof parsed.verificationKey === "string" ? parsed.verificationKey : "",
     };
+    if (hashes.verificationKey !== PINNED_VERIFICATION_KEY_SHA256) return null;
     return hashesLookPinned(hashes) ? hashes : null;
   } catch {
     return null;

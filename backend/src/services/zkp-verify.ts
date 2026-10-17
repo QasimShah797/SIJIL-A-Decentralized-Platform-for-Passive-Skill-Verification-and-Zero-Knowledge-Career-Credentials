@@ -12,7 +12,7 @@ import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { resolveZkpArtifactDir } from "./zkp-artifacts";
+import { PINNED_VERIFICATION_KEY_SHA256, resolveZkpArtifactDir } from "./zkp-artifacts";
 import { AppError } from "../utils/AppError";
 import { recomputeStoredDocumentHash } from "./credential-verify";
 import { findCredentialForLearnerCompetency } from "./credential-verify.service";
@@ -202,13 +202,16 @@ export function readPinnedVerificationKey(buildDir = resolveZkpArtifactDir() ?? 
     const keyPath = path.join(buildDir, "verification_key.json");
     const hashPath = path.join(buildDir, "hashes.json");
     const bytes = readFileSync(keyPath);
+    const sha256 = createHash("sha256").update(bytes).digest("hex");
     const hashes = JSON.parse(readFileSync(hashPath, "utf8")) as { verificationKey?: unknown };
-    const pinnedSha256 = typeof hashes.verificationKey === "string" ? hashes.verificationKey : "";
-    if (!SHA256_HEX.test(pinnedSha256)) return null;
+    const manifestSha256 = typeof hashes.verificationKey === "string" ? hashes.verificationKey : "";
+    if (sha256 !== PINNED_VERIFICATION_KEY_SHA256 || manifestSha256 !== PINNED_VERIFICATION_KEY_SHA256) {
+      return null;
+    }
     return {
       key: JSON.parse(bytes.toString("utf8")) as object,
-      sha256: createHash("sha256").update(bytes).digest("hex"),
-      pinnedSha256,
+      sha256,
+      pinnedSha256: PINNED_VERIFICATION_KEY_SHA256,
     };
   } catch {
     return null;

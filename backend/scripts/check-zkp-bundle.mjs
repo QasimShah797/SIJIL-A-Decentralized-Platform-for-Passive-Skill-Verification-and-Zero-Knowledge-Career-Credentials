@@ -14,8 +14,9 @@ process.env.SIJIL_ZKP_ARTIFACT_DIR = artifactDir;
 
 const require = createRequire(path.join(backendRoot, "package.json"));
 const { readPinnedVerificationKey } = require(path.join(backendRoot, "dist/services/zkp-verify.js"));
+const { PINNED_VERIFICATION_KEY_SHA256 } = require(path.join(backendRoot, "dist/services/zkp-artifacts.js"));
 const pinned = readPinnedVerificationKey();
-if (!pinned || pinned.sha256 !== pinned.pinnedSha256) {
+if (!pinned || pinned.sha256 !== PINNED_VERIFICATION_KEY_SHA256 || pinned.pinnedSha256 !== PINNED_VERIFICATION_KEY_SHA256) {
   throw new Error("pinned verification key failed its SHA-256 check");
 }
 

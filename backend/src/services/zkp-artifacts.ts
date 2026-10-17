@@ -12,6 +12,13 @@ const REQUIRED = [
   "hashes.json",
 ];
 
+/**
+ * SHA-256 of the score-threshold-v1 verification_key.json bytes.
+ * This constant is the trust anchor. hashes.json and SIJIL_ZKP_ARTIFACT_DIR
+ * cannot replace it.
+ */
+export const PINNED_VERIFICATION_KEY_SHA256 = "aff48cb87a787b102046765a05cd0515de3b753707cad93350a515539070b7e1";
+
 export function resolveZkpArtifactDir(): string | null {
   const candidates = [
     process.env.SIJIL_ZKP_ARTIFACT_DIR,
