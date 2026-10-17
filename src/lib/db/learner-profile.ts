@@ -1,5 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
-import { avatarInitials, holderDidFromUserId } from "@/lib/did";
+import { avatarInitials, displayLearnerDid } from "@/lib/did";
 import { resolveLearnerDisplayName } from "@/lib/learner-display-name";
 import {
   buildInstitutionDbPayload,
@@ -163,7 +163,7 @@ export async function fetchLearnerProfile(
   return {
     userId,
     name,
-    did: data?.holder_did ?? holderDidFromUserId(userId),
+    did: displayLearnerDid(data?.holder_did) ?? "",
     email: email ?? data?.university_email ?? "",
     universityEmail: data?.university_email ?? email ?? null,
     studentId: data?.student_id ?? "—",
@@ -621,7 +621,7 @@ function mapLearnerDirectoryRow(row: LearnerProfileDbRow): LearnerProfileView & 
     userId: row.user_id,
     user_id: row.user_id,
     name,
-    did: row.holder_did ?? holderDidFromUserId(row.user_id),
+    did: displayLearnerDid(row.holder_did) ?? "",
     email: "",
     universityEmail: row.university_email ?? null,
     studentId: row.student_id ?? "—",

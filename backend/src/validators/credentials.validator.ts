@@ -5,7 +5,7 @@ import { z } from "zod";
 
 export const issueCredentialSchema = z.object({
   skillId: z.string().uuid(),
-});
+}).strict();
 
 export const shareCredentialSchema = z.object({
   credentialId: z.string().min(1),

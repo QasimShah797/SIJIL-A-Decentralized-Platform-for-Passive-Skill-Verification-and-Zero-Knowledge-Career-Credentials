@@ -1,5 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
-import { getCredentialApi, getWalletApi } from "@/services/api/credentials.api";
+import { getCredentialApi, getWalletApi, issueCredentialRequestBody } from "@/services/api/credentials.api";
 import { verifyCredentialApi } from "@/services/api/recruiter.api";
 import { apiRequest } from "@/services/api/client";
 
@@ -128,7 +128,7 @@ export async function issueCredentialForSkill(
 ): Promise<CredentialView | null> {
   return apiRequest<CredentialView>("/credentials/issue", {
     method: "POST",
-    body: JSON.stringify({ skillId }),
+    body: JSON.stringify(issueCredentialRequestBody(skillId)),
   });
 }
 

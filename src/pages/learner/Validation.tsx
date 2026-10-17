@@ -29,6 +29,7 @@ import {
 } from "@/lib/db/validation";
 import { issueCredentialForSkill } from "@/lib/db/credentials";
 import { useAuth } from "@/hooks/useAuth";
+import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { PIPELINE_STAGES, pipelineStageIndex } from "@/lib/competency-pipeline";
 
@@ -212,8 +213,17 @@ export default function Validation() {
   const openIntegrations = () => navigate("/learner/integrations");
   const openWallet = () => navigate("/learner/wallet");
   const issueCredential = async () => {
-    if (user && skillId) await issueCredentialForSkill(user.id, skillId);
-    navigate("/learner/wallet");
+    if (!user || !skillId) return;
+    try {
+      await issueCredentialForSkill(user.id, skillId);
+      navigate("/learner/wallet");
+    } catch (err) {
+      toast({
+        title: "Could not issue credential",
+        description: err instanceof Error ? err.message : "Issuance failed.",
+        variant: "destructive",
+      });
+    }
   };
 
   return (

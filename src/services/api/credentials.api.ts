@@ -4,10 +4,14 @@
 import { tryApiRequest } from "./client";
 import type { CredentialView } from "@/lib/db/credentials";
 
+export function issueCredentialRequestBody(skillId: string): { skillId: string } {
+  return { skillId };
+}
+
 export async function issueCredentialApi(skillId: string): Promise<CredentialView | null> {
   return tryApiRequest<CredentialView>("/credentials/issue", {
     method: "POST",
-    body: JSON.stringify({ skillId }),
+    body: JSON.stringify(issueCredentialRequestBody(skillId)),
   });
 }
 

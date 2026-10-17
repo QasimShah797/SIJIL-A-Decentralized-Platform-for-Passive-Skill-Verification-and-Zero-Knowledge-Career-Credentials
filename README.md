@@ -4,6 +4,8 @@ Verifiable competency credentials platform built for learners, institutions, and
 
 **New teammate?** Follow **[TEAMMATE_SETUP.md](./TEAMMATE_SETUP.md)** for clone, `.env`, WSL/Docker, Fabric, and safe verification commands. Do not commit `.env` files or private keys.
 
+**SSI Phase 1** (learner-controlled Ed25519 `did:key` in the wallet): **[SSI_PHASE1.md](./SSI_PHASE1.md)**. Existing issuer-signed credentials are not rewritten.
+
 ## Architecture
 
 ```
