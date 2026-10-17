@@ -1,0 +1,16 @@
+{
+  "name": "sijil-score-threshold-v1",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Development-only Circom 2 / Groth16 demonstration that a private score meets a public threshold.",
+  "type": "module",
+  "scripts": {
+    "setup": "node scripts/setup-dev.mjs",
+    "test": "node scripts/setup-dev.mjs && node --test --test-concurrency=1 test/*.test.mjs"
+  },
+  "dependencies": {
+    "circomlib": "2.0.5",
+    "circomlibjs": "0.1.7",
+    "snarkjs": "0.7.5"
+  }
+}

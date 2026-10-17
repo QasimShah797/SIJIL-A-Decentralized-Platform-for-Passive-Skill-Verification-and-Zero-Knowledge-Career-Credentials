@@ -39,7 +39,7 @@ function assignCredentialField(
   key: keyof CredentialView,
   value: string,
 ): void {
-  if (key === "type" || key === "supportingRecords" || key === "proof") return;
+  if (key === "type" || key === "supportingRecords" || key === "proof" || key === "assessmentCommitment") return;
   if (key === "anchorTxId" || key === "anchoredAt" || key === "anchorStatus") return;
   view[key] = value;
 }

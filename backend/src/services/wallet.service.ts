@@ -91,6 +91,23 @@ type PresentationRow = {
   updated_at: string;
 };
 
+/** Columns granted to authenticated learners after the commitment migration. */
+export const LEARNER_MCQ_ATTEMPT_COLUMNS = [
+  "id",
+  "skill_id",
+  "competency_name",
+  "competency_domain",
+  "title",
+  "status",
+  "percentage",
+  "correct_count",
+  "total_questions",
+  "passed",
+  "feedback",
+  "submitted_at",
+  "created_at",
+] as const;
+
 const DISCLOSURE_REDACT_KEYS = new Set([
   "id",
   "user_id",
@@ -314,56 +331,15 @@ function sanitizeForDisclosure(value: unknown): unknown {
   return Object.keys(next).length > 0 ? next : undefined;
 }
 
-function parseJsonLikeArray(value: unknown): unknown[] {
-  if (Array.isArray(value)) return value;
-  if (typeof value === "string" && value.trim()) {
-    try {
-      const parsed = JSON.parse(value);
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
-  }
-  return [];
-}
-
 function computeMcqEvaluation(row: DbRow): {
   scorePercent: number | null;
   correctCount: number | null;
   totalQuestions: number | null;
 } {
-  const correctCountFromRow = asNumber(row.correct_count);
-  const totalQuestionsFromRow = asNumber(row.total_questions);
-  const percentageFromRow = asNumber(row.percentage);
-  if (
-    correctCountFromRow != null
-    || totalQuestionsFromRow != null
-    || percentageFromRow != null
-  ) {
-    return {
-      scorePercent: percentageFromRow,
-      correctCount: correctCountFromRow,
-      totalQuestions: totalQuestionsFromRow,
-    };
-  }
-
-  const answerKey = parseJsonLikeArray(row.answer_key);
-  const learnerAnswers = parseJsonLikeArray(row.learner_answers);
-  const totalQuestions = answerKey.length || parseJsonLikeArray(row.questions).length || null;
-  if (!answerKey.length || !learnerAnswers.length || totalQuestions == null || totalQuestions === 0) {
-    return { scorePercent: null, correctCount: null, totalQuestions };
-  }
-
-  let correctCount = 0;
-  for (let index = 0; index < answerKey.length; index += 1) {
-    if (answerKey[index] === learnerAnswers[index]) correctCount += 1;
-  }
-
-  const scorePercent = Math.round((correctCount / answerKey.length) * 100);
   return {
-    scorePercent,
-    correctCount,
-    totalQuestions: answerKey.length,
+    scorePercent: asNumber(row.percentage),
+    correctCount: asNumber(row.correct_count),
+    totalQuestions: asNumber(row.total_questions),
   };
 }
 
@@ -376,7 +352,7 @@ function parseSubmissionSession(submission: unknown): DbRow | null {
   }
 }
 
-function buildAttemptHistoryItem(row: DbRow): WalletAttemptHistoryItem | null {
+export function buildAttemptHistoryItem(row: DbRow): WalletAttemptHistoryItem | null {
   const attemptId = asText(row.id ?? row.attempt_id) || randomUUID();
   const title = asText(row.title) || "Practical task";
   const evaluation = computeMcqEvaluation(row);
@@ -1155,7 +1131,7 @@ async function loadAggregatedWallet(userId: string): Promise<WalletCompetencyRec
     safeFetchRows("mcq_task_attempts", () =>
       db()
         .from("mcq_task_attempts")
-        .select("id, skill_id, competency_name, competency_domain, title, status, learner_answers, answer_key, questions, passed, feedback, submitted_at, created_at")
+        .select(LEARNER_MCQ_ATTEMPT_COLUMNS.join(", "))
         .eq("learner_user_id", userId),
     ),
     safeFetchRows("peer_reviews", () =>
@@ -1910,6 +1886,14 @@ export class WalletService {
       proofValue: row.proof_value,
       verification,
     };
+  }
+
+  async resolveShareForZkp(token: string): Promise<{ learnerId: string; competencyId: string }> {
+    const row = await loadPresentationByToken(token);
+    if (!isShareActive(row)) {
+      throw new AppError("Not authorized to verify this credential", 403);
+    }
+    return { learnerId: row.learner_id, competencyId: row.competency_id };
   }
 
   async verifyPublicPresentation(

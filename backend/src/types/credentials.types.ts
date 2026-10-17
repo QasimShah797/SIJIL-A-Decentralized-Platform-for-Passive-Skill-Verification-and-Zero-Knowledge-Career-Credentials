@@ -45,6 +45,13 @@ export interface CredentialView {
   attestation: string;
   supportingRecords: number;
   skill: string;
+  assessmentCommitment?: {
+    version: number;
+    scheme: string;
+    circuitId: string;
+    attemptId: string;
+    commitment: string;
+  };
   proof?: Record<string, unknown>;
   anchorStatus?: string;
   anchorTxId?: string | null;

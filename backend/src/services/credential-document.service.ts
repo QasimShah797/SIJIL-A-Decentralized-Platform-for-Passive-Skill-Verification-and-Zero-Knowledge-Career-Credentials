@@ -6,6 +6,14 @@ import { generateSha256Hash } from "../utils/generateHash";
 
 export const CREDENTIAL_CONTEXT = "https://www.w3.org/ns/credentials/v2";
 
+export interface AssessmentCommitmentClaim {
+  version: number;
+  scheme: string;
+  circuitId: string;
+  attemptId: string;
+  commitment: string;
+}
+
 export interface CredentialDocumentInput {
   credentialUri: string;
   issuerDid: string;
@@ -15,6 +23,7 @@ export interface CredentialDocumentInput {
   evidenceHashes?: string[];
   validFrom: string;
   types?: string[];
+  assessmentCommitment?: AssessmentCommitmentClaim;
 }
 
 export interface CredentialDocument {
@@ -28,6 +37,7 @@ export interface CredentialDocument {
     skill: string;
     evidenceCount: number;
     evidenceHashes: string[];
+    assessmentCommitment?: AssessmentCommitmentClaim;
   };
 }
 
@@ -37,8 +47,22 @@ export interface CanonicalCredentialDocument {
   sha256Hash: string;
 }
 
+function publicAssessmentCommitment(
+  claim: AssessmentCommitmentClaim | undefined,
+): AssessmentCommitmentClaim | undefined {
+  if (!claim) return undefined;
+  return {
+    version: claim.version,
+    scheme: claim.scheme,
+    circuitId: claim.circuitId,
+    attemptId: claim.attemptId,
+    commitment: claim.commitment,
+  };
+}
+
 export function buildCredentialDocument(input: CredentialDocumentInput): CanonicalCredentialDocument {
   const evidenceHashes = [...(input.evidenceHashes ?? [])].filter((hash) => hash.length > 0).sort();
+  const assessmentCommitment = publicAssessmentCommitment(input.assessmentCommitment);
   const document: CredentialDocument = {
     "@context": [CREDENTIAL_CONTEXT],
     id: input.credentialUri,
@@ -50,6 +74,7 @@ export function buildCredentialDocument(input: CredentialDocumentInput): Canonic
       skill: input.skill,
       evidenceCount: input.evidenceCount,
       evidenceHashes,
+      ...(assessmentCommitment ? { assessmentCommitment } : {}),
     },
   };
 

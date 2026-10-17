@@ -15,11 +15,44 @@ export type CredentialView = {
   attestation: string;
   supportingRecords: number;
   skill: string;
+  assessmentCommitment?: {
+    version: number;
+    scheme: string;
+    circuitId: string;
+    attemptId: string;
+    commitment: string;
+  };
   proof?: Record<string, unknown>;
   anchorStatus?: string;
   anchorTxId?: string | null;
   anchoredAt?: string | null;
 };
+
+function assessmentCommitmentFromDocument(document: unknown): CredentialView["assessmentCommitment"] {
+  if (!document || typeof document !== "object") return undefined;
+  const subject = (document as { credentialSubject?: { assessmentCommitment?: unknown } }).credentialSubject;
+  const claim = subject?.assessmentCommitment;
+  if (!claim || typeof claim !== "object") return undefined;
+  const row = claim as Record<string, unknown>;
+  if (
+    row.version !== 1
+    || row.scheme !== "poseidon-bn254-v1"
+    || row.circuitId !== "score-threshold-v1"
+    || typeof row.attemptId !== "string"
+    || typeof row.commitment !== "string"
+    || "score" in row
+    || "blinding" in row
+  ) {
+    return undefined;
+  }
+  return {
+    version: 1,
+    scheme: "poseidon-bn254-v1",
+    circuitId: "score-threshold-v1",
+    attemptId: row.attemptId,
+    commitment: row.commitment,
+  };
+}
 
 function rowToCredential(row: {
   id: string;
@@ -34,6 +67,7 @@ function rowToCredential(row: {
   attestation_status: string;
   supporting_records: number;
   skill_name: string | null;
+  credential_document?: unknown;
   proof: unknown;
   anchor_status?: string | null;
   anchor_tx_id?: string | null;
@@ -51,6 +85,7 @@ function rowToCredential(row: {
     attestation: row.attestation_status,
     supportingRecords: row.supporting_records,
     skill: row.skill_name ?? "—",
+    assessmentCommitment: assessmentCommitmentFromDocument(row.credential_document),
     proof: (row.proof as Record<string, unknown>) ?? undefined,
     anchorStatus: row.anchor_status ?? undefined,
     anchorTxId: row.anchor_tx_id ?? null,
