@@ -40,6 +40,7 @@ import {
   shareWalletCompetencyApi,
   type WalletShareRecordView,
 } from "@/services/api/wallet.api";
+import { ZkpProofCard } from "@/components/wallet/ZkpProofCard";
 import {
   AuditLedgerCard,
   CompetencyPackageCard,
@@ -617,9 +618,15 @@ export default function WalletPage() {
     setEnabledFields(next);
   }, [activeRecord?.competencyId, profilePhotoUrl]);
 
-  const credentialIssued = activeRecord
-    ? Boolean(matchingCredential(credentials, activeRecord.competencyName))
-    : false;
+  const issuedCredential = activeRecord
+    ? matchingCredential(credentials, activeRecord.competencyName)
+    : undefined;
+  const credentialIssued = Boolean(issuedCredential);
+  const zkpCommitment = issuedCredential?.assessmentCommitment?.circuitId === "score-threshold-v1"
+    && issuedCredential.assessmentCommitment.scheme === "poseidon-bn254-v1"
+    && issuedCredential.assessmentCommitment.version === 1
+    ? issuedCredential.assessmentCommitment
+    : null;
   const anchorByCompetencyId = Object.fromEntries(
     records.map((record) => [
       record.competencyId,
@@ -775,6 +782,12 @@ export default function WalletPage() {
                 }))}
                 onViewPackage={() => setSelectedRecord(activeRecord)}
               />
+              {zkpCommitment && issuedCredential ? (
+                <ZkpProofCard
+                  credentialId={issuedCredential.id}
+                  commitment={zkpCommitment.commitment}
+                />
+              ) : null}
               <OneClickShareCard
                 toggles={shareToggles}
                 photoPreviewUrl={profilePhotoUrl}

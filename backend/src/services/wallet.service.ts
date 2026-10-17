@@ -1912,6 +1912,14 @@ export class WalletService {
     };
   }
 
+  async resolveShareForZkp(token: string): Promise<{ learnerId: string; competencyId: string }> {
+    const row = await loadPresentationByToken(token);
+    if (!isShareActive(row)) {
+      throw new AppError("Not authorized to verify this credential", 403);
+    }
+    return { learnerId: row.learner_id, competencyId: row.competency_id };
+  }
+
   async verifyPublicPresentation(
     token: string,
     disclosedPayload?: Record<string, unknown>,

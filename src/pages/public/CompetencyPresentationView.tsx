@@ -22,6 +22,7 @@ import {
   verifyPublicPresentationApi,
   type PublicPresentationView,
 } from "@/services/api/wallet.api";
+import { ReusableScoreProofCard } from "@/components/recruiter/ReusableScoreProofCard";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -374,6 +375,8 @@ export default function CompetencyPresentationView() {
                     />
                   </CardContent>
                 </Card>
+
+                {token ? <ReusableScoreProofCard shareToken={decodeURIComponent(token)} /> : null}
 
                 <Card>
                   <CardHeader className="pb-3">

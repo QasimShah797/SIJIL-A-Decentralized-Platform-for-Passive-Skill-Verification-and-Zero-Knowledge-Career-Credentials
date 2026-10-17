@@ -17,6 +17,7 @@ import studentActivationRoutes from "./student-activation.routes";
 import walletRoutes from "./wallet.routes";
 import publicPresentationsRoutes from "./public-presentations.routes";
 import publicCredentialsRoutes from "./public-credentials.routes";
+import zkpRoutes from "./zkp.routes";
 
 const router = Router();
 
@@ -26,6 +27,7 @@ router.use("/skills", skillsRoutes);
 router.use("/evidence", evidenceRoutes);
 router.use("/attestation", attestationRoutes);
 router.use("/credentials", credentialsRoutes);
+router.use("/zkp", zkpRoutes);
 router.use("/recruiter", recruiterRoutes);
 router.use("/integrations", integrationsRoutes);
 router.use("/github", integrationsRoutes);
