@@ -36,17 +36,17 @@ import {
 import {
   getWalletCompetenciesApi,
   getWalletCompetencyApi,
-  revokeWalletShareApi,
   shareWalletCompetencyApi,
   type WalletShareRecordView,
 } from "@/services/api/wallet.api";
 import { ZkpProofCard } from "@/components/wallet/ZkpProofCard";
+import { GitHubPolicyStatusCard } from "@/components/wallet/GitHubPolicyStatusCard";
+import { WalletPrivacySettingsCard } from "@/components/wallet/WalletPrivacySettingsCard";
 import {
   AuditLedgerCard,
   CompetencyPackageCard,
   ConnectedSourcesCard,
   EvidenceInspectorCard,
-  OneClickShareCard,
   WalletEmptyState,
   WalletRefreshBar,
   WalletStepper,
@@ -82,6 +82,10 @@ function latestAttempt(summary: WalletEvidenceSummary): WalletAttemptHistoryItem
 
 function resolveEvidencePackage(record: WalletCompetencyRecordView): WalletEvidenceSummary {
   return record.evidencePackage;
+}
+
+function walletFabricStatus(credential?: { ledgerAnchorStatus?: string | null; anchorStatus?: string }): string | null {
+  return credential?.ledgerAnchorStatus ?? credential?.anchorStatus ?? null;
 }
 
 function matchingCredential<T extends { skill: string; name: string }>(
@@ -632,19 +636,21 @@ export default function WalletPage() {
   const anchorByCompetencyId = Object.fromEntries(
     records.map((record) => [
       record.competencyId,
-      mapWalletAnchorStatus(matchingCredential(credentials, record.competencyName)?.anchorStatus),
+      mapWalletAnchorStatus(walletFabricStatus(matchingCredential(credentials, record.competencyName))),
     ]),
   );
   const activeAnchor = activeRecord
-    ? mapWalletAnchorStatus(matchingCredential(credentials, activeRecord.competencyName)?.anchorStatus)
+    ? mapWalletAnchorStatus(walletFabricStatus(matchingCredential(credentials, activeRecord.competencyName)))
     : null;
   const institutionApproved = /approv|attest|issued|verified/i.test(
     summary?.institutionReview.status ?? "",
   );
   const verified = credentialIssued || institutionApproved || activeRecord?.status === "Passed" || activeRecord?.status === "Review Available";
-  const statusLabel = credentialIssued || institutionApproved
-    ? "Verified"
-    : activeRecord?.status ?? "Collected";
+  const statusLabel = credentialIssued
+    ? "Credential issued"
+    : institutionApproved
+      ? "Competency verified"
+      : `Competency · ${activeRecord?.status ?? "Collected"}`;
   const lastSync = githubSyncedAt ?? moodleSyncedAt ?? activeRecord?.updatedAt ?? null;
   const taskLabel = attempt
     ? `${attempt.scorePercent != null ? `${attempt.scorePercent}% · ` : ""}${attempt.status}`
@@ -790,54 +796,11 @@ export default function WalletPage() {
                 <ZkpProofCard
                   credentialId={issuedCredential.id}
                   commitment={zkpCommitment.commitment}
+                  competencyId={activeRecord.competencyId}
                 />
               ) : null}
-              <OneClickShareCard
-                toggles={shareToggles}
-                photoPreviewUrl={profilePhotoUrl}
-                shareScope={shareScope}
-                onShareScopeChange={setShareScope}
-                selectedCompetencyName={activeRecord.competencyName}
-                competencyCount={records.length}
-                onToggle={(id, next) => {
-                  setEnabledFields((current) => next
-                    ? [...new Set([...current, id])]
-                    : current.filter((field) => field !== id));
-                }}
-                expiresInDays={expiresInDays}
-                onExpiresChange={setExpiresInDays}
-                shareUrl={shareUrl}
-                shareToken={shareToken}
-                shareId={shares.find((share) => share.shareStatus === "Active")?.id ?? null}
-                tokenHint={shares.find((share) => share.shareStatus === "Active")?.tokenHint ?? null}
-                expiresAt={shares.find((share) => share.shareStatus === "Active")?.expiresAt ?? null}
-                shares={shares}
-                submitting={submitting}
-                onGenerate={() => void handleGenerateShare()}
-                onRevoke={async (shareId) => {
-                  setSubmitting(true);
-                  try {
-                    const ok = await revokeWalletShareApi(shareId);
-                    if (!ok) throw new Error("Revocation failed.");
-                    setShares((current) => current.map((share) => (
-                      share.id === shareId
-                        ? { ...share, shareStatus: "Revoked", revokedAt: new Date().toISOString() }
-                        : share
-                    )));
-                    setShareUrl(null);
-                    setShareToken(null);
-                    toast({ title: "Share link revoked" });
-                  } catch (revokeError) {
-                    toast({
-                      title: "Could not revoke share link",
-                      description: revokeError instanceof Error ? revokeError.message : "Revoke failed.",
-                      variant: "destructive",
-                    });
-                  } finally {
-                    setSubmitting(false);
-                  }
-                }}
-              />
+              <GitHubPolicyStatusCard competencyId={activeRecord.competencyId} />
+              <WalletPrivacySettingsCard />
             </div>
           </div>
         </>

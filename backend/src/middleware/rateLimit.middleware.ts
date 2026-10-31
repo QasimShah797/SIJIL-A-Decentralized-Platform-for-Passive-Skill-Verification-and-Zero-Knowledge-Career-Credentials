@@ -8,6 +8,8 @@ import { AppError } from "../utils/AppError";
 export const PUBLIC_VERIFY_RATE_LIMIT = { windowMs: 60_000, max: 20 } as const;
 export const WITNESS_RATE_LIMIT = { windowMs: 60_000, max: 6 } as const;
 export const ZKP_VERIFY_RATE_LIMIT = { windowMs: 60_000, max: 10 } as const;
+export const GITHUB_SNAPSHOT_RATE_LIMIT = { windowMs: 60_000, max: 4 } as const;
+export const GITHUB_PROOF_RATE_LIMIT = { windowMs: 60_000, max: 2 } as const;
 export const RATE_LIMIT_MAX_KEYS = 10_000;
 
 type Hit = { count: number; resetAt: number };

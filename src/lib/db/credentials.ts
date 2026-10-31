@@ -24,6 +24,8 @@ export type CredentialView = {
   };
   proof?: Record<string, unknown>;
   anchorStatus?: string;
+  /** Live ledger-verified Fabric status. Prefer this over database `anchorStatus`. */
+  ledgerAnchorStatus?: string | null;
   anchorTxId?: string | null;
   anchoredAt?: string | null;
 };

@@ -186,7 +186,7 @@ export function WalletWorkspaceHeader({
         )}
       >
         <span className={cn("h-1.5 w-1.5 rounded-full", recent ? "bg-[#22c55e]" : "bg-[#94a3b8]")} />
-        Network sync · {formatRelative(lastSync)}
+        Evidence sync · {formatRelative(lastSync)}
       </span>
     </div>
   );

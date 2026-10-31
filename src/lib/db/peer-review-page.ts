@@ -801,21 +801,6 @@ export async function loadPeerReviewPageData(userId: string): Promise<{
     await safeLoad(() => cleanupOrphanedLearnerReviewData(userId), undefined);
   }
 
-  if (isApiEnabled()) {
-    const [apiProjects, apiReviews] = await Promise.all([
-      getPeerReviewProjectsApi(),
-      getPeerReviewsApi(),
-    ]);
-    if (apiProjects) {
-      return {
-        projects: filterProjectsForDeclaredSkills(apiProjects, skillRefs),
-        reviews: filterReviewsForDeclaredSkills(apiReviews ?? [], skillRefs),
-        legacyInvitations: filterInvitationsForDeclaredSkills(legacyInvitations, skillRefs),
-        contextRequests: filterInvitationsForDeclaredSkills(allContextRequests, skillRefs),
-      };
-    }
-  }
-
   const [
     dbProjects,
     linkedEvidence,
@@ -830,18 +815,44 @@ export async function loadPeerReviewPageData(userId: string): Promise<{
     safeLoad(() => fetchContributors(userId), [] as Array<ProjectContributor & { repoId: number }>),
   ]);
 
-  const projects = filterProjectsForDeclaredSkills(
+  const localProjects = filterProjectsForDeclaredSkills(
     attachContributors(
       buildPeerReviewProjects(dbProjects, linkedEvidence, evidenceProjects),
       contributors,
     ),
     skillRefs,
   );
+  const localReviews = filterReviewsForDeclaredSkills(reviews, skillRefs);
+
+  let projects = localProjects;
+  let mergedReviews = localReviews;
+
+  if (isApiEnabled()) {
+    const [apiProjects, apiReviews] = await Promise.all([
+      getPeerReviewProjectsApi(),
+      getPeerReviewsApi(),
+    ]);
+    if (apiProjects) {
+      projects = mergeById(
+        filterProjectsForDeclaredSkills(apiProjects, skillRefs),
+        localProjects,
+      );
+      mergedReviews = mergeById(
+        filterReviewsForDeclaredSkills(apiReviews ?? [], skillRefs),
+        localReviews,
+      );
+    }
+  }
 
   return {
     projects,
-    reviews: filterReviewsForDeclaredSkills(reviews, skillRefs),
+    reviews: mergedReviews,
     legacyInvitations: filterInvitationsForDeclaredSkills(legacyInvitations, skillRefs),
     contextRequests: filterInvitationsForDeclaredSkills(allContextRequests, skillRefs),
   };
+}
+
+function mergeById<T extends { id: string }>(primary: T[], extra: T[]): T[] {
+  const seen = new Set(primary.map((item) => item.id));
+  return [...primary, ...extra.filter((item) => !seen.has(item.id))];
 }

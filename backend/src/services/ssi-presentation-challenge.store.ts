@@ -66,6 +66,15 @@ export class SsiPresentationChallengeStore {
     return record;
   }
 
+  /** Loads claims even after consume; used to rebuild durable presentation envelopes. */
+  async getIncludingUsed(id: string): Promise<PresentationChallengeRecord> {
+    const record = this.rows.get(id);
+    if (!record) {
+      throw Object.assign(new Error("Unknown presentation challenge"), { statusCode: 404 });
+    }
+    return record;
+  }
+
   async peek(id: string): Promise<PresentationChallengeRecord> {
     this.prune();
     const record = this.rows.get(id);

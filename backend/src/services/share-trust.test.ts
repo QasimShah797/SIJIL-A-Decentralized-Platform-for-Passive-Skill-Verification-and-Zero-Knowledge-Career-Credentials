@@ -43,6 +43,8 @@ describe("share trust labels", () => {
     assert.equal(unavailable.blockchainVerified, false);
     assert.equal(unavailable.trustLabel, "Issued · ledger unavailable");
     assert.equal(skillTrustLabel({ issued: true, ledgerStatus: "pending_anchor" }), "Issued · pending blockchain anchor");
+    assert.equal(skillTrustLabel({ issued: true, ledgerStatus: "ledger_missing" }), "Issued · not found on ledger");
+    assert.equal(isBlockchainVerified("ledger_missing"), false);
   });
 
   it("keeps all-scope siblings but issued-only scope drops unissued JavaScript", () => {

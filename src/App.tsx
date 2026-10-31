@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -41,6 +41,7 @@ import RecruiterInterviews from "./pages/recruiter/Interviews";
 import RecruiterJobs from "./pages/recruiter/Jobs";
 import RecruiterJobDetail from "./pages/recruiter/JobDetail";
 import RecruiterProfile from "./pages/recruiter/Profile";
+import RecruiterGitHubProof from "./pages/recruiter/GitHubProof";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -99,6 +100,7 @@ const App = () => (
           <Route path="/learner/validation" element={<LR><LearnerValidation /></LR>} />
           <Route path="/learner/validation/:skillId" element={<LR><LearnerValidation /></LR>} />
           <Route path="/learner/wallet" element={<LR><LearnerWallet /></LR>} />
+          <Route path="/learner/zkp" element={<Navigate to="/learner/wallet" replace />} />
           <Route path="/learner/peer-reviews" element={<LR><LearnerPeerReviews /></LR>} />
           <Route path="/learner/credential/:id" element={<LR><LearnerCredentialDetails /></LR>} />
           <Route path="/learner/credential/:id/proof" element={<LR><LearnerCredentialProof /></LR>} />
@@ -111,6 +113,7 @@ const App = () => (
           <Route path="/recruiter/profile" element={<RR><RecruiterProfile /></RR>} />
           <Route path="/recruiter/candidate/:id" element={<RR><RecruiterCandidateSummary /></RR>} />
           <Route path="/recruiter/compare" element={<RR><RecruiterCompare /></RR>} />
+          <Route path="/recruiter/github-proof" element={<RR><RecruiterGitHubProof /></RR>} />
           <Route path="/recruiter/verify/:token" element={<CompetencyPresentationView />} />
           <Route path="/verify/vp/:id" element={<LearnerPresentationVerifyPage />} />
           <Route path="/credential/:shareToken" element={<PublicCredentialPage />} />

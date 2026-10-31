@@ -10,7 +10,7 @@ import { mapLedgerStatusToBadge } from "@/lib/ledger-status";
 export default function LearnerPresentationVerifyPage() {
   const { id } = useParams();
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<"missing" | "revoked" | null>(null);
   const [view, setView] = useState<PublicVpVerification | null>(null);
 
   useEffect(() => {
@@ -24,8 +24,10 @@ export default function LearnerPresentationVerifyPage() {
       .then((next) => {
         if (active) setView(next.verification);
       })
-      .catch(() => {
-        if (active) setError("missing");
+      .catch((err: unknown) => {
+        if (!active) return;
+        const message = err instanceof Error ? err.message : "";
+        setError(/410|revoked/i.test(message) ? "revoked" : "missing");
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -43,7 +45,11 @@ export default function LearnerPresentationVerifyPage() {
         <p className="text-sm text-muted-foreground">
           This is not a bearer share link. Holder proof, issuer signature, and blockchain status are shown separately.
         </p>
-        {loading ? <PageSkeleton rows={4} /> : error || !view ? (
+        {loading ? <PageSkeleton rows={4} /> : error === "revoked" ? (
+          <p className="text-sm text-destructive">
+            This presentation was revoked by the learner. No presentation data is available.
+          </p>
+        ) : error || !view ? (
           <p className="text-sm text-destructive">Presentation not found or expired.</p>
         ) : (
           <div className="space-y-4">
@@ -66,18 +72,25 @@ export default function LearnerPresentationVerifyPage() {
               return (
                 <Card key={credential.credentialId}>
                   <CardHeader>
-                    <CardTitle className="text-base">Credential {credential.credentialId}</CardTitle>
+                    <CardTitle className="text-base">
+                      {credential.skill ?? `Credential ${credential.credentialId}`}
+                    </CardTitle>
                   </CardHeader>
-                  <CardContent className="flex flex-wrap gap-2 text-sm">
-                    <StatusBadge variant={credential.holderBound ? "verified" : "destructive"}>
-                      {credential.holderBound ? "Holder DID matches" : "Holder mismatch"}
-                    </StatusBadge>
-                    <StatusBadge variant={credential.issuerIntegrity.ok ? "verified" : "destructive"}>
-                      {credential.issuerIntegrity.ok ? "Issuer signature valid" : "Issuer integrity failed"}
-                    </StatusBadge>
-                    <StatusBadge variant={credential.blockchain.ok ? "verified" : ledgerBadge.variant}>
-                      {credential.blockchain.ok ? "Blockchain verified" : ledgerBadge.label}
-                    </StatusBadge>
+                  <CardContent className="space-y-2 text-sm">
+                    {credential.issuer ? (
+                      <p className="break-all font-mono text-xs text-muted-foreground">{credential.issuer}</p>
+                    ) : null}
+                    <div className="flex flex-wrap gap-2">
+                      <StatusBadge variant={credential.holderBound ? "verified" : "destructive"}>
+                        {credential.holderBound ? "Holder DID matches" : "Holder mismatch"}
+                      </StatusBadge>
+                      <StatusBadge variant={credential.issuerIntegrity.ok ? "verified" : "destructive"}>
+                        {credential.issuerIntegrity.ok ? "Issuer signature valid" : "Issuer integrity failed"}
+                      </StatusBadge>
+                      <StatusBadge variant={credential.blockchain.ok ? "verified" : ledgerBadge.variant}>
+                        {credential.blockchain.ok ? "Blockchain verified" : ledgerBadge.label}
+                      </StatusBadge>
+                    </div>
                   </CardContent>
                 </Card>
               );

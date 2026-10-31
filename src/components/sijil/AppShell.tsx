@@ -10,6 +10,7 @@ import {
   ClipboardCheck,
   ShieldCheck,
   Wallet,
+  KeyRound,
   Bell,
   BadgeCheck,
   MessageSquare,
@@ -48,7 +49,10 @@ const recruiterNavGroups: NavGroup[] = [
   },
   {
     label: "Review",
-    items: [{ to: "/recruiter/compare", icon: BadgeCheck, label: "Compare", mobileTab: true }],
+    items: [
+      { to: "/recruiter/compare", icon: BadgeCheck, label: "Compare", mobileTab: true },
+      { to: "/recruiter/github-proof", icon: KeyRound, label: "GitHub proof" },
+    ],
   },
 ];
 

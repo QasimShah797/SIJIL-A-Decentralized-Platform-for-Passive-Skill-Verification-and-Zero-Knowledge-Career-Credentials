@@ -1,0 +1,11 @@
+{
+  "wasm": "ec4688aeb5b5a7148a7f738617408fafe7e25260176e173c923f974a9d025de7",
+  "zkey": "391c2dda34c0ccc1a7570d25be2032b6a5e46d5a7cd72dc725d1fbb008cb1875",
+  "verificationKey": "1eb098a12738e8cd6426fda605e17138b5938e78af5b2ba870ea50a1e553dca0",
+  "setup": "development-only",
+  "circuit": "github_contributions_below",
+  "publicSignals": [
+    "threshold",
+    "commitment"
+  ]
+}

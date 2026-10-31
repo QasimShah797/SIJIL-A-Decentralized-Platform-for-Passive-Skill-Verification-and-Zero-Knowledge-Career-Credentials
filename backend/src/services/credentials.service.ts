@@ -20,7 +20,8 @@ import {
 import { CREDENTIAL_VERIFICATION, PIPELINE_STAGE, SKILL_STATUS } from "../constants/status";
 import { generateCredentialUri } from "../utils/generateHash";
 import { randomUUID } from "node:crypto";
-import { getLedgerService } from "./ledger.factory";
+import { getEvaluateLedgerService, getLedgerService } from "./ledger.factory";
+import { resolveWalletLedgerAnchorStatus, type WalletLedgerRow } from "./wallet-ledger-status";
 import { evaluateIssuanceEligibility } from "./issuance-gate";
 import {
   assertTrustedOpening,
@@ -228,10 +229,11 @@ function mapOpening(row: Record<string, unknown> | null): {
 }
 
 async function resolveAssessmentCommitment(
+  db: CredentialsDb,
   userId: string,
   skillId: string,
 ): Promise<AssessmentCommitmentClaim> {
-  const { data, error } = await supabaseService.client
+  const { data, error } = await db
     .from("mcq_task_attempts")
     .select("id, learner_user_id, skill_id, status, passed, percentage, submitted_at, created_at, commitment, commitment_scheme, commitment_circuit_id, commitment_version")
     .eq("learner_user_id", userId)
@@ -245,11 +247,11 @@ async function resolveAssessmentCommitment(
   const selected = selectTrustedAssessmentAttempt({
     learnerId: userId,
     skillId,
-    attempts: (data ?? []).map((row) => mapAttempt(row as Record<string, unknown>)),
+    attempts: (data ?? []).map((row: unknown) => mapAttempt(row as Record<string, unknown>)),
   });
   if (!selected.ok) throw new AppError(selected.message, selected.status);
 
-  const { data: openingRow, error: openingError } = await supabaseService.client
+  const { data: openingRow, error: openingError } = await db
     .from("assessment_openings")
     .select("attempt_id, learner_user_id, score, blinding")
     .eq("attempt_id", selected.attempt.id)
@@ -323,9 +325,8 @@ export class CredentialsService {
 
     if (existing) return rowToView(existing as CredentialRow);
 
-    const assessmentCommitment = await resolveAssessmentCommitment(userId, input.skillId);
-
     const holderDid = await this.requireProvenHolderDid(userId);
+    const assessmentCommitment = await resolveAssessmentCommitment(this.db, userId, input.skillId);
 
     const { data: profile } = await this.db
       .from("learner_profiles")
@@ -429,7 +430,10 @@ export class CredentialsService {
       if (disclosed[0]) return disclosed[0];
       throw new AppError("Not authorized to read this learner's credentials", 403);
     }
-    return rowToView(row);
+    return {
+      ...rowToView(row),
+      ledgerAnchorStatus: await resolveWalletLedgerAnchorStatus(row as WalletLedgerRow, getEvaluateLedgerService()),
+    };
   }
 
   async getWallet(learnerId: string, caller: AuthCaller): Promise<Array<CredentialView | Partial<CredentialView>>> {
@@ -444,7 +448,11 @@ export class CredentialsService {
       .order("valid_from", { ascending: false });
 
     if (error) throw new AppError(error.message, 500);
-    return (data ?? []).map((row) => rowToView(row as CredentialRow));
+    const ledger = getEvaluateLedgerService();
+    return Promise.all((data ?? []).map(async (row) => ({
+      ...rowToView(row as CredentialRow),
+      ledgerAnchorStatus: await resolveWalletLedgerAnchorStatus(row as WalletLedgerRow, ledger),
+    })));
   }
 
   async share(userId: string, input: ShareCredentialInput): Promise<{ token: string; shareUrl: string }> {

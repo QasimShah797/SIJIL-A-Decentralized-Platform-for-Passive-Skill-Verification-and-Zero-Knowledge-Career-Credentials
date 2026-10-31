@@ -202,14 +202,15 @@ describe("trusted assessment binding", () => {
     assert.match(checked.message, /does not match the trusted opening/);
   });
 
-  it("ignores a commitment supplied beside the skill id", () => {
-    const parsed = issueCredentialSchema.parse({
+  it("rejects a commitment supplied beside the skill id", () => {
+    const parsed = issueCredentialSchema.safeParse({
       skillId: SKILL,
       commitment: "1",
       score: 100,
       blinding: "42",
     });
-    assert.deepEqual(parsed, { skillId: SKILL });
+    assert.equal(parsed.success, false);
+    assert.deepEqual(issueCredentialSchema.parse({ skillId: SKILL }), { skillId: SKILL });
   });
 
   it("covers the commitment with the signed document hash", () => {
