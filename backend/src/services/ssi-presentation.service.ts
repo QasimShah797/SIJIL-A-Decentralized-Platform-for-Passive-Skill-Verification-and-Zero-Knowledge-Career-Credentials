@@ -17,6 +17,26 @@ import {
   type IssuerCredentialProof,
   type SijilVerifiablePresentation,
 } from "./ssi-presentation-protocol";
+import {
+  MemoryPresentationRecordStore,
+  presentationHashFromClaims,
+  type PresentationRecordRow,
+  type PresentationRecordStore,
+} from "./ssi-presentation-record.store";
+
+function toStoredPresentation(
+  row: PresentationRecordRow,
+  envelope: SijilVerifiablePresentation,
+): StoredLearnerPresentation {
+  return {
+    id: row.id,
+    challengeId: row.challengeId,
+    learnerUserId: row.learnerUserId,
+    holderDid: row.holderDid,
+    envelope,
+    createdAt: row.createdAt,
+  };
+}
 
 export type PresentationCredentialSource = {
   id: string;
@@ -43,6 +63,8 @@ export type PresentationVerifyView = {
   holderProof: { ok: boolean; reason?: string; message?: string };
   credentials: Array<{
     credentialId: string;
+    skill: string | null;
+    issuer: string | null;
     holderBound: boolean;
     issuerIntegrity: { ok: boolean; status: CredentialVerifyResult["status"] };
     blockchain: {
@@ -63,11 +85,10 @@ export type PresentationServiceDeps = {
 };
 
 export class SsiPresentationService {
-  private readonly presentations = new Map<string, StoredLearnerPresentation>();
-
   constructor(
     private readonly deps: PresentationServiceDeps,
     private readonly challenges: SsiPresentationChallengeStore = ssiPresentationChallengeStore,
+    private readonly records: PresentationRecordStore = new MemoryPresentationRecordStore(),
   ) {}
 
   async issueChallenge(
@@ -136,6 +157,7 @@ export class SsiPresentationService {
     input: { challengeId: string; did: string; signature: string },
   ): Promise<StoredLearnerPresentation> {
     const challenge = await this.challenges.begin(input.challengeId, learnerUserId);
+    let persistedId: string | null = null;
     try {
       if (input.did !== challenge.holderDid) {
         throw new AppError("Presentation DID does not match the bound holder", 401);
@@ -154,28 +176,84 @@ export class SsiPresentationService {
       if (!proof.ok) {
         throw new AppError(proof.message, proof.reason === "expired" ? 400 : 401);
       }
-      await this.challenges.consume(input.challengeId, learnerUserId);
-      const stored: StoredLearnerPresentation = {
+
+      // Persist before consuming the challenge so a storage failure can still allow retry.
+      const record = await this.records.insert({
         id: randomUUID(),
         challengeId: challenge.id,
         learnerUserId,
         holderDid: challenge.holderDid,
-        envelope,
-        createdAt: new Date().toISOString(),
-      };
-      this.presentations.set(stored.id, stored);
-      return stored;
+        credentialIds: challenge.credentialIds,
+        claims: challenge.claims,
+        proofValue: input.signature,
+      });
+      persistedId = record.id;
+
+      try {
+        await this.challenges.consume(input.challengeId, learnerUserId);
+      } catch (consumeError) {
+        await this.records.deleteById(record.id);
+        throw consumeError;
+      }
+
+      return toStoredPresentation(record, envelope);
     } catch (err) {
       await this.challenges.abort(input.challengeId);
+      if (persistedId) {
+        try {
+          await this.records.deleteById(persistedId);
+        } catch {
+          // Prefer the original error; orphan cleanup is best-effort after abort.
+        }
+      }
       if (err instanceof AppError) throw err;
       const status = (err as { statusCode?: number }).statusCode ?? 400;
       throw new AppError(err instanceof Error ? err.message : "Invalid presentation", status);
     }
   }
 
+  async getEnvelope(presentationId: string): Promise<StoredLearnerPresentation> {
+    return this.loadStored(presentationId);
+  }
+
+  /**
+   * Learner-controlled revoke of one presentation verify link.
+   * Ownership comes from authenticated learnerUserId only.
+   * Idempotent: already-revoked returns success without changing credentials/DID.
+   */
+  async revoke(
+    learnerUserId: string,
+    presentationId: string,
+  ): Promise<{ presentationId: string; revokedAt: string; alreadyRevoked: boolean }> {
+    try {
+      const before = await this.records.getById(presentationId);
+      if (!before) throw new AppError("Presentation not found", 404);
+      if (before.learnerUserId !== learnerUserId) {
+        throw new AppError("Not authorized to revoke this presentation", 403);
+      }
+      const alreadyRevoked = Boolean(before.revokedAt);
+      const row = await this.records.revokeForOwner(
+        presentationId,
+        learnerUserId,
+        before.revokedAt ?? new Date().toISOString(),
+      );
+      if (!row.revokedAt) {
+        throw new AppError("Could not revoke presentation", 503);
+      }
+      return {
+        presentationId: row.id,
+        revokedAt: row.revokedAt,
+        alreadyRevoked,
+      };
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      const status = (err as { statusCode?: number }).statusCode ?? 503;
+      throw new AppError(err instanceof Error ? err.message : "Could not revoke presentation", status);
+    }
+  }
+
   async verify(presentationId: string, now?: Date): Promise<PresentationVerifyView> {
-    const stored = this.presentations.get(presentationId);
-    if (!stored) throw new AppError("Presentation not found", 404);
+    const stored = await this.loadStored(presentationId);
     const holder = verifyPresentationProof(stored.envelope, now);
     const credentials = await Promise.all(stored.envelope.sijilCredentialIds.map(async (credentialId, index) => {
       const embedded = stored.envelope.verifiableCredential[index];
@@ -189,6 +267,10 @@ export class SsiPresentationService {
       const blockchainOk = issuerAndLedger.status === "verified" && issuerAndLedger.detail !== "legacy_unverified_evidence";
       return {
         credentialId,
+        skill: typeof embedded?.credentialSubject?.skill === "string"
+          ? embedded.credentialSubject.skill
+          : null,
+        issuer: typeof embedded?.issuer === "string" ? embedded.issuer : null,
         holderBound,
         issuerIntegrity: { ok: issuerIntegrityOk, status: issuerAndLedger.status },
         blockchain: {
@@ -211,10 +293,52 @@ export class SsiPresentationService {
     };
   }
 
-  getEnvelope(presentationId: string): StoredLearnerPresentation {
-    const stored = this.presentations.get(presentationId);
-    if (!stored) throw new AppError("Presentation not found", 404);
-    return stored;
+  private async loadStored(presentationId: string): Promise<StoredLearnerPresentation> {
+    const row = await this.records.getById(presentationId);
+    if (!row) throw new AppError("Presentation not found", 404);
+    // Reject revoked VPs before reconstructing credentials or returning protected data.
+    if (row.revokedAt) {
+      throw new AppError("Presentation revoked", 410);
+    }
+
+    let challenge: PresentationChallengeRecord;
+    try {
+      challenge = await this.challenges.getIncludingUsed(row.challengeId);
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      const status = (err as { statusCode?: number }).statusCode ?? 503;
+      throw new AppError(
+        err instanceof Error ? err.message : "Could not load presentation challenge",
+        status === 404 ? 404 : 503,
+      );
+    }
+    if (challenge.learnerUserId !== row.learnerUserId || challenge.holderDid !== row.holderDid) {
+      throw new AppError("Presentation record does not match its challenge", 409);
+    }
+    if (presentationHashFromClaims(challenge.claims) !== row.presentationHash) {
+      throw new AppError("Presentation hash does not match the challenge claims", 409);
+    }
+
+    const rows = await this.deps.loadCredentials(row.credentialIds);
+    if (rows.length !== row.credentialIds.length) {
+      throw new AppError("One or more presented credentials are no longer available", 404);
+    }
+    for (const credential of rows) {
+      if (credential.userId !== row.learnerUserId) {
+        throw new AppError("Presentation credentials failed ownership check", 403);
+      }
+    }
+
+    const envelope = buildPresentationEnvelope({
+      claims: challenge.claims,
+      credentials: rows.map((credential) => ({
+        id: credential.id,
+        document: credential.document,
+        proof: credential.proof,
+      })),
+      proofValue: row.proofValue,
+    });
+    return toStoredPresentation(row, envelope);
   }
 }
 

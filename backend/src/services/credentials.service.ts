@@ -20,7 +20,8 @@ import {
 import { CREDENTIAL_VERIFICATION, PIPELINE_STAGE, SKILL_STATUS } from "../constants/status";
 import { generateCredentialUri } from "../utils/generateHash";
 import { randomUUID } from "node:crypto";
-import { getLedgerService } from "./ledger.factory";
+import { getEvaluateLedgerService, getLedgerService } from "./ledger.factory";
+import { resolveWalletLedgerAnchorStatus, type WalletLedgerRow } from "./wallet-ledger-status";
 import { evaluateIssuanceEligibility } from "./issuance-gate";
 import {
   assertTrustedOpening,
@@ -429,7 +430,10 @@ export class CredentialsService {
       if (disclosed[0]) return disclosed[0];
       throw new AppError("Not authorized to read this learner's credentials", 403);
     }
-    return rowToView(row);
+    return {
+      ...rowToView(row),
+      ledgerAnchorStatus: await resolveWalletLedgerAnchorStatus(row as WalletLedgerRow, getEvaluateLedgerService()),
+    };
   }
 
   async getWallet(learnerId: string, caller: AuthCaller): Promise<Array<CredentialView | Partial<CredentialView>>> {
@@ -444,7 +448,11 @@ export class CredentialsService {
       .order("valid_from", { ascending: false });
 
     if (error) throw new AppError(error.message, 500);
-    return (data ?? []).map((row) => rowToView(row as CredentialRow));
+    const ledger = getEvaluateLedgerService();
+    return Promise.all((data ?? []).map(async (row) => ({
+      ...rowToView(row as CredentialRow),
+      ledgerAnchorStatus: await resolveWalletLedgerAnchorStatus(row as WalletLedgerRow, ledger),
+    })));
   }
 
   async share(userId: string, input: ShareCredentialInput): Promise<{ token: string; shareUrl: string }> {

@@ -106,6 +106,22 @@ export class DurableSsiPresentationChallengeStore extends SsiPresentationChallen
     return record;
   }
 
+  override async getIncludingUsed(id: string): Promise<PresentationChallengeRecord> {
+    if ((await this.ensureBackend()) === "memory") return super.getIncludingUsed(id);
+    const { data, error } = await this.db.from(TABLE).select("*").eq("id", id).maybeSingle();
+    if (error && isMissingRelationError(error)) {
+      this.postgresReady = false;
+      return super.getIncludingUsed(id);
+    }
+    if (error) {
+      throw Object.assign(new Error(error.message ?? "Could not load presentation challenge"), { statusCode: 503 });
+    }
+    if (!data) {
+      throw Object.assign(new Error("Unknown presentation challenge"), { statusCode: 404 });
+    }
+    return fromRow(data);
+  }
+
   override async peek(id: string): Promise<PresentationChallengeRecord> {
     if ((await this.ensureBackend()) === "memory") return super.peek(id);
     const { data, error } = await this.db.from(TABLE).select("*").eq("id", id).maybeSingle();

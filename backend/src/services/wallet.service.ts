@@ -45,6 +45,8 @@ import {
   buildEvidenceLedger,
   competencyFromSharePayload,
 } from "../utils/public-credential-map";
+import { redactExactValues } from "../utils/exact-value-redaction";
+import { disclosurePreferencesStore } from "./disclosure-preferences.service";
 import { walletExportAvailability } from "./wallet-pass.service";
 import {
   findCredentialForLearnerCompetency,
@@ -1198,11 +1200,9 @@ async function loadAggregatedWallet(userId: string): Promise<WalletCompetencyRec
       (row) => asText(row.id),
     );
 
+    // Only stored, confirmed mappings count; suggestions are not validated associations.
     const skillGithubEvidenceRecords = dedupeByKey(
-      githubEvidenceAll.filter((row) =>
-        asText(row.mapped_skill_id) === competencyId
-        || asText(row.suggested_skill_id) === competencyId,
-      ),
+      githubEvidenceAll.filter((row) => asText(row.mapped_skill_id) === competencyId),
       (row) => asText(row.id) || asText(row.external_id),
     );
 
@@ -1876,7 +1876,7 @@ export class WalletService {
       competencyId: row.competency_id,
       selectedFields: row.selected_fields,
       selectionMode: (row.selection_mode || "custom") as PublicPresentationView["selectionMode"],
-      disclosedPayload: row.disclosed_payload,
+      disclosedPayload: await recruiterPayload(row, row.disclosed_payload, row.created_at),
       proofType: row.proof_type || "SignedSelectiveDisclosure",
       verificationMethod: row.verification_method,
       createdAt: row.created_at,
@@ -1901,9 +1901,14 @@ export class WalletService {
     disclosedPayload?: Record<string, unknown>,
   ): Promise<PublicPresentationView> {
     const row = await loadPresentationByToken(token);
+    const redacted = await recruiterPayload(row, row.disclosed_payload, row.created_at);
+    // A recruiter echoing back the redacted view is checked against the signed original.
+    const checked = !disclosedPayload || withoutDisclosureMeta(disclosedPayload) === withoutDisclosureMeta(redacted)
+      ? row.disclosed_payload
+      : disclosedPayload;
     const verification = await withLedgerRevocation(row, buildVerificationResult({
       row,
-      disclosedPayload: disclosedPayload ?? row.disclosed_payload,
+      disclosedPayload: checked,
     }));
 
     return {
@@ -1911,7 +1916,7 @@ export class WalletService {
       competencyId: row.competency_id,
       selectedFields: row.selected_fields,
       selectionMode: (row.selection_mode || "custom") as PublicPresentationView["selectionMode"],
-      disclosedPayload: row.disclosed_payload,
+      disclosedPayload: redacted,
       proofType: row.proof_type || "SignedSelectiveDisclosure",
       verificationMethod: row.verification_method,
       createdAt: row.created_at,
@@ -1976,7 +1981,7 @@ export class WalletService {
         ledgerDetail: ledgerInfo.ledgerDetail,
       };
     }
-    const payload = await hydrateSharedWalletPayload(row);
+    const payload = await recruiterPayload(row, await hydrateSharedWalletPayload(row), verifiedAt);
     const competency = competencyFromSharePayload(
       payload,
       competencyId,
@@ -2124,7 +2129,7 @@ export class WalletService {
     }
 
     const resumeToken = token === "owner" ? row.id : token;
-    const payload = await hydrateSharedWalletPayload(row);
+    const payload = await recruiterPayload(row, await hydrateSharedWalletPayload(row), verifiedAt);
     const resume = buildAtsResume(payload, resumeToken, row.competency_id, row.selected_fields);
     if (resume) {
       if (learnerPhotoHidden(payload)) {
@@ -2157,6 +2162,20 @@ export class WalletService {
       ledger: ledgerInfo.ledger,
     };
   }
+}
+
+async function recruiterPayload(
+  row: PresentationRow,
+  payload: Record<string, unknown>,
+  asOf: string,
+): Promise<Record<string, unknown>> {
+  const prefs = await disclosurePreferencesStore().get(row.learner_id);
+  return redactExactValues(payload, prefs, asOf);
+}
+
+function withoutDisclosureMeta(payload: Record<string, unknown>): string {
+  const { exactValueDisclosure: _meta, ...rest } = payload;
+  return JSON.stringify(rest);
 }
 
 async function loadPresentationByShareId(userId: string, shareId: string): Promise<PresentationRow> {

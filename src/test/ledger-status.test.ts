@@ -28,9 +28,11 @@ describe("ledger status mapping", () => {
   });
 
   it("maps wallet anchor statuses to pending / anchored / failed badges", () => {
-    expect(mapWalletAnchorStatus("pending")).toEqual({ variant: "pending", label: "pending" });
-    expect(mapWalletAnchorStatus("anchored")).toEqual({ variant: "verified", label: "anchored" });
-    expect(mapWalletAnchorStatus("failed")).toEqual({ variant: "destructive", label: "failed" });
+    expect(mapWalletAnchorStatus("pending")).toEqual({ variant: "pending", label: "Fabric: anchor pending" });
+    expect(mapWalletAnchorStatus("anchored")).toEqual({ variant: "verified", label: "Fabric: anchored" });
+    expect(mapWalletAnchorStatus("failed")).toEqual({ variant: "destructive", label: "Fabric: anchor failed" });
+    expect(mapWalletAnchorStatus("not_on_ledger")).toEqual({ variant: "warning", label: "Fabric: not found on ledger" });
+    expect(mapWalletAnchorStatus("unavailable")).toEqual({ variant: "warning", label: "Fabric verification unavailable" });
     expect(mapWalletAnchorStatus("not_required")).toBeNull();
   });
 });

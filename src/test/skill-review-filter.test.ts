@@ -16,13 +16,25 @@ describe("learner competency review matching", () => {
 
   it("matches an equivalent normalized competency name", () => {
     expect(reviewMatchesDeclaredSkills({ skill: "  typescript " }, [TYPESCRIPT])).toBe(true);
+    expect(reviewMatchesDeclaredSkills(
+      { skill: "java" },
+      [{ id: "skill-java", name: "Java" }],
+    )).toBe(true);
   });
 
-  it("currently treats a short competency name inside a longer name as a match", () => {
+  it("does not match a shorter competency name inside a longer name", () => {
     expect(reviewMatchesDeclaredSkills(
       { skill: "JavaScript" },
       [{ id: "skill-java", name: "Java" }],
-    )).toBe(true);
+    )).toBe(false);
+    expect(reviewMatchesDeclaredSkills(
+      { skill: "React Native" },
+      [{ id: "skill-react", name: "React" }],
+    )).toBe(false);
+    expect(reviewMatchesDeclaredSkills(
+      { skill: "React" },
+      [{ id: "skill-native", name: "React Native" }],
+    )).toBe(false);
   });
 
   it("rejects a missing or empty skill name when no competency id matches", () => {
@@ -54,13 +66,25 @@ describe("learner competency project matching", () => {
     expect(projects[0]?.linkedSkills).toEqual(["  typescript "]);
   });
 
-  it("currently keeps a project when a short name is contained in a longer name", () => {
+  it("keeps a project linked by an equal competency name", () => {
+    const projects = filterProjectsForDeclaredSkills([{
+      id: "proj-java",
+      skillLinks: [{ skillId: "other", skillName: "Java" }],
+      linkedSkills: ["Java"],
+    }], [{ id: "skill-java", name: "Java" }]);
+    expect(projects.map((project) => project.id)).toEqual(["proj-java"]);
+  });
+
+  it("drops a project when a short name is only contained in a longer name", () => {
     const projects = filterProjectsForDeclaredSkills([{
       id: "proj-1",
       skillLinks: [{ skillId: "other", skillName: "JavaScript" }],
-      linkedSkills: ["JavaScript"],
-    }], [{ id: "skill-java", name: "Java" }]);
-    expect(projects.map((project) => project.id)).toEqual(["proj-1"]);
+      linkedSkills: ["JavaScript", "React Native"],
+    }], [
+      { id: "skill-java", name: "Java" },
+      { id: "skill-react", name: "React" },
+    ]);
+    expect(projects).toEqual([]);
   });
 
   it("drops projects when the declared skill name is empty and the id does not match", () => {

@@ -1,79 +1,46 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
-import { verifyReusableScoreProof } from "@/services/api/zkp.api";
+import { render, screen } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ReusableScoreProofCard } from "./ReusableScoreProofCard";
+import { getSharedAssessmentPolicy } from "@/services/api/zkp.api";
 
-vi.mock("@/services/api/zkp.api", () => ({
-  verifyReusableScoreProof: vi.fn(),
-}));
+vi.mock("@/services/api/zkp.api", () => ({ getSharedAssessmentPolicy: vi.fn() }));
 
-const proofJson = JSON.stringify({
-  circuitId: "score-threshold-v1",
-  publicSignals: ["60", "100"],
-  proof: { protocol: "groth16" },
-  locallyVerified: true,
-  witness: { score: "73", blinding: "42" },
-});
+describe("recruiter assessment policy card", () => {
+  beforeEach(() => vi.mocked(getSharedAssessmentPolicy).mockReset());
 
-describe("recruiter reusable score proof card", () => {
-  it("shows the server result and does not treat a browser flag as success", async () => {
-    vi.mocked(verifyReusableScoreProof).mockResolvedValue({
-      proofBinding: "reusable-credential-bound-v1",
-      circuitId: "score-threshold-v1",
-      credentialId: "urn:uuid:sijil:test",
-      threshold: "60",
-      verified: true,
-      message: "Verified: This learner meets the required assessment threshold.",
-      replay: "score-threshold-v1 does not include a recruiter challenge.",
-      checks: {
-        signature: "valid",
-        documentHash: "matches",
-        credentialRevoked: false,
-        circuit: "supported",
-        commitment: "matches",
-        proof: "valid",
-        verificationKey: "pinned",
-        fabric: "active",
-      },
+  it("loads the verified outcome from the share link without a pasted proof or a score", async () => {
+    vi.mocked(getSharedAssessmentPolicy).mockResolvedValue({
+      outcome: "MEETS_THRESHOLD",
+      threshold: 60,
+      zkpType: "score-threshold-v1",
+      policyVersion: "assess-60-v1",
+      circuitVariant: "meets",
+      scope: { credentialId: "urn:cred:a" },
+      evidenceFreshAt: "2026-10-31T00:00:00.000Z",
+      check: "valid",
+      message: "Groth16 proof verified against the signed credential commitment.",
     });
-    render(<ReusableScoreProofCard shareToken="share-token-value" />);
-    fireEvent.change(screen.getByLabelText("Reusable assessment proof"), { target: { value: proofJson } });
-    fireEvent.click(screen.getByRole("button", { name: "Verify assessment threshold" }));
-    await waitFor(() => expect(screen.getByText(/meets the required assessment threshold/)).toBeTruthy());
-    expect(screen.getByText("Yes, at least 60")).toBeTruthy();
-    expect(screen.queryByText("73")).toBeNull();
-    expect(screen.queryByText("42")).toBeNull();
-    expect(verifyReusableScoreProof).toHaveBeenCalledWith("share-token-value", {
-      circuitId: "score-threshold-v1",
-      proof: { protocol: "groth16" },
-      publicSignals: ["60", "100"],
-    });
+    render(<ReusableScoreProofCard shareToken="share-token-123456" />);
+    expect(await screen.findByText("Outcome: Meets threshold")).toBeInTheDocument();
+    expect(screen.getByText("60%")).toBeInTheDocument();
+    expect(vi.mocked(getSharedAssessmentPolicy)).toHaveBeenCalledWith("share-token-123456");
+    expect(screen.queryByRole("textbox")).toBeNull();
+    expect(screen.queryByText(/score:/i)).toBeNull();
   });
 
-  it("shows a failure from the server instead of a local check", async () => {
-    vi.mocked(verifyReusableScoreProof).mockResolvedValue({
-      proofBinding: "reusable-credential-bound-v1",
-      circuitId: "score-threshold-v1",
-      credentialId: "urn:uuid:sijil:test",
-      threshold: "60",
-      verified: false,
-      message: "Verification failed: The proof does not match the signed credential.",
-      replay: "score-threshold-v1 does not include a recruiter challenge.",
-      checks: {
-        signature: "valid",
-        documentHash: "matches",
-        credentialRevoked: false,
-        circuit: "supported",
-        commitment: "mismatch",
-        proof: "invalid",
-        verificationKey: "pinned",
-        fabric: "not_checked",
-      },
+  it("shows ERROR as not verified rather than below threshold", async () => {
+    vi.mocked(getSharedAssessmentPolicy).mockResolvedValue({
+      outcome: "ERROR",
+      threshold: 60,
+      zkpType: "score-threshold-v1",
+      circuitVariant: null,
+      scope: null,
+      evidenceFreshAt: null,
+      check: "not_evaluated",
+      message: "Evaluation failed. No outcome is verified.",
     });
-    render(<ReusableScoreProofCard shareToken="share-token-value" />);
-    fireEvent.change(screen.getByLabelText("Reusable assessment proof"), { target: { value: proofJson } });
-    fireEvent.click(screen.getByRole("button", { name: "Verify assessment threshold" }));
-    await waitFor(() => expect(screen.getByText(/does not match the signed credential/)).toBeTruthy());
-    expect(screen.queryByText(/Local check/)).toBeNull();
+    render(<ReusableScoreProofCard shareToken="share-token-123456" />);
+    expect(await screen.findByText("Outcome: Error — not verified")).toBeInTheDocument();
+    expect(screen.queryByText(/Below threshold/)).toBeNull();
   });
 });

@@ -12,6 +12,12 @@ import { verifyPublicCredential } from "./credential-verify.service";
 import { recruiterVerifyCredential } from "./recruiter-verify";
 import { canReadLearnerData, type AuthCaller } from "./learner-access";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { redactExactValues } from "../utils/exact-value-redaction";
+import {
+  DEFAULT_DISCLOSURE_PREFERENCES,
+  disclosurePreferencesStore,
+  type DisclosurePreferencesStore,
+} from "./disclosure-preferences.service";
 
 type ShareRow = Record<string, unknown>;
 type ProfileRow = {
@@ -607,6 +613,28 @@ function recruiterDb(accessToken?: string): SupabaseClient {
   return supabaseService.client;
 }
 
+async function redactShareRows<T extends Record<string, unknown>>(
+  rows: T[],
+  learnerIdOf: (row: T) => string | null | undefined,
+): Promise<T[]> {
+  const prefsByLearner = new Map<string, Awaited<ReturnType<DisclosurePreferencesStore["get"]>>>();
+  const asOf = new Date().toISOString();
+  const out: T[] = [];
+  for (const row of rows) {
+    const learnerId = learnerIdOf(row) ?? "";
+    let prefs = prefsByLearner.get(learnerId);
+    if (!prefs) {
+      prefs = learnerId
+        ? await disclosurePreferencesStore().get(learnerId)
+        : { ...DEFAULT_DISCLOSURE_PREFERENCES };
+      prefsByLearner.set(learnerId, prefs);
+    }
+    const payload = asRecord(row.disclosed_payload);
+    out.push(payload ? { ...row, disclosed_payload: redactExactValues(payload, prefs, asOf) } : row);
+  }
+  return out;
+}
+
 async function fetchActiveShareRows(db: SupabaseClient): Promise<ShareRow[]> {
   const { data, error } = await db
     .from("selective_disclosure_presentations")
@@ -618,12 +646,13 @@ async function fetchActiveShareRows(db: SupabaseClient): Promise<ShareRow[]> {
     throw new AppError(error.message, 500);
   }
 
-  return (data ?? []).filter((row) =>
+  const active = (data ?? []).filter((row) =>
     isActiveShare({
       revokedAt: asText(row.revoked_at),
       expiresAt: asText(row.expires_at),
     }),
   ) as ShareRow[];
+  return redactShareRows(active, (row) => asText(row.learner_id));
 }
 
 function groupSharesByLearner(rows: ShareRow[]): Map<string, SharedCredentialView[]> {
@@ -704,8 +733,12 @@ async function listActiveSharedCredentials(
     throw new AppError(presentationError.message, 500);
   }
 
+  const redactedWalletRows = await redactShareRows(
+    (walletRows ?? []) as Record<string, unknown>[],
+    () => candidateId,
+  );
   const shared = [
-    ...(walletRows ?? []).map((row) => mapWalletShare(row as Record<string, unknown>)),
+    ...redactedWalletRows.map((row) => mapWalletShare(row)),
     ...(presentationRows ?? []).map((row) => mapCredentialShare(row as Record<string, unknown>)),
   ].filter((item): item is SharedCredentialView => item !== null);
 

@@ -54,6 +54,8 @@ export interface CredentialView {
   };
   proof?: Record<string, unknown>;
   anchorStatus?: string;
+  /** Live ledger-verified anchor state; `anchorStatus` is only the database record. */
+  ledgerAnchorStatus?: string | null;
   anchorTxId?: string | null;
   anchoredAt?: string | null;
 }

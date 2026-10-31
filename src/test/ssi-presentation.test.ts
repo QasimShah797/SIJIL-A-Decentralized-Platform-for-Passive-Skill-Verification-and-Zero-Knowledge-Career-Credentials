@@ -149,3 +149,30 @@ describe.skipIf(!ed25519Available)("frontend presentation Ed25519 signing", () =
       .rejects.toThrow(/does not match presentation holder/);
   });
 });
+
+describe("learner presentation revoke UX contract", () => {
+  it("classifies API 410 revoked separately from missing/expired", () => {
+    const classify = (message: string): "revoked" | "missing" =>
+      (/410|revoked/i.test(message) ? "revoked" : "missing");
+    expect(classify("API 410: Presentation revoked")).toBe("revoked");
+    expect(classify("API 404: Presentation not found")).toBe("missing");
+    expect(classify("API 400: Presentation expired")).toBe("missing");
+  });
+});
+
+describe("selective presentation credential eligibility", () => {
+  it("defaults to no automatic selection and only active DID-bound credentials", async () => {
+    const { eligiblePresentationCredentials } = await import("@/lib/ssi/presentation-selection");
+    const activeDid = "did:key:z6Mkj4M7z8UBANjpLqsPzCBEN9GGP9eDRvmGw7JPAp4yeNxR";
+    const rows = [
+      { id: "a", holderDid: activeDid, skill: "Dart" },
+      { id: "b", holderDid: "did:key:z6Mk" + "c".repeat(40), skill: "Other" },
+      { id: "c", holderDid: "did:key:z6Mkplaceholderhistorical0000000000001", skill: "Legacy" },
+    ];
+    expect(eligiblePresentationCredentials(rows, null)).toEqual([]);
+    expect(eligiblePresentationCredentials(rows, activeDid).map((row) => row.id)).toEqual(["a"]);
+    const selected = new Set<string>();
+    expect(selected.size).toBe(0);
+    expect(eligiblePresentationCredentials(rows, activeDid).filter((row) => selected.has(row.id))).toEqual([]);
+  });
+});

@@ -17,7 +17,14 @@ import {
   cancelInterview,
   resendInterviewEmail,
 } from "../controllers/interview.controller";
-import { verifyRecruiterScoreProof } from "../controllers/zkp.controller";
+import {
+  verifyAssessmentPolicy,
+  verifyRecruiterScoreProof,
+} from "../controllers/zkp.controller";
+import {
+  verifyGitHubDisclosure,
+  verifyGitHubPolicy,
+} from "../controllers/github-zkp.controller";
 import { ZKP_VERIFY_RATE_LIMIT, rateLimit } from "../middleware/rateLimit.middleware";
 
 const router = Router();
@@ -28,6 +35,21 @@ router.post(
   "/zkp/verify",
   rateLimit({ ...ZKP_VERIFY_RATE_LIMIT, key: (req) => req.user?.id || req.ip || "unknown" }),
   asyncHandler(verifyRecruiterScoreProof),
+);
+router.post(
+  "/zkp/policy/verify",
+  rateLimit({ ...ZKP_VERIFY_RATE_LIMIT, key: (req) => req.user?.id || req.ip || "unknown" }),
+  asyncHandler(verifyAssessmentPolicy),
+);
+router.post(
+  "/github-zkp/verify",
+  rateLimit({ ...ZKP_VERIFY_RATE_LIMIT, key: (req) => req.user?.id || req.ip || "unknown" }),
+  asyncHandler(verifyGitHubDisclosure),
+);
+router.post(
+  "/github-zkp/policy/verify",
+  rateLimit({ ...ZKP_VERIFY_RATE_LIMIT, key: (req) => req.user?.id || req.ip || "unknown" }),
+  asyncHandler(verifyGitHubPolicy),
 );
 router.get("/verify/:credentialId", asyncHandler(verifyCredential));
 router.get("/candidate/:candidateId", asyncHandler(getCandidate));
