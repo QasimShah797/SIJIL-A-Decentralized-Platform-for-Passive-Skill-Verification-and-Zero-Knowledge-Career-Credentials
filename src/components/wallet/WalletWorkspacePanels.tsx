@@ -142,7 +142,7 @@ export function WalletWorkspaceHeader({
   return (
     <div className="learner-stat-card mb-4 flex flex-wrap items-center justify-between gap-3 px-4 py-3">
       <div className="flex min-w-0 flex-wrap items-center gap-3">
-        <p className="text-sm font-semibold text-[#023E8A]">SIJIL Wallet</p>
+        <p className="text-sm font-semibold text-[#023E8A]">My Secure Wallet</p>
         <span className="hidden h-4 w-px bg-[#e2e8f0] sm:block" />
         {records.length > 1 ? (
           <Select value={selectedId} onValueChange={onSelect}>

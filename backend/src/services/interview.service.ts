@@ -112,27 +112,11 @@ async function resolveCandidateContact(
   let name = resolveLearnerDisplayName(profile);
   if (name === "Learner" && fallbackName.trim()) name = fallbackName.trim();
 
-  if (accessToken) {
+  if (accessToken && !email.includes("@")) {
     const { data: rpcEmail } = await getUserSupabase(accessToken)
       .rpc("learner_contact_email", { _user_id: candidateId });
     if (typeof rpcEmail === "string" && rpcEmail.includes("@")) {
       email = rpcEmail.trim();
-    }
-  }
-
-  if (!email.includes("@")) {
-    try {
-      const { data, error } = await supabaseService.client.auth.admin.getUserById(candidateId);
-      if (!error && data?.user) {
-        const registered = data.user.email?.trim();
-        if (registered) email = registered;
-        const metaName = data.user.user_metadata?.full_name;
-        if (typeof metaName === "string" && metaName.trim() && name === "Learner") {
-          name = metaName.trim();
-        }
-      }
-    } catch {
-      // auth.admin requires a service-role key.
     }
   }
 

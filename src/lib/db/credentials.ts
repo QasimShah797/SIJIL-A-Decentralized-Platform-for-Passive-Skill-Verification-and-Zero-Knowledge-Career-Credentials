@@ -135,18 +135,9 @@ export async function fetchCredentialByUri(userId: string, uri: string): Promise
   return data ? rowToCredential(data) : null;
 }
 
-/** Resolve credential by URI across users (recruiter verify flow). */
+/** Resolve a credential through the API. The browser does not select another learner's row. */
 export async function fetchCredentialByUriGlobal(uri: string): Promise<CredentialView | null> {
-  const viaApi = await getCredentialApi(uri);
-  if (viaApi) return viaApi;
-
-  const { data, error } = await supabase
-    .from("credentials")
-    .select("*")
-    .eq("credential_uri", uri)
-    .maybeSingle();
-  if (error) throw error;
-  return data ? rowToCredential(data) : null;
+  return getCredentialApi(uri);
 }
 
 export async function getCredentialDbId(uri: string): Promise<string | null> {

@@ -4,7 +4,7 @@ import { ssiBindSchema, ssiDidQuerySchema } from "../validators/ssi.validator";
 import { ssiService } from "../services/ssi.service";
 
 export async function createSsiChallenge(req: Request, res: Response): Promise<Response> {
-  const challenge = ssiService.issueChallenge(req.user!.id);
+  const challenge = await ssiService.issueChallenge(req.user!.id);
   return sendSuccess(res, challenge, "SSI ownership challenge issued", 201);
 }
 

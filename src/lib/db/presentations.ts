@@ -18,6 +18,21 @@ function rowToPresentation(row: Record<string, unknown>): SharedPresentation {
 }
 
 export async function fetchPresentation(token: string): Promise<SharedPresentation | null> {
+  const rpc = await (supabase as unknown as {
+    rpc: (
+      fn: string,
+      args: { p_token: string },
+    ) => Promise<{ data: Record<string, unknown> | Record<string, unknown>[] | null; error: { code?: string; message?: string } | null }>;
+  }).rpc("presentation_by_token", { p_token: token });
+  if (!rpc.error) {
+    const row = Array.isArray(rpc.data) ? rpc.data[0] : rpc.data;
+    if (!row) return null;
+    return rowToPresentation(row);
+  }
+  const missingFunction = rpc.error.code === "PGRST202"
+    || /presentation_by_token|could not find the function/i.test(rpc.error.message ?? "");
+  if (!missingFunction) throw rpc.error;
+
   const { data, error } = await supabase
     .from("presentations")
     .select(`
@@ -61,23 +76,6 @@ export async function revokePresentationDb(token: string): Promise<void> {
   if (error) throw error;
 }
 
-export async function fetchPresentationsForCandidate(candidateUserId: string): Promise<SharedPresentation[]> {
-  const { data, error } = await supabase
-    .from("presentations")
-    .select(`
-      *,
-      credentials ( credential_uri )
-    `)
-    .eq("candidate_user_id", candidateUserId)
-    .eq("revoked", false);
-  if (error) throw error;
-  const now = Date.now();
-  return (data ?? [])
-    .map((row) =>
-      rowToPresentation({
-        ...row,
-        credential_uri: (row.credentials as { credential_uri: string } | null)?.credential_uri ?? "",
-      }),
-    )
-    .filter((presentation) => !presentation.revoked && new Date(presentation.expiresAt).getTime() > now);
+export async function fetchPresentationsForCandidate(_candidateUserId: string): Promise<SharedPresentation[]> {
+  return [];
 }

@@ -53,13 +53,13 @@ export function deriveSsiStatus(input: {
     return {
       status: "unsupported",
       message: input.support.reasons[0]
-        ?? "This browser cannot store a learner SSI vault. SSI activation is disabled.",
+        ?? "This browser cannot store a learning identity. Setup is unavailable.",
     };
   }
   if (input.vaultLocked) {
     return {
       status: "locked",
-      message: "This identity is passphrase-protected. Unlock to sign. SIJIL cannot recover a forgotten passphrase.",
+      message: "Your learning identity is locked. Enter your recovery password to continue. SIJIL cannot reset that password.",
     };
   }
   const localUsable = Boolean(input.local && isUsablePrivateKey(input.local.privateKey));
@@ -68,32 +68,32 @@ export function deriveSsiStatus(input: {
   if (input.local && !localUsable) {
     return {
       status: "key_unavailable",
-      message: "An SSI identity exists on this device but the private key is not usable. A new DID will not be generated.",
+      message: "A learning identity exists on this device, but its key cannot be used. A replacement will not be created.",
     };
   }
   if (serverDid && !localUsable) {
     return {
       status: "key_unavailable",
-      message: "This account has a registered DID, but this browser does not have the private key. Restore an encrypted backup or unlock this device. SIJIL cannot recover a forgotten passphrase.",
+      message: "Your account already has a learning identity, and this browser does not have its key. Restore a recovery file, or unlock it on the device that created it. A browser-only identity cannot be restored.",
     };
   }
   if (localUsable && serverDid && input.local!.did !== serverDid) {
     return {
       status: "key_unavailable",
-      message: "This device’s DID does not match the DID registered to the account. The local key was not replaced.",
+      message: "This browser’s identity does not match the one on your account. The existing identity was not replaced.",
     };
   }
   if (localUsable) {
     return {
       status: "active",
       message: serverDid
-        ? "Learner-controlled Ed25519 identity is active on this device and registered to your account."
-        : "Learner-controlled key is active on this device. Server registration is pending (apply the SSI migration).",
+        ? "Your learning identity is ready on this device."
+        : "This device has your learning identity. Finish connecting it to your account. A new identity will not be created.",
     };
   }
   return {
     status: "not_activated",
-    message: "Generate an Ed25519 key on this device. The private key never leaves the browser.",
+    message: "Secure your learning identity on this device. The private key never leaves this browser.",
   };
 }
 

@@ -30,7 +30,7 @@ export function ReusableScoreProofCard({ shareToken }: { shareToken: string }) {
       </CardHeader>
       <CardContent className="space-y-2">
         <p className="text-sm text-muted-foreground">
-          SIJIL proves whether the signed assessment score meets the fixed policy threshold. The exact score stays hidden.
+          A threshold result is not a blockchain-confirmed privacy proof. The exact score stays hidden.
         </p>
         {error ? <p className="text-sm text-destructive">{error}</p> : null}
         {!policy && !error ? <p className="text-sm text-muted-foreground">Checking…</p> : null}

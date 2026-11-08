@@ -15,36 +15,53 @@ export type SsiChallengeRecord = {
   usedAt: number | null;
 };
 
-export class SsiChallengeStore {
+/** Same bytes the browser signs. 32-byte nonce, five-minute expiry. No key material. */
+export function createBindChallenge(userId: string, now: number): SsiChallengeRecord {
+  const id = randomUUID();
+  const nonce = randomBytes(32).toString("base64url");
+  const expiresAt = now + SSI_CHALLENGE_TTL_MS;
+  const payload = [
+    "SIJIL-SSI-BIND-v1",
+    `audience=${SSI_CHALLENGE_AUDIENCE}`,
+    `purpose=${SSI_CHALLENGE_PURPOSE}`,
+    `userId=${userId}`,
+    `challengeId=${id}`,
+    `nonce=${nonce}`,
+    `expiresAt=${new Date(expiresAt).toISOString()}`,
+  ].join("\n");
+  return {
+    id,
+    userId,
+    nonce,
+    purpose: SSI_CHALLENGE_PURPOSE,
+    audience: SSI_CHALLENGE_AUDIENCE,
+    payload,
+    expiresAt,
+    usedAt: null,
+  };
+}
+
+export type SsiChallengePort = {
+  issue(userId: string): SsiChallengeRecord | Promise<SsiChallengeRecord>;
+  peek(id: string, userId: string): SsiChallengeRecord | Promise<SsiChallengeRecord>;
+  consume(id: string, userId: string): SsiChallengeRecord | Promise<SsiChallengeRecord>;
+};
+
+export class SsiChallengeStore implements SsiChallengePort {
   private readonly rows = new Map<string, SsiChallengeRecord>();
 
   constructor(private readonly now: () => number = () => Date.now()) {}
 
   issue(userId: string): SsiChallengeRecord {
     this.prune();
-    const id = randomUUID();
-    const nonce = randomBytes(32).toString("base64url");
-    const expiresAt = this.now() + SSI_CHALLENGE_TTL_MS;
-    const payload = [
-      "SIJIL-SSI-BIND-v1",
-      `audience=${SSI_CHALLENGE_AUDIENCE}`,
-      `purpose=${SSI_CHALLENGE_PURPOSE}`,
-      `userId=${userId}`,
-      `challengeId=${id}`,
-      `nonce=${nonce}`,
-      `expiresAt=${new Date(expiresAt).toISOString()}`,
-    ].join("\n");
-    const record: SsiChallengeRecord = {
-      id,
-      userId,
-      nonce,
-      purpose: SSI_CHALLENGE_PURPOSE,
-      audience: SSI_CHALLENGE_AUDIENCE,
-      payload,
-      expiresAt,
-      usedAt: null,
-    };
-    this.rows.set(id, record);
+    const record = createBindChallenge(userId, this.now());
+    this.rows.set(record.id, record);
+    return record;
+  }
+
+  /** Keep a record created elsewhere. Used only when durable storage is intentionally bypassed. */
+  hold(record: SsiChallengeRecord): SsiChallengeRecord {
+    this.rows.set(record.id, record);
     return record;
   }
 

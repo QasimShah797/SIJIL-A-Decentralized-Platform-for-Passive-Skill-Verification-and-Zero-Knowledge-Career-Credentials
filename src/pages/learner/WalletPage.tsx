@@ -61,7 +61,10 @@ import {
   type ShareToggle,
 } from "@/components/wallet/WalletWorkspacePanels";
 import { SsiIdentityCard } from "@/components/wallet/SsiIdentityCard";
+import { LearnerCredentialWallet } from "@/components/wallet/LearnerCredentialWallet";
 import { SignedPresentationCard } from "@/components/wallet/SignedPresentationCard";
+import { WalletDashboardHub } from "@/components/wallet/WalletDashboardHub";
+import { VerifiedProofFlow } from "@/components/wallet/VerifiedProofFlow";
 
 function formatDate(value: string | null | undefined): string {
   if (!value) return "Recent";
@@ -412,7 +415,8 @@ export default function WalletPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { profile, loading: profileLoading } = useLearnerProfile();
-  const { credentials } = useCredentials();
+  const { credentials, loading: credentialsLoading, refresh: refreshCredentials } = useCredentials();
+  const [walletPanel, setWalletPanel] = useState<"hub" | "achievements" | "share" | "manage" | "proof">("hub");
   const [records, setRecords] = useState<WalletCompetencyRecordView[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -721,8 +725,42 @@ export default function WalletPage() {
   return (
     <LearnerWorkspaceShell variant="dashboard">
       <WalletRefreshBar onRefresh={() => void loadRecords()} loading={loading} />
-      <SsiIdentityCard />
-      <SignedPresentationCard />
+      {walletPanel === "hub" ? (
+        <WalletDashboardHub
+          credentials={credentials.map((credential) => ({ id: credential.id, name: credential.skill || credential.name }))}
+          credentialsLoading={credentialsLoading}
+          onViewAchievements={() => setWalletPanel("achievements")}
+          onShare={() => setWalletPanel("share")}
+          onManage={() => setWalletPanel("manage")}
+          onGetProof={() => setWalletPanel("proof")}
+        />
+      ) : (
+        <section className="space-y-4" aria-label="Secure wallet">
+          {walletPanel !== "proof" && walletPanel !== "share" ? (
+            <button type="button" className="text-sm font-semibold text-[#023E8A]" onClick={() => setWalletPanel("hub")}>
+              Back to My Secure Wallet
+            </button>
+          ) : null}
+          {walletPanel === "achievements" && user ? <LearnerCredentialWallet userId={user.id} credentials={credentials} /> : null}
+          {walletPanel === "share" ? <SignedPresentationCard onBack={() => setWalletPanel("hub")} /> : null}
+          {walletPanel === "manage" ? <SsiIdentityCard /> : null}
+          {walletPanel === "proof" && user ? (
+            <VerifiedProofFlow
+              userId={user.id}
+              credentials={credentials}
+              onBack={() => setWalletPanel("hub")}
+              onViewInWallet={() => setWalletPanel("achievements")}
+              onIssued={() => void refreshCredentials()}
+            />
+          ) : null}
+        </section>
+      )}
+
+      <section className="mt-10 border-t border-[#e2e8f0] pt-8" aria-label="Learning records">
+        <h2 className="mb-4 text-lg font-semibold text-[#0f172a]">Learning records</h2>
+        <p className="mb-4 max-w-2xl text-sm text-[#475569]">
+          Evidence from your courses, projects, and reviews stays in this separate workspace. It is not the same as a signed achievement.
+        </p>
 
       {error ? (
         <EmptyState
@@ -805,6 +843,7 @@ export default function WalletPage() {
           </div>
         </>
       )}
+      </section>
 
       <WalletEvidenceDialog
         record={selectedRecord}

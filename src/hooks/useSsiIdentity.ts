@@ -17,11 +17,12 @@ import {
   isVaultRecord,
   lockIdentity,
   rememberUnlocked,
-  restorePassphraseVault,
   rotateVaultPassphrase,
   unlockPersistedIdentity,
 } from "@/lib/ssi/session";
-import { parseBackupJson, type EncryptedSsiBackup } from "@/lib/ssi/vault";
+import { restoreOnThisDevice } from "@/lib/ssi/recovery";
+import { learnerIdentityError } from "@/lib/ssi/onboarding";
+import { type EncryptedSsiBackup } from "@/lib/ssi/vault";
 import { evaluateSsiBrowserSupport, type SsiSupportResult } from "@/lib/ssi/support";
 import {
   bindSsiIdentityApi,
@@ -129,10 +130,11 @@ export function useSsiIdentity() {
     void refresh();
   }, [refresh]);
 
-  const activate = useCallback(async (passphrase?: string): Promise<SsiUiStatus> => {
+  const activate = useCallback(async (passphrase?: string): Promise<{ status: SsiUiStatus; backup: EncryptedSsiBackup | null }> => {
     if (!user?.id) throw new Error("Sign in required");
     setWorking(true);
     setError(null);
+    let backup: EncryptedSsiBackup | null = null;
     try {
       const support = await evaluateSsiBrowserSupport();
       if (!support.ok) {
@@ -143,6 +145,7 @@ export function useSsiIdentity() {
       if (passphrase) {
         const created = await createPassphraseVault(indexedDbKeyStore, user.id, passphrase, api?.did ?? null);
         record = created.identity;
+        backup = created.backup;
       } else {
         if (!support.nonExtractablePersist) {
           throw new Error("This browser cannot persist a non-extractable key. Create a passphrase-protected identity instead.");
@@ -155,7 +158,7 @@ export function useSsiIdentity() {
         await bindDid(record);
       } catch (bindError) {
         const message = bindError instanceof Error ? bindError.message : "Could not register DID";
-        if (/Apply supabase\/migrations|503/.test(message)) {
+        if (/Apply supabase\/migrations|503|temporarily unavailable/.test(message)) {
           const derived = deriveSsiStatus({ support, local: record, serverDid: null });
           setSnapshot({
             status: derived.status,
@@ -164,14 +167,33 @@ export function useSsiIdentity() {
             support,
             message: `${derived.message} Server table is not applied yet.`,
           });
-          return derived.status;
+          return { status: derived.status, backup };
         }
         throw bindError;
       }
       await refresh();
-      return "active";
+      return { status: "active", backup };
     } catch (nextError) {
       const message = nextError instanceof Error ? nextError.message : "Activation failed";
+      await refresh();
+      setError(message);
+      throw nextError;
+    } finally {
+      setWorking(false);
+    }
+  }, [user?.id, refresh]);
+
+  const finishRegistration = useCallback(async () => {
+    if (!user?.id) throw new Error("Sign in required");
+    const record = getUnlockedIdentity(user.id);
+    if (!record) throw new Error("Unlock your identity on this device before finishing setup.");
+    setWorking(true);
+    setError(null);
+    try {
+      await bindDid(record);
+      await refresh();
+    } catch (nextError) {
+      const message = nextError instanceof Error ? nextError.message : "Could not finish setup";
       setError(message);
       throw nextError;
     } finally {
@@ -204,19 +226,29 @@ export function useSsiIdentity() {
 
   const restoreBackup = useCallback(async (raw: string, passphrase: string) => {
     if (!user?.id) throw new Error("Sign in required");
-    const backup = parseBackupJson(raw);
-    const api = await getSsiIdentityApi();
-    const identity = await restorePassphraseVault(
-      indexedDbKeyStore,
-      backup,
-      passphrase,
-      user.id,
-      api?.did ?? null,
-    );
-    if (!api?.did) {
-      await bindDid(identity);
+    setWorking(true);
+    setError(null);
+    try {
+      const api = await getSsiIdentityApi();
+      if (!api) throw new Error("Identity verification is temporarily unavailable");
+      const result = await restoreOnThisDevice({
+        store: indexedDbKeyStore,
+        backupRaw: raw,
+        passphrase,
+        userId: user.id,
+        boundDid: api.did,
+        prove: bindDid,
+      });
+      await refresh();
+      if (result.status === "interrupted") {
+        throw new Error("Restoration stopped before this device finished checking your identity.");
+      }
+    } catch (nextError) {
+      setError(learnerIdentityError(nextError));
+      throw nextError;
+    } finally {
+      setWorking(false);
     }
-    await refresh();
   }, [user?.id, refresh]);
 
   const changePassphrase = useCallback(async (currentPassphrase: string, nextPassphrase: string) => {
@@ -236,6 +268,7 @@ export function useSsiIdentity() {
     signingIdentity,
     refresh,
     activate,
+    finishRegistration,
     unlock,
     lock,
     exportBackup,

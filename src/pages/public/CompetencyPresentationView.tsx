@@ -17,6 +17,7 @@ import {
   type LedgerVerifyStatus,
 } from "@/lib/ledger-status";
 import { getPublicCredentialApi } from "@/services/api/public-credential.api";
+import { recruiterVerificationLines } from "@/lib/sharing/guide";
 import {
   getPublicPresentationApi,
   verifyPublicPresentationApi,
@@ -205,6 +206,15 @@ export default function CompetencyPresentationView() {
   }, [presentation]);
 
   const ledgerBadge = mapLedgerStatusToBadge(ledgerStatus, ledgerDetail);
+  const access = presentation?.verification.revoked
+    ? "revoked"
+    : presentation?.verification.expired
+      ? "expired"
+      : "active";
+  const checks = recruiterVerificationLines({
+    access,
+    ledgerStatus,
+  });
 
   const runVerification = async () => {
     if (!token) return;
@@ -239,16 +249,16 @@ export default function CompetencyPresentationView() {
             Verify credentials. Build trust instantly.
           </h1>
           <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">
-            This page shows only what the learner chose to disclose — with signed proof metadata.
-            Full wallet access is never granted from a presentation link.
+            This page shows the items the learner included in this link, together with the server proof for that payload.
+            A valid link proof is not the same as a current credential or a blockchain confirmation.
           </p>
         </div>
 
         <div className="mb-6 flex items-start gap-3 rounded-xl border border-info/20 bg-info/5 px-4 py-3 text-sm text-muted-foreground">
           <Info className="mt-0.5 h-4 w-4 shrink-0 text-info" aria-hidden />
           <div>
-            <span className="font-medium text-foreground">Selective disclosure.</span>{" "}
-            Recruiters receive verified claims via a time-limited link — not the learner&apos;s complete evidence package.
+            <span className="font-medium text-foreground">Shared fields.</span>{" "}
+            This page shows the items stored for this link. It is not a zero-knowledge proof. Signature, credential status, and blockchain confirmation stay separate.
           </div>
         </div>
 
@@ -298,6 +308,11 @@ export default function CompetencyPresentationView() {
                       Verification result
                     </p>
                     <p className="mt-1 text-lg font-semibold">{presentation.verification.result}</p>
+                    <ul className="mt-2 space-y-1 text-sm text-primary-foreground/90">
+                      {checks.map((line) => (
+                        <li key={line.label}>{line.label}: {line.value}</li>
+                      ))}
+                    </ul>
                   </div>
                   <StatusBadge variant={proofVariant(presentation.verification.result, ledgerStatus, ledgerDetail)} className="bg-white/15 text-primary-foreground">
                     {presentation.proofType}
@@ -341,9 +356,17 @@ export default function CompetencyPresentationView() {
 
             <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
               <div className="space-y-6">
-                {sections.map((section) => (
+                {access === "active" ? sections.map((section) => (
                   <DisclosureSection key={section.key} title={section.title} value={section.value} />
-                ))}
+                )) : (
+                  <Card>
+                    <CardContent className="p-5 text-sm text-muted-foreground">
+                      {access === "revoked"
+                        ? "This link was stopped. The shared items are not shown. Stopping a link does not delete a copy someone already saved, and it does not revoke the achievement."
+                        : "This link has expired. The shared items are not shown."}
+                    </CardContent>
+                  </Card>
+                )}
               </div>
 
               <div className="space-y-6">

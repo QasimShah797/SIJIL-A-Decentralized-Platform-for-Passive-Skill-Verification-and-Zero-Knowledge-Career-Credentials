@@ -254,7 +254,7 @@ export function mapCredentialShareToView(row: {
   const proof = asRecord(row.proof);
 
   return {
-    presentationId: asText(row.token) ?? "credential-share",
+    presentationId: `credential-share:${asText(row.created_at) ?? "unknown"}`,
     source: "credential_share",
     title,
     subtitle: issuer,
@@ -266,7 +266,7 @@ export function mapCredentialShareToView(row: {
     hiddenFieldCount: hiddenFields.length,
     createdAt: asText(row.created_at) ?? new Date().toISOString(),
     expiresAt: asText(row.expires_at),
-    token: asText(row.token),
+    token: null,
     proofType: asText(proof?.type),
   };
 }

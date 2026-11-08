@@ -214,11 +214,17 @@ type OpeningVerifier = (input: {
 let verifierPromise: Promise<OpeningVerifier> | undefined;
 
 async function openingVerifier(): Promise<OpeningVerifier> {
-  verifierPromise ??= import(
-    pathToFileURL(
-      path.resolve(__dirname, "../../../circuits/score-threshold-v1/src/commitment.mjs"),
-    ).href
-  ).then((mod: { verifyAssessmentOpening: OpeningVerifier }) => mod.verifyAssessmentOpening);
+  if (!verifierPromise) {
+    verifierPromise = import(
+      pathToFileURL(
+        path.resolve(__dirname, "../../../circuits/score-threshold-v1/src/commitment.mjs"),
+      ).href
+    ).then((mod: { verifyAssessmentOpening: OpeningVerifier }) => mod.verifyAssessmentOpening)
+      .catch((error: unknown) => {
+        verifierPromise = undefined;
+        throw error;
+      });
+  }
   return verifierPromise;
 }
 

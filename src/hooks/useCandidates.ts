@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { fetchCandidates, fetchCandidateSkillsMap, mergeCandidateLists, applyCandidateCardFields, fetchCandidateCardFieldsByIds, coalesceCandidateText, latestTimestamp, type CandidateView } from "@/lib/db/candidates";
+import { applyCandidateCardFields, fetchCandidateCardFieldsByIds, coalesceCandidateText, type CandidateView } from "@/lib/db/candidates";
 import { apiRequest, isApiEnabled } from "@/services/api/client";
 import { getCandidateProfileFieldsApi } from "@/services/api/recruiter.api";
 import type { CandidateSkill } from "@/lib/sijil-data";
@@ -28,37 +28,15 @@ export function useCandidates() {
         }
       }
 
-      const [fallbackCandidates, cs] = await Promise.all([
-        fetchCandidates(),
-        fetchCandidateSkillsMap().catch(() => ({})),
-      ]);
-
-      let c: CandidateView[];
       if (viaApi === null) {
-        c = fallbackCandidates;
-      } else if (viaApi.length === 0) {
-        c = fallbackCandidates;
-      } else {
-        c = mergeCandidateLists(viaApi, fallbackCandidates);
+        setCandidates([]);
+        setCandidateSkills({});
+        setError(apiDown || !isApiEnabled() ? API_DOWN_MESSAGE : null);
+        return;
       }
 
-      const fallbackById = new Map(fallbackCandidates.map((candidate) => [candidate.id, candidate]));
-      c = c.map((candidate) => {
-        const fallback = fallbackById.get(candidate.id);
-        if (!fallback) return candidate;
-        return {
-          ...candidate,
-          avatarUrl: coalesceCandidateText(candidate.avatarUrl, fallback.avatarUrl),
-          skillsSummary: coalesceCandidateText(candidate.skillsSummary, fallback.skillsSummary),
-          careerGoal: coalesceCandidateText(candidate.careerGoal, fallback.careerGoal),
-          searchableSkills: [...new Set([...(candidate.searchableSkills ?? []), ...(fallback.searchableSkills ?? [])])],
-          verifiedSkills: candidate.verifiedSkills?.length ? candidate.verifiedSkills : fallback.verifiedSkills,
-          skillEvidence: fallback.skillEvidence?.length
-            ? fallback.skillEvidence
-            : candidate.skillEvidence,
-          sharedAt: latestTimestamp(candidate.sharedAt, fallback.sharedAt),
-        };
-      });
+      const cs: Record<string, CandidateSkill[]> = {};
+      let c: CandidateView[] = viaApi;
 
       if (c.length === 0 && apiDown) {
         setCandidates([]);

@@ -5,6 +5,7 @@
 import path from "node:path";
 import dotenv from "dotenv";
 import { z } from "zod";
+import { productionOriginProblems } from "./production-origins";
 
 dotenv.config({ path: path.resolve(process.cwd(), ".env") });
 dotenv.config({ path: path.resolve(process.cwd(), "../.env.local") });
@@ -126,4 +127,12 @@ export const env = parsed.data;
 if (env.NODE_ENV === "production" && !env.ISSUER_ED25519_PRIVATE_KEY) {
   console.error("ISSUER_ED25519_PRIVATE_KEY is required in production");
   process.exit(1);
+}
+
+if (env.NODE_ENV === "production") {
+  const originProblems = productionOriginProblems(env.CORS_ORIGIN, env.FRONTEND_URL);
+  if (originProblems.length > 0) {
+    console.error("Production web origins are not safe:", originProblems.join("; "));
+    process.exit(1);
+  }
 }
