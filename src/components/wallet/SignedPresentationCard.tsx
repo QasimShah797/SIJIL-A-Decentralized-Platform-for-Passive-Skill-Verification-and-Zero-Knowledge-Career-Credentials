@@ -1,119 +1,142 @@
 import { useMemo, useState } from "react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { toast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { useSsiIdentity } from "@/hooks/useSsiIdentity";
 import { useCredentials } from "@/hooks/useLearnerData";
+import { getCredentialDbId, type CredentialView } from "@/lib/db/credentials";
 import { isDidKeyEd25519 } from "@/lib/did";
-import { getCredentialDbId } from "@/lib/db/credentials";
+import { eligiblePresentationCredentials } from "@/lib/ssi/presentation-selection";
 import { signUtf8 } from "@/lib/ssi/keystore";
 import { getUnlockedIdentity } from "@/lib/ssi/session";
 import {
   createPresentationChallengeApi,
+  revokeLearnerPresentationApi,
   submitLearnerPresentationApi,
 } from "@/services/api/ssi.api";
+import { GuidedShareFlow } from "./GuidedShareFlow";
 
-export function SignedPresentationCard() {
+function statusLabel(credential: CredentialView): string {
+  if (credential.ledgerAnchorStatus === "anchored" || credential.anchorStatus === "anchored") {
+    return "Anchored";
+  }
+  if (credential.verification === "verified" || credential.attestation === "attested") {
+    return "Verified";
+  }
+  return credential.verification || credential.attestation || "Issued";
+}
+
+export function SignedPresentationCard({ onBack }: { onBack: () => void }) {
   const { credentials } = useCredentials();
   const { user } = useAuth();
-  const { snapshot } = useSsiIdentity();
+  const { snapshot, unlock, working: identityWorking, signingIdentity } = useSsiIdentity();
   const [audience, setAudience] = useState("sijil-recruiter-verify");
-  const [working, setWorking] = useState(false);
-  const [verifyUrl, setVerifyUrl] = useState<string | null>(null);
 
-  const bound = useMemo(
-    () => credentials.filter((credential) => isDidKeyEd25519(credential.holderDid)),
+  const activeDid = signingIdentity?.did
+    ?? (typeof snapshot.local?.did === "string" ? snapshot.local.did : null)
+    ?? snapshot.server.did
+    ?? null;
+
+  const eligible = useMemo(
+    () => eligiblePresentationCredentials(credentials, activeDid),
+    [credentials, activeDid],
+  );
+  const historical = useMemo(
+    () => credentials.filter((credential) => !isDidKeyEd25519(credential.holderDid)).length,
     [credentials],
   );
-  const historical = credentials.length - bound.length;
+  const canSign = Boolean(signingIdentity);
+  const identityNote = !canSign && snapshot.status === "key_unavailable"
+    ? "This browser does not have the key for your identity. A new identity will not be created."
+    : !canSign && snapshot.status !== "locked"
+      ? "Set up your secure identity, then approve this share."
+      : null;
 
-  const createPresentation = async () => {
-    const signingIdentity = user?.id ? getUnlockedIdentity(user.id) : null;
-    if (!signingIdentity) {
-      toast({
-        title: "Unlock your SSI identity first",
-        description: snapshot.status === "locked"
-          ? "Enter your passphrase to unlock the wallet."
-          : "Activate SSI identity, then sign a presentation.",
-        variant: "destructive",
-      });
-      return;
+  const createPresentation = async (input: { credentialIds: string[]; audience: string }) => {
+    const currentIdentity = user?.id ? getUnlockedIdentity(user.id) : null;
+    if (!currentIdentity) {
+      const message = snapshot.status === "locked"
+        ? "Enter your recovery password to continue."
+        : "Set up your secure identity, then approve this share.";
+      toast({ title: "Unlock your secure identity first", description: message, variant: "destructive" });
+      throw new Error(message);
     }
-    if (bound.length === 0) {
-      toast({
-        title: "No DID-bound credentials",
-        description: "Historical placeholder credentials can still be shared with a bearer link.",
-        variant: "destructive",
-      });
-      return;
+    if (eligible.length === 0) {
+      const message = "Older records can still be shared with a private link.";
+      toast({ title: "No achievements can be signed yet", description: message, variant: "destructive" });
+      throw new Error(message);
     }
-    setWorking(true);
+    const chosen = eligible.filter((credential) => input.credentialIds.includes(credential.id));
+    if (chosen.length === 0) {
+      const message = "Nothing is shared until you choose which credentials to include.";
+      toast({ title: "Select at least one credential", description: message, variant: "destructive" });
+      throw new Error(message);
+    }
     try {
       const credentialIds: string[] = [];
-      for (const credential of bound) {
+      for (const credential of chosen) {
         const dbId = await getCredentialDbId(credential.id);
         credentialIds.push(dbId ?? credential.id);
       }
       const challenge = await createPresentationChallengeApi({
         credentialIds,
-        audience: audience.trim() || "sijil-recruiter-verify",
+        audience: input.audience.trim() || "sijil-recruiter-verify",
       });
-      if (challenge.holderDid !== signingIdentity.did) {
+      if (challenge.holderDid !== currentIdentity.did) {
         throw new Error("Bound DID does not match this browser key");
       }
-      const signature = await signUtf8(signingIdentity.privateKey, challenge.canonicalPayload);
+      if (challenge.credentials.length !== credentialIds.length) {
+        throw new Error("Server challenge credential set does not match your selection");
+      }
+      const signature = await signUtf8(currentIdentity.privateKey, challenge.canonicalPayload);
       const submitted = await submitLearnerPresentationApi({
         challengeId: challenge.challengeId,
-        did: signingIdentity.did,
+        did: currentIdentity.did,
         signature,
       });
-      setVerifyUrl(submitted.verifyUrl);
-      toast({ title: "Learner-signed presentation created" });
+      toast({ title: "Signed share created" });
+      return { verifyUrl: submitted.verifyUrl, presentationId: submitted.presentationId };
     } catch (createError) {
-      toast({
-        title: "Could not sign presentation",
-        description: createError instanceof Error ? createError.message : "Signing failed.",
-        variant: "destructive",
-      });
-    } finally {
-      setWorking(false);
+      const message = createError instanceof Error ? createError.message : "Signing failed.";
+      toast({ title: "Could not sign presentation", description: message, variant: "destructive" });
+      throw createError instanceof Error ? createError : new Error(message);
+    }
+  };
+
+  const revokePresentation = async (presentationId: string) => {
+    const confirmed = window.confirm(
+      "Stop access to this signed share? Anyone with the verify link will no longer see it. Your achievements and identity stay unchanged.",
+    );
+    if (!confirmed) return false;
+    try {
+      await revokeLearnerPresentationApi(presentationId);
+      toast({ title: "Share access stopped" });
+      return true;
+    } catch (revokeError) {
+      const message = revokeError instanceof Error ? revokeError.message : "Revoke failed.";
+      toast({ title: "Could not revoke presentation", description: message, variant: "destructive" });
+      throw revokeError instanceof Error ? revokeError : new Error(message);
     }
   };
 
   return (
-    <section className="learner-stat-card mb-4 space-y-3 px-4 py-4">
-      <p className="text-sm font-semibold text-[#023E8A]">Learner-signed presentation</p>
-      <p className="text-xs text-muted-foreground">
-        This proves you currently hold the DID on DID-bound credentials. It is not a bearer share link
-        and not a zero-knowledge proof. Issuer signatures and Fabric checks stay separate.
-      </p>
-      <p className="text-xs text-muted-foreground">
-        {bound.length} DID-bound credential{bound.length === 1 ? "" : "s"} can be presented
-        {historical > 0 ? ` · ${historical} historical credential(s) stay on bearer share links` : ""}.
-      </p>
-      <Input
-        value={audience}
-        onChange={(event) => setAudience(event.target.value)}
-        placeholder="Intended verifier / audience"
-      />
-      <Button size="sm" disabled={working} onClick={() => void createPresentation()}>
-        {working ? "Signing…" : "Sign presentation for recruiter"}
-      </Button>
-      {verifyUrl ? (
-        <div className="rounded-xl border border-border/60 p-3">
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Recruiter verify URL</p>
-          <p className="break-all font-mono text-xs">{verifyUrl}</p>
-          <Button
-            size="sm"
-            variant="outline"
-            className="mt-2"
-            onClick={() => void navigator.clipboard.writeText(verifyUrl)}
-          >
-            Copy verify URL
-          </Button>
-        </div>
-      ) : null}
-    </section>
+    <GuidedShareFlow
+      credentials={eligible.map((credential) => ({
+        id: credential.id,
+        title: credential.skill !== "—" ? credential.skill : credential.name,
+        issuer: credential.issuer || credential.issuerDid,
+        status: statusLabel(credential),
+      }))}
+      historicalCount={historical}
+      canSign={canSign}
+      identityLocked={snapshot.status === "locked"}
+      identityNote={identityNote}
+      audience={audience}
+      onAudienceChange={setAudience}
+      onUnlock={unlock}
+      unlockWorking={identityWorking}
+      onApprove={createPresentation}
+      onRevoke={revokePresentation}
+      onBack={onBack}
+    />
   );
 }

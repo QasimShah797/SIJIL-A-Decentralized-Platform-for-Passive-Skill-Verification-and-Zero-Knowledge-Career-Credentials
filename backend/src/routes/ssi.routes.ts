@@ -11,6 +11,7 @@ import {
 } from "../controllers/ssi.controller";
 import {
   createPresentationChallenge,
+  revokeLearnerPresentation,
   submitLearnerPresentation,
 } from "../controllers/ssi-presentation.controller";
 
@@ -44,6 +45,11 @@ router.post(
   "/presentations",
   rateLimit({ windowMs: 60_000, max: 10 }),
   asyncHandler(submitLearnerPresentation),
+);
+router.post(
+  "/presentations/:id/revoke",
+  rateLimit({ windowMs: 60_000, max: 20 }),
+  asyncHandler(revokeLearnerPresentation),
 );
 
 export default router;

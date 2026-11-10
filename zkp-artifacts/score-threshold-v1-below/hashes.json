@@ -1,0 +1,11 @@
+{
+  "wasm": "61cddfcb0b2ba1eb63279e1404bdc6cfeb9c9131a28e742f8bc6bed03583441a",
+  "zkey": "d3555e1be79e462cd24183544978bd0d799ec2a35f4689cc2c92b8a8cb61c89c",
+  "verificationKey": "8e609ca611123e33f34500c120c0f799e726d95a3351c887f5c819311c6caf76",
+  "setup": "development-only",
+  "circuit": "score_below",
+  "publicSignals": [
+    "threshold",
+    "commitment"
+  ]
+}

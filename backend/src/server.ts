@@ -4,12 +4,17 @@
 import app from "./app";
 import { env } from "./config/env";
 import { startAnchorWorker, stopAnchorWorker } from "./services/anchor-worker.service";
+import {
+  startZkpAutomationWorker,
+  stopZkpAutomationWorker,
+} from "./services/zkp-automation-worker.service";
 
 const server = app.listen(env.PORT, () => {
   console.log(`[SIJIL Backend] Running on http://localhost:${env.PORT}`);
   console.log(`[SIJIL Backend] API base: http://localhost:${env.PORT}/api`);
   console.log(`[SIJIL Backend] Environment: ${env.NODE_ENV}`);
   startAnchorWorker();
+  startZkpAutomationWorker();
 });
 
 server.on("error", (err: NodeJS.ErrnoException) => {
@@ -21,6 +26,7 @@ server.on("error", (err: NodeJS.ErrnoException) => {
 });
 
 process.on("SIGTERM", () => {
+  stopZkpAutomationWorker();
   stopAnchorWorker();
   server.close(() => process.exit(0));
 });

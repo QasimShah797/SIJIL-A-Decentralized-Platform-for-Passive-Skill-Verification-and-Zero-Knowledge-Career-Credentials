@@ -79,7 +79,7 @@ export default function CredentialDetails() {
   }
 
   const totalSupporting = repoEvidence.length;
-  const anchorBadge = mapWalletAnchorStatus(c.anchorStatus);
+  const anchorBadge = mapWalletAnchorStatus(c.ledgerAnchorStatus ?? c.anchorStatus);
 
   return (
     <AppShell role="learner">

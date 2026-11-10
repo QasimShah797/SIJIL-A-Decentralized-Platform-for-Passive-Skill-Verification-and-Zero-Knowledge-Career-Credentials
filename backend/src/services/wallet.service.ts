@@ -18,6 +18,8 @@ import {
   logWalletLoad,
   splitEvidenceRecordsBySource,
 } from "../utils/wallet-evidence-mapping";
+import { payloadVisibleToRecipient, shareLinkAccess } from "./share-access";
+import { shareStorageFailure } from "./share-storage";
 import {
   WALLET_SHARE_FIELD_IDS,
   type PublicPresentationVerification,
@@ -45,6 +47,8 @@ import {
   buildEvidenceLedger,
   competencyFromSharePayload,
 } from "../utils/public-credential-map";
+import { redactExactValues } from "../utils/exact-value-redaction";
+import { disclosurePreferencesStore } from "./disclosure-preferences.service";
 import { walletExportAvailability } from "./wallet-pass.service";
 import {
   findCredentialForLearnerCompetency,
@@ -90,6 +94,23 @@ type PresentationRow = {
   created_at: string;
   updated_at: string;
 };
+
+/** Columns granted to authenticated learners after the commitment migration. */
+export const LEARNER_MCQ_ATTEMPT_COLUMNS = [
+  "id",
+  "skill_id",
+  "competency_name",
+  "competency_domain",
+  "title",
+  "status",
+  "percentage",
+  "correct_count",
+  "total_questions",
+  "passed",
+  "feedback",
+  "submitted_at",
+  "created_at",
+] as const;
 
 const DISCLOSURE_REDACT_KEYS = new Set([
   "id",
@@ -314,56 +335,15 @@ function sanitizeForDisclosure(value: unknown): unknown {
   return Object.keys(next).length > 0 ? next : undefined;
 }
 
-function parseJsonLikeArray(value: unknown): unknown[] {
-  if (Array.isArray(value)) return value;
-  if (typeof value === "string" && value.trim()) {
-    try {
-      const parsed = JSON.parse(value);
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
-  }
-  return [];
-}
-
 function computeMcqEvaluation(row: DbRow): {
   scorePercent: number | null;
   correctCount: number | null;
   totalQuestions: number | null;
 } {
-  const correctCountFromRow = asNumber(row.correct_count);
-  const totalQuestionsFromRow = asNumber(row.total_questions);
-  const percentageFromRow = asNumber(row.percentage);
-  if (
-    correctCountFromRow != null
-    || totalQuestionsFromRow != null
-    || percentageFromRow != null
-  ) {
-    return {
-      scorePercent: percentageFromRow,
-      correctCount: correctCountFromRow,
-      totalQuestions: totalQuestionsFromRow,
-    };
-  }
-
-  const answerKey = parseJsonLikeArray(row.answer_key);
-  const learnerAnswers = parseJsonLikeArray(row.learner_answers);
-  const totalQuestions = answerKey.length || parseJsonLikeArray(row.questions).length || null;
-  if (!answerKey.length || !learnerAnswers.length || totalQuestions == null || totalQuestions === 0) {
-    return { scorePercent: null, correctCount: null, totalQuestions };
-  }
-
-  let correctCount = 0;
-  for (let index = 0; index < answerKey.length; index += 1) {
-    if (answerKey[index] === learnerAnswers[index]) correctCount += 1;
-  }
-
-  const scorePercent = Math.round((correctCount / answerKey.length) * 100);
   return {
-    scorePercent,
-    correctCount,
-    totalQuestions: answerKey.length,
+    scorePercent: asNumber(row.percentage),
+    correctCount: asNumber(row.correct_count),
+    totalQuestions: asNumber(row.total_questions),
   };
 }
 
@@ -376,7 +356,7 @@ function parseSubmissionSession(submission: unknown): DbRow | null {
   }
 }
 
-function buildAttemptHistoryItem(row: DbRow): WalletAttemptHistoryItem | null {
+export function buildAttemptHistoryItem(row: DbRow): WalletAttemptHistoryItem | null {
   const attemptId = asText(row.id ?? row.attempt_id) || randomUUID();
   const title = asText(row.title) || "Practical task";
   const evaluation = computeMcqEvaluation(row);
@@ -411,6 +391,20 @@ function throwDbError(error: { message?: string }, context: string): never {
     );
   }
   throw new AppError(message, 500);
+}
+
+async function fetchShareRowsStrict(
+  kind: "list" | "create",
+  run: () => PromiseLike<{ data: unknown[] | null; error: { message?: string } | null }>,
+): Promise<DbRow[]> {
+  try {
+    const { data, error } = await run();
+    if (error) throw shareStorageFailure(kind);
+    return asRows(data);
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+    throw shareStorageFailure(kind);
+  }
 }
 
 async function safeFetchRows(
@@ -959,7 +953,7 @@ async function listSharesForCompetency(
   userId: string,
   competencyId: string,
 ): Promise<WalletShareRecordView[]> {
-  const rows = await safeFetchRows("selective_disclosure_presentations", () =>
+  const rows = await fetchShareRowsStrict("list", () =>
     db()
       .from("selective_disclosure_presentations")
       .select("id, competency_id, selected_fields, selection_mode, proof_type, share_token_hint, expires_at, revoked_at, created_at, updated_at")
@@ -1155,7 +1149,7 @@ async function loadAggregatedWallet(userId: string): Promise<WalletCompetencyRec
     safeFetchRows("mcq_task_attempts", () =>
       db()
         .from("mcq_task_attempts")
-        .select("id, skill_id, competency_name, competency_domain, title, status, learner_answers, answer_key, questions, passed, feedback, submitted_at, created_at")
+        .select(LEARNER_MCQ_ATTEMPT_COLUMNS.join(", "))
         .eq("learner_user_id", userId),
     ),
     safeFetchRows("peer_reviews", () =>
@@ -1222,11 +1216,9 @@ async function loadAggregatedWallet(userId: string): Promise<WalletCompetencyRec
       (row) => asText(row.id),
     );
 
+    // Only stored, confirmed mappings count; suggestions are not validated associations.
     const skillGithubEvidenceRecords = dedupeByKey(
-      githubEvidenceAll.filter((row) =>
-        asText(row.mapped_skill_id) === competencyId
-        || asText(row.suggested_skill_id) === competencyId,
-      ),
+      githubEvidenceAll.filter((row) => asText(row.mapped_skill_id) === competencyId),
       (row) => asText(row.id) || asText(row.external_id),
     );
 
@@ -1708,7 +1700,7 @@ async function loadActiveShareForCompetency(
   userId: string,
   competencyId: string,
 ): Promise<PresentationRow | null> {
-  const rows = await safeFetchRows("selective_disclosure_presentations", () =>
+  const rows = await fetchShareRowsStrict("create", () =>
     db()
       .from("selective_disclosure_presentations")
       .select("*")
@@ -1858,9 +1850,7 @@ export class WalletService {
           .single(),
       );
 
-    if (error) {
-      throwDbError(error, "Could not create share link");
-    }
+    if (error) throw shareStorageFailure("create");
 
     if (existing) {
       await revokeDuplicateShares(userId, competencyId, asText((data as DbRow).id));
@@ -1894,22 +1884,40 @@ export class WalletService {
       row,
       disclosedPayload: row.disclosed_payload,
     }));
+    const access = shareLinkAccess({
+      revoked: verification.revoked,
+      expiresAt: row.expires_at,
+    });
+    const disclosedPayload = payloadVisibleToRecipient(
+      access,
+      access === "active"
+        ? await recruiterPayload(row, row.disclosed_payload, row.created_at)
+        : {},
+    );
 
     return {
       id: row.id,
       competencyId: row.competency_id,
       selectedFields: row.selected_fields,
       selectionMode: (row.selection_mode || "custom") as PublicPresentationView["selectionMode"],
-      disclosedPayload: row.disclosed_payload,
+      disclosedPayload,
       proofType: row.proof_type || "SignedSelectiveDisclosure",
       verificationMethod: row.verification_method,
       createdAt: row.created_at,
       expiresAt: row.expires_at,
       revokedAt: row.revoked_at,
       payloadHash: row.payload_hash,
-      proofValue: row.proof_value,
+      proofValue: access === "active" ? row.proof_value : null,
       verification,
     };
+  }
+
+  async resolveShareForZkp(token: string): Promise<{ learnerId: string; competencyId: string }> {
+    const row = await loadPresentationByToken(token);
+    if (!isShareActive(row)) {
+      throw new AppError("Not authorized to verify this credential", 403);
+    }
+    return { learnerId: row.learner_id, competencyId: row.competency_id };
   }
 
   async verifyPublicPresentation(
@@ -1917,24 +1925,33 @@ export class WalletService {
     disclosedPayload?: Record<string, unknown>,
   ): Promise<PublicPresentationView> {
     const row = await loadPresentationByToken(token);
+    const redacted = await recruiterPayload(row, row.disclosed_payload, row.created_at);
+    // A recruiter echoing back the redacted view is checked against the signed original.
+    const checked = !disclosedPayload || withoutDisclosureMeta(disclosedPayload) === withoutDisclosureMeta(redacted)
+      ? row.disclosed_payload
+      : disclosedPayload;
     const verification = await withLedgerRevocation(row, buildVerificationResult({
       row,
-      disclosedPayload: disclosedPayload ?? row.disclosed_payload,
+      disclosedPayload: checked,
     }));
+    const access = shareLinkAccess({
+      revoked: verification.revoked,
+      expiresAt: row.expires_at,
+    });
 
     return {
       id: row.id,
       competencyId: row.competency_id,
       selectedFields: row.selected_fields,
       selectionMode: (row.selection_mode || "custom") as PublicPresentationView["selectionMode"],
-      disclosedPayload: row.disclosed_payload,
+      disclosedPayload: payloadVisibleToRecipient(access, access === "active" ? redacted : {}),
       proofType: row.proof_type || "SignedSelectiveDisclosure",
       verificationMethod: row.verification_method,
       createdAt: row.created_at,
       expiresAt: row.expires_at,
       revokedAt: row.revoked_at,
       payloadHash: row.payload_hash,
-      proofValue: row.proof_value,
+      proofValue: access === "active" ? row.proof_value : null,
       verification,
     };
   }
@@ -1992,7 +2009,7 @@ export class WalletService {
         ledgerDetail: ledgerInfo.ledgerDetail,
       };
     }
-    const payload = await hydrateSharedWalletPayload(row);
+    const payload = await recruiterPayload(row, await hydrateSharedWalletPayload(row), verifiedAt);
     const competency = competencyFromSharePayload(
       payload,
       competencyId,
@@ -2140,7 +2157,7 @@ export class WalletService {
     }
 
     const resumeToken = token === "owner" ? row.id : token;
-    const payload = await hydrateSharedWalletPayload(row);
+    const payload = await recruiterPayload(row, await hydrateSharedWalletPayload(row), verifiedAt);
     const resume = buildAtsResume(payload, resumeToken, row.competency_id, row.selected_fields);
     if (resume) {
       if (learnerPhotoHidden(payload)) {
@@ -2173,6 +2190,20 @@ export class WalletService {
       ledger: ledgerInfo.ledger,
     };
   }
+}
+
+async function recruiterPayload(
+  row: PresentationRow,
+  payload: Record<string, unknown>,
+  asOf: string,
+): Promise<Record<string, unknown>> {
+  const prefs = await disclosurePreferencesStore().get(row.learner_id);
+  return redactExactValues(payload, prefs, asOf);
+}
+
+function withoutDisclosureMeta(payload: Record<string, unknown>): string {
+  const { exactValueDisclosure: _meta, ...rest } = payload;
+  return JSON.stringify(rest);
 }
 
 async function loadPresentationByShareId(userId: string, shareId: string): Promise<PresentationRow> {

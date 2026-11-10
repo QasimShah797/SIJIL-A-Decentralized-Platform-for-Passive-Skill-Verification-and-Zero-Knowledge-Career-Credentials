@@ -137,3 +137,22 @@ export async function verifyPublicPresentationApi(
     },
   );
 }
+
+export interface DisclosurePreferences {
+  shareExactAssessmentMarks: boolean;
+  shareExactGithubCommitCount: boolean;
+  updatedAt: string | null;
+}
+
+export function getDisclosurePreferencesApi(): Promise<DisclosurePreferences> {
+  return apiRequest<DisclosurePreferences>("/wallet/disclosure-preferences");
+}
+
+export function updateDisclosurePreferencesApi(
+  patch: Partial<Pick<DisclosurePreferences, "shareExactAssessmentMarks" | "shareExactGithubCommitCount">>,
+): Promise<DisclosurePreferences> {
+  return apiRequest<DisclosurePreferences>("/wallet/disclosure-preferences", {
+    method: "PUT",
+    body: JSON.stringify(patch),
+  });
+}

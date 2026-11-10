@@ -18,6 +18,7 @@ export function skillTrustLabel(input: {
   if (isBlockchainVerified(input.ledgerStatus, input.detail)) return "Blockchain verified";
   if (input.ledgerStatus === "pending_anchor") return "Issued · pending blockchain anchor";
   if (input.ledgerStatus === "ledger_unavailable") return "Issued · ledger unavailable";
+  if (input.ledgerStatus === "ledger_missing") return "Issued · not found on ledger";
   if (input.ledgerStatus === "revoked") return "Revoked";
   if (input.ledgerStatus === "tampered") return "Tampered";
   if (input.ledgerStatus === "evidence_unavailable") return "Issued · evidence unavailable";

@@ -11,6 +11,7 @@ export type CredentialVerifyStatus =
   | "tampered"
   | "revoked"
   | "pending_anchor"
+  | "ledger_missing"
   | "ledger_unavailable"
   | "evidence_unavailable"
   | "not_found";
@@ -115,8 +116,9 @@ export async function evaluateCredentialVerification(
   }
 
   if (!ledgerView.exists) {
+    // Recorded as anchored but absent from the configured ledger: an anchoring gap, not tampering.
     if (snapshot.anchorStatus === "anchored") {
-      return baseResult(snapshot, verifiedAt, "tampered", recomputedHash, detail);
+      return baseResult(snapshot, verifiedAt, "ledger_missing", recomputedHash, detail);
     }
     return baseResult(snapshot, verifiedAt, "pending_anchor", recomputedHash, detail);
   }

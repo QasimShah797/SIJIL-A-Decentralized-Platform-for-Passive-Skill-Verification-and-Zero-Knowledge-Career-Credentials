@@ -27,3 +27,8 @@ fabric/**/*.tar.gz
 **/priv_sk
 **/*.pem
 !fabric/chaincode/**/*.md
+# New ZKP circuits: exclude generated and private artifacts
+zkp-artifacts/github-contributions-v1-below/build/
+zkp-artifacts/score-threshold-v1-below/build/
+zkp-artifacts/github-contributions-v1-below/*.zkey
+zkp-artifacts/score-threshold-v1-below/*.zkey

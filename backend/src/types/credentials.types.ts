@@ -45,8 +45,17 @@ export interface CredentialView {
   attestation: string;
   supportingRecords: number;
   skill: string;
+  assessmentCommitment?: {
+    version: number;
+    scheme: string;
+    circuitId: string;
+    attemptId: string;
+    commitment: string;
+  };
   proof?: Record<string, unknown>;
   anchorStatus?: string;
+  /** Live ledger-verified anchor state; `anchorStatus` is only the database record. */
+  ledgerAnchorStatus?: string | null;
   anchorTxId?: string | null;
   anchoredAt?: string | null;
 }

@@ -32,6 +32,10 @@ import {
   qualifyingGitHubTitle,
   WALLET_READY_STAGE,
 } from "../_shared/wallet-ready-promotion.ts";
+import {
+  createAssessmentCommitment,
+  verifyAssessmentOpening,
+} from "../_shared/assessment-commitment.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -901,8 +905,7 @@ Deno.serve(async (req) => {
           return json({ error: "Missing attemptId" }, 400);
         }
 
-        console.log("[mcq-evaluate] attemptId:", attemptId);
-        console.log("[mcq-evaluate] raw selected answers:", JSON.stringify(answers));
+        console.log("[mcq-evaluate] grading attempt", attemptId);
 
         const { data: attempt, error: fetchErr } = await admin
           .from("mcq_task_attempts")
@@ -935,25 +938,57 @@ Deno.serve(async (req) => {
         );
         const submittedAt = new Date().toISOString();
         const resultLabel = passed ? "Passed" : "Needs Improvement";
+        const trustedAttemptId = String(attempt.id);
 
-        const { error: updateErr } = await admin
-          .from("mcq_task_attempts")
-          .update({
-            learner_answers: answers,
-            correct_count: correctCount,
-            total_questions: totalQuestions,
-            percentage,
-            passed,
-            status: "completed",
-            feedback: passed
-              ? `MCQ passed with ${percentage}%.`
-              : `MCQ score ${percentage}% — needs improvement (pass threshold is 60%).`,
-            submitted_at: submittedAt,
-          })
-          .eq("id", attemptId);
+        let commitment;
+        try {
+          commitment = await createAssessmentCommitment({
+            score: percentage,
+            learnerId: userId,
+            attemptId: trustedAttemptId,
+          });
+          const openingMatches = await verifyAssessmentOpening({
+            score: commitment.opening.score,
+            learnerId: commitment.opening.learnerId,
+            attemptId: commitment.opening.attemptId,
+            blinding: commitment.opening.blinding,
+            commitment: commitment.publicCommitment,
+          });
+          if (!openingMatches) {
+            console.error("[mcq-evaluate] commitment did not match the trusted score");
+            return json({ error: "Could not store the assessment result" }, 500);
+          }
+        } catch {
+          console.error("[mcq-evaluate] commitment failed");
+          return json({ error: "Could not store the assessment result" }, 500);
+        }
 
-        if (updateErr) {
-          return json({ error: updateErr.message }, 500);
+        const { error: finalizeErr } = await admin.rpc("finalize_mcq_attempt", {
+          p_attempt_id: trustedAttemptId,
+          p_learner_user_id: userId,
+          p_learner_answers: answers,
+          p_correct_count: correctCount,
+          p_total_questions: totalQuestions,
+          p_percentage: percentage,
+          p_passed: passed,
+          p_feedback: passed
+            ? `MCQ passed with ${percentage}%.`
+            : `MCQ score ${percentage}% — needs improvement (pass threshold is 60%).`,
+          p_submitted_at: submittedAt,
+          p_commitment: commitment.publicCommitment.commitment,
+          p_commitment_scheme: commitment.publicCommitment.scheme,
+          p_commitment_circuit_id: commitment.publicCommitment.circuitId,
+          p_commitment_version: commitment.publicCommitment.version,
+          p_blinding: commitment.opening.blinding,
+        });
+
+        if (finalizeErr) {
+          const message = finalizeErr.message ?? "";
+          console.error("[mcq-evaluate] finalize failed");
+          if (message.includes("not awaiting evaluation")) {
+            return json({ error: "MCQ attempt already submitted" }, 400);
+          }
+          return json({ error: "Could not store the assessment result" }, 500);
         }
 
         let walletReady = false;

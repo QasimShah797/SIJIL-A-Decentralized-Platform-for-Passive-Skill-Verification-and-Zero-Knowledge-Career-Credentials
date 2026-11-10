@@ -1,0 +1,19 @@
+{
+  "circuit": "6cb567565e6144fb8d157009c0afe7afe8a7d1f78bfc1ab682dbb77d7b386b0d",
+  "r1cs": "f8d967e3b2d0b496ddeebc5f77881e298fa3deeaf70db7a27158d3d5273303cb",
+  "wasm": "aa87825cd7848d8392247d470709cf4f74c33877a48075882b5bcba8b7c7f6b8",
+  "zkey": "dc4b128541eac571589effd8eb183ed755ca0333ba0f5d9fdc4a7f4da08ebbdb",
+  "verificationKey": "aff48cb87a787b102046765a05cd0515de3b753707cad93350a515539070b7e1",
+  "wrongVerificationKey": "13d394aab35f94855c604b444d4a623f0a39de0c1a32d552f687b26df92b0343",
+  "circomVersion": "2.1.9",
+  "circomSha256": "e5575829252d763b7818049df9de2ef9304df834697de77fa63ce7babc23c967",
+  "snarkjs": "0.7.5",
+  "circomlib": "2.0.5",
+  "circomlibjs": "0.1.7",
+  "curve": "bn128",
+  "ptauPower": 12,
+  "publicSignals": [
+    "threshold",
+    "commitment"
+  ]
+}

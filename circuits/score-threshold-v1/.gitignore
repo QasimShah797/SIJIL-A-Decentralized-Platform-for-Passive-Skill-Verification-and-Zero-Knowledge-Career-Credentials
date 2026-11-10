@@ -1,0 +1,20 @@
+# Dependencies and the pinned Circom binary downloaded by scripts/setup-dev.mjs
+node_modules/
+.tools/
+
+# Powers of tau, proving keys, witnesses, and proof files.
+# The final zkey is a development Groth16 proving key. Do not commit it.
+# verification_key.json is regenerated with fresh entropy on each setup.
+build/
+*.ptau
+*.zkey
+*.wtns
+*.r1cs
+*.sym
+*_js/
+*_cpp/
+proof.json
+public.json
+witness.json
+input.json
+input_*.json

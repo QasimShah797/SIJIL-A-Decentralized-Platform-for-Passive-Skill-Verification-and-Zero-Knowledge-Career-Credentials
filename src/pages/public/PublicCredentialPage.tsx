@@ -63,7 +63,7 @@ export default function PublicCredentialPage() {
         ) : credential.resume ? (
           <div className="space-y-5">
             <p className="text-sm text-muted-foreground">
-              Shared SIJIL resume · only disclosed fields are shown
+              This page shows only the details the learner chose to share.
             </p>
             {ledgerBadge ? (
               <div className="flex flex-wrap items-center gap-2">

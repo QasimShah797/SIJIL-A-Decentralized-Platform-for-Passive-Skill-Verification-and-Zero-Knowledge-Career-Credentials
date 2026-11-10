@@ -33,6 +33,23 @@ function sampleWalletShare(overrides: Partial<SharedCredentialView> = {}): Share
   };
 }
 
+describe("legacy credential shares", () => {
+  it("does not put a legacy bearer token in the recruiter view", () => {
+    const token = "11111111-1111-4111-8111-111111111111";
+    const view = mapCredentialShareToView({
+      token,
+      created_at: "2026-08-01T00:00:00.000Z",
+      expires_at: "2099-01-01T00:00:00.000Z",
+      revoked: false,
+      disclosed_fields: [{ id: "skill", label: "Skill", value: "TypeScript" }],
+      hidden_fields: ["Contact details"],
+    });
+    expect(view?.token).toBeNull();
+    expect(JSON.stringify(view)).not.toContain(token);
+    expect(view?.disclosedFields.map((field) => field.value)).toEqual(["TypeScript"]);
+  });
+});
+
 describe("isActiveShare", () => {
   it("keeps non-revoked, non-expired presentations", () => {
     expect(isActiveShare({ expiresAt: "2099-10-01T00:00:00.000Z", now })).toBe(true);

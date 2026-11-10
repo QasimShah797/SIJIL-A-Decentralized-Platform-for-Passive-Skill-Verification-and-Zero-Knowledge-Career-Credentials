@@ -9,16 +9,13 @@ import { PageSkeleton } from "@/components/sijil/SkeletonLoader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
-  ArrowLeft, ShieldCheck, ShieldAlert, CheckCircle2, EyeOff, Lock,
-  Github, BookOpen, FileText, FileUp, MessageSquare,
+  ArrowLeft, ShieldCheck, ShieldAlert, EyeOff,
 } from "lucide-react";
 import { fetchPresentation } from "@/lib/db/presentations";
-import { fetchCredentialByUriGlobal } from "@/lib/db/credentials";
 import { mapLedgerStatusToBadge, shareShowsVerified } from "@/lib/ledger-status";
+import { recruiterVerificationLines, shareAccess } from "@/lib/sharing/guide";
 import { verifyCredentialLedgerApi, type LedgerVerifyResult } from "@/services/api/ledger.api";
-import { useCandidates } from "@/hooks/useCandidates";
 import type { SharedPresentation } from "@/lib/sijil-data";
-import type { CredentialView } from "@/lib/db/credentials";
 import { toast } from "@/hooks/use-toast";
 
 export default function RecruiterCredentialView() {
@@ -26,22 +23,16 @@ export default function RecruiterCredentialView() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
 
-  const { candidateSkills } = useCandidates();
   const [presentation, setPresentation] = useState<SharedPresentation | null>(null);
-  const [cred, setCred] = useState<CredentialView | null>(null);
   const [loading, setLoading] = useState(true);
   const [ledgerResult, setLedgerResult] = useState<LedgerVerifyResult | null>(null);
   const [verifying, setVerifying] = useState(false);
-  const [issuerVerified, setIssuerVerified] = useState(false);
 
   useEffect(() => {
     if (!token) { setLoading(false); return; }
     setLoading(true);
     fetchPresentation(decodeURIComponent(token))
-      .then(async (p) => {
-        setPresentation(p);
-        if (p) setCred(await fetchCredentialByUriGlobal(p.credentialId));
-      })
+      .then((p) => setPresentation(p))
       .finally(() => setLoading(false));
   }, [token]);
 
@@ -63,48 +54,29 @@ export default function RecruiterCredentialView() {
   }
 
 
-  if (!cred) {
-    return (
-      <AppShell role="recruiter">
-        <EmptyState
-          icon={ShieldAlert}
-          title="Credential not found"
-          description="The linked credential could not be loaded."
-          action={{ label: "Back", onClick: () => navigate(-1) }}
-        />
-      </AppShell>
-    );
-  }
-
-  const isExpired = new Date(presentation.expiresAt).getTime() < Date.now();
-  const status = presentation.revoked ? "Revoked" : isExpired ? "Expired" : "Active";
-  const ledgerBadge = ledgerResult ? mapLedgerStatusToBadge(ledgerResult.status, ledgerResult.detail) : null;
-  const ledgerVerified = shareShowsVerified({
-    ledgerStatus: ledgerResult?.status,
-    detail: ledgerResult?.detail,
+  const access = shareAccess({
+    revoked: presentation.revoked,
+    expiresAt: presentation.expiresAt,
   });
-
-  // Recruiter only ever sees fields the learner explicitly disclosed.
-  const has = (id: string) => presentation.disclosedFields.some((f) => f.id === id);
-  const get = (id: string) => presentation.disclosedFields.find((f) => f.id === id)?.value;
-
-  // Supporting trail visibility — only shown if learner disclosed the evidence summary.
-  const showTrail = has("evidenceSummary");
-  const candSkills = candidateSkills[presentation.candidateId] || [];
-  const matchedSkill = candSkills.find((s) => get("skill")?.toLowerCase().includes(s.skill.toLowerCase().split(" ")[0]));
+  const open = access === "active";
+  const ledgerBadge = ledgerResult ? mapLedgerStatusToBadge(ledgerResult.status, ledgerResult.detail) : null;
+  const checks = recruiterVerificationLines({
+    access,
+    ledgerStatus: ledgerResult?.status ?? null,
+  });
 
   const runIntegrityCheck = async () => {
     setVerifying(true);
     try {
-      const next = await verifyCredentialLedgerApi(presentation.credentialId || cred.id);
+      const next = await verifyCredentialLedgerApi(presentation.credentialId);
       setLedgerResult(next);
       const badge = mapLedgerStatusToBadge(next.status, next.detail);
       const shown = shareShowsVerified({ ledgerStatus: next.status, detail: next.detail });
       toast({
         title: badge.label,
         description: shown
-          ? "Hash matches · issuer DID resolved · proof signature valid · ledger anchored"
-          : `Ledger status ${badge.label}`,
+          ? "The blockchain record matches this credential."
+          : badge.label,
         variant: shown ? "default" : "destructive",
       });
     } finally {
@@ -112,16 +84,11 @@ export default function RecruiterCredentialView() {
     }
   };
 
-  const verifyIssuer = () => {
-    setIssuerVerified(true);
-    toast({ title: "Issuer DID resolved", description: `${presentation.proof.verificationMethod} → trusted issuer registry` });
-  };
-
   return (
     <AppShell role="recruiter">
       <PageHeader
         title="Verifiable Presentation"
-        description="Recruiter-side view. You only see fields the candidate explicitly disclosed. Nothing in the candidate's wallet is accessible."
+        description="This page lists the fields stored for this share. A stopped or expired link does not show those fields. This is not a zero-knowledge proof."
         actions={
           <Button variant="outline" onClick={() => navigate(params.get("from") || "/recruiter/search")}>
             <ArrowLeft className="h-4 w-4 mr-1.5" />Back
@@ -141,11 +108,10 @@ export default function RecruiterCredentialView() {
             </div>
           </div>
           <div className="flex flex-wrap gap-1.5">
-            <StatusBadge variant={status === "Active" ? "info" : "destructive"}>{status}</StatusBadge>
+            <StatusBadge variant={open ? "info" : "destructive"}>{access}</StatusBadge>
             {ledgerBadge ? (
               <StatusBadge variant={ledgerBadge.variant}>{ledgerBadge.label}</StatusBadge>
             ) : null}
-            <StatusBadge variant="info"><Lock className="h-3 w-3" /> Selective disclosure</StatusBadge>
             <StatusBadge variant="neutral">Recipient: {presentation.recipient}</StatusBadge>
           </div>
         </CardContent>
@@ -160,111 +126,39 @@ export default function RecruiterCredentialView() {
               <p className="text-xs text-muted-foreground">Only fields the candidate chose to reveal are shown.</p>
             </CardHeader>
             <CardContent>
-              {presentation.disclosedFields.filter((field) => !isInstitutionClaim(field.id) && !isInstitutionClaim(field.label)).map((f) => (
+              {open ? presentation.disclosedFields.filter((field) => !isInstitutionClaim(field.id) && !isInstitutionClaim(field.label)).map((f) => (
                 <FieldRow key={f.id} label={f.label} value={f.value} />
+              )) : (
+                <p className="text-sm text-muted-foreground">
+                  {checks.map((line) => line.value).join(" ")}
+                </p>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Verification</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {checks.map((line) => (
+                <FieldRow key={line.label} label={line.label} value={line.value} />
               ))}
-            </CardContent>
-          </Card>
-
-          {/* Issuer verification */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base flex items-center gap-2">
-                <ShieldCheck className="h-4 w-4" /> Issuer verification
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <FieldRow label="Issuer" value={get("issuer") || "—"} />
-              <FieldRow label="Issuer DID" value={presentation.proof.verificationMethod.split("#")[0]} mono hint="Resolved against the trusted issuer registry." />
-              <FieldRow label="Verification" value={cred?.attestation || "—"} />
-              <FieldRow
-                label="Issuer signature"
-                value={
-                  issuerVerified
-                    ? <StatusBadge variant="verified" icon={<CheckCircle2 className="h-3 w-3" />}>Trusted issuer</StatusBadge>
-                    : <StatusBadge variant="info">Not yet verified</StatusBadge>
-                }
-              />
               <div className="pt-3">
-                <Button variant="outline" size="sm" onClick={verifyIssuer}>
-                  <ShieldCheck className="h-4 w-4 mr-1.5" /> Verify issuer DID
+                <Button onClick={() => void runIntegrityCheck()} disabled={verifying || !open}>
+                  <ShieldCheck className="h-4 w-4 mr-1.5" /> {verifying ? "Verifying…" : "Check blockchain record"}
                 </Button>
               </div>
-            </CardContent>
-          </Card>
-
-          {/* Cryptographic proof */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Cryptographic proof</CardTitle>
-              <p className="text-xs text-muted-foreground">System-level integrity check — hash, issuer DID, and proof signature.</p>
-            </CardHeader>
-            <CardContent>
-              <FieldRow label="proof.type" value={presentation.proof.type} mono />
-              <FieldRow label="cryptosuite" value={presentation.proof.cryptosuite} mono />
-              <FieldRow label="created" value={presentation.proof.created} mono />
-              <FieldRow label="verificationMethod" value={presentation.proof.verificationMethod} mono />
-              <FieldRow label="proofValue (hash)" value={`${presentation.proof.proofValue}…`} mono />
-              <FieldRow
-                label="Credential status"
-                value={
-                  ledgerBadge
-                    ? <StatusBadge variant={ledgerBadge.variant} icon={ledgerVerified ? <CheckCircle2 className="h-3 w-3" /> : <ShieldAlert className="h-3 w-3" />}>{ledgerBadge.label}</StatusBadge>
-                    : <StatusBadge variant="info">Not yet checked</StatusBadge>
-                }
-              />
-              <FieldRow
-                label="Integrity check"
-                value={
-                  ledgerBadge
-                    ? <StatusBadge variant={ledgerBadge.variant}>{ledgerBadge.label}</StatusBadge>
-                    : <StatusBadge variant="neutral">Pending</StatusBadge>
-                }
-              />
-              <div className="pt-3">
-                <Button onClick={() => void runIntegrityCheck()} disabled={verifying}>
-                  <ShieldCheck className="h-4 w-4 mr-1.5" /> {verifying ? "Verifying…" : "Run cryptographic verification"}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Supporting trail */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Supporting trail</CardTitle>
-              <p className="text-xs text-muted-foreground">
-                {showTrail
-                  ? "Aggregated evidence behind this credential — counts only, no private artifacts."
-                  : "Candidate did not disclose the supporting evidence summary."}
-              </p>
-            </CardHeader>
-            <CardContent>
-              {!showTrail && (
-                <div className="rounded-md border border-dashed bg-muted/30 p-4 text-sm text-muted-foreground flex items-center gap-2">
-                  <EyeOff className="h-4 w-4" /> Hidden by selective disclosure.
-                </div>
-              )}
-              {showTrail && (
-                <div className="grid sm:grid-cols-2 gap-3">
-                  <Trail icon={BookOpen} label="LMS records" value={matchedSkill?.lmsRecords ?? 0} />
-                  <Trail icon={Github} label="GitHub records" value={matchedSkill?.githubRecords ?? 0} />
-                  <Trail icon={FileText} label="Practical task" value={matchedSkill?.practicalTask ?? "—"} />
-                  <Trail icon={FileUp} label="External certificate" value={matchedSkill?.externalCert ?? "—"} />
-                  <Trail icon={MessageSquare} label="Mentor / teacher reviews" value={matchedSkill?.reviews ?? 0} />
-                </div>
-              )}
             </CardContent>
           </Card>
         </div>
 
-        {/* Right column */}
         <div className="space-y-4">
           <Card>
-            <CardHeader><CardTitle className="text-base">Hidden fields</CardTitle></CardHeader>
+            <CardHeader><CardTitle className="text-base">Not included</CardTitle></CardHeader>
             <CardContent>
               {presentation.hiddenFields.length === 0 ? (
-                <div className="text-xs text-muted-foreground">All fields disclosed.</div>
+                <div className="text-xs text-muted-foreground">No extra field labels were stored for this share.</div>
               ) : (
                 <div className="flex flex-wrap gap-1.5">
                   {presentation.hiddenFields.filter((field) => !isInstitutionClaim(field)).map((h) => (
@@ -273,28 +167,8 @@ export default function RecruiterCredentialView() {
                 </div>
               )}
               <p className="text-xs text-muted-foreground mt-3">
-                These claims were never sent — verifier cannot request them without a new presentation.
+                These labels are names only. Stopping this share does not delete a copy someone already saved, and it does not revoke the achievement.
               </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader><CardTitle className="text-base">Presentation metadata</CardTitle></CardHeader>
-            <CardContent>
-              <FieldRow label="Created" value={presentation.createdAt} mono />
-              <FieldRow label="Expires" value={presentation.expiresAt} mono />
-              <FieldRow label="Recipient DID" value={presentation.recipientDid} mono />
-              <FieldRow label="Wallet access" value={<StatusBadge variant="neutral"><Lock className="h-3 w-3" /> Not granted</StatusBadge>} hint="Recruiter never accesses the candidate's wallet." />
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader><CardTitle className="text-base">What this proves</CardTitle></CardHeader>
-            <CardContent className="text-sm text-muted-foreground space-y-2">
-              <p>· Credential was issued by a trusted issuer.</p>
-              <p>· Disclosed claims have not been altered since signing.</p>
-              <p>· Candidate is the rightful holder (DID-bound).</p>
-              <p>· Hidden fields remain private — privacy-preserving.</p>
             </CardContent>
           </Card>
         </div>
@@ -305,18 +179,4 @@ export default function RecruiterCredentialView() {
 
 function isInstitutionClaim(value: string) {
   return /institution/i.test(value);
-}
-
-function Trail({ icon: Icon, label, value }: { icon: any; label: string; value: any }) {
-  return (
-    <div className="rounded-md border bg-card p-3 flex items-center gap-3">
-      <div className="h-9 w-9 rounded-md bg-secondary flex items-center justify-center">
-        <Icon className="h-4 w-4" />
-      </div>
-      <div className="flex-1 min-w-0">
-        <div className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</div>
-        <div className="text-sm font-medium truncate">{value}</div>
-      </div>
-    </div>
-  );
 }

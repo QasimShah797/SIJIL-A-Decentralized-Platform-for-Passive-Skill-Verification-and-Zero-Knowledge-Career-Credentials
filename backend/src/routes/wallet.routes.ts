@@ -5,7 +5,9 @@ import { requireLearner } from "../middleware/role.middleware";
 import {
   downloadOwnerResumePdf,
   downloadOwnerWalletResumePdf,
+  getDisclosurePreferences,
   getOwnerShareResume,
+  updateDisclosurePreferences,
   getOwnerWalletResume,
   getWalletCompetencies,
   getWalletCompetency,
@@ -18,6 +20,8 @@ const router = Router();
 
 router.use(authMiddleware, requireLearner);
 
+router.get("/disclosure-preferences", asyncHandler(getDisclosurePreferences));
+router.put("/disclosure-preferences", asyncHandler(updateDisclosurePreferences));
 router.get("/competencies", asyncHandler(getWalletCompetencies));
 router.get("/competencies/:competencyId", asyncHandler(getWalletCompetency));
 router.post("/competencies/:competencyId/sync", asyncHandler(syncWalletCompetency));

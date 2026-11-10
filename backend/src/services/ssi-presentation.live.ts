@@ -7,6 +7,7 @@ import {
   SsiPresentationService,
   type PresentationCredentialSource,
 } from "./ssi-presentation.service";
+import { supabasePresentationRecordStore } from "./ssi-presentation-record.store";
 import type { IssuerCredentialProof } from "./ssi-presentation-protocol";
 
 function asIssuerProof(proof: Record<string, unknown> | null): IssuerCredentialProof {
@@ -42,8 +43,12 @@ export async function loadPresentationCredentials(ids: string[]): Promise<Presen
   return rows;
 }
 
-export const ssiPresentationService = new SsiPresentationService({
-  loadCredentials: loadPresentationCredentials,
-  requireHolderDid: (userId) => ssiService.requireProvenHolderDid(userId),
-  verifyIssued: (credentialId) => verifyPublicCredential(credentialId),
-}, new DurableSsiPresentationChallengeStore());
+export const ssiPresentationService = new SsiPresentationService(
+  {
+    loadCredentials: loadPresentationCredentials,
+    requireHolderDid: (userId) => ssiService.requireProvenHolderDid(userId),
+    verifyIssued: (credentialId) => verifyPublicCredential(credentialId),
+  },
+  new DurableSsiPresentationChallengeStore(),
+  supabasePresentationRecordStore,
+);

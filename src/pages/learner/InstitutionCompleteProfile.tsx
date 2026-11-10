@@ -249,8 +249,8 @@ export default function InstitutionCompleteProfile() {
       setF(rowToOnboardingForm(updated, user.email));
       setAvatarFile(null);
       if (fileRef.current) fileRef.current.value = "";
-      toast({ title: "Profile complete!", description: "Welcome to your SIJIL dashboard." });
-      navigate("/learner/profile", { replace: true });
+      toast({ title: "Profile saved", description: "Next, secure your learning identity." });
+      navigate("/learner/secure-identity", { replace: true });
     } catch (err) {
       toast({ title: "Could not save profile", description: formatSupabaseError(err), variant: "destructive" });
     } finally {

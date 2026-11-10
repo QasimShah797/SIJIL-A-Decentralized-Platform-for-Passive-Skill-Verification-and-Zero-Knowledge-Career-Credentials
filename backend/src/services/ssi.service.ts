@@ -7,10 +7,10 @@ import {
 import { verifyEd25519Utf8 } from "../utils/ed25519";
 import { supabaseService } from "./supabase.service";
 import {
-  SsiChallengeStore,
-  ssiChallengeStore,
+  type SsiChallengePort,
   type SsiChallengeRecord,
 } from "./ssi-challenge.store";
+import { DurableSsiBindChallengeStore } from "./ssi-bind-challenge.store";
 import { provenHolderDidFromIdentityRow, SSI_MIGRATION_HINT } from "./ssi-holder-did";
 
 export const SSI_TABLE = "learner_ssi_identities";
@@ -63,19 +63,19 @@ type SsiDbClient = {
 
 export class SsiService {
   constructor(
-    private readonly challenges: SsiChallengeStore = ssiChallengeStore,
+    private readonly challenges: SsiChallengePort = new DurableSsiBindChallengeStore(),
     private readonly db: SsiDbClient = supabaseService.client as unknown as SsiDbClient,
   ) {}
 
-  issueChallenge(userId: string): {
+  async issueChallenge(userId: string): Promise<{
     challengeId: string;
     nonce: string;
     purpose: string;
     audience: string;
     expiresAt: string;
     payload: string;
-  } {
-    const record = this.challenges.issue(userId);
+  }> {
+    const record = await this.challenges.issue(userId);
     return {
       challengeId: record.id,
       nonce: record.nonce,
@@ -173,7 +173,7 @@ export class SsiService {
   ): Promise<SsiIdentityView> {
     let challenge: SsiChallengeRecord;
     try {
-      challenge = this.challenges.peek(input.challengeId, userId);
+      challenge = await this.challenges.peek(input.challengeId, userId);
     } catch (err) {
       const status = (err as { statusCode?: number }).statusCode ?? 400;
       throw new AppError(err instanceof Error ? err.message : "Invalid challenge", status);
@@ -194,7 +194,7 @@ export class SsiService {
     }
 
     try {
-      this.challenges.consume(input.challengeId, userId);
+      await this.challenges.consume(input.challengeId, userId);
     } catch (err) {
       const status = (err as { statusCode?: number }).statusCode ?? 400;
       throw new AppError(err instanceof Error ? err.message : "Invalid challenge", status);

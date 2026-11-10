@@ -1,203 +1,262 @@
+import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { useEffect, useMemo, useState } from "react";
+import { ArrowLeft } from "lucide-react";
 import { AppShell } from "@/components/sijil/AppShell";
 import { PageHeader } from "@/components/sijil/PageHeader";
-import { StatusBadge } from "@/components/sijil/StatusBadge";
 import { PageSkeleton } from "@/components/sijil/SkeletonLoader";
-import { StubControl } from "@/components/sijil/StubControl";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { EmptyState } from "@/components/sijil/EmptyState";
 import { Button } from "@/components/ui/button";
-import { Switch } from "@/components/ui/switch";
-import { ArrowLeft, Copy, Ban, EyeOff, Eye, ExternalLink } from "lucide-react";
+import { ShieldAlert } from "lucide-react";
+import { ShareAchievementFlow, type ShareRecord } from "@/components/sharing/ShareAchievementFlow";
 import { useAuth } from "@/hooks/useAuth";
-import { useCredentials, useLearnerProfile } from "@/hooks/useLearnerData";
+import { useCredentials } from "@/hooks/useLearnerData";
+import { useSsiIdentity } from "@/hooks/useSsiIdentity";
 import { getCredentialDbId } from "@/lib/db/credentials";
-import { savePresentationDb, revokePresentationDb } from "@/lib/db/presentations";
-import { toast } from "@/hooks/use-toast";
+import { eligiblePresentationCredentials } from "@/lib/ssi/presentation-selection";
+import { signUtf8 } from "@/lib/ssi/keystore";
+import { getUnlockedIdentity } from "@/lib/ssi/session";
+import { presentationSubmitBody, walletShareRequest } from "@/lib/sharing/guide";
+import type { WalletShareFieldId } from "@/lib/wallet-competency-shared";
+import { apiRequest } from "@/services/api/client";
+import {
+  getWalletCompetenciesApi,
+  revokeWalletShareApi,
+  shareWalletCompetencyApi,
+  type WalletCompetencyDetailView,
+} from "@/services/api/wallet.api";
+import {
+  createPresentationChallengeApi,
+  revokeLearnerPresentationApi,
+  submitLearnerPresentationApi,
+} from "@/services/api/ssi.api";
+
+const LINK_FIELDS: Array<{ id: WalletShareFieldId; label: string }> = [
+  { id: "competency_name", label: "Achievement name" },
+  { id: "competency_domain", label: "Subject area" },
+  { id: "verification_status", label: "Verification summary" },
+  { id: "learner_name", label: "Your name" },
+  { id: "learner_institution", label: "Institution" },
+  { id: "learner_contact", label: "Contact details" },
+];
+
+function shareError(error: unknown): string {
+  const message = error instanceof Error ? error.message : "";
+  if (/privateKey|BEGIN PRIVATE KEY/i.test(message)) return "Sharing could not be completed.";
+  if (/schema cache|does not exist|relation|API 5/i.test(message)) {
+    return "A share link could not be created. Please try again.";
+  }
+  if (/revoked/i.test(message)) return "This achievement is revoked, so it cannot be shared.";
+  if (/not found/i.test(message)) return "This achievement is not available to share from this account.";
+  if (message && message.length < 180) return message;
+  return "Sharing could not be completed. Please try again.";
+}
 
 export default function SelectiveDisclosure() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
   const { credentials, loading } = useCredentials();
-  const { profile } = useLearnerProfile();
-  const c = credentials.find((x) => x.id === decodeURIComponent(id || ""));
-
-  const allFields = useMemo(() => {
-    if (!c) return [];
-    return [
-      { id: "credentialName", label: "Credential name", value: c.name, default: true },
-      { id: "skill", label: "Skill / achievement", value: c.skill, default: true },
-      { id: "verification", label: "Verification status", value: c.verification, default: true },
-      { id: "issuer", label: "Issuer", value: c.issuer, default: true },
-      { id: "validFrom", label: "Issue date (validFrom)", value: c.validFrom.slice(0, 10), default: true },
-      { id: "evidenceSummary", label: "Selected supporting record summary", value: `${c.supportingRecords} records`, default: false },
-      { id: "studentId", label: "Student ID", value: profile?.studentId ?? "—", default: false },
-      { id: "fullEvidence", label: "Full evidence history", value: "—", default: false },
-      { id: "internalMeta", label: "Internal metadata", value: "—", default: false },
-      { id: "reviews", label: "Review metadata", value: "—", default: false },
-    ];
-  }, [c, profile]);
-
-  const [selected, setSelected] = useState<Record<string, boolean>>({});
-  const [isRevoked, setIsRevoked] = useState(false);
+  const { snapshot } = useSsiIdentity();
+  const credential = credentials.find((item) => item.id === decodeURIComponent(id || ""));
+  const [competencyId, setCompetencyId] = useState<string | null>(null);
+  const [shares, setShares] = useState<ShareRecord[]>([]);
+  const [historyUnavailable, setHistoryUnavailable] = useState(false);
+  const [historyAttempt, setHistoryAttempt] = useState(0);
+  const [working, setWorking] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [resultUrl, setResultUrl] = useState<string | null>(null);
 
   useEffect(() => {
-    if (allFields.length) {
-      setSelected(Object.fromEntries(allFields.map((f) => [f.id, f.default])));
-    }
-  }, [c?.id]);
+    if (!credential) return;
+    let active = true;
+    getWalletCompetenciesApi()
+      .then((rows) => {
+        if (!active) return;
+        const matches = (rows ?? []).filter((row) => row.competencyName === credential.skill);
+        setCompetencyId(matches.length === 1 ? matches[0].competencyId : null);
+      })
+      .catch(() => {
+        if (active) setCompetencyId(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [credential]);
 
-  const toggle = (fieldId: string) => setSelected((s) => ({ ...s, [fieldId]: !s[fieldId] }));
+  useEffect(() => {
+    if (!competencyId) return;
+    let active = true;
+    setHistoryUnavailable(false);
+    apiRequest<WalletCompetencyDetailView>(`/wallet/competencies/${encodeURIComponent(competencyId)}`)
+      .then((detail) => {
+        if (!active) return;
+        setShares(detail.shares.map((share) => ({
+          token: share.id,
+          label: credential?.skill ?? "Achievement",
+          access: share.shareStatus === "Revoked"
+            ? "revoked"
+            : share.shareStatus === "Expired"
+              ? "expired"
+              : "active",
+          kind: "link" as const,
+        })));
+      })
+      .catch(() => {
+        if (!active) return;
+        setHistoryUnavailable(true);
+        setShares([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, [competencyId, credential?.skill, historyAttempt]);
 
-  const token = useMemo(
-    () => `pres-${Math.random().toString(36).slice(2, 10)}-${Date.now().toString(36)}`,
-    [c?.id],
-  );
-  const shareUrl = `${window.location.origin}/recruiter/verify/${encodeURIComponent(token)}`;
-
-  const safeFieldIds = new Set(["credentialName", "skill", "verification", "issuer", "validFrom"]);
-  const safeFields = allFields.filter((f) => safeFieldIds.has(f.id));
-  const sensitiveFields = allFields.filter((f) => !safeFieldIds.has(f.id));
-  const visible = allFields.filter((f) => selected[f.id]);
-  const hidden = allFields.filter((f) => !selected[f.id]);
-
-  const renderFieldToggle = (f: (typeof allFields)[number]) => (
-    <div key={f.id} className="flex items-center justify-between gap-3 rounded-md border p-3">
-      <div className="min-w-0">
-        <div className="text-sm font-medium">{f.label}</div>
-        <div className="text-xs text-muted-foreground truncate">{f.value}</div>
-      </div>
-      <Switch checked={!!selected[f.id]} onCheckedChange={() => toggle(f.id)} />
-    </div>
-  );
-
-  const persist = async () => {
-    if (!user || !c || !profile) return;
-    const dbId = await getCredentialDbId(c.id);
-    if (!dbId) {
-      toast({ title: "Could not save presentation", variant: "destructive" });
+  const createLink = async (input: { selectedFields: string[]; expiresInDays: number }) => {
+    if (!competencyId) {
+      setError("This achievement is not available for a field-limited link yet.");
       return;
     }
-    await savePresentationDb(user.id, dbId, user.id, {
-      token,
-      credentialId: c.id,
-      candidateId: user.id,
-      recipient: "Verifier",
-      recipientDid: "did:web:verifier.example",
-      createdAt: new Date().toISOString(),
-      expiresAt: new Date(Date.now() + 90 * 86_400_000).toISOString(),
-      revoked: false,
-      disclosedFields: visible.map((f) => ({ id: f.id, label: f.label, value: f.value })),
-      hiddenFields: hidden.map((f) => f.label),
-      proof: {
-        type: "DataIntegrityProof",
-        cryptosuite: "eddsa-2022",
-        created: new Date().toISOString(),
-        verificationMethod: `${c.issuerDid}#key-1`,
-        proofValue: `0x${token.replace(/-/g, "").slice(0, 32).toUpperCase()}`,
-      },
-    });
-    toast({ title: "Presentation saved", description: "Share link is ready for recruiters." });
+    setWorking(true);
+    setError(null);
+    try {
+      const request = walletShareRequest({
+        competencyId,
+        selectedFields: input.selectedFields,
+        expiresInDays: input.expiresInDays,
+      });
+      const created = await shareWalletCompetencyApi({
+        ...request,
+        selectedFields: request.selectedFields as WalletShareFieldId[],
+      });
+      setResultUrl(created.shareUrl);
+      setShares((current) => [{
+        token: created.shareId,
+        label: credential?.skill ?? "Achievement",
+        access: "active",
+        kind: "link",
+      }, ...current]);
+    } catch (next) {
+      setError(shareError(next));
+    } finally {
+      setWorking(false);
+    }
   };
 
-  const revoke = async () => {
-    await revokePresentationDb(token);
-    setIsRevoked(true);
-    toast({ title: "Presentation revoked" });
+  const createSigned = async () => {
+    if (!user || !credential) return;
+    const signingIdentity = getUnlockedIdentity(user.id);
+    const activeDid = signingIdentity?.did
+      ?? (typeof snapshot.local?.did === "string" ? snapshot.local.did : null)
+      ?? snapshot.server.did
+      ?? null;
+    if (!signingIdentity) {
+      setError(snapshot.status === "locked"
+        ? "Unlock your learning identity on this device before signing."
+        : "Set up your learning identity on this device before signing.");
+      return;
+    }
+    const eligible = eligiblePresentationCredentials([credential], activeDid);
+    if (eligible.length === 0) {
+      setError("This achievement is not tied to the identity on this device, so it cannot be signed here.");
+      return;
+    }
+    setWorking(true);
+    setError(null);
+    try {
+      const dbId = await getCredentialDbId(credential.id);
+      const challenge = await createPresentationChallengeApi({
+        credentialIds: [dbId ?? credential.id],
+        audience: "sijil-recruiter-verify",
+      });
+      if (challenge.holderDid !== signingIdentity.did) {
+        throw new Error("The identity on this device does not match the signed challenge.");
+      }
+      const signature = await signUtf8(signingIdentity.privateKey, challenge.canonicalPayload);
+      const body = presentationSubmitBody({
+        challengeId: challenge.challengeId,
+        did: signingIdentity.did,
+        signature,
+      });
+      const submitted = await submitLearnerPresentationApi(body);
+      setResultUrl(submitted.verifyUrl);
+      setShares((current) => [{
+        token: submitted.presentationId,
+        label: credential.skill,
+        access: "active",
+        kind: "presentation",
+      }, ...current]);
+    } catch (next) {
+      setError(shareError(next));
+    } finally {
+      setWorking(false);
+    }
+  };
+
+  const revoke = async (share: ShareRecord) => {
+    setWorking(true);
+    setError(null);
+    try {
+      if (share.kind === "presentation") {
+        await revokeLearnerPresentationApi(share.token);
+      } else {
+        const stopped = await revokeWalletShareApi(share.token);
+        if (!stopped) throw new Error("The link could not be stopped.");
+      }
+      setShares((current) => current.map((item) => (
+        item.kind === share.kind && item.token === share.token
+          ? { ...item, access: "revoked" }
+          : item
+      )));
+    } catch (next) {
+      setError(shareError(next));
+    } finally {
+      setWorking(false);
+    }
   };
 
   if (loading) {
+    return <AppShell role="learner"><PageSkeleton rows={4} /></AppShell>;
+  }
+
+  if (!credential) {
     return (
       <AppShell role="learner">
-        <PageSkeleton rows={3} />
+        <EmptyState
+          icon={ShieldAlert}
+          title="Achievement not found"
+          description="This achievement is not on your account."
+          action={{ label: "Back", onClick: () => navigate("/learner/wallet") }}
+        />
       </AppShell>
     );
   }
-
-  if (!c) {
-    return (
-      <AppShell role="learner">
-        <PageHeader title="Credential not found" />
-        <Button onClick={() => navigate("/learner/wallet")}>Back to wallet</Button>
-      </AppShell>
-    );
-  }
-
-  const encodedId = encodeURIComponent(c.id);
 
   return (
     <AppShell role="learner">
       <PageHeader
-        title="Selective Disclosure"
-        description="Choose exactly what a verifier sees. Hidden fields remain bound to the credential but are not revealed."
-        breadcrumbs={[
-          { label: "Wallet", href: "/learner/wallet" },
-          { label: c.name, href: `/learner/credential/${encodedId}` },
-          { label: "Share" },
-        ]}
-        actions={
-          <Button variant="outline" onClick={() => navigate(`/learner/credential/${encodeURIComponent(c.id)}`)}>
-            <ArrowLeft className="h-4 w-4 mr-1.5" />Back to details
+        title="Share Achievement"
+        description="Choose a link or a signed presentation. Advanced signature details stay optional."
+        actions={(
+          <Button variant="outline" onClick={() => navigate(-1)}>
+            <ArrowLeft className="mr-1.5 h-4 w-4" />Back
           </Button>
-        }
+        )}
       />
-
-      <div className="grid lg:grid-cols-2 gap-6">
-        <Card>
-          <CardHeader><CardTitle className="text-base">Fields to disclose</CardTitle></CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Safe to share</h3>
-              <div className="space-y-2">{safeFields.map(renderFieldToggle)}</div>
-            </div>
-            <div>
-              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Sensitive fields</h3>
-              <p className="mb-2 text-xs text-muted-foreground">These may reveal internal metadata or full evidence history.</p>
-              <div className="space-y-2">{sensitiveFields.map(renderFieldToggle)}</div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader><CardTitle className="text-base">Verifier preview</CardTitle></CardHeader>
-          <CardContent>
-            <div className="rounded-md border bg-muted/30 p-4 space-y-2 mb-4">
-              {visible.length === 0 ? (
-                <div className="text-sm text-muted-foreground flex items-center gap-2"><EyeOff className="h-4 w-4" />Nothing selected to disclose</div>
-              ) : visible.map((f) => (
-                <div key={f.id} className="flex justify-between text-sm gap-4">
-                  <span className="text-muted-foreground">{f.label}</span>
-                  <span className="font-medium text-right">{f.value}</span>
-                </div>
-              ))}
-              {hidden.length > 0 && (
-                <div className="text-xs text-muted-foreground pt-2 border-t flex items-center gap-1.5">
-                  <Eye className="h-3.5 w-3.5" />{hidden.length} field(s) hidden from verifier
-                </div>
-              )}
-            </div>
-
-            <div className="text-xs text-muted-foreground mb-2">Share link</div>
-            <div className="flex gap-2 mb-4">
-              <code className="flex-1 text-xs bg-muted rounded px-2 py-1.5 truncate">{shareUrl}</code>
-              <Button size="sm" variant="outline" onClick={() => { navigator.clipboard.writeText(shareUrl); toast({ title: "Link copied" }); }}>
-                <Copy className="h-3.5 w-3.5" />
-              </Button>
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              <Button onClick={persist} disabled={isRevoked}><ExternalLink className="h-4 w-4 mr-1.5" />Save & share</Button>
-              <StubControl
-                label="QR code"
-                reason="QR presentation sharing is planned for a future release."
-              />
-              <Button variant="destructive" onClick={revoke} disabled={isRevoked}><Ban className="h-4 w-4 mr-1.5" />Revoke</Button>
-            </div>
-            {isRevoked && <StatusBadge variant="destructive" className="mt-3">Revoked</StatusBadge>}
-          </CardContent>
-        </Card>
-      </div>
+      <ShareAchievementFlow
+        skill={credential.skill}
+        fields={LINK_FIELDS}
+        linkAvailable={Boolean(competencyId)}
+        zkp={{ verified: false, fabric: null }}
+        shares={shares}
+        working={working}
+        error={error}
+        resultUrl={resultUrl}
+        onCreateLink={(input) => { void createLink(input); }}
+        onCreateSigned={() => { void createSigned(); }}
+        onRevoke={(share) => { void revoke(share); }}
+        historyUnavailable={historyUnavailable}
+        onRetryHistory={() => setHistoryAttempt((attempt) => attempt + 1)}
+      />
     </AppShell>
   );
 }

@@ -55,6 +55,8 @@ export type PublicVpVerification = {
   holderProof: { ok: boolean; reason?: string; message?: string };
   credentials: Array<{
     credentialId: string;
+    skill: string | null;
+    issuer: string | null;
     holderBound: boolean;
     issuerIntegrity: { ok: boolean; status: string };
     blockchain: { ok: boolean; status: string; anchorTxId: string | null; detail?: string };
@@ -112,6 +114,22 @@ export async function submitLearnerPresentationApi(body: {
     method: "POST",
     body: JSON.stringify(body),
   });
+}
+
+export type LearnerPresentationRevokeView = {
+  presentationId: string;
+  revokedAt: string;
+  alreadyRevoked: boolean;
+  kind: "learner-signed-vp";
+};
+
+export async function revokeLearnerPresentationApi(
+  presentationId: string,
+): Promise<LearnerPresentationRevokeView> {
+  return apiRequest<LearnerPresentationRevokeView>(
+    `/ssi/presentations/${encodeURIComponent(presentationId)}/revoke`,
+    { method: "POST" },
+  );
 }
 
 export async function getPublicVpApi(id: string): Promise<{

@@ -1,0 +1,5 @@
+{
+  "imports": {
+    "circomlibjs": "npm:circomlibjs@0.1.7"
+  }
+}

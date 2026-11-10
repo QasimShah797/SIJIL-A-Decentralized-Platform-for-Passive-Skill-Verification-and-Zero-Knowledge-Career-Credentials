@@ -191,6 +191,11 @@ export class SkillsService {
       // Auto-link is best-effort when GitHub is unavailable.
     }
 
+    // Lazy import avoids a credentials/skills module cycle; runs in the background.
+    void import("./competency-automation.service")
+      .then((automation) => automation.triggerCompetencyAutomation(userId, skill.id))
+      .catch(() => undefined);
+
     return this.getSkillWithRelatedEvidence(userId, skill.id);
   }
 

@@ -785,6 +785,11 @@ export async function loadPeerReviewPageData(userId: string): Promise<{
     contextRequests,
     peerReviewInvites,
     declaredSkills,
+    dbProjects,
+    linkedEvidence,
+    evidenceProjects,
+    reviews,
+    contributors,
     apiProjects,
     apiReviews,
   ] = await Promise.all([
@@ -792,6 +797,11 @@ export async function loadPeerReviewPageData(userId: string): Promise<{
     safeLoad(() => fetchContextReviewRequests(userId), [] as ContextReviewRequestDisplay[]),
     safeLoad(() => fetchPeerReviewInvites(userId), [] as ContextReviewRequestDisplay[]),
     safeLoad(() => fetchDeclaredSkills(userId), []),
+    safeLoad(() => fetchProjectsFromDb(userId), [] as Project[]),
+    safeLoad(() => fetchLinkedProjectEvidence(userId), [] as ProjectEvidenceApiView[]),
+    safeLoad(() => fetchEvidenceRecordProjects(userId), [] as ProjectEvidenceApiView[]),
+    safeLoad(() => fetchPeerReviews(userId), [] as PeerReview[]),
+    safeLoad(() => fetchContributors(userId), [] as Array<ProjectContributor & { repoId: number }>),
     isApiEnabled() ? getPeerReviewProjectsApi() : Promise.resolve(null),
     isApiEnabled() ? getPeerReviewsApi() : Promise.resolve(null),
   ]);
@@ -803,41 +813,38 @@ export async function loadPeerReviewPageData(userId: string): Promise<{
     void safeLoad(() => cleanupOrphanedLearnerReviewData(userId), undefined);
   }
 
-  if (apiProjects) {
-    return {
-      projects: filterProjectsForDeclaredSkills(apiProjects, skillRefs),
-      reviews: filterReviewsForDeclaredSkills(apiReviews ?? [], skillRefs),
-      legacyInvitations: filterInvitationsForDeclaredSkills(legacyInvitations, skillRefs),
-      contextRequests: filterInvitationsForDeclaredSkills(allContextRequests, skillRefs),
-    };
-  }
-
-  const [
-    dbProjects,
-    linkedEvidence,
-    evidenceProjects,
-    reviews,
-    contributors,
-  ] = await Promise.all([
-    safeLoad(() => fetchProjectsFromDb(userId), [] as Project[]),
-    safeLoad(() => fetchLinkedProjectEvidence(userId), [] as ProjectEvidenceApiView[]),
-    safeLoad(() => fetchEvidenceRecordProjects(userId), [] as ProjectEvidenceApiView[]),
-    safeLoad(() => fetchPeerReviews(userId), [] as PeerReview[]),
-    safeLoad(() => fetchContributors(userId), [] as Array<ProjectContributor & { repoId: number }>),
-  ]);
-
-  const projects = filterProjectsForDeclaredSkills(
+  const localProjects = filterProjectsForDeclaredSkills(
     attachContributors(
       buildPeerReviewProjects(dbProjects, linkedEvidence, evidenceProjects),
       contributors,
     ),
     skillRefs,
   );
+  const localReviews = filterReviewsForDeclaredSkills(reviews, skillRefs);
+
+  let projects = localProjects;
+  let mergedReviews = localReviews;
+
+  if (apiProjects) {
+    projects = mergeById(
+      filterProjectsForDeclaredSkills(apiProjects, skillRefs),
+      localProjects,
+    );
+    mergedReviews = mergeById(
+      filterReviewsForDeclaredSkills(apiReviews ?? [], skillRefs),
+      localReviews,
+    );
+  }
 
   return {
     projects,
-    reviews: filterReviewsForDeclaredSkills(reviews, skillRefs),
+    reviews: mergedReviews,
     legacyInvitations: filterInvitationsForDeclaredSkills(legacyInvitations, skillRefs),
     contextRequests: filterInvitationsForDeclaredSkills(allContextRequests, skillRefs),
   };
+}
+
+function mergeById<T extends { id: string }>(primary: T[], extra: T[]): T[] {
+  const seen = new Set(primary.map((item) => item.id));
+  return [...primary, ...extra.filter((item) => !seen.has(item.id))];
 }

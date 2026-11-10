@@ -103,6 +103,15 @@ describe("public credential verification outcomes", () => {
     assert.equal(result.status, "revoked");
   });
 
+  it("returns ledger_missing when the database says anchored but Fabric has no entry", async () => {
+    const result = await evaluateCredentialVerification(snapshot(), {
+      ...depsBase,
+      ledger: ledgerStub({ exists: false, hashMatches: false, status: "" }),
+    });
+    assert.equal(result.status, "ledger_missing");
+    assert.equal(credentialShowsVerified(result), false);
+  });
+
   it("returns pending_anchor when the credential is not on the ledger yet", async () => {
     const result = await evaluateCredentialVerification(
       snapshot({ anchorStatus: "pending", anchorTxId: null, anchoredAt: null }),

@@ -3,6 +3,7 @@
  */
 import { tryApiRequest } from "./client";
 import type { CredentialView } from "@/lib/db/credentials";
+import type { PortableCredentialFile } from "@/lib/credentials/portable";
 
 export function issueCredentialRequestBody(skillId: string): { skillId: string } {
   return { skillId };
@@ -13,6 +14,17 @@ export async function issueCredentialApi(skillId: string): Promise<CredentialVie
     method: "POST",
     body: JSON.stringify(issueCredentialRequestBody(skillId)),
   });
+}
+
+export async function getCredentialDocumentApi(id: string): Promise<PortableCredentialFile | null> {
+  return tryApiRequest<PortableCredentialFile>(`/credentials/${encodeURIComponent(id)}/document`);
+}
+
+export async function getTrustedIssuerKeyApi(issuerDid: string): Promise<string | null> {
+  const data = await tryApiRequest<{ publicKeyPem?: string }>(
+    `/public/issuers/${encodeURIComponent(issuerDid)}`,
+  );
+  return typeof data?.publicKeyPem === "string" ? data.publicKeyPem : null;
 }
 
 export async function getCredentialApi(id: string): Promise<CredentialView | null> {

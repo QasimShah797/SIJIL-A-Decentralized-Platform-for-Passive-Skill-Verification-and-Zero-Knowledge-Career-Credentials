@@ -5,6 +5,7 @@ export type LedgerVerifyStatus =
   | "tampered"
   | "revoked"
   | "pending_anchor"
+  | "ledger_missing"
   | "ledger_unavailable"
   | "evidence_unavailable"
   | "not_found";
@@ -13,7 +14,15 @@ export type LedgerVerifyDetail = "legacy_unverified_evidence";
 
 export type LedgerDisplayLabel = LedgerVerifyStatus | LedgerVerifyDetail;
 
-export type WalletAnchorStatus = "pending" | "anchored" | "failed";
+/** Backend ledger-verified anchor state (`ledgerAnchorStatus`) or legacy database `anchorStatus`. */
+export type WalletAnchorStatus =
+  | "pending"
+  | "anchored"
+  | "failed"
+  | "not_on_ledger"
+  | "hash_mismatch"
+  | "unavailable"
+  | "revoked";
 
 export interface LedgerStatusBadge {
   variant: StatusVariant;
@@ -22,7 +31,7 @@ export interface LedgerStatusBadge {
 
 export interface WalletAnchorBadge {
   variant: StatusVariant;
-  label: WalletAnchorStatus;
+  label: string;
 }
 
 const LEDGER_STATUS_BADGE: Record<LedgerVerifyStatus, LedgerStatusBadge> = {
@@ -30,6 +39,7 @@ const LEDGER_STATUS_BADGE: Record<LedgerVerifyStatus, LedgerStatusBadge> = {
   tampered: { variant: "destructive", label: "tampered" },
   revoked: { variant: "destructive", label: "revoked" },
   pending_anchor: { variant: "pending", label: "pending_anchor" },
+  ledger_missing: { variant: "warning", label: "ledger_missing" },
   ledger_unavailable: { variant: "warning", label: "ledger_unavailable" },
   evidence_unavailable: { variant: "warning", label: "evidence_unavailable" },
   not_found: { variant: "neutral", label: "not_found" },
@@ -41,9 +51,13 @@ const LEGACY_UNVERIFIED_BADGE: LedgerStatusBadge = {
 };
 
 const WALLET_ANCHOR_BADGE: Record<WalletAnchorStatus, WalletAnchorBadge> = {
-  pending: { variant: "pending", label: "pending" },
-  anchored: { variant: "verified", label: "anchored" },
-  failed: { variant: "destructive", label: "failed" },
+  pending: { variant: "pending", label: "Fabric: anchor pending" },
+  anchored: { variant: "verified", label: "Fabric: anchored" },
+  failed: { variant: "destructive", label: "Fabric: anchor failed" },
+  not_on_ledger: { variant: "warning", label: "Fabric: not found on ledger" },
+  hash_mismatch: { variant: "destructive", label: "Fabric: hash mismatch" },
+  unavailable: { variant: "warning", label: "Fabric verification unavailable" },
+  revoked: { variant: "destructive", label: "Fabric: revoked" },
 };
 
 export function isLedgerVerifyStatus(value: string | null | undefined): value is LedgerVerifyStatus {
@@ -82,8 +96,8 @@ export function mapLedgerStatusToBadge(
 }
 
 export function mapWalletAnchorStatus(status: string | null | undefined): WalletAnchorBadge | null {
-  if (status === "pending" || status === "anchored" || status === "failed") {
-    return WALLET_ANCHOR_BADGE[status];
+  if (status && status in WALLET_ANCHOR_BADGE) {
+    return WALLET_ANCHOR_BADGE[status as WalletAnchorStatus];
   }
   return null;
 }

@@ -188,12 +188,6 @@ export function scoreMcqSubmission(
     ? correctCount / totalQuestions >= MCQ_PASS_THRESHOLD
     : false;
 
-  console.log("[mcq-score] selected answers:", JSON.stringify(normalizedAnswers));
-  console.log("[mcq-score] correct answers:", JSON.stringify(
-    Object.fromEntries(entries.map((e) => [e.id, e.correctOptionId])),
-  ));
-  console.log("[mcq-score] calculated:", { correctCount, totalQuestions, percentage, passed });
-
   return { correctCount, totalQuestions, percentage, passed };
 }
 

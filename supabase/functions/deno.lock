@@ -1,0 +1,517 @@
+{
+  "version": "4",
+  "specifiers": {
+    "npm:circomlibjs@0.1.7": "0.1.7"
+  },
+  "npm": {
+    "@ethersproject/abi@5.8.0": {
+      "integrity": "sha512-b9YS/43ObplgyV6SlyQsG53/vkSal0MNA1fskSC4mbnCMi8R+NkcH8K9FPYNESf6jUefBUniE4SOKms0E/KK1Q==",
+      "dependencies": [
+        "@ethersproject/address",
+        "@ethersproject/bignumber",
+        "@ethersproject/bytes",
+        "@ethersproject/constants",
+        "@ethersproject/hash",
+        "@ethersproject/keccak256",
+        "@ethersproject/logger",
+        "@ethersproject/properties",
+        "@ethersproject/strings"
+      ]
+    },
+    "@ethersproject/abstract-provider@5.8.0": {
+      "integrity": "sha512-wC9SFcmh4UK0oKuLJQItoQdzS/qZ51EJegK6EmAWlh+OptpQ/npECOR3QqECd8iGHC0RJb4WKbVdSfif4ammrg==",
+      "dependencies": [
+        "@ethersproject/bignumber",
+        "@ethersproject/bytes",
+        "@ethersproject/logger",
+        "@ethersproject/networks",
+        "@ethersproject/properties",
+        "@ethersproject/transactions",
+        "@ethersproject/web"
+      ]
+    },
+    "@ethersproject/abstract-signer@5.8.0": {
+      "integrity": "sha512-N0XhZTswXcmIZQdYtUnd79VJzvEwXQw6PK0dTl9VoYrEBxxCPXqS0Eod7q5TNKRxe1/5WUMuR0u0nqTF/avdCA==",
+      "dependencies": [
+        "@ethersproject/abstract-provider",
+        "@ethersproject/bignumber",
+        "@ethersproject/bytes",
+        "@ethersproject/logger",
+        "@ethersproject/properties"
+      ]
+    },
+    "@ethersproject/address@5.8.0": {
+      "integrity": "sha512-GhH/abcC46LJwshoN+uBNoKVFPxUuZm6dA257z0vZkKmU1+t8xTn8oK7B9qrj8W2rFRMch4gbJl6PmVxjxBEBA==",
+      "dependencies": [
+        "@ethersproject/bignumber",
+        "@ethersproject/bytes",
+        "@ethersproject/keccak256",
+        "@ethersproject/logger",
+        "@ethersproject/rlp"
+      ]
+    },
+    "@ethersproject/base64@5.8.0": {
+      "integrity": "sha512-lN0oIwfkYj9LbPx4xEkie6rAMJtySbpOAFXSDVQaBnAzYfB4X2Qr+FXJGxMoc3Bxp2Sm8OwvzMrywxyw0gLjIQ==",
+      "dependencies": [
+        "@ethersproject/bytes"
+      ]
+    },
+    "@ethersproject/basex@5.8.0": {
+      "integrity": "sha512-PIgTszMlDRmNwW9nhS6iqtVfdTAKosA7llYXNmGPw4YAI1PUyMv28988wAb41/gHF/WqGdoLv0erHaRcHRKW2Q==",
+      "dependencies": [
+        "@ethersproject/bytes",
+        "@ethersproject/properties"
+      ]
+    },
+    "@ethersproject/bignumber@5.8.0": {
+      "integrity": "sha512-ZyaT24bHaSeJon2tGPKIiHszWjD/54Sz8t57Toch475lCLljC6MgPmxk7Gtzz+ddNN5LuHea9qhAe0x3D+uYPA==",
+      "dependencies": [
+        "@ethersproject/bytes",
+        "@ethersproject/logger",
+        "bn.js@5.2.5"
+      ]
+    },
+    "@ethersproject/bytes@5.8.0": {
+      "integrity": "sha512-vTkeohgJVCPVHu5c25XWaWQOZ4v+DkGoC42/TS2ond+PARCxTJvgTFUNDZovyQ/uAQ4EcpqqowKydcdmRKjg7A==",
+      "dependencies": [
+        "@ethersproject/logger"
+      ]
+    },
+    "@ethersproject/constants@5.8.0": {
+      "integrity": "sha512-wigX4lrf5Vu+axVTIvNsuL6YrV4O5AXl5ubcURKMEME5TnWBouUh0CDTWxZ2GpnRn1kcCgE7l8O5+VbV9QTTcg==",
+      "dependencies": [
+        "@ethersproject/bignumber"
+      ]
+    },
+    "@ethersproject/contracts@5.8.0": {
+      "integrity": "sha512-0eFjGz9GtuAi6MZwhb4uvUM216F38xiuR0yYCjKJpNfSEy4HUM8hvqqBj9Jmm0IUz8l0xKEhWwLIhPgxNY0yvQ==",
+      "dependencies": [
+        "@ethersproject/abi",
+        "@ethersproject/abstract-provider",
+        "@ethersproject/abstract-signer",
+        "@ethersproject/address",
+        "@ethersproject/bignumber",
+        "@ethersproject/bytes",
+        "@ethersproject/constants",
+        "@ethersproject/logger",
+        "@ethersproject/properties",
+        "@ethersproject/transactions"
+      ]
+    },
+    "@ethersproject/hash@5.8.0": {
+      "integrity": "sha512-ac/lBcTbEWW/VGJij0CNSw/wPcw9bSRgCB0AIBz8CvED/jfvDoV9hsIIiWfvWmFEi8RcXtlNwp2jv6ozWOsooA==",
+      "dependencies": [
+        "@ethersproject/abstract-signer",
+        "@ethersproject/address",
+        "@ethersproject/base64",
+        "@ethersproject/bignumber",
+        "@ethersproject/bytes",
+        "@ethersproject/keccak256",
+        "@ethersproject/logger",
+        "@ethersproject/properties",
+        "@ethersproject/strings"
+      ]
+    },
+    "@ethersproject/hdnode@5.8.0": {
+      "integrity": "sha512-4bK1VF6E83/3/Im0ERnnUeWOY3P1BZml4ZD3wcH8Ys0/d1h1xaFt6Zc+Dh9zXf9TapGro0T4wvO71UTCp3/uoA==",
+      "dependencies": [
+        "@ethersproject/abstract-signer",
+        "@ethersproject/basex",
+        "@ethersproject/bignumber",
+        "@ethersproject/bytes",
+        "@ethersproject/logger",
+        "@ethersproject/pbkdf2",
+        "@ethersproject/properties",
+        "@ethersproject/sha2",
+        "@ethersproject/signing-key",
+        "@ethersproject/strings",
+        "@ethersproject/transactions",
+        "@ethersproject/wordlists"
+      ]
+    },
+    "@ethersproject/json-wallets@5.8.0": {
+      "integrity": "sha512-HxblNck8FVUtNxS3VTEYJAcwiKYsBIF77W15HufqlBF9gGfhmYOJtYZp8fSDZtn9y5EaXTE87zDwzxRoTFk11w==",
+      "dependencies": [
+        "@ethersproject/abstract-signer",
+        "@ethersproject/address",
+        "@ethersproject/bytes",
+        "@ethersproject/hdnode",
+        "@ethersproject/keccak256",
+        "@ethersproject/logger",
+        "@ethersproject/pbkdf2",
+        "@ethersproject/properties",
+        "@ethersproject/random",
+        "@ethersproject/strings",
+        "@ethersproject/transactions",
+        "aes-js",
+        "scrypt-js"
+      ]
+    },
+    "@ethersproject/keccak256@5.8.0": {
+      "integrity": "sha512-A1pkKLZSz8pDaQ1ftutZoaN46I6+jvuqugx5KYNeQOPqq+JZ0Txm7dlWesCHB5cndJSu5vP2VKptKf7cksERng==",
+      "dependencies": [
+        "@ethersproject/bytes",
+        "js-sha3"
+      ]
+    },
+    "@ethersproject/logger@5.8.0": {
+      "integrity": "sha512-Qe6knGmY+zPPWTC+wQrpitodgBfH7XoceCGL5bJVejmH+yCS3R8jJm8iiWuvWbG76RUmyEG53oqv6GMVWqunjA=="
+    },
+    "@ethersproject/networks@5.8.0": {
+      "integrity": "sha512-egPJh3aPVAzbHwq8DD7Po53J4OUSsA1MjQp8Vf/OZPav5rlmWUaFLiq8cvQiGK0Z5K6LYzm29+VA/p4RL1FzNg==",
+      "dependencies": [
+        "@ethersproject/logger"
+      ]
+    },
+    "@ethersproject/pbkdf2@5.8.0": {
+      "integrity": "sha512-wuHiv97BrzCmfEaPbUFpMjlVg/IDkZThp9Ri88BpjRleg4iePJaj2SW8AIyE8cXn5V1tuAaMj6lzvsGJkGWskg==",
+      "dependencies": [
+        "@ethersproject/bytes",
+        "@ethersproject/sha2"
+      ]
+    },
+    "@ethersproject/properties@5.8.0": {
+      "integrity": "sha512-PYuiEoQ+FMaZZNGrStmN7+lWjlsoufGIHdww7454FIaGdbe/p5rnaCXTr5MtBYl3NkeoVhHZuyzChPeGeKIpQw==",
+      "dependencies": [
+        "@ethersproject/logger"
+      ]
+    },
+    "@ethersproject/providers@5.8.0": {
+      "integrity": "sha512-3Il3oTzEx3o6kzcg9ZzbE+oCZYyY+3Zh83sKkn4s1DZfTUjIegHnN2Cm0kbn9YFy45FDVcuCLLONhU7ny0SsCw==",
+      "dependencies": [
+        "@ethersproject/abstract-provider",
+        "@ethersproject/abstract-signer",
+        "@ethersproject/address",
+        "@ethersproject/base64",
+        "@ethersproject/basex",
+        "@ethersproject/bignumber",
+        "@ethersproject/bytes",
+        "@ethersproject/constants",
+        "@ethersproject/hash",
+        "@ethersproject/logger",
+        "@ethersproject/networks",
+        "@ethersproject/properties",
+        "@ethersproject/random",
+        "@ethersproject/rlp",
+        "@ethersproject/sha2",
+        "@ethersproject/strings",
+        "@ethersproject/transactions",
+        "@ethersproject/web",
+        "bech32",
+        "ws"
+      ]
+    },
+    "@ethersproject/random@5.8.0": {
+      "integrity": "sha512-E4I5TDl7SVqyg4/kkA/qTfuLWAQGXmSOgYyO01So8hLfwgKvYK5snIlzxJMk72IFdG/7oh8yuSqY2KX7MMwg+A==",
+      "dependencies": [
+        "@ethersproject/bytes",
+        "@ethersproject/logger"
+      ]
+    },
+    "@ethersproject/rlp@5.8.0": {
+      "integrity": "sha512-LqZgAznqDbiEunaUvykH2JAoXTT9NV0Atqk8rQN9nx9SEgThA/WMx5DnW8a9FOufo//6FZOCHZ+XiClzgbqV9Q==",
+      "dependencies": [
+        "@ethersproject/bytes",
+        "@ethersproject/logger"
+      ]
+    },
+    "@ethersproject/sha2@5.8.0": {
+      "integrity": "sha512-dDOUrXr9wF/YFltgTBYS0tKslPEKr6AekjqDW2dbn1L1xmjGR+9GiKu4ajxovnrDbwxAKdHjW8jNcwfz8PAz4A==",
+      "dependencies": [
+        "@ethersproject/bytes",
+        "@ethersproject/logger",
+        "hash.js"
+      ]
+    },
+    "@ethersproject/signing-key@5.8.0": {
+      "integrity": "sha512-LrPW2ZxoigFi6U6aVkFN/fa9Yx/+4AtIUe4/HACTvKJdhm0eeb107EVCIQcrLZkxaSIgc/eCrX8Q1GtbH+9n3w==",
+      "dependencies": [
+        "@ethersproject/bytes",
+        "@ethersproject/logger",
+        "@ethersproject/properties",
+        "bn.js@5.2.5",
+        "elliptic",
+        "hash.js"
+      ]
+    },
+    "@ethersproject/solidity@5.8.0": {
+      "integrity": "sha512-4CxFeCgmIWamOHwYN9d+QWGxye9qQLilpgTU0XhYs1OahkclF+ewO+3V1U0mvpiuQxm5EHHmv8f7ClVII8EHsA==",
+      "dependencies": [
+        "@ethersproject/bignumber",
+        "@ethersproject/bytes",
+        "@ethersproject/keccak256",
+        "@ethersproject/logger",
+        "@ethersproject/sha2",
+        "@ethersproject/strings"
+      ]
+    },
+    "@ethersproject/strings@5.8.0": {
+      "integrity": "sha512-qWEAk0MAvl0LszjdfnZ2uC8xbR2wdv4cDabyHiBh3Cldq/T8dPH3V4BbBsAYJUeonwD+8afVXld274Ls+Y1xXg==",
+      "dependencies": [
+        "@ethersproject/bytes",
+        "@ethersproject/constants",
+        "@ethersproject/logger"
+      ]
+    },
+    "@ethersproject/transactions@5.8.0": {
+      "integrity": "sha512-UglxSDjByHG0TuU17bDfCemZ3AnKO2vYrL5/2n2oXvKzvb7Cz+W9gOWXKARjp2URVwcWlQlPOEQyAviKwT4AHg==",
+      "dependencies": [
+        "@ethersproject/address",
+        "@ethersproject/bignumber",
+        "@ethersproject/bytes",
+        "@ethersproject/constants",
+        "@ethersproject/keccak256",
+        "@ethersproject/logger",
+        "@ethersproject/properties",
+        "@ethersproject/rlp",
+        "@ethersproject/signing-key"
+      ]
+    },
+    "@ethersproject/units@5.8.0": {
+      "integrity": "sha512-lxq0CAnc5kMGIiWW4Mr041VT8IhNM+Pn5T3haO74XZWFulk7wH1Gv64HqE96hT4a7iiNMdOCFEBgaxWuk8ETKQ==",
+      "dependencies": [
+        "@ethersproject/bignumber",
+        "@ethersproject/constants",
+        "@ethersproject/logger"
+      ]
+    },
+    "@ethersproject/wallet@5.8.0": {
+      "integrity": "sha512-G+jnzmgg6UxurVKRKvw27h0kvG75YKXZKdlLYmAHeF32TGUzHkOFd7Zn6QHOTYRFWnfjtSSFjBowKo7vfrXzPA==",
+      "dependencies": [
+        "@ethersproject/abstract-provider",
+        "@ethersproject/abstract-signer",
+        "@ethersproject/address",
+        "@ethersproject/bignumber",
+        "@ethersproject/bytes",
+        "@ethersproject/hash",
+        "@ethersproject/hdnode",
+        "@ethersproject/json-wallets",
+        "@ethersproject/keccak256",
+        "@ethersproject/logger",
+        "@ethersproject/properties",
+        "@ethersproject/random",
+        "@ethersproject/signing-key",
+        "@ethersproject/transactions",
+        "@ethersproject/wordlists"
+      ]
+    },
+    "@ethersproject/web@5.8.0": {
+      "integrity": "sha512-j7+Ksi/9KfGviws6Qtf9Q7KCqRhpwrYKQPs+JBA/rKVFF/yaWLHJEH3zfVP2plVu+eys0d2DlFmhoQJayFewcw==",
+      "dependencies": [
+        "@ethersproject/base64",
+        "@ethersproject/bytes",
+        "@ethersproject/logger",
+        "@ethersproject/properties",
+        "@ethersproject/strings"
+      ]
+    },
+    "@ethersproject/wordlists@5.8.0": {
+      "integrity": "sha512-2df9bbXicZws2Sb5S6ET493uJ0Z84Fjr3pC4tu/qlnZERibZCeUVuqdtt+7Tv9xxhUxHoIekIA7avrKUWHrezg==",
+      "dependencies": [
+        "@ethersproject/bytes",
+        "@ethersproject/hash",
+        "@ethersproject/logger",
+        "@ethersproject/properties",
+        "@ethersproject/strings"
+      ]
+    },
+    "aes-js@3.0.0": {
+      "integrity": "sha512-H7wUZRn8WpTq9jocdxQ2c8x2sKo9ZVmzfRE13GiNJXfp7NcKYEdvl3vspKjXox6RIG2VtaRe4JFvxG4rqp2Zuw=="
+    },
+    "b4a@1.9.0": {
+      "integrity": "sha512-dpfcF9fDNR6++cthXR67iyhgqWy9CBouAvIWhIntzBG6cvK/cnIPiZQjBwi/ZqjjBEDGfoNDtmB0kTjroOJ3pQ=="
+    },
+    "bech32@1.1.4": {
+      "integrity": "sha512-s0IrSOzLlbvX7yp4WBfPITzpAU8sqQcpsmwXDiKwrG4r491vwCO/XpejasRNl0piBMe/DvP4Tz0mIS/X1DPJBQ=="
+    },
+    "blake-hash@2.0.0": {
+      "integrity": "sha512-Igj8YowDu1PRkRsxZA7NVkdFNxH5rKv5cpLxQ0CVXSIA77pVYwCPRQJ2sMew/oneUpfuYRyjG6r8SmmmnbZb1w==",
+      "dependencies": [
+        "node-addon-api",
+        "node-gyp-build",
+        "readable-stream"
+      ]
+    },
+    "blake2b-wasm@2.4.0": {
+      "integrity": "sha512-S1kwmW2ZhZFFFOghcx73+ZajEfKBqhP82JMssxtLVMxlaPea1p9uoLiUZ5WYyHn0KddwbLc+0vh4wR0KBNoT5w==",
+      "dependencies": [
+        "b4a",
+        "nanoassert"
+      ]
+    },
+    "blake2b@2.1.4": {
+      "integrity": "sha512-AyBuuJNI64gIvwx13qiICz6H6hpmjvYS5DGkG6jbXMOT8Z3WUJ3V1X0FlhIoT1b/5JtHE3ki+xjtMvu1nn+t9A==",
+      "dependencies": [
+        "blake2b-wasm",
+        "nanoassert"
+      ]
+    },
+    "bn.js@4.12.5": {
+      "integrity": "sha512-3aRg6/JxfffFD+OlOjOFR3Vo79l39ooBTFucxx+MT3dhCtzn3EmiUPQo+6/OZuI2jbXi3YKgmiTFBgChQMwIRQ=="
+    },
+    "bn.js@5.2.5": {
+      "integrity": "sha512-Vq886eXykuP5E6HcKSSStP3bJgrE6In5WKxVUvJ8XGpWWYs2xZHWqUwzCtGgEtBcxyd57KBFDPFoUfNzdaHCNg=="
+    },
+    "brorand@1.1.0": {
+      "integrity": "sha512-cKV8tMCEpQs4hK/ik71d6LrPOnpkpGBR0wzxqr68g2m/LB2GxVYQroAjMJZRVM1Y4BCjCKc3vAamxSzOY2RP+w=="
+    },
+    "circomlibjs@0.1.7": {
+      "integrity": "sha512-GRAUoAlKAsiiTa+PA725G9RmEmJJRc8tRFxw/zKktUxlQISGznT4hH4ESvW8FNTsrGg/nNd06sGP/Wlx0LUHVg==",
+      "dependencies": [
+        "blake-hash",
+        "blake2b",
+        "ethers",
+        "ffjavascript"
+      ]
+    },
+    "elliptic@6.6.1": {
+      "integrity": "sha512-RaddvvMatK2LJHqFJ+YA4WysVN5Ita9E35botqIYspQ4TkRAlCicdzKOjlyv/1Za5RyTNn7di//eEV0uTAfe3g==",
+      "dependencies": [
+        "bn.js@4.12.5",
+        "brorand",
+        "hash.js",
+        "hmac-drbg",
+        "inherits",
+        "minimalistic-assert",
+        "minimalistic-crypto-utils"
+      ]
+    },
+    "ethers@5.8.0": {
+      "integrity": "sha512-DUq+7fHrCg1aPDFCHx6UIPb3nmt2XMpM7Y/g2gLhsl3lIBqeAfOJIl1qEvRf2uq3BiKxmh6Fh5pfp2ieyek7Kg==",
+      "dependencies": [
+        "@ethersproject/abi",
+        "@ethersproject/abstract-provider",
+        "@ethersproject/abstract-signer",
+        "@ethersproject/address",
+        "@ethersproject/base64",
+        "@ethersproject/basex",
+        "@ethersproject/bignumber",
+        "@ethersproject/bytes",
+        "@ethersproject/constants",
+        "@ethersproject/contracts",
+        "@ethersproject/hash",
+        "@ethersproject/hdnode",
+        "@ethersproject/json-wallets",
+        "@ethersproject/keccak256",
+        "@ethersproject/logger",
+        "@ethersproject/networks",
+        "@ethersproject/pbkdf2",
+        "@ethersproject/properties",
+        "@ethersproject/providers",
+        "@ethersproject/random",
+        "@ethersproject/rlp",
+        "@ethersproject/sha2",
+        "@ethersproject/signing-key",
+        "@ethersproject/solidity",
+        "@ethersproject/strings",
+        "@ethersproject/transactions",
+        "@ethersproject/units",
+        "@ethersproject/wallet",
+        "@ethersproject/web",
+        "@ethersproject/wordlists"
+      ]
+    },
+    "ffjavascript@0.2.63": {
+      "integrity": "sha512-dBgdsfGks58b66JnUZeZpGxdMIDQ4QsD3VYlRJyFVrKQHb2kJy4R2gufx5oetrTxXPT+aEjg0dOvOLg1N0on4A==",
+      "dependencies": [
+        "wasmbuilder",
+        "wasmcurves",
+        "web-worker"
+      ]
+    },
+    "hash.js@1.1.7": {
+      "integrity": "sha512-taOaskGt4z4SOANNseOviYDvjEJinIkRgmp7LbKP2YTTmVxWBl87s/uzK9r+44BclBSp2X7K1hqeNfz9JbBeXA==",
+      "dependencies": [
+        "inherits",
+        "minimalistic-assert"
+      ]
+    },
+    "hmac-drbg@1.0.1": {
+      "integrity": "sha512-Tti3gMqLdZfhOQY1Mzf/AanLiqh1WTiJgEj26ZuYQ9fbkLomzGchCws4FyrSd4VkpBfiNhaE1On+lOz894jvXg==",
+      "dependencies": [
+        "hash.js",
+        "minimalistic-assert",
+        "minimalistic-crypto-utils"
+      ]
+    },
+    "inherits@2.0.4": {
+      "integrity": "sha512-k/vGaX4/Yla3WzyMCvTQOXYeIHvqOKtnqBduzTHpzpQZzAskKMhZ2K+EnBiSM9zGSoIFeMpXKxa4dYeZIQqewQ=="
+    },
+    "js-sha3@0.8.0": {
+      "integrity": "sha512-gF1cRrHhIzNfToc802P800N8PpXS+evLLXfsVpowqmAFR9uwbi89WvXg2QspOmXL8QL86J4T1EpFu+yUkwJY3Q=="
+    },
+    "minimalistic-assert@1.0.1": {
+      "integrity": "sha512-UtJcAD4yEaGtjPezWuO9wC4nwUnVH/8/Im3yEHQP4b67cXlD/Qr9hdITCU1xDbSEXg2XKNaP8jsReV7vQd00/A=="
+    },
+    "minimalistic-crypto-utils@1.0.1": {
+      "integrity": "sha512-JIYlbt6g8i5jKfJ3xz7rF0LXmv2TkDxBLUkiBeZ7bAx4GnnNMr8xFpGnOxn6GhTEHx3SjRrZEoU+j04prX1ktg=="
+    },
+    "nanoassert@2.0.0": {
+      "integrity": "sha512-7vO7n28+aYO4J+8w96AzhmU8G+Y/xpPDJz/se19ICsqj/momRbb9mh9ZUtkoJ5X3nTnPdhEJyc0qnM6yAsHBaA=="
+    },
+    "node-addon-api@3.2.1": {
+      "integrity": "sha512-mmcei9JghVNDYydghQmeDX8KoAm0FAiYyIcUt/N4nhyAipB17pllZQDOJD2fotxABnt4Mdz+dKTO7eftLg4d0A=="
+    },
+    "node-gyp-build@4.8.4": {
+      "integrity": "sha512-LA4ZjwlnUblHVgq0oBF3Jl/6h/Nvs5fzBLwdEF4nuxnFdsfajde4WfxtJr3CaiH+F6ewcIB/q4jQ4UzPyid+CQ=="
+    },
+    "readable-stream@3.6.2": {
+      "integrity": "sha512-9u/sniCrY3D5WdsERHzHE4G2YCXqoG5FTHUiCC4SIbr6XcLZBY05ya9EKjYek9O5xOAwjGq+1JdGBAS7Q9ScoA==",
+      "dependencies": [
+        "inherits",
+        "string_decoder",
+        "util-deprecate"
+      ]
+    },
+    "safe-buffer@5.2.1": {
+      "integrity": "sha512-rp3So07KcdmmKbGvgaNxQSJr7bGVSVk5S9Eq1F+ppbRo70+YeaDxkw5Dd8NPN+GD6bjnYm2VuPuCXmpuYvmCXQ=="
+    },
+    "scrypt-js@3.0.1": {
+      "integrity": "sha512-cdwTTnqPu0Hyvf5in5asVdZocVDTNRmR7XEcJuIzMjJeSHybHl7vpB66AzwTaIg6CLSbtjcxc8fqcySfnTkccA=="
+    },
+    "string_decoder@1.3.0": {
+      "integrity": "sha512-hkRX8U1WjJFd8LsDJ2yQ/wWWxaopEsABU1XfkM8A+j0+85JAGppt16cr1Whg6KIbb4okU6Mql6BOj+uup/wKeA==",
+      "dependencies": [
+        "safe-buffer"
+      ]
+    },
+    "util-deprecate@1.0.2": {
+      "integrity": "sha512-EPD5q1uXyFxJpCrLnCc1nHnq3gOa6DZBocAIiI2TaSCA7VCJ1UJDMagCzIkXNsUYfD1daK//LTEQ8xiIbrHtcw=="
+    },
+    "wasmbuilder@0.0.16": {
+      "integrity": "sha512-Qx3lEFqaVvp1cEYW7Bfi+ebRJrOiwz2Ieu7ZG2l7YyeSJIok/reEQCQCuicj/Y32ITIJuGIM9xZQppGx5LrQdA=="
+    },
+    "wasmcurves@0.2.2": {
+      "integrity": "sha512-JRY908NkmKjFl4ytnTu5ED6AwPD+8VJ9oc94kdq7h5bIwbj0L4TDJ69mG+2aLs2SoCmGfqIesMWTEJjtYsoQXQ==",
+      "dependencies": [
+        "wasmbuilder"
+      ]
+    },
+    "web-worker@1.2.0": {
+      "integrity": "sha512-PgF341avzqyx60neE9DD+XS26MMNMoUQRz9NOZwW32nPQrF6p77f1htcnjBSEV8BGMKZ16choqUG4hyI0Hx7mA=="
+    },
+    "ws@8.18.0": {
+      "integrity": "sha512-8VbfWfHLbbwu3+N6OKsOMpBdT4kXPDDB9cJk2bJ6mh9ucxdlnNvH1e+roYkKmN9Nxw2yjz7VzeO9oOz2zJ04Pw=="
+    }
+  },
+  "redirects": {
+    "https://esm.sh/iceberg-js@^0.8.1?target=denonext": "https://esm.sh/iceberg-js@0.8.1?target=denonext"
+  },
+  "remote": {
+    "https://esm.sh/@supabase/auth-js@2.95.0/denonext/auth-js.mjs": "1123ffb14d82c71c8d244fc3d0a6ad2fb3668054efca4bee613b99212ed0ca85",
+    "https://esm.sh/@supabase/functions-js@2.95.0/denonext/functions-js.mjs": "462e4f2709092ca20b59629d53d703b446b7c04fa88af5cb530bb36d3a77608d",
+    "https://esm.sh/@supabase/postgrest-js@2.95.0/denonext/postgrest-js.mjs": "b00bbd49dc6617020de0d16748f1937b52864601c8ea63fc0057e10ee8be48b6",
+    "https://esm.sh/@supabase/realtime-js@2.95.0/denonext/realtime-js.mjs": "9e896596277b49e80124015b0802e29621217b517c9cb6698cf75b80a4d40db2",
+    "https://esm.sh/@supabase/storage-js@2.95.0/denonext/storage-js.mjs": "2e129b4defb7df6c397bec3ef1f5838e06a5e1d358aab4d8029ec63809b32474",
+    "https://esm.sh/@supabase/supabase-js@2.95.0": "8f03cc20a55700f9625b75c9b6de887287727b59f376fc3e8598785fea5e4d14",
+    "https://esm.sh/@supabase/supabase-js@2.95.0/denonext/supabase-js.mjs": "aaa158f8d6fdb27badaef756985c2316ad6c1997d81260f74f5449a550bb20fb",
+    "https://esm.sh/iceberg-js@0.8.1/denonext/iceberg-js.mjs": "d839d81a2e3966500ca2cdd0c1cb458e9608bacfc91f7bb67a69b2e878dcdb4f",
+    "https://esm.sh/iceberg-js@0.8.1?target=denonext": "58c849d7fe2bf4eca4a84eb501e83c161a7d8c34ca1bec15a962b3bec3062633",
+    "https://esm.sh/tslib@2.8.1/denonext/tslib.mjs": "c38da5dd6da6281964435002ce204cd586634fe3bdfb24a0ee116f48cf3292e9"
+  },
+  "workspace": {
+    "dependencies": [
+      "npm:circomlibjs@0.1.7"
+    ]
+  }
+}

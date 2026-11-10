@@ -17,6 +17,17 @@ import {
   walletExportAvailability,
 } from "../services/wallet-pass.service";
 import { AppError } from "../utils/AppError";
+import { disclosurePreferencesStore } from "../services/disclosure-preferences.service";
+import { disclosurePreferencesPatchSchema } from "../validators/disclosure-preferences.validator";
+
+export async function getDisclosurePreferences(req: Request, res: Response): Promise<Response> {
+  return sendSuccess(res, await disclosurePreferencesStore().get(req.user!.id));
+}
+
+export async function updateDisclosurePreferences(req: Request, res: Response): Promise<Response> {
+  const patch = disclosurePreferencesPatchSchema.parse(req.body ?? {});
+  return sendSuccess(res, await disclosurePreferencesStore().set(req.user!.id, patch), "Disclosure settings saved");
+}
 
 export async function getWalletCompetencies(req: Request, res: Response): Promise<Response> {
   const records = await runWithUserDb(req.accessToken, () => walletService.getCompetencies(req.user!.id));
