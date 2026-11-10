@@ -1,5 +1,6 @@
 /**
- * Fetch GitHub pull request reviews and map them into the SIJIL review format.
+ * Fetch public GitHub pull request reviews and map them into the SIJIL review format.
+ * Anyone who reviewed the linked repo is included. The learner's own reviews are skipped.
  */
 import { supabase } from "@/integrations/supabase/client";
 import {
@@ -18,6 +19,7 @@ export type GitHubPrReviewRecord = {
   pull_request_number: number;
   pull_request_title: string;
   created_at: string;
+  is_repo_contributor: boolean;
 };
 
 export type GitHubPrReviewFetchError =
@@ -42,14 +44,9 @@ function parseOwnerRepo(fullName: string): { owner: string; repo: string } | nul
   return { owner: parts[0], repo: parts.slice(1).join("/") };
 }
 
-function isVerifiedContributor(
-  reviewerLogin: string,
-  contributors: Set<string>,
-  learnerLogin: string,
-): boolean {
+function isLearnerLogin(reviewerLogin: string, learnerLogin: string): boolean {
   const normalized = reviewerLogin.toLowerCase();
-  if (!normalized || normalized === learnerLogin) return false;
-  return contributors.has(normalized);
+  return !normalized || normalized === learnerLogin;
 }
 
 function mapPullReview(
@@ -88,6 +85,7 @@ function mapPullReview(
     pull_request_number: prNumber,
     pull_request_title: prTitle,
     created_at: createdAt,
+    is_repo_contributor: false,
   };
 }
 
@@ -216,10 +214,13 @@ export async function fetchGitHubPrReviewsForUser(
     );
 
     for (const item of pullBatches.flat()) {
-      if (!isVerifiedContributor(item.reviewer_name, contributorLogins, learnerLogin)) continue;
+      if (isLearnerLogin(item.reviewer_name, learnerLogin)) continue;
       if (seen.has(item.id)) continue;
       seen.add(item.id);
-      reviews.push(item);
+      reviews.push({
+        ...item,
+        is_repo_contributor: contributorLogins.has(item.reviewer_name.toLowerCase()),
+      });
     }
   });
 

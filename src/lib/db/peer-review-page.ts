@@ -784,36 +784,32 @@ export async function loadPeerReviewPageData(userId: string): Promise<{
     legacyInvitations,
     contextRequests,
     peerReviewInvites,
+    declaredSkills,
+    apiProjects,
+    apiReviews,
   ] = await Promise.all([
     safeLoad(() => fetchInvitations(userId), [] as ReviewInvitation[]),
     safeLoad(() => fetchContextReviewRequests(userId), [] as ContextReviewRequestDisplay[]),
     safeLoad(() => fetchPeerReviewInvites(userId), [] as ContextReviewRequestDisplay[]),
+    safeLoad(() => fetchDeclaredSkills(userId), []),
+    isApiEnabled() ? getPeerReviewProjectsApi() : Promise.resolve(null),
+    isApiEnabled() ? getPeerReviewsApi() : Promise.resolve(null),
   ]);
 
   const allContextRequests = [...peerReviewInvites, ...contextRequests];
-  const declaredSkills = await safeLoad(
-    () => fetchDeclaredSkills(userId),
-    [],
-  );
   const skillRefs = declaredSkills.map((skill) => ({ id: skill.id, name: skill.name }));
 
   if (!skillRefs.length) {
-    await safeLoad(() => cleanupOrphanedLearnerReviewData(userId), undefined);
+    void safeLoad(() => cleanupOrphanedLearnerReviewData(userId), undefined);
   }
 
-  if (isApiEnabled()) {
-    const [apiProjects, apiReviews] = await Promise.all([
-      getPeerReviewProjectsApi(),
-      getPeerReviewsApi(),
-    ]);
-    if (apiProjects) {
-      return {
-        projects: filterProjectsForDeclaredSkills(apiProjects, skillRefs),
-        reviews: filterReviewsForDeclaredSkills(apiReviews ?? [], skillRefs),
-        legacyInvitations: filterInvitationsForDeclaredSkills(legacyInvitations, skillRefs),
-        contextRequests: filterInvitationsForDeclaredSkills(allContextRequests, skillRefs),
-      };
-    }
+  if (apiProjects) {
+    return {
+      projects: filterProjectsForDeclaredSkills(apiProjects, skillRefs),
+      reviews: filterReviewsForDeclaredSkills(apiReviews ?? [], skillRefs),
+      legacyInvitations: filterInvitationsForDeclaredSkills(legacyInvitations, skillRefs),
+      contextRequests: filterInvitationsForDeclaredSkills(allContextRequests, skillRefs),
+    };
   }
 
   const [

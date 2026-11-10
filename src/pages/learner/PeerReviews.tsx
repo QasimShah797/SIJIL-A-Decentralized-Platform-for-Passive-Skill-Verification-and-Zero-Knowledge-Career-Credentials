@@ -50,7 +50,6 @@ import {
   type PeerReviewProject,
   type ContextReviewRequestDisplay,
 } from "@/lib/db/peer-review-page";
-import { fetchGitHubPrReviewsForUser, type GitHubPrReviewRecord } from "@/lib/github-pr-reviews";
 import {
   importExternalReviewsApi,
 } from "@/services/api/reviews.api";
@@ -71,30 +70,6 @@ type InviteReviewer = {
   githubUsername: string | null;
   role: ProjectContributor["role"];
 };
-
-/** Contributor GitHub login only — never the repo owner / learner login. */
-function mapGitHubPrReviewToDisplay(
-  review: GitHubPrReviewRecord,
-  skill = "Declared competency",
-): PeerReview & Record<string, unknown> {
-  return {
-    id: review.id,
-    reviewerName: review.reviewer_name,
-    reviewerRole: "Project Collaborator",
-    comment: review.review_text,
-    source: "GitHub",
-    skill,
-    date: review.created_at,
-    projectName: review.repository_name,
-    evidenceLabel: `${review.repository_name} — PR #${review.pull_request_number}`,
-    imported: true,
-    origin: "GitHub PR",
-    trustWeight: "Medium Trust",
-    contextStatus: "Context Verified",
-    contributorVerification: "Contributor Verified",
-    rating: 3,
-  };
-}
 
 function mergeUniqueReviews(
   ...groups: Array<Array<PeerReview | (PeerReview & Record<string, unknown>)>>
@@ -226,6 +201,7 @@ export default function PeerReviewsPage() {
   const [bulkBusy, setBulkBusy] = useState(false);
   const [githubSyncing, setGithubSyncing] = useState(false);
   const loadGenRef = useRef(0);
+  const walletReviewsRef = useRef<PeerReview[]>([]);
   const skillKey = declaredSkills.map((skill) => skill.id).join("|");
 
   const applyPageData = useCallback((
@@ -278,10 +254,9 @@ export default function PeerReviewsPage() {
     }
 
     try {
-      const [data, stats, evidenceReviews, githubConn] = await Promise.all([
+      const [data, stats, githubConn] = await Promise.all([
         loadPeerReviewPageData(userId),
         isApiEnabled() ? getPeerReviewStatsApi() : Promise.resolve(null),
-        fetchWalletCompetencyRecords(userId),
         supabase
           .from("github_connections")
           .select("github_username")
@@ -291,8 +266,7 @@ export default function PeerReviewsPage() {
       ]);
       if (gen !== loadGenRef.current) return;
 
-      const walletReviews = mapWalletRecordsToReviews(evidenceReviews);
-      const merged = applyPageData(data, stats, walletReviews);
+      const merged = applyPageData(data, stats, walletReviewsRef.current);
       setLearnerGithub(githubConn);
       setLoading(false);
 
@@ -308,33 +282,21 @@ export default function PeerReviewsPage() {
       };
 
       if (!opts?.skipGithub) {
-        setGithubSyncing(true);
-        void fetchGitHubPrReviewsForUser(userId, { maxRepos: 4, maxPullsPerRepo: 5, linkedOnly: true })
-          .then((githubPrResult) => {
+        void fetchWalletCompetencyRecords(userId)
+          .then((evidenceReviews) => {
             if (gen !== loadGenRef.current) return;
-            if (!githubPrResult.reviews.length) return;
-            const githubPrReviews = githubPrResult.reviews.map((review) => {
-              const linkedProject = data.projects.find(
-                (project) => project.name === review.repository_name
-                  || project.url?.includes(review.repository_name),
-              );
-              return mapGitHubPrReviewToDisplay(
-                review,
-                linkedProject?.linkedSkills[0] ?? declaredSkills[0]?.name ?? "Declared competency",
-              );
-            });
+            const walletReviews = mapWalletRecordsToReviews(evidenceReviews);
+            walletReviewsRef.current = walletReviews;
+            if (!walletReviews.length) return;
             setReviews((prev) => {
-              const next = mergeUniqueReviews(prev, githubPrReviews);
+              const next = mergeUniqueReviews(prev, walletReviews);
               if (peerReviewPageCache?.userId === userId) {
                 peerReviewPageCache = { ...peerReviewPageCache, reviews: next, at: Date.now() };
               }
               return next;
             });
           })
-          .catch(() => undefined)
-          .finally(() => {
-            if (gen === loadGenRef.current) setGithubSyncing(false);
-          });
+          .catch(() => undefined);
       }
     } catch {
       if (gen !== loadGenRef.current) return;
@@ -360,8 +322,19 @@ export default function PeerReviewsPage() {
     }
   }, [selectedProject, skillForProject, declaredSkills]);
 
+  const enrichedProjectIds = useRef(new Set<string>());
+
   useEffect(() => {
     if (!selectedProjectId || !isApiEnabled()) return;
+    if (enrichedProjectIds.current.has(selectedProjectId)) return;
+    const current = projects.find((project) => project.id === selectedProjectId);
+    const needsEmail = !current?.contributors.length
+      || current.contributors.some((contributor) => !contributor.email?.trim());
+    if (!needsEmail) {
+      enrichedProjectIds.current.add(selectedProjectId);
+      return;
+    }
+    enrichedProjectIds.current.add(selectedProjectId);
     getPeerReviewContributorsApi(selectedProjectId)
       .then((contributors) => {
         if (!contributors?.length) return;
@@ -382,7 +355,7 @@ export default function PeerReviewsPage() {
         )));
       })
       .catch(() => undefined);
-  }, [selectedProjectId]);
+  }, [selectedProjectId, projects]);
 
   const contributorRows = useMemo(
     () => (selectedProject
@@ -474,6 +447,53 @@ export default function PeerReviewsPage() {
     return `${window.location.origin}/review/${invitation.id}`;
   };
 
+  const rememberSentInvite = (
+    contributor: ProjectContributor,
+    email: string,
+    skillName: string,
+    skillId: string | null,
+    result: { inviteId: string; token: string; status: string },
+  ) => {
+    if (!selectedProject || !result.inviteId) return;
+    const alreadyListed = contextRequests.some((item) =>
+      item.id === result.inviteId
+      || (
+        item.projectId === selectedProject.id
+        && item.contributorId === contributor.id
+        && item.status !== "Completed"
+      ),
+    );
+    if (!alreadyListed && result.status === "sent") {
+      setApiStats((stats) => (
+        stats ? { ...stats, pendingInvites: stats.pendingInvites + 1 } : stats
+      ));
+    }
+    const next: ContextReviewRequestDisplay = {
+      id: result.inviteId,
+      token: result.token,
+      projectId: selectedProject.id,
+      projectName: selectedProject.name,
+      source: selectedProject.source,
+      contributorId: contributor.id,
+      contributorName: contributor.name,
+      contributorEmail: email,
+      contributorRole: contributor.role,
+      skill: skillName,
+      skillId,
+      status: "Sent",
+      sentAt: new Date().toISOString(),
+      recordSource: "peer",
+    };
+    setContextRequests((prev) => [
+      next,
+      ...prev.filter((item) => item.id !== next.id && !(
+        item.projectId === next.projectId
+        && item.contributorId === next.contributorId
+        && item.status !== "Completed"
+      )),
+    ]);
+  };
+
   const resendInvitationFromList = async (invitation: ReviewInvitation) => {
     const source = invitation.recordSource ?? "peer";
     if (source === "legacy") {
@@ -502,7 +522,11 @@ export default function PeerReviewsPage() {
       return;
     }
 
-    await reload({ silent: true, skipGithub: true });
+    setContextRequests((prev) => prev.map((item) => (
+      item.id === invitation.id
+        ? { ...item, token: result.token, status: "Sent", sentAt: new Date().toISOString() }
+        : item
+    )));
     if (result.viaFallback) {
       await navigator.clipboard.writeText(result.reviewLink);
       toast({
@@ -556,7 +580,7 @@ export default function PeerReviewsPage() {
         }
 
         if (result) {
-          await reload({ silent: true, skipGithub: true });
+          rememberSentInvite(c, email, skillName, skillId, result);
           toast({ title: "Review invitation sent successfully" });
           return;
         }
@@ -644,7 +668,11 @@ export default function PeerReviewsPage() {
       }
 
       setGeneratedLink(result.reviewLink);
-      await reload({ silent: true, skipGithub: true });
+      setContextRequests((prev) => prev.map((item) => (
+        item.id === result.inviteId
+          ? { ...item, token: result.token, status: "Sent", sentAt: new Date().toISOString() }
+          : item
+      )));
       if (result.viaFallback) {
         toast({
           title: "Review link refreshed",
@@ -698,7 +726,7 @@ export default function PeerReviewsPage() {
         }
 
         setGeneratedLink(result.reviewLink);
-        await reload({ silent: true, skipGithub: true });
+        rememberSentInvite(inviteContrib, normalizedEmail, inviteSkillName, skillId, result);
         toast({
           title: inviteResend
             ? "Invitation resent"
@@ -760,11 +788,17 @@ export default function PeerReviewsPage() {
       return;
     }
 
+    setGithubSyncing(true);
     let apiError = "";
-    const result = await importExternalReviewsApi({
-      evidenceId: selectedProject.evidenceRecordId,
-      projectId: selectedProject.id,
-    }, (msg) => { apiError = msg; });
+    let result: Awaited<ReturnType<typeof importExternalReviewsApi>> = null;
+    try {
+      result = await importExternalReviewsApi({
+        evidenceId: selectedProject.evidenceRecordId,
+        projectId: selectedProject.id,
+      }, (msg) => { apiError = msg; });
+    } finally {
+      setGithubSyncing(false);
+    }
 
     if (!result) {
       toast({
@@ -778,11 +812,11 @@ export default function PeerReviewsPage() {
     await reload({ silent: true, skipGithub: true });
     const imported = result.imported ?? 0;
     if (imported > 0) {
-      toast({ title: "Reviews imported", description: `${imported} GitHub review(s) imported from verified contributors.` });
+      toast({ title: "Reviews imported", description: `${imported} public GitHub review(s) imported for this repository.` });
     } else {
       toast({
         title: "No external reviews found",
-        description: "No PR reviews or comments from verified repo contributors were found for this project.",
+        description: "No public PR reviews or comments were found on this repository.",
       });
     }
   };

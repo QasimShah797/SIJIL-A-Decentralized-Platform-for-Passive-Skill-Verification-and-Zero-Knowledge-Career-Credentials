@@ -1,6 +1,7 @@
 /**
  * Import GitHub PR reviews, review comments, and issue comments via REST API.
- * Only stores feedback from verified repo contributors (excluding the learner).
+ * Stores public feedback from anyone on the linked repo, excluding the learner.
+ * Contributor sync stays in place so review invites can still target contributors only.
  */
 import { supabaseService } from "./supabase.service";
 import { REVIEW_TYPE, CONTEXT_RECOMMENDATION } from "../constants/reviews";
@@ -15,7 +16,7 @@ import {
 } from "../constants/peer-review";
 import { withPeerReviewUserColumns } from "../utils/peerReviewInsert";
 import {
-  resolveGitHubUserEmail,
+  resolveGitHubUserEmails,
 } from "../utils/githubContributorEmail";
 
 const GH = "https://api.github.com";
@@ -103,14 +104,10 @@ export async function syncContributorsForRepo(
     if (!Array.isArray(contributors)) return logins;
 
     const learnerLogin = ghConn.username.toLowerCase();
-    const emailByLogin = new Map<string, string | null>();
-
-    for (const c of contributors) {
-      const login = (c.login as string) ?? "";
-      if (!login || login.toLowerCase() === learnerLogin) continue;
-      const email = await resolveGitHubUserEmail(login, ghConn.token, fullName);
-      emailByLogin.set(login.toLowerCase(), email);
-    }
+    const loginsToResolve = contributors
+      .map((c) => (c.login as string) ?? "")
+      .filter((login) => login && login.toLowerCase() !== learnerLogin);
+    const emailByLogin = await resolveGitHubUserEmails(loginsToResolve, ghConn.token, fullName);
 
     const contributorRows = contributors.map((c) => {
       const login = (c.login as string) ?? "";
@@ -203,14 +200,13 @@ async function loadContributorLogins(
   return logins;
 }
 
-function isVerifiedContributor(
-  reviewerLogin: string,
-  contributors: Set<string>,
-  learnerLogin: string,
-): boolean {
+function isLearnerLogin(reviewerLogin: string, learnerLogin: string): boolean {
   const normalized = reviewerLogin.toLowerCase();
-  if (!normalized || normalized === learnerLogin) return false;
-  return contributors.has(normalized);
+  return !normalized || normalized === learnerLogin;
+}
+
+function isKnownContributor(reviewerLogin: string, contributors: Set<string>): boolean {
+  return contributors.has(reviewerLogin.toLowerCase());
 }
 
 async function fetchPullRequests(
@@ -365,7 +361,6 @@ export async function importGitHubReviewsForEvidence(
     repoId,
     target.evidence_record_id,
   );
-  if (!contributorLogins.size) return 0;
 
   let skillId: string | null = null;
   let skillName = target.linked_skill_name ?? "General";
@@ -418,9 +413,6 @@ export async function importGitHubReviewsForEvidence(
     review_type: REVIEW_TYPE.IMPORTED,
     evidence_record_id: target.evidence_record_id,
     skill_id: skillId,
-    context_status: CONTEXT_STATUS.VERIFIED,
-    context_verified: true,
-    contributor_verification: CONTRIBUTOR_VERIFICATION.VERIFIED,
     imported: true,
   };
 
@@ -441,16 +433,19 @@ export async function importGitHubReviewsForEvidence(
       );
 
       for (const item of candidates) {
-        // 5 & 8. Only verified repo contributors; ignore everyone else.
-        if (!isVerifiedContributor(item.reviewerLogin, contributorLogins, learnerLogin)) {
-          continue;
-        }
+        if (isLearnerLogin(item.reviewerLogin, learnerLogin)) continue;
         if (existingRefs.has(item.externalReference)) continue;
 
+        const knownContributor = isKnownContributor(item.reviewerLogin, contributorLogins);
         const ok = await insertImportedReview({
           ...baseReview,
           reviewer_name: item.reviewerLogin,
-          ...reviewTrustFields("Same repo contributor"),
+          ...reviewTrustFields(knownContributor ? "Same repo contributor" : "GitHub reviewer"),
+          context_status: CONTEXT_STATUS.VERIFIED,
+          context_verified: true,
+          contributor_verification: knownContributor
+            ? CONTRIBUTOR_VERIFICATION.VERIFIED
+            : CONTRIBUTOR_VERIFICATION.NOT_CONTRIBUTOR,
           evidence_label: item.evidenceLabel,
           evidence_url: item.evidenceUrl,
           rating: item.rating,
