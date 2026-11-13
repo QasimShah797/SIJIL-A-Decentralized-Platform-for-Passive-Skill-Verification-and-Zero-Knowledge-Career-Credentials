@@ -28,3 +28,7 @@ verify_jwt = false
 # The gateway JWT check rejects the browser session before that runs.
 [functions.recruiter-match]
 verify_jwt = false
+
+# moodle-sync also enforces JWT inside the handler for every action.
+[functions.moodle-sync]
+verify_jwt = true

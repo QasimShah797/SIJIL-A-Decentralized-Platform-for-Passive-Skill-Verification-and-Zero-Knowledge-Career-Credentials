@@ -208,16 +208,6 @@ export default function InstitutionCompleteProfile() {
       return;
     }
 
-    const oauth = await meetsOAuthCompletionRequirements(user.id);
-    if (!oauth.github) {
-      toast({
-        title: "GitHub verification required",
-        description: "Connect and verify your GitHub account before completing your profile.",
-        variant: "destructive",
-      });
-      return;
-    }
-
     setBusy(true);
     try {
       let avatarUrl: string | undefined;

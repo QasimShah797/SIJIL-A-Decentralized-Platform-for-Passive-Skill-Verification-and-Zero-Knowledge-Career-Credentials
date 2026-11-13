@@ -8,6 +8,7 @@ import {
   ClipboardCheck,
   Wallet,
   MessageSquare,
+  Route,
   LogOut,
   Menu,
   Bell,
@@ -81,6 +82,7 @@ function dashboardNav(): NavGroup[] {
       label: "Identity",
       items: [
         { to: "/learner/wallet", icon: Wallet, label: "Wallet" },
+        { to: "/learner/journey", icon: Route, label: "My Skill Journey" },
         { to: "/learner/peer-reviews", icon: MessageSquare, label: "Peer Reviews" },
       ],
     },
@@ -126,6 +128,7 @@ function profileNav(): NavGroup[] {
       label: "Identity",
       items: [
         { to: "/learner/wallet", icon: Wallet, label: "Wallet" },
+        { to: "/learner/journey", icon: Route, label: "My Skill Journey" },
         { to: "/learner/peer-reviews", icon: MessageSquare, label: "Peer Reviews" },
       ],
     },

@@ -9,18 +9,28 @@ import {
   resolveCompetencyForMoodleAssignment,
   upsertMoodleAssignmentEvidenceRecord,
 } from "./moodle-evidence-records.ts";
+import {
+  assertActualMoodleSiteMatchesExpected,
+  assertMoodleUrlTransportPolicy,
+  DEFAULT_MOODLE_CLOUD_SITE_URL,
+  normalizeMoodleSiteUrl as normalizeMoodleSiteUrlCanonical,
+  resolveExpectedMoodleSiteUrlFromEnv,
+} from "./moodle-site-url.ts";
+import {
+  buildMoodleSyncCorsHeaders,
+  isAccessControlError,
+} from "./moodle-sync-security.ts";
 
-export const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
+/** CORS headers for a request Origin (allowlist only — never `*`). */
+export function corsHeaders(req?: Request | null): Record<string, string> {
+  return buildMoodleSyncCorsHeaders(
+    req?.headers.get("Origin"),
+    Deno.env.get("MOODLE_SYNC_CORS_ORIGINS"),
+  );
+}
 
 const MOODLE_BASE_URL = Deno.env.get("MOODLE_BASE_URL");
 const MOODLE_TOKEN = Deno.env.get("MOODLE_TOKEN");
-
-/** Canonical MoodleCloud site — only this instance is supported. */
-export const EXPECTED_MOODLE_SITE_URL = "https://sijil-fyp.moodlecloud.com";
 
 let moodleEnvLogged = false;
 
@@ -30,11 +40,20 @@ export function logMoodleEnvConfig(): {
   tokenExists: boolean;
   tokenLength: number;
   restEndpoint: string | null;
+  expectedSiteUrl: string;
 } {
   const baseUrl = MOODLE_BASE_URL?.trim().replace(/\/+$/, "") ?? null;
   const tokenExists = Boolean(MOODLE_TOKEN?.trim());
   const tokenLength = MOODLE_TOKEN?.trim().length ?? 0;
   const restEndpoint = baseUrl ? `${baseUrl}/webservice/rest/server.php` : null;
+  let expectedSiteUrl = DEFAULT_MOODLE_CLOUD_SITE_URL;
+  try {
+    expectedSiteUrl = resolveExpectedMoodleSiteUrlFromEnv({
+      MOODLE_EXPECTED_SITE_URL: Deno.env.get("MOODLE_EXPECTED_SITE_URL"),
+    });
+  } catch {
+    // keep default for diagnostics only
+  }
 
   if (!moodleEnvLogged) {
     moodleEnvLogged = true;
@@ -43,10 +62,11 @@ export function logMoodleEnvConfig(): {
       tokenExists,
       tokenLength,
       restEndpoint,
+      expectedSiteUrl,
     });
   }
 
-  return { baseUrl, tokenExists, tokenLength, restEndpoint };
+  return { baseUrl, tokenExists, tokenLength, restEndpoint, expectedSiteUrl };
 }
 
 function getMoodleBaseUrl(): string {
@@ -55,6 +75,14 @@ function getMoodleBaseUrl(): string {
     throw new MoodleSyncError(
       "INVALID_MOODLE_TOKEN",
       "Moodle is not configured (missing MOODLE_BASE_URL).",
+    );
+  }
+  try {
+    assertMoodleUrlTransportPolicy(baseUrl, "MOODLE_BASE_URL");
+  } catch (error) {
+    throw new MoodleSyncError(
+      "MOODLE_API_UNAVAILABLE",
+      error instanceof Error ? error.message : "Invalid MOODLE_BASE_URL.",
     );
   }
   return baseUrl;
@@ -144,8 +172,36 @@ export class MoodleSyncError extends Error {
   }
 }
 
+/** Canonical expected Moodle wwwroot (MOODLE_EXPECTED_SITE_URL, else MoodleCloud default). */
+export function getExpectedMoodleSiteUrl(): string {
+  try {
+    return resolveExpectedMoodleSiteUrlFromEnv({
+      MOODLE_EXPECTED_SITE_URL: Deno.env.get("MOODLE_EXPECTED_SITE_URL"),
+    });
+  } catch (error) {
+    throw new MoodleSyncError(
+      "MOODLE_API_UNAVAILABLE",
+      error instanceof Error ? error.message : "Invalid MOODLE_EXPECTED_SITE_URL.",
+    );
+  }
+}
+
+/** @deprecated Use getExpectedMoodleSiteUrl() — default MoodleCloud when env unset. */
+export const EXPECTED_MOODLE_SITE_URL = DEFAULT_MOODLE_CLOUD_SITE_URL;
+
 export function logSyncStage(stage: string, data: Record<string, unknown> = {}) {
-  console.log(JSON.stringify({ service: "moodle-sync", stage, ts: new Date().toISOString(), ...data }));
+  const payload = { service: "moodle-sync", stage, ts: new Date().toISOString(), ...data };
+  try {
+    console.log(JSON.stringify(payload));
+  } catch (err) {
+    // Never let debug logging abort sync (circular / deeply nested Moodle payloads).
+    console.log(JSON.stringify({
+      service: "moodle-sync",
+      stage,
+      ts: new Date().toISOString(),
+      logSerializeError: err instanceof Error ? err.message : String(err),
+    }));
+  }
 }
 
 function isMissingTableError(message: string, code?: string): boolean {
@@ -201,18 +257,6 @@ async function dbUpsert(
       : "DATABASE_INSERT_FAILED",
     `Failed to save Moodle data to ${table}: ${error.message}`,
     { table, code: error.code, hint: "Run supabase/migrations/20260706120000_moodle_sync_tables.sql in Supabase SQL Editor" },
-  );
-}
-
-function isAccessControlError(message: string, errorcode?: string): boolean {
-  const m = message.toLowerCase();
-  const code = (errorcode ?? "").toLowerCase();
-  return (
-    code.includes("accessexception") ||
-    code === "accessdenied" ||
-    m.includes("access control exception") ||
-    m.includes("access denied") ||
-    m.includes("not allowed")
   );
 }
 
@@ -342,10 +386,10 @@ async function fetchCourseGradeReport(
   return { byAssignmentId, byName, accessDenied: false };
 }
 
-export function json(body: unknown, status = 200) {
+export function json(body: unknown, status = 200, req?: Request | null) {
   return Response.json(body, {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...corsHeaders(req), "Content-Type": "application/json" },
   });
 }
 
@@ -418,7 +462,7 @@ export async function callMoodle(
   });
 
   if (!res.ok || data?.exception || data?.errorcode) {
-    const msg = data?.message || data?.debuginfo || "Moodle API request failed";
+    const msg = String(data?.message || data?.debuginfo || "Moodle API request failed");
     const errorcode = String(data?.errorcode ?? "");
 
     logSyncStage("moodle_api_error", {
@@ -447,7 +491,7 @@ export async function callMoodle(
 export async function resolveUser(req: Request) {
   const authHeader = req.headers.get("Authorization");
   if (!authHeader?.startsWith("Bearer ")) {
-    return { error: json({ error: "Unauthorized" }, 401) };
+    return { error: json({ error: "Unauthorized" }, 401, req) };
   }
 
   const userClient = createClient(
@@ -459,7 +503,7 @@ export async function resolveUser(req: Request) {
   const token = authHeader.replace("Bearer ", "");
   const { data: userData, error: userErr } = await userClient.auth.getUser(token);
   if (userErr || !userData.user) {
-    return { error: json({ error: "Unauthorized" }, 401) };
+    return { error: json({ error: "Unauthorized" }, 401, req) };
   }
 
   const admin = createClient(
@@ -486,7 +530,7 @@ function isLmsConnectionsColumnError(message: string, code?: string): boolean {
 
 /** Normalize Moodle site URL for consistent storage and filtering. */
 export function normalizeMoodleSiteUrl(url: string): string {
-  return url.trim().replace(/\/+$/, "").toLowerCase();
+  return normalizeMoodleSiteUrlCanonical(url);
 }
 
 /** Build lms_connections payload using only columns defined in repo migrations. */
@@ -674,17 +718,23 @@ async function resolveActiveMoodleLearnerUserId(
 }
 
 function assertExpectedMoodleSite(siteurl: string): string {
-  const normalized = normalizeMoodleSiteUrl(siteurl || getMoodleBaseUrl());
-  const expected = normalizeMoodleSiteUrl(EXPECTED_MOODLE_SITE_URL);
-  if (normalized !== expected) {
-    logSyncStage("moodle_site_url_mismatch", { siteurl, normalized, expected });
+  const expected = getExpectedMoodleSiteUrl();
+  try {
+    const matched = assertActualMoodleSiteMatchesExpected(siteurl, expected);
+    return matched;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logSyncStage("moodle_site_url_mismatch", {
+      siteurl,
+      expected,
+      message,
+    });
     throw new MoodleSyncError(
       "MOODLE_API_UNAVAILABLE",
-      `Moodle token is connected to ${siteurl}, expected ${EXPECTED_MOODLE_SITE_URL}. Update MOODLE_BASE_URL and MOODLE_TOKEN Supabase secrets.`,
-      { siteurl: normalized, expected },
+      `${message} Update MOODLE_EXPECTED_SITE_URL / MOODLE_BASE_URL secrets for this environment.`,
+      { siteurl: siteurl || null, expected },
     );
   }
-  return normalized;
 }
 
 /** Wipe all Moodle rows for one learner — used after successful fetch before fresh insert. */
@@ -1094,7 +1144,7 @@ export async function findMoodleUserByEmails(emails: string[]): Promise<MoodleUs
     const result = await callMoodle("core_user_get_users", {
       criteria: [{ key: "email", value: email }],
     });
-    const users = result?.users ?? [];
+    const users = Array.isArray(result?.users) ? result.users : [];
     if (users.length > 0) {
       return users[0] as MoodleUser;
     }
@@ -1113,8 +1163,13 @@ function parseMoodleGrade(v: unknown): number | null {
   if (typeof v === "string") {
     const trimmed = v.trim();
     if (!trimmed || trimmed === "—" || trimmed === "-") return null;
-    const fraction = trimmed.match(/^([\d.]+)\s*(?:\/\s*([\d.]+))?$/);
-    if (fraction) return parseMoodleGrade(fraction[1]);
+    // Match "85", "85.00000", or "85/100" — parse numerically (never recurse on the same string).
+    const fraction = trimmed.match(/^([\d.]+)(?:\s*\/\s*([\d.]+))?$/);
+    if (fraction) {
+      const n = parseNum(fraction[1]);
+      if (n === null || n < 0) return null;
+      return n;
+    }
   }
   const n = parseNum(v);
   if (n === null || n < 0) return null;
@@ -1212,7 +1267,7 @@ type LastAttemptExtract = {
   submittedAt: string | null;
 };
 
-/** Primary grade/feedback source: mod_assign_get_submission_status → lastattempt */
+/** Primary grade/feedback source: mod_assign_get_submission_status → lastattempt / feedback.grade */
 function extractFromSubmissionStatusResponse(
   response: Record<string, unknown> | null,
 ): LastAttemptExtract {
@@ -1221,26 +1276,44 @@ function extractFromSubmissionStatusResponse(
   const submissionFound = Boolean(lastAttempt);
 
   const gradeBlock = lastAttempt?.grade as Record<string, unknown> | undefined;
+  // Moodle often places the released grade on feedback.grade (not lastattempt.grade).
+  const feedbackBlock = response?.feedback as Record<string, unknown> | undefined;
+  const feedbackGradeBlock = feedbackBlock?.grade as Record<string, unknown> | undefined;
+
   const grade = parseMoodleGrade(
     gradeBlock?.value
     ?? gradeBlock?.grade
     ?? gradeBlock?.graderaw
     ?? gradeBlock?.rawgrade
     ?? gradeBlock?.strgrade
-    ?? gradeBlock?.formatted,
+    ?? gradeBlock?.formatted
+    ?? feedbackGradeBlock?.grade
+    ?? feedbackGradeBlock?.graderaw
+    ?? feedbackGradeBlock?.rawgrade
+    ?? feedbackGradeBlock?.strgrade
+    ?? feedbackGradeBlock?.formatted,
   );
   const gradeMax = parseNum(
     gradeBlock?.max
     ?? gradeBlock?.grademax
-    ?? gradeBlock?.grademaxformatted,
+    ?? gradeBlock?.grademaxformatted
+    ?? feedbackGradeBlock?.grademax
+    ?? feedbackGradeBlock?.grademaxformatted,
   );
 
-  const feedbackPlugins = (lastAttempt?.feedbackplugins as unknown[]) ?? [];
+  const feedbackPlugins = [
+    ...((lastAttempt?.feedbackplugins as unknown[]) ?? []),
+    ...((feedbackBlock?.plugins as unknown[]) ?? []),
+  ];
   const feedbackText = extractFeedbackFromFeedbackPlugins(feedbackPlugins);
   const feedbackFound = Boolean(feedbackText?.trim());
 
   const gradedAt = tsToIso(
-    gradeBlock?.dategraded ?? gradeBlock?.timemodified ?? lastAttempt?.timemodified,
+    gradeBlock?.dategraded
+    ?? gradeBlock?.timemodified
+    ?? feedbackGradeBlock?.timemodified
+    ?? feedbackGradeBlock?.timecreated
+    ?? lastAttempt?.timemodified,
   );
   const submittedAt = tsToIso(
     lastAttempt?.timemodified ?? lastAttempt?.timecreated,
@@ -1294,7 +1367,17 @@ function extractCommentsFeedbackFromPlugins(
   logSyncStage("feedback_plugins_inspect", {
     ...context,
     pluginCount: plugins.length,
-    pluginSummaries: plugins.map((p) => summarizePluginStructure(p as Record<string, unknown>)),
+    pluginSummaries: plugins.map((p) => {
+      const s = summarizePluginStructure(p as Record<string, unknown>);
+      // Keep summaries shallow — full filearea trees can blow JSON serialization.
+      return {
+        type: s.type,
+        name: s.name,
+        keys: s.keys,
+        editorfieldCount: Array.isArray(s.editorfields) ? s.editorfields.length : 0,
+        fileareaCount: Array.isArray(s.fileareas) ? s.fileareas.length : 0,
+      };
+    }),
   });
 
   const broadText = extractFeedbackFromFeedbackPlugins(plugins) ??
@@ -1358,11 +1441,10 @@ async function resolveTeacherFeedback(
     assignmentId,
     moodleUserId,
     gradeObjectPresent: Boolean(gradeRow),
-    grade_plugins: gradeRow?.plugins ?? null,
-    grade_feedback: gradeRow?.feedback ?? null,
-    grade_feedbacktext: gradeRow?.feedbacktext ?? null,
+    grade_feedback: typeof gradeRow?.feedback === "string" ? gradeRow.feedback : null,
+    grade_feedbacktext: typeof gradeRow?.feedbacktext === "string" ? gradeRow.feedbacktext : null,
     gradeKeys: gradeRow ? Object.keys(gradeRow) : [],
-    fullGradeObject: gradeRow ?? null,
+    // Avoid logging full plugin trees / grade objects (can be huge or cyclic).
   });
 
   const pluginSources: {
@@ -1467,21 +1549,15 @@ async function resolveTeacherFeedback(
     moodleUserId,
     courseId: courseId ?? null,
     mod_assign_get_grades: {
-      grade_plugins: gradeRow?.plugins ?? null,
-      grade_feedback: gradeRow?.feedback ?? null,
-      grade_feedbacktext: gradeRow?.feedbacktext ?? null,
-      fullGradeObject: gradeRow ?? null,
+      gradeKeys: gradeRow ? Object.keys(gradeRow) : [],
+      hasPlugins: Array.isArray(gradeRow?.plugins),
     },
     mod_assign_get_submission_status: submissionStatusRaw
-      ? {
-          topLevelKeys: Object.keys(submissionStatusRaw),
-          feedback: submissionStatusRaw.feedback ?? null,
-        }
+      ? { topLevelKeys: Object.keys(submissionStatusRaw) }
       : null,
     pluginSourcesAttempted: pluginSources.map((s) => ({
       source: s.source,
       pluginCount: s.plugins.length,
-      pluginsFullStructure: s.plugins,
     })),
   });
 
@@ -2146,6 +2222,7 @@ export type SyncActivitiesResult = {
   completion: number;
   warnings: string[];
   cleanup?: MoodleCleanupStats;
+  evidenceRepair?: Awaited<ReturnType<typeof repairMoodleEvidenceRecords>>;
   debug?: {
     moodleUrl: string;
     userid: number;
@@ -2298,15 +2375,18 @@ export async function syncLearnerMoodleActivities(
     warnings.push(...courseWarnings);
 
     const gradeReport = await fetchCourseGradeReport(moodleUserId, courseId, courseName);
-    if (courseAssignApiDenied || gradeReport.accessDenied) {
+    // Required assignment APIs denied → serious permission warning.
+    if (courseAssignApiDenied) {
       if (!gradePermissionWarningAdded) {
         warnings.push(MOODLE_GRADE_PERMISSION_WARNING);
         gradePermissionWarningAdded = true;
       }
     }
-    if (gradeReport.accessDenied && gradeReport.failedWsfunction) {
+    // Optional grade-report enrichment denied → informational only.
+    if (gradeReport.accessDenied) {
       warnings.push(
-        `${gradeReport.failedWsfunction} access denied for "${courseName}" (course id ${courseId}).`,
+        `Grade report enrichment unavailable for "${courseName}" (course id ${courseId}). ` +
+          "Assignment grades and feedback were loaded via Moodle assignment APIs.",
       );
     }
 
@@ -2366,7 +2446,7 @@ export async function syncLearnerMoodleActivities(
         const match = reportItem.gradeFormatted.match(/^([\d.]+)/);
         if (match) grade = parseMoodleGrade(match[1]);
       }
-      if (gradeMax === null && reportItem?.gradeMax !== null) {
+      if (gradeMax === null && reportItem?.gradeMax != null) {
         gradeMax = reportItem.gradeMax;
       }
       if (grade === null && reportItem?.gradeFormatted) {

@@ -1,56 +1,72 @@
 import { supabase } from "@/integrations/supabase/client";
 import { isMissingColumnError, isMissingRelationError } from "@/lib/supabase-errors";
+import {
+  isMoodleSyncBridgeEnabled,
+  moodleSyncBridgeMisconfiguredMessage,
+  moodleSyncBridgeUnreachableMessage,
+  resolveMoodleSyncBridgeConfig,
+} from "@/lib/moodle-sync-bridge";
+import {
+  DEFAULT_MOODLE_CLOUD_HOST,
+  DEFAULT_MOODLE_CLOUD_SITE_URL,
+  isConfiguredMoodleSiteUrl,
+  isLegacyMoodleCloudHost,
+  normalizeMoodleSiteUrl as normalizeMoodleSiteUrlShared,
+  parseMoodleSiteUrl,
+  resolveConfiguredMoodleSiteUrl,
+} from "../../supabase/functions/moodle-sync/moodle-site-url.ts";
 
-export const MOODLE_SITE_URL = "https://sijil-fyp.moodlecloud.com";
+/**
+ * Frontend display/filter URL only (VITE_MOODLE_SITE_URL).
+ * Never a Moodle token. Defaults to MoodleCloud when unset.
+ */
+export const MOODLE_SITE_URL = resolveConfiguredMoodleSiteUrl(
+  import.meta.env.VITE_MOODLE_SITE_URL as string | undefined,
+  DEFAULT_MOODLE_CLOUD_SITE_URL,
+);
 
-/** Hostname of the only supported MoodleCloud instance. */
-export const CURRENT_MOODLE_SITE_HOST = "sijil-fyp.moodlecloud.com";
+/** Hostname of the configured Moodle site (Vite env or MoodleCloud default). */
+export const CURRENT_MOODLE_SITE_HOST =
+  parseMoodleSiteUrl(MOODLE_SITE_URL)?.host ?? DEFAULT_MOODLE_CLOUD_HOST;
 
-/** Legacy MoodleCloud host — must never be shown in UI. */
+/** Legacy MoodleCloud host — remapped only when configured site is MoodleCloud. */
 export const LEGACY_MOODLE_SITE_HOST = "sijil.moodlecloud.com";
 
 /** Expected edge function version — mismatch means remote deploy is stale. */
 export const MOODLE_SYNC_FUNCTION_VERSION = "3.4.0";
 
 export function normalizeMoodleSiteUrl(url: string): string {
-  return url.trim().replace(/\/+$/, "").toLowerCase();
+  return normalizeMoodleSiteUrlShared(url);
 }
 
 export function displayMoodleSiteHost(url: string = MOODLE_SITE_URL): string {
-  try {
-    const host = new URL(url.startsWith("http") ? url : `https://${url}`).host.toLowerCase();
-    if (host === LEGACY_MOODLE_SITE_HOST || (host.includes("moodlecloud.com") && !host.includes("sijil-fyp"))) {
-      return CURRENT_MOODLE_SITE_HOST;
-    }
-    return host;
-  } catch {
-    const stripped = url.replace(/^https?:\/\//, "").replace(/\/+$/, "").toLowerCase();
-    if (stripped === LEGACY_MOODLE_SITE_HOST) return CURRENT_MOODLE_SITE_HOST;
-    return stripped;
+  const parts = parseMoodleSiteUrl(url);
+  if (!parts) {
+    return url.replace(/^https?:\/\//, "").replace(/\/+$/, "").toLowerCase();
   }
+  // Legacy MoodleCloud remapping only applies when the app is configured for MoodleCloud.
+  if (
+    CURRENT_MOODLE_SITE_HOST.includes("sijil-fyp.moodlecloud.com") &&
+    isLegacyMoodleCloudHost(url)
+  ) {
+    return DEFAULT_MOODLE_CLOUD_HOST;
+  }
+  return parts.host;
 }
 
-/** True when URL belongs to the current sijil-fyp MoodleCloud site. */
+/** True when URL matches the configured VITE_MOODLE_SITE_URL / default site. */
 export function isCurrentMoodleSiteUrl(url: string | null | undefined): boolean {
-  if (!url?.trim()) return false;
-  return displayMoodleSiteHost(url) === CURRENT_MOODLE_SITE_HOST;
+  return isConfiguredMoodleSiteUrl(url, MOODLE_SITE_URL);
 }
 
 /** True when URL points at the retired sijil.moodlecloud.com instance. */
 export function isLegacyMoodleSiteUrl(url: string | null | undefined): boolean {
-  if (!url?.trim()) return false;
-  const host = displayMoodleSiteHost(url);
-  const normalized = normalizeMoodleSiteUrl(url);
-  return (
-    host === LEGACY_MOODLE_SITE_HOST ||
-    normalized.includes(LEGACY_MOODLE_SITE_HOST) ||
-    (normalized.includes("moodlecloud.com") && !normalized.includes("sijil-fyp"))
-  );
+  return isLegacyMoodleCloudHost(url);
 }
 
 /**
  * Resolve the Moodle site URL for display from the connection record.
- * Stale/legacy URLs are replaced with the canonical current site.
+ * Stale/legacy URLs are replaced with the canonical configured site.
  */
 export function resolveMoodleConnectionSiteUrl(
   connection: { moodle_site_url: string | null } | null | undefined,
@@ -58,6 +74,9 @@ export function resolveMoodleConnectionSiteUrl(
   const stored = connection?.moodle_site_url;
   if (stored && isCurrentMoodleSiteUrl(stored)) {
     return normalizeMoodleSiteUrl(stored);
+  }
+  if (stored && isLegacyMoodleSiteUrl(stored) && CURRENT_MOODLE_SITE_HOST.includes("moodlecloud.com")) {
+    return normalizeMoodleSiteUrl(MOODLE_SITE_URL);
   }
   return normalizeMoodleSiteUrl(MOODLE_SITE_URL);
 }
@@ -98,6 +117,8 @@ type MoodleFunctionPayload = {
   feedback?: number;
   completion?: number;
   warnings?: string[];
+  /** Structured sync warning codes from moodle-sync (preferred over string matching). */
+  warningCodes?: string[];
   moodleUserId?: number;
   moodleSiteUrl?: string;
   url?: string;
@@ -114,6 +135,24 @@ type MoodleFunctionPayload = {
     completionFetched: number;
   };
 };
+
+/** Mirrors moodle-sync OPTIONAL_GRADE_REPORT_UNAVAILABLE / ASSIGNMENT_GRADE_PERMISSION_DENIED. */
+export const MOODLE_SYNC_WARNING_CODES = {
+  OPTIONAL_GRADE_REPORT_UNAVAILABLE: "OPTIONAL_GRADE_REPORT_UNAVAILABLE",
+  ASSIGNMENT_GRADE_PERMISSION_DENIED: "ASSIGNMENT_GRADE_PERMISSION_DENIED",
+} as const;
+
+export function isOptionalGradeReportInfoWarning(warning: string): boolean {
+  const lower = warning.toLowerCase();
+  if (lower.includes("grade report enrichment unavailable")) return true;
+  if (
+    lower.includes("gradereport_user_get_grade_items") &&
+    lower.includes("using assignment grade apis")
+  ) {
+    return true;
+  }
+  return false;
+}
 
 async function authHeaders(): Promise<Record<string, string>> {
   const { data: session } = await supabase.auth.getSession();
@@ -183,14 +222,79 @@ function mapSyncError(payload: MoodleFunctionPayload | null, fallback: string): 
   }
 }
 
+/**
+ * Prefer the local authenticated bridge when configured.
+ * Hosted Edge cannot reach localhost Moodle; bridge reuses the same moodle-sync code.
+ */
 async function invokeMoodleFunction(body: Record<string, unknown>): Promise<MoodleFunctionPayload> {
+  const bridge = resolveMoodleSyncBridgeConfig(
+    import.meta.env.VITE_MOODLE_SYNC_BRIDGE_URL as string | undefined,
+  );
+  if (bridge.error) {
+    throw new Error(moodleSyncBridgeMisconfiguredMessage(bridge.error));
+  }
+
   const headers = await authHeaders();
+
+  if (bridge.enabled && bridge.url) {
+    const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+    let response: Response;
+    try {
+      response = await fetch(bridge.url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(anonKey ? { apikey: anonKey } : {}),
+          ...headers,
+        },
+        body: JSON.stringify(body),
+      });
+    } catch {
+      throw new Error(moodleSyncBridgeUnreachableMessage(bridge.url));
+    }
+
+    let payload: MoodleFunctionPayload | null = null;
+    try {
+      payload = (await response.json()) as MoodleFunctionPayload;
+    } catch {
+      payload = null;
+    }
+
+    if (!response.ok || payload?.error) {
+      throw new Error(
+        mapSyncError(
+          payload,
+          !response.ok
+            ? `Moodle sync bridge HTTP ${response.status}`
+            : "Moodle request failed",
+        ),
+      );
+    }
+
+    if (!payload) {
+      throw new Error("Empty response from local Moodle sync bridge.");
+    }
+
+    return payload;
+  }
+
   const { data, error } = await supabase.functions.invoke("moodle-sync", { body, headers });
 
   const payload = await parseFunctionPayload(error, data);
 
   if (error || payload?.error) {
-    throw new Error(mapSyncError(payload, error?.message ?? "Moodle request failed"));
+    const mapped = mapSyncError(payload, error?.message ?? "Moodle request failed");
+    // Hosted Edge often returns HTML-from-Moodle when its secret URL is wrong/unreachable.
+    if (
+      mapped.toLowerCase().includes("html instead of json")
+      || mapped.toLowerCase().includes("moodle api is unavailable")
+    ) {
+      throw new Error(
+        `${mapped} For local Moodle, set VITE_MOODLE_SYNC_BRIDGE_URL=http://127.0.0.1:8787 ` +
+          "and run: npm run moodle:serve-bridge (do not expect hosted Edge to reach localhost:8000).",
+      );
+    }
+    throw new Error(mapped);
   }
 
   if (!payload) {
@@ -198,6 +302,11 @@ async function invokeMoodleFunction(body: Record<string, unknown>): Promise<Mood
   }
 
   return payload;
+}
+
+/** True when the UI should treat Moodle sync as local-bridge mode. */
+export function isLocalMoodleBridgeMode(): boolean {
+  return isMoodleSyncBridgeEnabled();
 }
 
 export type MoodleConnection = {
@@ -290,6 +399,7 @@ export type MoodleSyncResult = {
   feedback: number;
   completion: number;
   warnings: string[];
+  warningCodes: string[];
   functionVersion?: string;
   moodleSiteUrl?: string;
   url?: string;
@@ -305,6 +415,7 @@ function mapSyncPayload(payload: MoodleFunctionPayload): MoodleSyncResult {
     feedback: payload.feedback ?? 0,
     completion: payload.completion ?? 0,
     warnings: payload.warnings ?? [],
+    warningCodes: payload.warningCodes ?? [],
     functionVersion: payload.functionVersion,
     moodleSiteUrl: payload.moodleSiteUrl ?? payload.url,
     url: payload.url ?? payload.moodleSiteUrl ?? MOODLE_SITE_URL,
@@ -348,7 +459,7 @@ export async function repairMoodleEvidenceRecords(): Promise<{
   };
 }
 
-/** Force full Moodle resync: purge stale data, fetch fresh from sijil-fyp.moodlecloud.com, update DB. */
+/** Force full Moodle resync: purge stale data for the configured site, fetch fresh, update DB. */
 export async function syncMoodleData(): Promise<MoodleSyncResult> {
   const { data: session } = await supabase.auth.getSession();
   if (!session.session) {
@@ -756,14 +867,28 @@ async function buildCourseActivitiesFromRows(
   });
 }
 
-export function hasMoodleAccessControlWarning(warnings: string[]): boolean {
+/**
+ * True when sync warnings should show a destructive Moodle permission toast.
+ * Prefers structured `warningCodes` from moodle-sync when present.
+ * Optional grade-report enrichment notes are never treated as destructive.
+ */
+export function hasMoodleAccessControlWarning(
+  warnings: string[],
+  warningCodes?: string[] | null,
+): boolean {
+  if (Array.isArray(warningCodes) && warningCodes.length > 0) {
+    return warningCodes.includes(MOODLE_SYNC_WARNING_CODES.ASSIGNMENT_GRADE_PERMISSION_DENIED);
+  }
+
   return warnings.some((w) => {
+    if (isOptionalGradeReportInfoWarning(w)) return false;
     const lower = w.toLowerCase();
     return (
-      lower.includes("access denied") ||
-      lower.includes("access control") ||
-      lower.includes("lacks permission") ||
+      lower.includes("lacks permission to read assignment grades") ||
       lower.includes("grade access denied") ||
+      (lower.includes("access denied") &&
+        !lower.includes("gradereport_user_get_grade_items")) ||
+      lower.includes("access control") ||
       lower.includes("permission required")
     );
   });

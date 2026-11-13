@@ -14,6 +14,7 @@ import {
   Bell,
   BadgeCheck,
   MessageSquare,
+  Route,
   LogOut,
   Menu,
 } from "lucide-react";
@@ -81,6 +82,7 @@ function useLearnerNav(): NavGroup[] {
       label: "Identity",
       items: [
         { to: "/learner/wallet", icon: Wallet, label: "Wallet", mobileTab: true },
+        { to: "/learner/journey", icon: Route, label: "My Skill Journey", mobileTab: true },
         { to: "/learner/peer-reviews", icon: MessageSquare, label: "Peer Reviews" },
       ],
     },

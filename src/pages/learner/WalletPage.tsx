@@ -19,29 +19,25 @@ import {
 import type {
   WalletAttemptHistoryItem,
   WalletEvidenceSummary,
-  WalletShareFieldId,
 } from "@/lib/wallet-competency-shared";
 import { fetchGitHubConnection } from "@/lib/github-integration";
 import { fetchMoodleConnection } from "@/lib/moodle-integration";
-import { toast } from "@/hooks/use-toast";
 import { mapWalletAnchorStatus } from "@/lib/ledger-status";
 import { EmptyState } from "@/components/sijil/EmptyState";
+import { Button } from "@/components/ui/button";
 import {
   ClipboardList,
   Github,
   GraduationCap,
   MessageSquare,
+  Share2,
   ShieldAlert,
 } from "lucide-react";
-import {
-  getWalletCompetenciesApi,
-  getWalletCompetencyApi,
-  shareWalletCompetencyApi,
-  type WalletShareRecordView,
-} from "@/services/api/wallet.api";
+import { getWalletCompetenciesApi } from "@/services/api/wallet.api";
 import { ZkpProofCard } from "@/components/wallet/ZkpProofCard";
 import { GitHubPolicyStatusCard } from "@/components/wallet/GitHubPolicyStatusCard";
 import { WalletPrivacySettingsCard } from "@/components/wallet/WalletPrivacySettingsCard";
+import { CompetencyShareDialog } from "@/components/wallet/CompetencyShareDialog";
 import {
   AuditLedgerCard,
   CompetencyPackageCard,
@@ -58,7 +54,6 @@ import {
   type InspectorSource,
   type LedgerEvent,
   type LmsCourseRow,
-  type ShareToggle,
 } from "@/components/wallet/WalletWorkspacePanels";
 import { SsiIdentityCard } from "@/components/wallet/SsiIdentityCard";
 import { SignedPresentationCard } from "@/components/wallet/SignedPresentationCard";
@@ -418,19 +413,12 @@ export default function WalletPage() {
   const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string>("");
   const [selectedRecord, setSelectedRecord] = useState<WalletCompetencyRecordView | null>(null);
+  const [shareOpen, setShareOpen] = useState(false);
   const [inspectorSource, setInspectorSource] = useState<InspectorSource>("github");
   const [githubUsername, setGithubUsername] = useState<string | null>(null);
-  const [githubAvatarUrl, setGithubAvatarUrl] = useState<string | null>(null);
   const [githubSyncedAt, setGithubSyncedAt] = useState<string | null>(null);
   const [moodleHost, setMoodleHost] = useState<string | null>(null);
   const [moodleSyncedAt, setMoodleSyncedAt] = useState<string | null>(null);
-  const [shares, setShares] = useState<WalletShareRecordView[]>([]);
-  const [shareUrl, setShareUrl] = useState<string | null>(null);
-  const [shareToken, setShareToken] = useState<string | null>(null);
-  const [expiresInDays, setExpiresInDays] = useState(30);
-  const [enabledFields, setEnabledFields] = useState<WalletShareFieldId[]>(["competency_name"]);
-  const [shareScope, setShareScope] = useState<"all" | "selected" | "issued">("all");
-  const [submitting, setSubmitting] = useState(false);
 
   const loadRecords = async () => {
     if (!user?.id) {
@@ -459,7 +447,6 @@ export default function WalletPage() {
         ? current
         : merged[0]?.competencyId ?? "");
       setGithubUsername(github?.github_username ?? null);
-      setGithubAvatarUrl(github?.github_avatar_url ?? null);
       setGithubSyncedAt(github?.last_synced_at ?? null);
       setMoodleHost(moodle?.moodle_site_url ?? null);
       setMoodleSyncedAt(moodle?.last_synced_at ?? null);
@@ -480,41 +467,6 @@ export default function WalletPage() {
   const lmsRows = summary ? buildLmsRows(summary) : [];
   const attempt = summary ? latestAttempt(summary) : null;
   const peerReviews = summary ? asEvidenceArray(summary.peerReviews) : [];
-
-  useEffect(() => {
-    if (!activeRecord) {
-      setShares([]);
-      setShareUrl(null);
-      return;
-    }
-    let active = true;
-    getWalletCompetencyApi(activeRecord.competencyId)
-      .then((detail) => {
-        if (!active || !detail) return;
-        setShares(detail.shares);
-        const latest = detail.shares.find((share) => share.shareStatus === "Active");
-        if (!latest) {
-          setShareUrl(null);
-          setShareToken(null);
-          return;
-        }
-        try {
-          const stored = sessionStorage.getItem(`sijil.share.${latest.id}`);
-          if (!stored) return;
-          const parsed = JSON.parse(stored) as { token?: string; url?: string };
-          if (parsed.url) setShareUrl(parsed.url);
-          if (parsed.token) setShareToken(parsed.token);
-        } catch {
-          // ignore malformed session data
-        }
-      })
-      .catch(() => {
-        if (active) setShares([]);
-      });
-    return () => {
-      active = false;
-    };
-  }, [activeRecord?.competencyId]);
 
   const availableSources = useMemo<InspectorSource[]>(() => {
     const next: InspectorSource[] = [];
@@ -589,41 +541,6 @@ export default function WalletPage() {
     ];
   }, [summary, activeRecord, githubUsername, githubSyncedAt, githubStats.repos, githubStats.activities, moodleHost, moodleSyncedAt, lmsRows.length, peerReviews.length, attempt, profile?.linkedinUrl]);
 
-  const profilePhotoUrl = profile?.avatarUrl || githubAvatarUrl || null;
-
-  const shareToggles = useMemo<ShareToggle[]>(() => {
-    if (!activeRecord || !summary) return [];
-    return [
-      { id: "competency_name", label: "Competency name", enabled: enabledFields.includes("competency_name"), available: true },
-      { id: "verification_status", label: "Verification status", enabled: enabledFields.includes("verification_status"), available: true },
-      { id: "github_evidence", label: "GitHub evidence", enabled: enabledFields.includes("github_evidence"), available: githubStats.repos > 0 || githubStats.activities > 0 },
-      { id: "lms_evidence", label: "Moodle / LMS evidence", enabled: enabledFields.includes("lms_evidence"), available: lmsRows.length > 0 },
-      { id: "practical_task_result", label: "Practical task result", enabled: enabledFields.includes("practical_task_result"), available: Boolean(attempt) },
-      { id: "peer_reviews", label: "Peer reviews", enabled: enabledFields.includes("peer_reviews"), available: peerReviews.length > 0 },
-      { id: "teacher_feedback", label: "Teacher feedback", enabled: enabledFields.includes("teacher_feedback"), available: asEvidenceArray(summary.teacherFeedback).length > 0 },
-      { id: "learner_name", label: "Name", enabled: enabledFields.includes("learner_name"), available: Boolean(profile?.name) },
-      { id: "learner_contact", label: "Contact", enabled: enabledFields.includes("learner_contact"), available: Boolean(profile?.email || profile?.contactNumber) },
-      { id: "learner_institution", label: "Education", enabled: enabledFields.includes("learner_institution"), available: Boolean(profile?.institution) },
-      { id: "learner_career_goal", label: "Professional summary", enabled: enabledFields.includes("learner_career_goal"), available: Boolean(profile?.careerGoal || profile?.skillsSummary) },
-      { id: "learner_skills_summary", label: "Other skills", enabled: enabledFields.includes("learner_skills_summary"), available: Boolean(profile?.skillsSummary) || records.length > 1 },
-      { id: "learner_photo", label: "Profile picture", enabled: enabledFields.includes("learner_photo"), available: Boolean(profilePhotoUrl) },
-    ];
-  }, [activeRecord, summary, enabledFields, githubStats.repos, githubStats.activities, lmsRows.length, attempt, peerReviews.length, profile, records.length, profilePhotoUrl]);
-
-  useEffect(() => {
-    if (!summary) return;
-    const next: WalletShareFieldId[] = ["competency_name", "verification_status", "learner_name", "learner_contact"];
-    if (githubStats.repos > 0 || githubStats.activities > 0) next.push("github_evidence");
-    if (lmsRows.length > 0) next.push("lms_evidence");
-    if (attempt) next.push("practical_task_result");
-    if (peerReviews.length > 0) next.push("peer_reviews");
-    if (profile?.institution) next.push("learner_institution", "learner_program");
-    if (profile?.careerGoal) next.push("learner_career_goal");
-    if (profile?.skillsSummary || records.length > 1) next.push("learner_skills_summary");
-    if (profilePhotoUrl) next.push("learner_photo");
-    setEnabledFields(next);
-  }, [activeRecord?.competencyId, profilePhotoUrl]);
-
   const issuedCredential = activeRecord
     ? matchingCredential(credentials, activeRecord.competencyName)
     : undefined;
@@ -655,60 +572,6 @@ export default function WalletPage() {
   const taskLabel = attempt
     ? `${attempt.scorePercent != null ? `${attempt.scorePercent}% · ` : ""}${attempt.status}`
     : null;
-
-  const handleGenerateShare = async () => {
-    if (!activeRecord) return;
-    const selected = new Set<WalletShareFieldId>(
-      shareToggles.filter((toggle) => toggle.enabled && toggle.available).map((toggle) => toggle.id),
-    );
-    if (selected.has("learner_institution")) {
-      if (profile?.program) selected.add("learner_program");
-      if (profile?.cityCountry) selected.add("learner_location");
-    }
-    if (selected.has("competency_name")) selected.add("competency_domain");
-    if (selected.size === 0) {
-      toast({ title: "Select at least one field to share", variant: "destructive" });
-      return;
-    }
-    setSubmitting(true);
-    try {
-      const result = await shareWalletCompetencyApi({
-        competencyId: activeRecord.competencyId,
-        selectionMode: "custom",
-        selectedFields: [...selected],
-        shareScope,
-        expiresInDays,
-      });
-      setShareUrl(result.shareUrl);
-      setShareToken(result.token);
-      try {
-        sessionStorage.setItem(
-          `sijil.share.${result.shareId}`,
-          JSON.stringify({ token: result.token, url: result.shareUrl }),
-        );
-      } catch {
-        // ignore quota / private-mode failures
-      }
-      const detail = await getWalletCompetencyApi(activeRecord.competencyId);
-      if (detail) setShares(detail.shares);
-      toast({
-        title: "Share link created",
-        description: shareScope === "selected"
-          ? `Only ${activeRecord.competencyName} included for recruiters.`
-          : shareScope === "issued"
-            ? "Only issued credentials included for recruiters."
-          : `${records.length} competenc${records.length === 1 ? "y" : "ies"} included for recruiters.`,
-      });
-    } catch (shareError) {
-      toast({
-        title: "Could not create share link",
-        description: shareError instanceof Error ? shareError.message : "Share generation failed.",
-        variant: "destructive",
-      });
-    } finally {
-      setSubmitting(false);
-    }
-  };
 
   if (profileLoading || loading) {
     return (
@@ -747,6 +610,15 @@ export default function WalletPage() {
             lastSync={lastSync}
             anchorStatus={activeAnchor}
             anchorByCompetencyId={anchorByCompetencyId}
+            actions={
+              <Button
+                className="rounded-xl bg-[#023E8A] hover:bg-[#012A5C]"
+                onClick={() => setShareOpen(true)}
+              >
+                <Share2 className="mr-1.5 h-4 w-4" />
+                Share with Recruiter
+              </Button>
+            }
           />
           <WalletStepper />
 
@@ -812,6 +684,17 @@ export default function WalletPage() {
         open={!!selectedRecord}
         onOpenChange={(open) => {
           if (!open) setSelectedRecord(null);
+        }}
+      />
+
+      <CompetencyShareDialog
+        record={activeRecord}
+        open={shareOpen}
+        onOpenChange={setShareOpen}
+        onRecordSynced={(record) => {
+          setRecords((current) => current.map((item) => (
+            item.competencyId === record.competencyId ? record : item
+          )));
         }}
       />
 

@@ -1,56 +1,29 @@
 import {
   callMoodle,
   corsHeaders,
-  EXPECTED_MOODLE_SITE_URL,
+  getExpectedMoodleSiteUrl,
   json,
-  logMoodleEnvConfig,
   logSyncStage,
   MoodleSyncError,
   resolveUser,
   syncLearnerMoodleActivities,
 } from "./moodle-sync-core.ts";
 import { repairMoodleEvidenceRecords } from "./moodle-evidence-records.ts";
+import {
+  ACTIVE_MOODLE_SYNC_ACTIONS,
+  bodyAttemptsIdentityOverride,
+  buildSafeMoodleTestResponse,
+  disabledDebugActionPayload,
+  isDisabledMoodleDebugAction,
+  MOODLE_SYNC_FUNCTION_VERSION,
+  normalizeMoodleSyncAction,
+} from "./moodle-sync-security.ts";
+import { bodyAttemptsMoodleHostOverride } from "./moodle-site-url.ts";
 
-/** Bump when deploying — exposed in test/sync responses so frontend can detect stale deploys. */
-const FUNCTION_VERSION = "3.4.0";
+const FUNCTION_VERSION = MOODLE_SYNC_FUNCTION_VERSION;
+const SUPPORTED_ACTIONS = ACTIVE_MOODLE_SYNC_ACTIONS;
 
-const SUPPORTED_ACTIONS = [
-  "test",
-  "sync_activities",
-  "sync_moodle_data",
-  "repair_moodle_evidence_records",
-  "get_courses",
-  "find_user_by_email",
-  "get_user_courses",
-  "get_completion",
-  "get_grades",
-] as const;
-
-function normalizeAction(raw: unknown): string {
-  const s = String(raw ?? "").trim().toLowerCase().replace(/-/g, "_");
-  if (s === "sync_moodle_data" || s === "refresh_moodle_data") {
-    return "sync_moodle_data";
-  }
-  if (
-    s === "repair_moodle_evidence"
-    || s === "repair_moodle_evidence_records"
-    || s === "repair_moodle_evidence_mapping"
-  ) {
-    return "repair_moodle_evidence_records";
-  }
-  if (
-    s === "sync"
-    || s === "sync_moodle"
-    || s === "sync_moodle_activities"
-    || s === "syncactivities"
-    || s === "sync_activities"
-  ) {
-    return "sync_activities";
-  }
-  return s;
-}
-
-function invalidActionResponse(raw: unknown, normalized: string) {
+function invalidActionResponse(req: Request, raw: unknown, normalized: string) {
   return json(
     {
       error: "Invalid action",
@@ -62,6 +35,7 @@ function invalidActionResponse(raw: unknown, normalized: string) {
       hint: "Moodle sync function does not support this action. Redeploy: supabase functions deploy moodle-sync",
     },
     400,
+    req,
   );
 }
 
@@ -77,31 +51,42 @@ async function parseBody(req: Request): Promise<Record<string, unknown>> {
   }
 }
 
+/**
+ * Authenticate before any Moodle or DB work.
+ * Identity always comes from the JWT — body userId/email fields are ignored.
+ */
+async function requireAuth(req: Request) {
+  return resolveUser(req);
+}
+
 async function runLearnerSync(
   req: Request,
   body: Record<string, unknown>,
   forceResync: boolean,
 ) {
-  const resolved = await resolveUser(req);
+  const resolved = await requireAuth(req);
   if ("error" in resolved && resolved.error) return resolved.error;
 
+  // Authenticated identity only — never trust body.userId / body.email / Moodle host.
   const { userId, authEmail, admin } = resolved;
-  logSyncStage("sync_auth_ok", { userId, authEmail, forceResync });
+  logSyncStage("sync_auth_ok", {
+    userId,
+    authEmail,
+    forceResync,
+    identityOverrideAttempt: bodyAttemptsIdentityOverride(body),
+    moodleHostOverrideAttempt: bodyAttemptsMoodleHostOverride(body),
+  });
 
-  let institutionEmail: string | null =
-    typeof body.institutionEmail === "string" ? body.institutionEmail : null;
-
-  if (!institutionEmail) {
-    const { data: profile, error: profileErr } = await admin
-      .from("learner_profiles")
-      .select("university_email")
-      .eq("user_id", userId)
-      .maybeSingle();
-    if (profileErr) {
-      logSyncStage("learner_profile_lookup_failed", { userId, error: profileErr.message });
-    }
-    institutionEmail = profile?.university_email ?? null;
+  let institutionEmail: string | null = null;
+  const { data: profile, error: profileErr } = await admin
+    .from("learner_profiles")
+    .select("university_email")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (profileErr) {
+    logSyncStage("learner_profile_lookup_failed", { userId, error: profileErr.message });
   }
+  institutionEmail = profile?.university_email ?? null;
 
   const result = await syncLearnerMoodleActivities(
     admin,
@@ -118,7 +103,7 @@ async function runLearnerSync(
     grades: result.grades,
     feedback: result.feedback,
     completion: result.completion,
-    url: result.url ?? EXPECTED_MOODLE_SITE_URL,
+    url: result.url ?? getExpectedMoodleSiteUrl(),
     moodleUserId: result.moodleUserId,
     moodleSiteUrl: result.moodleSiteUrl,
     warnings: result.warnings,
@@ -127,22 +112,22 @@ async function runLearnerSync(
     debug: result.debug ?? null,
     functionVersion: FUNCTION_VERSION,
     supportedActions: SUPPORTED_ACTIONS,
-  });
+  }, 200, req);
 }
 
-Deno.serve(async (req) => {
+async function handleMoodleSyncRequest(req: Request): Promise<Response> {
   if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
+    return new Response("ok", { headers: corsHeaders(req) });
   }
 
   if (req.method !== "POST") {
-    return json({ error: "Method not allowed", code: "METHOD_NOT_ALLOWED" }, 405);
+    return json({ error: "Method not allowed", code: "METHOD_NOT_ALLOWED" }, 405, req);
   }
 
   try {
     const body = await parseBody(req);
     const rawAction = body.action;
-    const action = normalizeAction(rawAction);
+    const action = normalizeMoodleSyncAction(rawAction);
 
     logSyncStage("request_received", {
       action,
@@ -151,67 +136,29 @@ Deno.serve(async (req) => {
       supportedActions: SUPPORTED_ACTIONS,
     });
 
+    // Disabled debug proxies: no auth Moodle fan-out; never call Moodle.
+    if (isDisabledMoodleDebugAction(action)) {
+      logSyncStage("disabled_debug_action", { action });
+      return json(disabledDebugActionPayload(action), 410, req);
+    }
+
     if (action === "test") {
-      const envConfig = logMoodleEnvConfig();
-      const siteInfo = await callMoodle("core_webservice_get_site_info");
-      return json({
-        success: true,
-        siteInfo,
-        moodleEnv: envConfig,
-        functionVersion: FUNCTION_VERSION,
-        supportedActions: SUPPORTED_ACTIONS,
-      });
+      const resolved = await requireAuth(req);
+      if ("error" in resolved && resolved.error) return resolved.error;
+
+      const siteInfo = await callMoodle("core_webservice_get_site_info") as Record<string, unknown>;
+      return json(
+        buildSafeMoodleTestResponse({
+          siteInfo,
+          functionVersion: FUNCTION_VERSION,
+        }),
+        200,
+        req,
+      );
     }
 
     if (action === "sync_moodle_data") {
       return await runLearnerSync(req, body, true);
-    }
-
-    if (action === "get_courses") {
-      const courses = await callMoodle("core_course_get_courses");
-      return json({ success: true, courses, functionVersion: FUNCTION_VERSION });
-    }
-
-    if (action === "find_user_by_email") {
-      const email = body.email;
-      if (!email) return json({ error: "email is required" }, 400);
-      const user = await callMoodle("core_user_get_users", {
-        criteria: [{ key: "email", value: email }],
-      });
-      return json({ success: true, user });
-    }
-
-    if (action === "get_user_courses") {
-      const moodleUserId = body.moodleUserId;
-      if (!moodleUserId) return json({ error: "moodleUserId is required" }, 400);
-      const courses = await callMoodle("core_enrol_get_users_courses", { userid: moodleUserId });
-      return json({ success: true, courses });
-    }
-
-    if (action === "get_completion") {
-      const moodleUserId = body.moodleUserId;
-      const courseId = body.courseId;
-      if (!moodleUserId || !courseId) {
-        return json({ error: "moodleUserId and courseId are required" }, 400);
-      }
-      const completion = await callMoodle("core_completion_get_course_completion_status", {
-        userid: moodleUserId,
-        courseid: courseId,
-      });
-      return json({ success: true, completion });
-    }
-
-    if (action === "get_grades") {
-      const moodleUserId = body.moodleUserId;
-      const courseId = body.courseId;
-      if (!moodleUserId || !courseId) {
-        return json({ error: "moodleUserId and courseId are required" }, 400);
-      }
-      const grades = await callMoodle("gradereport_user_get_grade_items", {
-        userid: moodleUserId,
-        courseid: courseId,
-      });
-      return json({ success: true, grades });
     }
 
     if (action === "sync_activities") {
@@ -220,7 +167,7 @@ Deno.serve(async (req) => {
     }
 
     if (action === "repair_moodle_evidence_records") {
-      const resolved = await resolveUser(req);
+      const resolved = await requireAuth(req);
       if ("error" in resolved && resolved.error) {
         return resolved.error;
       }
@@ -236,7 +183,7 @@ Deno.serve(async (req) => {
         result,
         functionVersion: FUNCTION_VERSION,
         supportedActions: SUPPORTED_ACTIONS,
-      });
+      }, 200, req);
     }
 
     if (!action) {
@@ -246,13 +193,14 @@ Deno.serve(async (req) => {
           code: "MISSING_ACTION",
           supportedActions: SUPPORTED_ACTIONS,
           functionVersion: FUNCTION_VERSION,
-          hint: 'Send JSON body: { "action": "repair_moodle_evidence_records" }',
+          hint: 'Send JSON body: { "action": "sync_moodle_data" }',
         },
         400,
+        req,
       );
     }
 
-    return invalidActionResponse(rawAction, action);
+    return invalidActionResponse(req, rawAction, action);
   } catch (error) {
     console.error("moodle-sync error:", error);
 
@@ -267,6 +215,7 @@ Deno.serve(async (req) => {
           supportedActions: SUPPORTED_ACTIONS,
         },
         error.code === "UNAUTHORIZED" ? 401 : 400,
+        req,
       );
     }
 
@@ -280,6 +229,23 @@ Deno.serve(async (req) => {
         supportedActions: SUPPORTED_ACTIONS,
       },
       500,
+      req,
     );
   }
-});
+}
+
+/**
+ * Hosted Edge: Deno.serve(handler) with platform-managed bind.
+ * Local bridge: MOODLE_SYNC_BRIDGE_PORT avoids clashing with Moodle :8000.
+ */
+const bridgePortRaw = Deno.env.get("MOODLE_SYNC_BRIDGE_PORT")?.trim();
+if (bridgePortRaw) {
+  const port = Number(bridgePortRaw);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error(`Invalid MOODLE_SYNC_BRIDGE_PORT: ${bridgePortRaw}`);
+  }
+  logSyncStage("bridge_listen", { port, functionVersion: FUNCTION_VERSION });
+  Deno.serve({ port, hostname: "127.0.0.1" }, handleMoodleSyncRequest);
+} else {
+  Deno.serve(handleMoodleSyncRequest);
+}

@@ -10,7 +10,6 @@ import {
   stripNonDbColumns,
   type LearnerProfileDbRow,
 } from "@/lib/db/learner-profile-schema";
-import { meetsOAuthCompletionRequirements } from "@/lib/profile-oauth-verification";
 import { loadProfileUiFields, saveProfileUiFields } from "@/lib/profile-ui-fields";
 
 export type { LearnerProfileDbRow as LearnerProfileRow } from "@/lib/db/learner-profile-schema";
@@ -231,9 +230,8 @@ function rowToOnboardingForm(
 
 export async function isLearnerProfileComplete(userId: string): Promise<boolean> {
   const data = await fetchLearnerProfileRow(userId);
-  if (!hasRequiredLearnerFields(data)) return false;
-  const oauth = await meetsOAuthCompletionRequirements(userId);
-  return oauth.ok;
+  // Personal/profile fields only — GitHub is an optional evidence integration.
+  return hasRequiredLearnerFields(data);
 }
 
 export async function isUsernameAvailable(username: string): Promise<boolean> {
@@ -305,14 +303,14 @@ export type SelfSignupProfileProgressOptions = {
 
 export function selfSignupProfileProgress(
   form: SelfSignupProfileForm,
-  opts?: SelfSignupProfileProgressOptions,
+  _opts?: SelfSignupProfileProgressOptions,
 ): number {
+  // Progress tracks required personal fields only; GitHub remains optional UI.
   const checks = [
     form.contactNumber.trim(),
     form.country.trim(),
     form.city.trim(),
     form.bio.trim(),
-    opts?.githubVerified ? "github" : "",
     form.skillsSummary.trim(),
     form.careerGoal.trim(),
   ];
@@ -354,8 +352,7 @@ export async function saveSelfSignupProfileProgress(
     skills_summary: (payload.skills_summary as string | undefined) ?? existing.skills_summary,
     career_goal: (payload.career_goal as string | undefined) ?? existing.career_goal,
   };
-  const oauth = await meetsOAuthCompletionRequirements(userId);
-  payload.profile_completed = hasRequiredSelfSignupLearnerFields(merged) && oauth.ok;
+  payload.profile_completed = hasRequiredSelfSignupLearnerFields(merged);
 
   const { error } = await supabase
     .from("learner_profiles")
@@ -386,13 +383,22 @@ export async function saveSelfSignupOnboarding(
     careerGoal: data.careerGoal,
     avatarUrl: data.avatarUrl,
     linkedinUrl: data.linkedinUrl,
-    profileCompleted: true,
   });
 
-  const oauth = await meetsOAuthCompletionRequirements(userId);
-  if (!oauth.github) {
-    throw new Error("Connect and verify your GitHub account before completing your profile.");
+  const merged: LearnerProfileDbRow = {
+    ...existing,
+    contact_number: (payload.contact_number as string | undefined) ?? existing.contact_number,
+    city_country: (payload.city_country as string | null | undefined) ?? existing.city_country,
+    institution_name: (payload.institution_name as string | null | undefined) ?? existing.institution_name,
+    program: (payload.program as string | null | undefined) ?? existing.program,
+    bio: (payload.bio as string | undefined) ?? existing.bio,
+    skills_summary: (payload.skills_summary as string | undefined) ?? existing.skills_summary,
+    career_goal: (payload.career_goal as string | undefined) ?? existing.career_goal,
+  };
+  if (!hasRequiredSelfSignupLearnerFields(merged)) {
+    throw new Error("Please complete required profile fields before finishing onboarding.");
   }
+  payload.profile_completed = true;
 
   const { data: updated, error } = await updateLearnerProfileRow(userId, payload);
   if (error) throw error;
@@ -474,13 +480,22 @@ export async function saveLearnerOnboarding(userId: string, data: LearnerOnboard
     careerGoal: data.careerGoal,
     avatarUrl: data.avatarUrl,
     linkedinUrl: data.linkedinUrl,
-    profileCompleted: true,
   });
 
-  const oauth = await meetsOAuthCompletionRequirements(userId);
-  if (!oauth.github) {
-    throw new Error("Connect and verify your GitHub account before completing your profile.");
+  const merged: LearnerProfileDbRow = {
+    ...existing,
+    first_name: (payload.first_name as string | undefined) ?? existing.first_name,
+    last_name: (payload.last_name as string | undefined) ?? existing.last_name,
+    contact_number: (payload.contact_number as string | undefined) ?? existing.contact_number,
+    city_country: (payload.city_country as string | undefined) ?? existing.city_country,
+    bio: (payload.bio as string | undefined) ?? existing.bio,
+    skills_summary: (payload.skills_summary as string | undefined) ?? existing.skills_summary,
+    career_goal: (payload.career_goal as string | undefined) ?? existing.career_goal,
+  };
+  if (!hasRequiredInstitutionLearnerFields(merged)) {
+    throw new Error("Please complete required profile fields before finishing onboarding.");
   }
+  payload.profile_completed = true;
 
   const { data: updated, error } = await updateLearnerProfileRow(userId, payload);
   if (error) throw error;
@@ -520,8 +535,7 @@ export async function saveLearnerProfileProgress(
     skills_summary: (payload.skills_summary as string | undefined) ?? existing.skills_summary,
     career_goal: (payload.career_goal as string | undefined) ?? existing.career_goal,
   };
-  const oauth = await meetsOAuthCompletionRequirements(userId);
-  payload.profile_completed = hasRequiredInstitutionLearnerFields(merged) && oauth.ok;
+  payload.profile_completed = hasRequiredInstitutionLearnerFields(merged);
 
   const { error } = await supabase
     .from("learner_profiles")
@@ -603,8 +617,7 @@ export async function updateLearnerEditableProfile(
       skills_summary: payload.skills_summary as string,
       career_goal: payload.career_goal as string,
     };
-    const oauth = await meetsOAuthCompletionRequirements(userId);
-    payload.profile_completed = hasRequiredSelfSignupLearnerFields(merged) && oauth.ok;
+    payload.profile_completed = hasRequiredSelfSignupLearnerFields(merged);
   }
 
   const { error } = await supabase

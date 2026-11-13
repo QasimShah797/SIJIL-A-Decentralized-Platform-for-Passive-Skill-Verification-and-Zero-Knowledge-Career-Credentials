@@ -192,7 +192,11 @@ supabase functions deploy recruiter-match --project-ref <your-project-ref>
 
 ## Deployment
 
-1. Apply all Supabase migrations to the live project:
+**Teammates:** do **not** recreate the hosted database and do **not** run `supabase db push` or Edge deploys on your own. Follow **[TEAMMATE_SETUP.md](./TEAMMATE_SETUP.md)** — clone the feature branch, point FE/BE at the shared hosted project `nhzvtqpplfruzocframc`, and use vault env values.
+
+**Project lead only** (greenfield / coordinated cutover):
+
+1. Apply approved Supabase migrations to the live project (coordinate; never as a routine teammate step):
 
 ```bash
 supabase db push

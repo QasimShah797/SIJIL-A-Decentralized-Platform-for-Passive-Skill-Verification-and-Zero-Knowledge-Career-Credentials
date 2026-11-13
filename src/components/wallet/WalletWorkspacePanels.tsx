@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 import {
   Bar,
@@ -124,6 +125,7 @@ export function WalletWorkspaceHeader({
   lastSync,
   anchorStatus,
   anchorByCompetencyId,
+  actions,
 }: {
   competencyName: string;
   records: WalletCompetencyRecordView[];
@@ -134,6 +136,7 @@ export function WalletWorkspaceHeader({
   lastSync: string | null;
   anchorStatus?: WalletAnchorBadge | null;
   anchorByCompetencyId?: Record<string, WalletAnchorBadge | null>;
+  actions?: ReactNode;
 }) {
   const recent = lastSync
     ? Date.now() - new Date(lastSync).getTime() < 7 * 24 * 60 * 60 * 1000
@@ -179,15 +182,18 @@ export function WalletWorkspaceHeader({
           <StatusBadge variant={anchorStatus.variant}>{anchorStatus.label}</StatusBadge>
         ) : null}
       </div>
-      <span
-        className={cn(
-          "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide",
-          recent ? "bg-[#ecfdf5] text-[#059669]" : "bg-[#f8fafc] text-[#64748b]",
-        )}
-      >
-        <span className={cn("h-1.5 w-1.5 rounded-full", recent ? "bg-[#22c55e]" : "bg-[#94a3b8]")} />
-        Evidence sync · {formatRelative(lastSync)}
-      </span>
+      <div className="flex flex-wrap items-center gap-2">
+        <span
+          className={cn(
+            "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide",
+            recent ? "bg-[#ecfdf5] text-[#059669]" : "bg-[#f8fafc] text-[#64748b]",
+          )}
+        >
+          <span className={cn("h-1.5 w-1.5 rounded-full", recent ? "bg-[#22c55e]" : "bg-[#94a3b8]")} />
+          Evidence sync · {formatRelative(lastSync)}
+        </span>
+        {actions}
+      </div>
     </div>
   );
 }

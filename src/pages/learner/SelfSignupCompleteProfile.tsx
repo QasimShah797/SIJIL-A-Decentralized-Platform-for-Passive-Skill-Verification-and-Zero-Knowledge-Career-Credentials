@@ -247,16 +247,6 @@ export default function SelfSignupCompleteProfile() {
       return;
     }
 
-    const oauth = await meetsOAuthCompletionRequirements(user.id);
-    if (!oauth.github) {
-      toast({
-        title: "GitHub verification required",
-        description: "Connect and verify your GitHub account before completing your profile.",
-        variant: "destructive",
-      });
-      return;
-    }
-
     const gradYearStr = parsed.data.graduationYear?.trim();
     if (gradYearStr) {
       const year = Number.parseInt(gradYearStr, 10);
@@ -501,7 +491,7 @@ export default function SelfSignupCompleteProfile() {
 
           <div className="flex items-start gap-2 rounded-lg border border-border/60 bg-muted/30 p-3 text-xs text-muted-foreground">
             <MapPin className="h-4 w-4 shrink-0 mt-0.5" />
-            Your progress is saved automatically. Form data is preserved when you connect GitHub.
+            Your progress is saved automatically. GitHub is optional — connect it anytime from Integrations.
           </div>
 
           <Button type="submit" disabled={busy} className="w-full">

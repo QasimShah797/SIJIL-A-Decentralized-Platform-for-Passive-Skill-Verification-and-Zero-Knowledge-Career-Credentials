@@ -1,5 +1,10 @@
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.95.0";
 import { resolveGitHubUserEmail } from "./github-contributor-email.ts";
+import {
+  formatIssueEventActivityTitle,
+  formatPullRequestEventActivityTitle,
+  formatPullRequestSearchActivityTitle,
+} from "./github-activity-titles.ts";
 
 const GH = "https://api.github.com";
 
@@ -228,7 +233,11 @@ export async function runGitHubSync(
           github_username: connection.github_username,
           repo_name: repoFull,
           activity_type: "pull_request",
-          activity_title: `PR #${pr.number} ${ev.payload.action}: ${pr.title}`,
+          activity_title: formatPullRequestEventActivityTitle(
+            pr.number,
+            ev.payload?.action,
+            pr.title,
+          ),
           activity_url: pr.html_url,
           commit_hash: null,
           occurred_at: ev.created_at,
@@ -243,7 +252,11 @@ export async function runGitHubSync(
           github_username: connection.github_username,
           repo_name: repoFull,
           activity_type: "issue",
-          activity_title: `Issue #${iss.number} ${ev.payload.action}: ${iss.title}`,
+          activity_title: formatIssueEventActivityTitle(
+            iss.number,
+            ev.payload?.action,
+            iss.title,
+          ),
           activity_url: iss.html_url,
           commit_hash: null,
           occurred_at: ev.created_at,
@@ -279,7 +292,7 @@ export async function runGitHubSync(
         github_username: connection.github_username,
         repo_name: repoFull,
         activity_type: "pull_request",
-        activity_title: `PR #${pr.number}: ${pr.title} (${pr.state})`,
+        activity_title: formatPullRequestSearchActivityTitle(pr.number, pr.title, pr.state),
         activity_url: pr.html_url,
         commit_hash: null,
         occurred_at: pr.updated_at,

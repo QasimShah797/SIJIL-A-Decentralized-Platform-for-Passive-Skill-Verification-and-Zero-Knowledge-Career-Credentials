@@ -4,6 +4,20 @@ node_modules
 .env
 .env.local
 .env.*.local
+# Env backups / copies that may contain JWTs, service_role, issuer keys, Moodle tokens.
+# Keep real files on disk; never commit them. (*.example remains trackable.)
+.env*.bak
+.env*.bak.*
+backend/.env*.bak
+backend/.env*.bak.*
+env/**/*.bak
+env/**/*.bak.*
+# Local-only Moodle/Supabase working env copies (keep *.example tracked)
+env/local/*.env
+!env/local/*.env.example
+# Local Moodle → hosted Supabase bridge working env (keep *.example tracked)
+env/bridge/*.env
+!env/bridge/*.env.example
 dist/
 coverage/
 _pptx_temp.zip

@@ -17,6 +17,7 @@ import {
   fetchMoodleConnection,
   fetchMoodleCourseActivities,
   hasMoodleAccessControlWarning,
+  isLocalMoodleBridgeMode,
   resolveMoodleConnectionSiteHost,
   syncMoodleData,
   testMoodleConnection,
@@ -346,9 +347,10 @@ export default function Integrations() {
     setLmsSyncing(true);
     setMoodleError(null);
     try {
+      const usingBridge = isLocalMoodleBridgeMode();
       const test = await testMoodleConnection();
       if (!test.ok) throw new Error(test.error ?? "Moodle connection failed");
-      if (test.staleDeploy) {
+      if (test.staleDeploy && !usingBridge) {
         toast({
           title: "Moodle function update required",
           description: "Remote moodle-sync is outdated. Run: npm run supabase:deploy-moodle",
@@ -356,19 +358,24 @@ export default function Integrations() {
         });
       }
 
+      // Connection is only claimed after a successful ingestion sync — not after test alone.
       const result = await syncMoodleData();
       await loadMoodleFromDb();
       toast({
-        title: "Moodle data updated successfully.",
+        title: usingBridge
+          ? "Local Moodle synced to hosted SIJIL."
+          : "Moodle data updated successfully.",
         description: `${result.courses} courses · ${result.assignments} assignments · ${result.feedback} feedback records imported.`,
       });
       if (result.warnings.length) {
+        const destructive = hasMoodleAccessControlWarning(
+          result.warnings,
+          result.warningCodes,
+        );
         toast({
-          title: hasMoodleAccessControlWarning(result.warnings)
-            ? "Moodle permission issue"
-            : "Sync notes",
+          title: destructive ? "Moodle permission issue" : "Sync notes",
           description: result.warnings.slice(0, 2).join(" "),
-          variant: hasMoodleAccessControlWarning(result.warnings) ? "destructive" : "default",
+          variant: destructive ? "destructive" : "default",
         });
       }
     } catch (err) {
@@ -395,12 +402,14 @@ export default function Integrations() {
         description: `${result.assignments} assignments · ${result.feedback} feedback records across ${result.courses} courses.`,
       });
       if (result.warnings.length) {
+        const destructive = hasMoodleAccessControlWarning(
+          result.warnings,
+          result.warningCodes,
+        );
         toast({
-          title: hasMoodleAccessControlWarning(result.warnings)
-            ? "Moodle permission issue"
-            : "Sync notes",
+          title: destructive ? "Moodle permission issue" : "Sync notes",
           description: result.warnings.slice(0, 2).join(" "),
-          variant: hasMoodleAccessControlWarning(result.warnings) ? "destructive" : "default",
+          variant: destructive ? "destructive" : "default",
         });
       }
     } catch (e) {

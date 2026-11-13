@@ -22,4 +22,6 @@ export const GITHUB_SYNC_STATUS = {
 export const EVIDENCE_SOURCE = {
   GITHUB: "GitHub",
   UPLOAD: "Upload",
+  /** Moodle / LMS-sourced evidence_records (journey maps these separately). */
+  LMS: "LMS",
 } as const;
