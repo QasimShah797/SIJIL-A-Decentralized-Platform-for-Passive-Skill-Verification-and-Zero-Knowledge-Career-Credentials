@@ -62,6 +62,36 @@ export function parseMoodleSiteUrl(url: string): MoodleSiteUrlParts | null {
   }
 }
 
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
+
+function explicitPort(url: URL): string {
+  if (url.port) return url.port;
+  return url.protocol === "https:" ? "443" : "80";
+}
+
+/**
+ * Moodle redirects a POST to its wwwroot and drops the body, which makes a
+ * valid token look missing. When both URLs are loopback aliases of the same
+ * port, call the expected wwwroot instead of the alias.
+ */
+export function resolveMoodleRestEndpoint(
+  baseUrl: string,
+  expectedSiteUrl: string | null | undefined,
+): string {
+  const base = new URL(baseUrl);
+  let origin = base.origin;
+  const expectedRaw = expectedSiteUrl?.trim();
+  if (expectedRaw) {
+    const expected = new URL(expectedRaw);
+    const bothLoopback = LOOPBACK_HOSTS.has(base.hostname.toLowerCase())
+      && LOOPBACK_HOSTS.has(expected.hostname.toLowerCase());
+    if (bothLoopback && explicitPort(base) === explicitPort(expected)) {
+      origin = expected.origin;
+    }
+  }
+  return `${origin}/webservice/rest/server.php`;
+}
+
 /** Canonical compare key: origin only (ignores path/trailing slash). */
 export function moodleSiteCompareKey(url: string): string | null {
   const parts = parseMoodleSiteUrl(url);

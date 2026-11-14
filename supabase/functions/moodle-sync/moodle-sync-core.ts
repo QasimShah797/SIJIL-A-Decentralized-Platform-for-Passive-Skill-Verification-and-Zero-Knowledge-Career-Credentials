@@ -15,7 +15,9 @@ import {
   DEFAULT_MOODLE_CLOUD_SITE_URL,
   normalizeMoodleSiteUrl as normalizeMoodleSiteUrlCanonical,
   resolveExpectedMoodleSiteUrlFromEnv,
+  resolveMoodleRestEndpoint,
 } from "./moodle-site-url.ts";
+import { parseMoodleRestBody } from "./moodle-rest-response.ts";
 import {
   buildMoodleSyncCorsHeaders,
   isAccessControlError,
@@ -90,7 +92,13 @@ function getMoodleBaseUrl(): string {
 
 export function getMoodleRestEndpoint(): string {
   const baseUrl = getMoodleBaseUrl();
-  return `${baseUrl.replace(/\/+$/, "")}/webservice/rest/server.php`;
+  let expected: string | null = null;
+  try {
+    expected = getExpectedMoodleSiteUrl();
+  } catch {
+    expected = null;
+  }
+  return resolveMoodleRestEndpoint(baseUrl, expected);
 }
 
 async function parseMoodleJsonResponse(
@@ -114,37 +122,36 @@ async function parseMoodleJsonResponse(
     });
   }
 
-  const looksHtml = bodyText.trimStart().startsWith("<") ||
-    contentType.includes("text/html");
-  if (looksHtml) {
-    logSyncStage("moodle_html_response", {
-      context,
+  const parsed = parseMoodleRestBody(contentType, bodyText);
+  if (parsed.ok) return parsed.data;
+
+  logSyncStage(parsed.reason === "html" ? "moodle_html_response" : "moodle_json_parse_failed", {
+    context,
+    httpStatus: res.status,
+    contentType,
+    preview: bodyText.slice(0, 100),
+  });
+
+  if (parsed.reason === "empty") {
+    throw new MoodleSyncError("MOODLE_API_UNAVAILABLE", `${context}: empty response from Moodle.`, {
       httpStatus: res.status,
       contentType,
-      preview: bodyText.slice(0, 100),
     });
+  }
+
+  if (parsed.reason === "html") {
     throw new MoodleSyncError(
       "MOODLE_API_UNAVAILABLE",
-      "Moodle server returned HTML instead of JSON. Check MOODLE_BASE_URL in Supabase secrets.",
+      "Moodle returned an HTML page instead of a REST response. MOODLE_BASE_URL must be the site wwwroot. A loopback alias such as 127.0.0.1 redirects and drops the request.",
       { context, httpStatus: res.status, contentType },
     );
   }
 
-  try {
-    return JSON.parse(bodyText) as Record<string, unknown>;
-  } catch {
-    logSyncStage("moodle_json_parse_failed", {
-      context,
-      httpStatus: res.status,
-      contentType,
-      preview: bodyText.slice(0, 100),
-    });
-    throw new MoodleSyncError(
-      "MOODLE_API_UNAVAILABLE",
-      `${context}: invalid JSON from Moodle.`,
-      { httpStatus: res.status, contentType },
-    );
-  }
+  throw new MoodleSyncError(
+    "MOODLE_API_UNAVAILABLE",
+    `${context}: invalid JSON from Moodle.`,
+    { httpStatus: res.status, contentType },
+  );
 }
 
 export type MoodleSyncErrorCode =
@@ -445,7 +452,7 @@ export async function callMoodle(
     res = await fetch(getMoodleRestEndpoint(), {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: params,
+      body: params.toString(),
     });
   } catch {
     throw new MoodleSyncError("MOODLE_API_UNAVAILABLE", "Could not reach the Moodle server.");
