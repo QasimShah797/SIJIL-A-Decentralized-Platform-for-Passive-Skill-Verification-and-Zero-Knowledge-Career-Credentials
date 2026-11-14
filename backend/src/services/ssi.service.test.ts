@@ -76,7 +76,7 @@ describe("SSI ownership service", () => {
     const service = new SsiService(store, db as never);
     const userId = "11111111-1111-4111-8111-111111111111";
     const keys = learnerKeys();
-    const challenge = service.issueChallenge(userId);
+    const challenge = await service.issueChallenge(userId);
     const signature = signPayload(keys.privateKey, challenge.payload, keys.did);
     const bound = await service.bindIdentity(userId, {
       challengeId: challenge.challengeId,
@@ -108,7 +108,7 @@ describe("SSI ownership service", () => {
     const service = new SsiService(new SsiChallengeStore(), db as never);
     const userId = "11111111-1111-4111-8111-111111111111";
     const keys = learnerKeys();
-    const challenge = service.issueChallenge(userId);
+    const challenge = await service.issueChallenge(userId);
     await service.bindIdentity(userId, {
       challengeId: challenge.challengeId,
       did: keys.did,
@@ -124,7 +124,7 @@ describe("SSI ownership service", () => {
     const db = new MemorySsiDb();
     const service = new SsiService(new SsiChallengeStore(), db as never);
     const userId = "11111111-1111-4111-8111-111111111111";
-    const challenge = service.issueChallenge(userId);
+    const challenge = await service.issueChallenge(userId);
     await assert.rejects(
       () => service.bindIdentity(userId, {
         challengeId: challenge.challengeId,
@@ -141,7 +141,7 @@ describe("SSI ownership service", () => {
     const service = new SsiService(new SsiChallengeStore(), db as never);
     const userId = "11111111-1111-4111-8111-111111111111";
     const keys = learnerKeys();
-    const challenge = service.issueChallenge(userId);
+    const challenge = await service.issueChallenge(userId);
     await assert.rejects(
       () => service.bindIdentity(userId, {
         challengeId: challenge.challengeId,
@@ -159,7 +159,7 @@ describe("SSI ownership service", () => {
     const service = new SsiService(store, db as never);
     const userId = "11111111-1111-4111-8111-111111111111";
     const keys = learnerKeys();
-    const challenge = service.issueChallenge(userId);
+    const challenge = await service.issueChallenge(userId);
     const signature = signPayload(keys.privateKey, challenge.payload, keys.did);
     await service.bindIdentity(userId, { challengeId: challenge.challengeId, did: keys.did, signature });
     await assert.rejects(
@@ -167,7 +167,7 @@ describe("SSI ownership service", () => {
       /already been used/,
     );
 
-    const expired = service.issueChallenge(userId);
+    const expired = await service.issueChallenge(userId);
     now += 6 * 60 * 1000;
     const expiredSig = signPayload(keys.privateKey, expired.payload, keys.did);
     await assert.rejects(
@@ -181,7 +181,7 @@ describe("SSI ownership service", () => {
     const alice = "11111111-1111-4111-8111-111111111111";
     const bob = "22222222-2222-4222-8222-222222222222";
     const keys = learnerKeys();
-    const challenge = service.issueChallenge(alice);
+    const challenge = await service.issueChallenge(alice);
     const signature = signPayload(keys.privateKey, challenge.payload, keys.did);
     await assert.rejects(
       () => service.bindIdentity(bob, { challengeId: challenge.challengeId, did: keys.did, signature }),
@@ -194,7 +194,7 @@ describe("SSI ownership service", () => {
     const service = new SsiService(new SsiChallengeStore(), db as never);
     const userId = "11111111-1111-4111-8111-111111111111";
     const keys = learnerKeys();
-    const challenge = service.issueChallenge(userId);
+    const challenge = await service.issueChallenge(userId);
     await assert.rejects(
       () => service.bindIdentity(userId, {
         challengeId: challenge.challengeId,
@@ -210,7 +210,7 @@ describe("SSI ownership service", () => {
     const service = new SsiService(new SsiChallengeStore(), db as never);
     const userId = "11111111-1111-4111-8111-111111111111";
     const keys = learnerKeys();
-    const challenge = service.issueChallenge(userId);
+    const challenge = await service.issueChallenge(userId);
     await assert.rejects(
       () => service.bindIdentity(userId, {
         challengeId: challenge.challengeId,
@@ -235,14 +235,14 @@ describe("SSI ownership service", () => {
     const bob = "22222222-2222-4222-8222-222222222222";
     const aliceKeys = learnerKeys();
     const otherKeys = learnerKeys();
-    const first = service.issueChallenge(alice);
+    const first = await service.issueChallenge(alice);
     await service.bindIdentity(alice, {
       challengeId: first.challengeId,
       did: aliceKeys.did,
       signature: signPayload(aliceKeys.privateKey, first.payload, aliceKeys.did),
     });
     const frozen = { ...db.rows[0] };
-    const retry = service.issueChallenge(alice);
+    const retry = await service.issueChallenge(alice);
     await assert.rejects(
       () => service.bindIdentity(alice, {
         challengeId: retry.challengeId,
@@ -255,7 +255,7 @@ describe("SSI ownership service", () => {
     assert.deepEqual(db.rows[0], frozen);
     assert.equal(db.rows[0]?.fingerprint, canonicalSsiBindingFromDid(aliceKeys.did).fingerprint);
     assert.equal(db.rows[0]?.public_key_multibase, canonicalSsiBindingFromDid(aliceKeys.did).publicKeyMultibase);
-    const bobChallenge = service.issueChallenge(bob);
+    const bobChallenge = await service.issueChallenge(bob);
     await assert.rejects(
       () => service.bindIdentity(bob, {
         challengeId: bobChallenge.challengeId,
@@ -273,7 +273,7 @@ describe("SSI ownership service", () => {
     const firstKeys = learnerKeys();
     const secondKeys = learnerKeys();
     db.rows.push({ user_id: userId, did: firstKeys.did, fingerprint: "aa:bb" });
-    const challenge = service.issueChallenge(userId);
+    const challenge = await service.issueChallenge(userId);
     await assert.rejects(
       () => service.bindIdentity(userId, {
         challengeId: challenge.challengeId,
@@ -292,7 +292,7 @@ describe("SSI ownership service", () => {
     const userId = "11111111-1111-4111-8111-111111111111";
     await assert.rejects(() => service.requireProvenHolderDid(userId), /Activate a learner SSI identity/);
     const keys = learnerKeys();
-    const challenge = service.issueChallenge(userId);
+    const challenge = await service.issueChallenge(userId);
     await service.bindIdentity(userId, {
       challengeId: challenge.challengeId,
       did: keys.did,
@@ -323,7 +323,7 @@ describe("SSI ownership service", () => {
     const identity = await service.getIdentity("11111111-1111-4111-8111-111111111111");
     assert.equal(identity.tableReady, false);
     const keys = learnerKeys();
-    const challenge = service.issueChallenge("11111111-1111-4111-8111-111111111111");
+    const challenge = await service.issueChallenge("11111111-1111-4111-8111-111111111111");
     const signature = signPayload(keys.privateKey, challenge.payload, keys.did);
     await assert.rejects(
       () => service.bindIdentity("11111111-1111-4111-8111-111111111111", {

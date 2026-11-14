@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { Copy, Fingerprint, KeyRound, Lock, ShieldCheck, Unlock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,11 +9,10 @@ import { cn } from "@/lib/utils";
 import type { SsiUiStatus } from "@/lib/ssi/ownership";
 
 function statusLabel(status: SsiUiStatus): string {
-  if (status === "active") return "Active";
+  if (status === "active") return "Identity active";
   if (status === "locked") return "Locked";
-  if (status === "key_unavailable") return "Key unavailable";
-  if (status === "unsupported") return "Not activated";
-  return "Not activated";
+  if (status === "key_unavailable") return "Restore needed";
+  return "Not set up";
 }
 
 export function SsiIdentityCard() {
@@ -22,7 +22,6 @@ export function SsiIdentityCard() {
     working,
     error,
     recoverable,
-    activate,
     unlock,
     lock,
     exportBackup,
@@ -39,28 +38,9 @@ export function SsiIdentityCard() {
     if (!did) return;
     try {
       await navigator.clipboard.writeText(did);
-      toast({ title: "DID copied" });
+      toast({ title: "Identity identifier copied" });
     } catch {
-      toast({ title: "Could not copy DID", variant: "destructive" });
-    }
-  };
-
-  const handleActivate = async () => {
-    try {
-      await activate(passphrase.trim() ? passphrase : undefined);
-      setPassphrase("");
-      toast({
-        title: "SSI identity activated",
-        description: passphrase.trim()
-          ? "The private key is passphrase-wrapped on this device. SIJIL cannot recover a forgotten passphrase."
-          : "The private key stays on this device and is not exportable.",
-      });
-    } catch (activateError) {
-      toast({
-        title: "Could not activate SSI identity",
-        description: activateError instanceof Error ? activateError.message : "Activation failed.",
-        variant: "destructive",
-      });
+      toast({ title: "Could not copy the identifier", variant: "destructive" });
     }
   };
 
@@ -128,125 +108,172 @@ export function SsiIdentityCard() {
     }
   };
 
+  const locked = snapshot.status === "locked";
+
   return (
-    <section className="learner-stat-card mb-4 space-y-3 px-4 py-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <p className="flex items-center gap-2 text-sm font-semibold text-[#023E8A]">
-            <KeyRound className="h-4 w-4" />
-            SSI Identity
-          </p>
-          <p className="mt-1 max-w-2xl text-xs text-muted-foreground">
-            You control the Ed25519 private key on this browser. SIJIL never uploads the private key.
-            Existing non-extractable keys cannot be exported. Passphrase-protected identities can be
-            backed up as ciphertext only. Forgotten passphrases cannot be recovered.
+    <section className="overflow-hidden rounded-2xl border border-[#dbeafe] bg-white shadow-sm">
+      <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center">
+        <div className={cn(
+          "flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl text-white",
+          snapshot.status === "active" ? "bg-[#059669]" : "bg-[#023E8A]",
+        )}>
+          {snapshot.status === "active" ? <ShieldCheck className="h-8 w-8" /> : <KeyRound className="h-8 w-8" />}
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#023E8A]">Digital identity</p>
+          <h2 className="text-xl font-semibold text-[#0f172a]">Your identity on this device</h2>
+          <p className="mt-1 text-sm leading-relaxed text-[#475569]">
+            This identity approves shares from this browser. SIJIL never receives your private key.
           </p>
         </div>
         <span
           className={cn(
-            "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide",
+            "inline-flex w-fit items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold",
             snapshot.status === "active" && "bg-[#ecfdf5] text-[#059669]",
             snapshot.status === "locked" && "bg-[#fff7ed] text-[#c2410c]",
             snapshot.status === "key_unavailable" && "bg-[#fff7ed] text-[#c2410c]",
             (snapshot.status === "not_activated" || snapshot.status === "unsupported") && "bg-[#f1f5f9] text-[#64748b]",
           )}
         >
-          {snapshot.status === "active" ? <ShieldCheck className="h-3 w-3" /> : <Fingerprint className="h-3 w-3" />}
+          {snapshot.status === "active" ? <ShieldCheck className="h-3.5 w-3.5" /> : <Fingerprint className="h-3.5 w-3.5" />}
           {statusLabel(snapshot.status)}
         </span>
       </div>
 
-      {loading ? (
-        <p className="text-xs text-muted-foreground">Checking this browser…</p>
-      ) : (
-        <>
-          <p className="text-xs text-muted-foreground">{snapshot.message}</p>
-          {error ? <p className="text-xs text-destructive">{error}</p> : null}
+      <div className="space-y-4 border-t border-[#e2e8f0] px-5 py-5">
+        {loading ? <p className="text-sm text-[#64748b]">Checking this browser…</p> : null}
+        {!loading && snapshot.message ? <p className="text-sm text-[#334155]">{snapshot.message}</p> : null}
+        {error ? <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{error}</p> : null}
 
-          {did ? (
-            <div className="space-y-1 rounded-xl border border-border/60 bg-background/70 p-3">
-              <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Learner DID</p>
-              <p className="break-all font-mono text-xs text-foreground">{did}</p>
-              {fingerprint ? (
-                <p className="font-mono text-[11px] text-muted-foreground">Fingerprint · {fingerprint}</p>
-              ) : null}
-              <p className="font-mono text-[11px] text-muted-foreground">
-                Verification method · {did}#{did.replace("did:key:", "")}
-              </p>
-            </div>
-          ) : null}
+        {locked ? (
+          <div className="space-y-3 rounded-2xl border border-[#fed7aa] bg-[#fff7ed] p-4">
+            <p className="text-sm font-medium text-[#9a3412]">Unlock to approve a share</p>
+            <p className="text-sm text-[#9a3412]">
+              This device is locked. Enter the recovery password you chose. SIJIL cannot reset it, and nothing is shared until you unlock.
+            </p>
+            <label className="block text-sm font-medium text-[#0f172a]" htmlFor="wallet-unlock-password">
+              Recovery password
+              <Input
+                id="wallet-unlock-password"
+                className="mt-1 bg-white"
+                type="password"
+                autoComplete="current-password"
+                aria-label="Recovery password"
+                value={passphrase}
+                onChange={(event) => setPassphrase(event.target.value)}
+              />
+            </label>
+            <Button className="w-full rounded-xl sm:w-auto" disabled={working || passphrase.length < 10} onClick={() => void handleUnlock()}>
+              <Unlock className="h-4 w-4" />
+              Unlock Identity
+            </Button>
+          </div>
+        ) : null}
 
-          {(snapshot.status === "not_activated" || snapshot.status === "locked" || recoverable) ? (
-            <Input
-              type="password"
-              placeholder={snapshot.status === "locked" ? "Passphrase to unlock" : "Optional passphrase (min 10 chars) for recoverable backup"}
-              value={passphrase}
-              onChange={(event) => setPassphrase(event.target.value)}
+        {snapshot.status === "not_activated" ? (
+          <Button asChild className="rounded-xl">
+            <Link to="/learner/secure-identity">Set up my secure identity</Link>
+          </Button>
+        ) : null}
+
+        {snapshot.status === "key_unavailable" ? (
+          <div className="space-y-3 rounded-2xl border border-[#fed7aa] bg-[#fff7ed] p-4">
+            <p className="text-sm font-medium text-[#9a3412]">Restore this identity</p>
+            <p className="text-sm text-[#9a3412]">
+              This browser does not have the key for your identity. A new identity will not be created. Use the recovery file and the password you chose.
+            </p>
+            <label className="block text-sm font-medium text-[#0f172a]" htmlFor="restore-passphrase">
+              Recovery password
+              <Input
+                id="restore-passphrase"
+                className="mt-1 bg-white"
+                type="password"
+                aria-label="Recovery password"
+                value={passphrase}
+                onChange={(event) => setPassphrase(event.target.value)}
+              />
+            </label>
+            <textarea
+              className="min-h-24 w-full rounded-xl border border-input bg-white p-3 text-sm"
+              placeholder="Paste your recovery file here"
+              value={restoreText}
+              onChange={(event) => setRestoreText(event.target.value)}
             />
-          ) : null}
+            <Button className="rounded-xl" disabled={!restoreText || passphrase.length < 10} onClick={() => void handleRestore()}>
+              Restore Identity
+            </Button>
+          </div>
+        ) : null}
 
+        {snapshot.status === "active" ? (
           <div className="flex flex-wrap gap-2">
-            {snapshot.status === "not_activated" ? (
-              <Button size="sm" disabled={working} onClick={() => void handleActivate()}>
-                {working ? "Activating…" : "Activate SSI Identity"}
-              </Button>
-            ) : null}
-            {snapshot.status === "locked" ? (
-              <Button size="sm" disabled={working || passphrase.length < 10} onClick={() => void handleUnlock()}>
-                <Unlock className="h-3.5 w-3.5" />
-                Unlock
-              </Button>
-            ) : null}
-            {snapshot.status === "active" && recoverable ? (
-              <Button size="sm" variant="outline" onClick={() => lock()}>
+            {recoverable ? (
+              <Button size="sm" variant="outline" className="rounded-xl" onClick={() => lock()}>
                 <Lock className="h-3.5 w-3.5" />
                 Lock
               </Button>
             ) : null}
-            <Button size="sm" variant="outline" disabled={!did} onClick={() => void copyDid()}>
-              <Copy className="h-3.5 w-3.5" />
-              Copy DID
-            </Button>
-            <Button size="sm" variant="outline" onClick={() => void handleBackup()}>
-              Export encrypted backup
+            <Button size="sm" variant="outline" className="rounded-xl" onClick={() => void handleBackup()}>
+              Download recovery file
             </Button>
           </div>
+        ) : null}
 
-          {snapshot.status === "active" && recoverable ? (
-            <div className="grid gap-2 sm:grid-cols-2">
-              <Input
-                type="password"
-                placeholder="Current passphrase"
-                value={passphrase}
-                onChange={(event) => setPassphrase(event.target.value)}
-              />
-              <Input
-                type="password"
-                placeholder="New passphrase"
-                value={nextPassphrase}
-                onChange={(event) => setNextPassphrase(event.target.value)}
-              />
-              <Button size="sm" variant="outline" onClick={() => void handleChangePassphrase()}>
-                Change passphrase
+        <details className="rounded-2xl border border-[#e2e8f0] bg-[#f8fafc] p-4">
+          <summary className="cursor-pointer text-sm font-medium text-[#023E8A]">Recovery and advanced details</summary>
+          <div className="mt-3 space-y-3">
+            {snapshot.status !== "active" ? (
+              <Button size="sm" variant="outline" className="rounded-xl" onClick={() => void handleBackup()}>
+                Download recovery file
               </Button>
-            </div>
-          ) : null}
-
-          {snapshot.status === "not_activated" || snapshot.status === "key_unavailable" ? (
-            <div className="space-y-2">
-              <textarea
-                className="min-h-20 w-full rounded-md border border-input bg-background p-2 font-mono text-xs"
-                placeholder="Paste encrypted backup JSON to restore this account on this device"
-                value={restoreText}
-                onChange={(event) => setRestoreText(event.target.value)}
-              />
-              <Button size="sm" variant="outline" disabled={!restoreText || passphrase.length < 10} onClick={() => void handleRestore()}>
-                Restore encrypted backup
-              </Button>
-            </div>
-          ) : null}
-        </>
-      )}
+            ) : null}
+            {snapshot.status === "not_activated" ? (
+              <div className="space-y-2">
+                <label className="block text-sm font-medium text-[#0f172a]" htmlFor="setup-restore-password">
+                  Recovery password
+                  <Input
+                    id="setup-restore-password"
+                    className="mt-1 bg-white"
+                    type="password"
+                    aria-label="Recovery password"
+                    value={passphrase}
+                    onChange={(event) => setPassphrase(event.target.value)}
+                  />
+                </label>
+                <textarea
+                  className="min-h-24 w-full rounded-xl border border-input bg-white p-3 text-sm"
+                  placeholder="Paste your recovery file here"
+                  value={restoreText}
+                  onChange={(event) => setRestoreText(event.target.value)}
+                />
+                <Button size="sm" variant="outline" className="rounded-xl" disabled={!restoreText || passphrase.length < 10} onClick={() => void handleRestore()}>
+                  Restore Identity
+                </Button>
+              </div>
+            ) : null}
+            {snapshot.status === "active" && recoverable ? (
+              <div className="grid gap-2 sm:grid-cols-2">
+                <Input type="password" placeholder="Current passphrase" aria-label="Current passphrase" value={passphrase} onChange={(event) => setPassphrase(event.target.value)} />
+                <Input type="password" placeholder="New passphrase" aria-label="New passphrase" value={nextPassphrase} onChange={(event) => setNextPassphrase(event.target.value)} />
+                <Button size="sm" variant="outline" className="rounded-xl" onClick={() => void handleChangePassphrase()}>
+                  Change passphrase
+                </Button>
+              </div>
+            ) : null}
+            {did ? (
+              <div>
+                <p className="text-xs font-medium text-[#64748b]">Identifier</p>
+                <p className="mt-1 break-all font-mono text-xs text-[#0f172a]">{did}</p>
+                {fingerprint ? <p className="font-mono text-[11px] text-[#64748b]">Fingerprint · {fingerprint}</p> : null}
+                <Button size="sm" variant="outline" className="mt-2 rounded-xl" disabled={!did} onClick={() => void copyDid()}>
+                  <Copy className="h-3.5 w-3.5" />
+                  Copy identifier
+                </Button>
+              </div>
+            ) : null}
+          </div>
+        </details>
+      </div>
     </section>
   );
 }

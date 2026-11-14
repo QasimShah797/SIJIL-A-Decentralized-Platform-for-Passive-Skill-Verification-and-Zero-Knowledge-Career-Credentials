@@ -48,15 +48,7 @@ CREATE POLICY "selective_disclosure_presentations_update_own"
   USING (auth.uid() = learner_id);
 
 DROP POLICY IF EXISTS "selective_disclosure_presentations_select_recruiter" ON public.selective_disclosure_presentations;
-CREATE POLICY "selective_disclosure_presentations_select_recruiter"
-  ON public.selective_disclosure_presentations
-  FOR SELECT
-  TO authenticated
-  USING (
-    public.has_role(auth.uid(), 'recruiter')
-    AND revoked_at IS NULL
-    AND (expires_at IS NULL OR expires_at > now())
-  );
+-- Recruiters do not receive a SELECT policy. A private link is read by the API with the token hash.
 
 CREATE INDEX IF NOT EXISTS selective_disclosure_presentations_learner_idx
   ON public.selective_disclosure_presentations (learner_id, created_at DESC);

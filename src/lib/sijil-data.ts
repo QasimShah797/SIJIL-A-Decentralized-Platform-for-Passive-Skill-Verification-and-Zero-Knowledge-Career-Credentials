@@ -632,14 +632,16 @@ export const seededPresentations: Record<string, SharedPresentation> = {
 
 // ===== Peer Review module =====
 // SIJIL peer review is a context-based trust signal — never an expert/beginner judgement.
-// Reviews can ONLY be given by verified contributors of the same project.
+// Public GitHub reviews on a linked repo are imported from anyone who left one.
+// Review invites stay limited to verified project contributors.
 export type ReviewerRelationship =
   | "Teammate"
   | "Mentor"
   | "Teacher"
   | "Class Fellow"
   | "Project Collaborator"
-  | "Supervisor";
+  | "Supervisor"
+  | "Peer";
 
 export type ContextSource = "GitHub" | "LMS" | "Spark" | "Manual Project";
 export type ContextStatus = "Context Verified" | "Context Pending" | "Context Not Verified";
@@ -808,7 +810,6 @@ export function trustWeightFor(rel: ReviewerRelationship, contextVerified: boole
 }
 
 // Demo / sample reviews — covers SIJIL native, GitHub PR, Moodle LMS feedback, Spark comments.
-// Every imported review is automatically tied to a project + a verified contributor.
 export const seedPeerReviews: PeerReview[] = [
   {
     id: "pr-001",

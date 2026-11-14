@@ -7,6 +7,7 @@ import {
   ShieldCheck,
   ClipboardCheck,
   Wallet,
+  KeyRound,
   MessageSquare,
   Route,
   LogOut,
@@ -83,6 +84,7 @@ function dashboardNav(): NavGroup[] {
       items: [
         { to: "/learner/wallet", icon: Wallet, label: "Wallet" },
         { to: "/learner/journey", icon: Route, label: "My Skill Journey" },
+        { to: "/learner/secure-identity", icon: KeyRound, label: "Privacy & Security" },
         { to: "/learner/peer-reviews", icon: MessageSquare, label: "Peer Reviews" },
       ],
     },
@@ -129,6 +131,7 @@ function profileNav(): NavGroup[] {
       items: [
         { to: "/learner/wallet", icon: Wallet, label: "Wallet" },
         { to: "/learner/journey", icon: Route, label: "My Skill Journey" },
+        { to: "/learner/secure-identity", icon: KeyRound, label: "Privacy & Security" },
         { to: "/learner/peer-reviews", icon: MessageSquare, label: "Peer Reviews" },
       ],
     },

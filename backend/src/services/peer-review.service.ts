@@ -5,7 +5,6 @@
 import { randomBytes } from "crypto";
 import { supabaseService } from "./supabase.service";
 import { walletService } from "./wallet.service";
-import { reviewsService } from "./reviews.service";
 import { AppError } from "../utils/AppError";
 import { buildReviewLink, sendReviewRequestEmail } from "../utils/reviewEmail";
 import {
@@ -43,6 +42,7 @@ import {
   getGitHubConnection,
   persistContributorEmail,
   resolveGitHubUserEmail,
+  resolveGitHubUserEmails,
 } from "../utils/githubContributorEmail";
 
 type EvidenceRow = {
@@ -415,15 +415,16 @@ async function enrichContributorEmails(
   const ghConn = await getGitHubConnection(userId);
   if (!ghConn) return contributors;
 
+  const resolved = await resolveGitHubUserEmails(
+    missing.map((contributor) => contributor.handle!),
+    ghConn.token,
+    project.repoFullName,
+  );
+
   const enriched = await Promise.all(
     contributors.map(async (contributor) => {
       if (contributor.email?.trim() || !contributor.handle?.trim()) return contributor;
-
-      const email = await resolveGitHubUserEmail(
-        contributor.handle,
-        ghConn.token,
-        project.repoFullName,
-      );
+      const email = resolved.get(contributor.handle.toLowerCase()) ?? null;
       if (!email) return contributor;
 
       await persistContributorEmail(userId, contributor.handle, email, {
@@ -444,12 +445,30 @@ async function ensureContributorVerified(
   contributorId: string,
   contributorEmail?: string,
 ): Promise<PeerReviewContributorView> {
-  let contributors = await fetchContributorsForProject(userId, project);
-  contributors = await enrichContributorEmails(userId, project, contributors);
-  const contributor = contributors.find((c) => contributorIdentityMatches(c, contributorId, contributorEmail));
+  const contributors = await fetchContributorsForProject(userId, project);
+  let contributor = contributors.find((c) => contributorIdentityMatches(c, contributorId, contributorEmail));
   if (!contributor) {
     throw new AppError("Only verified contributors of the same project can submit reviews", 403);
   }
+
+  if (!contributor.email?.trim() && contributor.handle?.trim() && project.source === "GitHub") {
+    const ghConn = await getGitHubConnection(userId);
+    if (ghConn) {
+      const email = await resolveGitHubUserEmail(
+        contributor.handle,
+        ghConn.token,
+        project.repoFullName,
+      );
+      if (email) {
+        await persistContributorEmail(userId, contributor.handle, email, {
+          repoId: project.githubRepoId,
+          evidenceRecordId: project.evidenceRecordId,
+        });
+        contributor = { ...contributor, email };
+      }
+    }
+  }
+
   return contributor;
 }
 
@@ -655,19 +674,6 @@ function buildReviewInsertPayload(input: {
   });
 }
 
-async function triggerGitHubImport(userId: string, project: ResolvedProject): Promise<void> {
-  if (project.source !== "GitHub") return;
-  try {
-    if (project.evidenceRecordId) {
-      await reviewsService.importExternalForEvidence(userId, project.evidenceRecordId);
-    } else {
-      await reviewsService.importExternalForProject(userId, project.projectId);
-    }
-  } catch {
-    // Best-effort import when loading contributors or sending invites.
-  }
-}
-
 async function fetchSupplementalGitHubReviews(userId: string): Promise<PeerReviewRecordView[]> {
   const { data, error } = await supabaseService.client
     .from("github_discussion_reviews")
@@ -703,9 +709,17 @@ async function fetchSupplementalGitHubReviews(userId: string): Promise<PeerRevie
 
 export class PeerReviewService {
   async getProjects(userId: string): Promise<PeerReviewProjectView[]> {
-    const skillLinksByEvidence = await getSkillLinksForUser(userId);
-
-    const [{ data: repos }, { data: evidenceRows }, { data: lmsRows }] = await Promise.all([
+    const [
+      skillLinksByEvidence,
+      skillRefs,
+      { data: repos },
+      { data: evidenceRows },
+      { data: lmsRows },
+      { data: ghContributorRows },
+      { data: contextRows },
+    ] = await Promise.all([
+      getSkillLinksForUser(userId),
+      fetchDeclaredSkillRefs(userId),
       supabaseService.client
         .from("github_repos")
         .select("repo_id, repo_name, full_name, github_url, linked_skill_name")
@@ -722,6 +736,14 @@ export class PeerReviewService {
         .select("id, course_name, course_url")
         .eq("user_id", userId)
         .limit(50),
+      supabaseService.client
+        .from("github_repo_contributors")
+        .select("id, repo_id, full_name, contributor_login, contributor_email, contributor_avatar_url")
+        .eq("user_id", userId),
+      supabaseService.client
+        .from("reviewer_contexts")
+        .select("id, evidence_record_id, reviewer_name, reviewer_login, reviewer_email, context_role")
+        .eq("user_id", userId),
     ]);
 
     const evidenceByRepoId = new Map<number, EvidenceRow>();
@@ -729,6 +751,49 @@ export class PeerReviewService {
       const repoId = Number(row.github_repo_id ?? 0);
       if (repoId) evidenceByRepoId.set(repoId, row as EvidenceRow);
     }
+
+    const contributorsByRepo = new Map<number, PeerReviewContributorView[]>();
+    for (const row of ghContributorRows ?? []) {
+      const repoId = Number(row.repo_id);
+      if (!repoId) continue;
+      const list = contributorsByRepo.get(repoId) ?? [];
+      list.push({
+        id: row.id as string,
+        name: row.full_name as string,
+        handle: (row.contributor_login as string) ?? undefined,
+        email: (row.contributor_email as string) ?? undefined,
+        role: displayRoleForRelationship(RELATIONSHIP.CONTRIBUTOR),
+        relationship: RELATIONSHIP.CONTRIBUTOR,
+        avatarUrl: (row.contributor_avatar_url as string) ?? undefined,
+        verified: true,
+        reviewStatus: "Review Pending",
+      });
+      contributorsByRepo.set(repoId, list);
+    }
+
+    const contextsByEvidence = new Map<string, PeerReviewContributorView[]>();
+    for (const row of contextRows ?? []) {
+      const evidenceId = row.evidence_record_id as string;
+      if (!evidenceId) continue;
+      const relationship = relationshipFromRole(row.context_role as string);
+      const list = contextsByEvidence.get(evidenceId) ?? [];
+      list.push({
+        id: row.id as string,
+        name: row.reviewer_name as string,
+        handle: (row.reviewer_login as string) ?? undefined,
+        email: (row.reviewer_email as string) ?? undefined,
+        role: displayRoleForRelationship(relationship),
+        relationship,
+        verified: true,
+        reviewStatus: "Review Pending",
+      });
+      contextsByEvidence.set(evidenceId, list);
+    }
+
+    const contributorsFor = (repoId: number | null, evidenceId?: string) => dedupeContributors([
+      ...(evidenceId ? contextsByEvidence.get(evidenceId) ?? [] : []),
+      ...(repoId != null ? contributorsByRepo.get(repoId) ?? [] : []),
+    ]);
 
     const projects: PeerReviewProjectView[] = [];
 
@@ -738,8 +803,6 @@ export class PeerReviewService {
       const skillLinks = evidence
         ? (skillLinksByEvidence.get(evidence.id) ?? [])
         : [];
-      const project = await resolveProject(userId, `gh-${repoId}`);
-      const contributors = await fetchContributorsForProject(userId, project);
       projects.push({
         id: `gh-${repoId}`,
         name: repo.repo_name as string,
@@ -749,7 +812,7 @@ export class PeerReviewService {
         linkedSkills: skillLinks.length
           ? skillLinks.map((s) => s.skillName)
           : repo.linked_skill_name ? [repo.linked_skill_name as string] : [],
-        contributors,
+        contributors: contributorsFor(repoId, evidence?.id),
         evidenceRecordId: evidence?.id,
         skillLinks,
       });
@@ -759,9 +822,7 @@ export class PeerReviewService {
       const repoId = Number(row.github_repo_id ?? 0);
       if (repoId && projects.some((p) => p.id === `gh-${repoId}`)) continue;
       const projectId = repoId ? `gh-${repoId}` : `ev-${row.id}`;
-      const project = await resolveProject(userId, projectId);
       const skillLinks = skillLinksByEvidence.get(row.id as string) ?? [];
-      const contributors = await fetchContributorsForProject(userId, project);
       const metadata = row.metadata as Record<string, unknown> | null;
       const fullName = (row.repo_full_name as string | null)
         ?? (metadata?.full_name as string | undefined)
@@ -773,7 +834,7 @@ export class PeerReviewService {
         url: row.repository_url as string,
         evidenceLabel: `${row.source}: ${fullName}`,
         linkedSkills: skillLinks.map((s) => s.skillName),
-        contributors,
+        contributors: contributorsFor(repoId || null, row.id as string),
         evidenceRecordId: row.id as string,
         skillLinks,
       });
@@ -794,7 +855,6 @@ export class PeerReviewService {
       });
     }
 
-    const skillRefs = await fetchDeclaredSkillRefs(userId);
     return filterProjectsForDeclaredSkills(projects, skillRefs);
   }
 
@@ -804,16 +864,27 @@ export class PeerReviewService {
   ): Promise<PeerReviewContributorView[]> {
     const project = await resolveProject(userId, projectId);
 
-    await triggerGitHubImport(userId, project);
-
     let contributors = await fetchContributorsForProject(userId, project);
     contributors = await enrichContributorEmails(userId, project, contributors);
-    const reviews = await this.getReviewsForUser(userId);
-    const { data: invites } = await supabaseService.client
-      .from("peer_review_invites")
-      .select("id, contributor_id, status, completed_review_id")
-      .eq("learner_user_id", userId)
-      .eq("project_id", projectId);
+
+    let reviewQuery = supabaseService.client
+      .from("peer_reviews")
+      .select("id, reviewer_name, project_id, evidence_record_id, imported")
+      .eq("learner_user_id", userId);
+    reviewQuery = project.evidenceRecordId
+      ? reviewQuery.or(`project_id.eq.${project.projectId},evidence_record_id.eq.${project.evidenceRecordId}`)
+      : reviewQuery.eq("project_id", project.projectId);
+
+    const [{ data: reviewRows }, { data: invites }] = await Promise.all([
+      reviewQuery,
+      supabaseService.client
+        .from("peer_review_invites")
+        .select("id, contributor_id, status, completed_review_id")
+        .eq("learner_user_id", userId)
+        .eq("project_id", projectId),
+    ]);
+
+    const reviews = (reviewRows ?? []).map((row) => rowToPeerReview(row as Record<string, unknown>));
 
     const inviteByContributor = new Map(
       (invites ?? []).map((i) => [i.contributor_id as string, i]),
@@ -880,22 +951,22 @@ export class PeerReviewService {
       }
     }
 
-    const contributor = await ensureContributorVerified(
-      userId,
-      project,
-      input.contributorId,
-      normalizedEmail,
-    );
-
-    const { data: skill } = await supabaseService.client
-      .from("declared_skills")
-      .select("id, name")
-      .eq("id", input.skillId)
-      .eq("user_id", userId)
-      .maybeSingle();
+    const [contributor, skillResult] = await Promise.all([
+      ensureContributorVerified(
+        userId,
+        project,
+        input.contributorId,
+        normalizedEmail,
+      ),
+      supabaseService.client
+        .from("declared_skills")
+        .select("id, name")
+        .eq("id", input.skillId)
+        .eq("user_id", userId)
+        .maybeSingle(),
+    ]);
+    const skill = skillResult.data;
     if (!skill) throw new AppError("Skill not found", 404);
-
-    await triggerGitHubImport(userId, project);
 
     const existing = await findExistingReview(userId, project, contributor);
     if (existing) {

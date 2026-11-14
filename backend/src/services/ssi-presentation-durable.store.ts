@@ -1,6 +1,7 @@
 /**
- * Presentation challenges: Postgres when ssi_presentation_challenges exists,
- * otherwise the in-memory store. Consume is UPDATE … WHERE used_at IS NULL.
+ * Presentation challenges: Postgres when ssi_presentation_challenges exists.
+ * Production does not fall back to process memory. Consume is
+ * UPDATE … WHERE used_at IS NULL. The signed claims bytes are unchanged.
  */
 import { supabaseService } from "./supabase.service";
 import { isMissingRelationError } from "../utils/supabase-errors";
@@ -11,6 +12,8 @@ import {
 } from "./ssi-presentation-challenge.store";
 
 const TABLE = "ssi_presentation_challenges";
+const UNAVAILABLE = "Presentation signing is temporarily unavailable. Try again in a moment.";
+const MIGRATION_REQUIRED = "Presentation signing storage is not ready. Try again after the presentation-challenge migration is applied.";
 
 type ChallengeRow = {
   id: string;
@@ -28,7 +31,7 @@ type ChallengeRow = {
 
 type QueryResult = { data: ChallengeRow | null; error: { message?: string; code?: string } | null };
 
-type ChallengeDb = {
+export type PresentationChallengeDb = {
   from: (table: string) => {
     insert: (row: Record<string, unknown>) => Promise<{ error: { message?: string; code?: string } | null }>;
     select: (columns: string) => {
@@ -49,29 +52,45 @@ type ChallengeDb = {
   };
 };
 
+function fail(message: string, statusCode: number): never {
+  throw Object.assign(new Error(message), { statusCode });
+}
+
+let warnedMemoryFallback = false;
+
 export class DurableSsiPresentationChallengeStore extends SsiPresentationChallengeStore {
   private postgresReady: boolean | null = null;
+  private usingMemory = false;
 
   constructor(
-    now: () => number = () => Date.now(),
-    private readonly db: ChallengeDb = supabaseService.client as unknown as ChallengeDb,
+    private readonly clock: () => number = () => Date.now(),
+    private readonly db: PresentationChallengeDb = supabaseService.client as unknown as PresentationChallengeDb,
+    private readonly requirePersistence: boolean = process.env.NODE_ENV === "production",
   ) {
-    super(now);
+    super(clock);
   }
 
   private async ensureBackend(): Promise<"memory" | "postgres"> {
-    if (this.postgresReady === false) return "memory";
+    if (this.usingMemory) return "memory";
     if (this.postgresReady === true) return "postgres";
     const { error } = await this.db.from(TABLE).select("id").limit(1);
-    if (error && isMissingRelationError(error)) {
+    if (!error) {
+      this.postgresReady = true;
+      return "postgres";
+    }
+    if (isMissingRelationError(error) && !this.requirePersistence) {
+      this.usingMemory = true;
       this.postgresReady = false;
+      if (!warnedMemoryFallback) {
+        warnedMemoryFallback = true;
+        console.warn(
+          "[ssi] ssi_presentation_challenges is unavailable. Presentation challenges are process-local because NODE_ENV is not production.",
+        );
+      }
       return "memory";
     }
-    if (error) {
-      throw Object.assign(new Error(error.message ?? "Presentation challenge table is unavailable"), { statusCode: 503 });
-    }
-    this.postgresReady = true;
-    return "postgres";
+    if (isMissingRelationError(error)) fail(MIGRATION_REQUIRED, 503);
+    fail(UNAVAILABLE, 503);
   }
 
   override async issue(input: {
@@ -81,8 +100,9 @@ export class DurableSsiPresentationChallengeStore extends SsiPresentationChallen
     credentials: { id: string; hash: string }[];
     ttlMs?: number;
   }): Promise<PresentationChallengeRecord> {
+    const backend = await this.ensureBackend();
     const record = await super.issue(input);
-    if ((await this.ensureBackend()) === "memory") return record;
+    if (backend === "memory") return record;
     const { error } = await this.db.from(TABLE).insert({
       id: record.id,
       learner_user_id: record.learnerUserId,
@@ -96,83 +116,60 @@ export class DurableSsiPresentationChallengeStore extends SsiPresentationChallen
       expires_at: record.expiresAt,
       used_at: null,
     });
-    if (error && isMissingRelationError(error)) {
-      this.postgresReady = false;
-      return record;
-    }
     if (error) {
-      throw Object.assign(new Error(error.message ?? "Could not persist presentation challenge"), { statusCode: 503 });
+      await super.discardUnused(record.id);
+      fail(isMissingRelationError(error) ? MIGRATION_REQUIRED : UNAVAILABLE, 503);
     }
     return record;
   }
 
   override async getIncludingUsed(id: string): Promise<PresentationChallengeRecord> {
     if ((await this.ensureBackend()) === "memory") return super.getIncludingUsed(id);
-    const { data, error } = await this.db.from(TABLE).select("*").eq("id", id).maybeSingle();
-    if (error && isMissingRelationError(error)) {
-      this.postgresReady = false;
-      return super.getIncludingUsed(id);
-    }
-    if (error) {
-      throw Object.assign(new Error(error.message ?? "Could not load presentation challenge"), { statusCode: 503 });
-    }
-    if (!data) {
-      throw Object.assign(new Error("Unknown presentation challenge"), { statusCode: 404 });
-    }
-    return fromRow(data);
+    const row = await this.readRow(id);
+    if (!row) fail("Unknown presentation challenge", 404);
+    return fromRow(row);
   }
 
   override async peek(id: string): Promise<PresentationChallengeRecord> {
     if ((await this.ensureBackend()) === "memory") return super.peek(id);
-    const { data, error } = await this.db.from(TABLE).select("*").eq("id", id).maybeSingle();
-    if (error && isMissingRelationError(error)) {
-      this.postgresReady = false;
-      return super.peek(id);
-    }
-    if (error) {
-      throw Object.assign(new Error(error.message ?? "Could not load presentation challenge"), { statusCode: 503 });
-    }
-    if (!data) {
-      throw Object.assign(new Error("Unknown or expired presentation challenge"), { statusCode: 400 });
-    }
-    const record = fromRow(data);
-    if (record.usedAt != null) {
-      throw Object.assign(new Error("Presentation challenge has already been used"), { statusCode: 409 });
-    }
-    if (Date.parse(record.expiresAt) <= Date.now()) {
-      throw Object.assign(new Error("Presentation challenge has expired"), { statusCode: 400 });
-    }
-    return record;
+    return this.assertUsable(await this.readRow(id), null);
   }
 
   override async consume(id: string, learnerUserId: string): Promise<PresentationChallengeRecord> {
     if ((await this.ensureBackend()) === "memory") return super.consume(id, learnerUserId);
+    const nowIso = new Date(this.clock()).toISOString();
     const { data, error } = await this.db
       .from(TABLE)
-      .update({ used_at: new Date().toISOString() })
+      .update({ used_at: nowIso })
       .eq("id", id)
       .eq("learner_user_id", learnerUserId)
       .is("used_at", null)
-      .gt("expires_at", new Date().toISOString())
+      .gt("expires_at", nowIso)
       .select("*")
       .maybeSingle();
-    if (error && isMissingRelationError(error)) {
-      this.postgresReady = false;
-      return super.consume(id, learnerUserId);
-    }
-    if (error) {
-      await super.abort(id);
-      throw Object.assign(new Error(error.message ?? "Could not consume presentation challenge"), { statusCode: 503 });
-    }
+    if (error) fail(isMissingRelationError(error) ? MIGRATION_REQUIRED : UNAVAILABLE, 503);
     if (!data) {
-      await super.abort(id);
-      throw Object.assign(new Error("Presentation challenge has already been used"), { statusCode: 409 });
+      this.assertUsable(await this.readRow(id), learnerUserId);
+      fail("Presentation challenge has already been used", 409);
     }
-    const record = await super.consume(id, learnerUserId).catch(async () => {
-      await super.abort(id);
-      return fromRow(data);
-    });
-    return record;
+    await super.discardUnused(id);
+    return fromRow({ ...data, used_at: data.used_at ?? nowIso });
+  }
+
+  private async readRow(id: string): Promise<ChallengeRow | null> {
+    const { data, error } = await this.db.from(TABLE).select("*").eq("id", id).maybeSingle();
+    if (error) fail(isMissingRelationError(error) ? MIGRATION_REQUIRED : UNAVAILABLE, 503);
+    return data;
+  }
+
+  private assertUsable(row: ChallengeRow | null, learnerUserId: string | null): PresentationChallengeRecord {
+    if (!row) fail("Unknown or expired presentation challenge", 400);
+    if (learnerUserId && row.learner_user_id !== learnerUserId) {
+      fail("Challenge was issued to a different account", 403);
+    }
+    if (row.used_at != null) fail("Presentation challenge has already been used", 409);
+    if (Date.parse(row.expires_at) <= this.clock()) fail("Presentation challenge has expired", 400);
+    return fromRow(row);
   }
 }
 

@@ -31,7 +31,8 @@ import {
   type AssessmentCommitmentClaim,
 } from "./assessment-binding";
 import { isMissingColumnError, isMissingRelationError } from "../utils/supabase-errors";
-import { canReadLearnerData, isActiveShareRow, type AuthCaller } from "./learner-access";
+import { canReadLearnerData, type AuthCaller } from "./learner-access";
+import { shareListedForRecruiters } from "./share-directory";
 import { hashEvidenceMetadata, sortedEvidenceHashes } from "../utils/evidence-hash";
 import { credentialFromDisclosedFields, type DisclosedField } from "./recruiter-disclose";
 import { ROLES } from "../constants/roles";
@@ -93,31 +94,22 @@ export type CredentialsServiceDeps = {
 };
 
 async function callerHasActiveShare(learnerId: string): Promise<boolean> {
-  const [{ data: walletShares }, { data: presentations }] = await Promise.all([
-    supabaseService.client
-      .from("selective_disclosure_presentations")
-      .select("expires_at, revoked_at")
-      .eq("learner_id", learnerId)
-      .is("revoked_at", null),
-    supabaseService.client
-      .from("presentations")
-      .select("expires_at, revoked")
-      .eq("candidate_user_id", learnerId)
-      .eq("revoked", false),
-  ]);
+  const { data: walletShares, error } = await supabaseService.client
+    .from("selective_disclosure_presentations")
+    .select("expires_at, revoked_at, disclosed_payload")
+    .eq("learner_id", learnerId)
+    .is("revoked_at", null);
 
-  const walletActive = (walletShares ?? []).some((row) =>
-    isActiveShareRow({
+  if (error) {
+    if (/schema cache|does not exist|could not find the table/i.test(error.message)) return false;
+    throw new AppError("Not authorized to read this learner's credentials", 403);
+  }
+
+  return (walletShares ?? []).some((row) =>
+    shareListedForRecruiters({
       revokedAt: typeof row.revoked_at === "string" ? row.revoked_at : null,
       expiresAt: typeof row.expires_at === "string" ? row.expires_at : null,
-    }),
-  );
-  if (walletActive) return true;
-
-  return (presentations ?? []).some((row) =>
-    isActiveShareRow({
-      revoked: Boolean(row.revoked),
-      expiresAt: typeof row.expires_at === "string" ? row.expires_at : null,
+      disclosedPayload: row.disclosed_payload,
     }),
   );
 }

@@ -1,6 +1,9 @@
 /**
- * Passphrase-wrapped Ed25519 vault (PBKDF2-SHA-256 + AES-GCM).
- * Private keys are never stored in plaintext. Forgotten passphrases cannot be recovered.
+ * Passphrase-wrapped Ed25519 vault (PBKDF2-SHA-256, 310,000 iterations,
+ * 16-byte salt, AES-GCM). A person who has the recovery file can try
+ * passwords offline. These settings slow each guess. They do not make a
+ * short password safe, and a forgotten password cannot be reset.
+ * Private keys are never stored in plaintext.
  */
 import { encodeDidKeyFromRawPublicKey, publicKeyFingerprint, resolveDidKey } from "./did-key";
 import {

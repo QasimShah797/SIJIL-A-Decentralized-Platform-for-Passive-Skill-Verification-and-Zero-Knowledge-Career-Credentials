@@ -40,10 +40,10 @@ export default function LearnerPresentationVerifyPage() {
   return (
     <PublicSurfaceLayout accent="strong" className="verify-surface">
       <div className="mx-auto max-w-3xl space-y-4 px-4 py-8">
-        <p className="text-xs font-semibold uppercase tracking-wider text-primary">Learner-signed presentation</p>
-        <h1 className="text-2xl font-semibold">Holder possession plus issuer verification</h1>
+        <p className="text-xs font-semibold uppercase tracking-wider text-primary">Verify achievement</p>
+        <h1 className="text-2xl font-semibold">Check this shared achievement</h1>
         <p className="text-sm text-muted-foreground">
-          This is not a bearer share link. Holder proof, issuer signature, and blockchain status are shown separately.
+          This page shows whether the learner approved the share and whether SIJIL accepts the signed record. Those checks are separate. This is not a private link, and it does not re-check the original project or course.
         </p>
         {loading ? <PageSkeleton rows={4} /> : error === "revoked" ? (
           <p className="text-sm text-destructive">
@@ -55,13 +55,16 @@ export default function LearnerPresentationVerifyPage() {
           <div className="space-y-4">
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">Holder possession</CardTitle>
+                <CardTitle className="text-base">Learner approval</CardTitle>
               </CardHeader>
               <CardContent className="space-y-2 text-sm">
                 <StatusBadge variant={view.holderProof.ok ? "verified" : "destructive"}>
-                  {view.holderProof.ok ? "Learner signature valid" : view.holderProof.reason ?? "invalid"}
+                  {view.holderProof.ok ? "The learner approved this share" : view.holderProof.reason ?? "The approval could not be checked"}
                 </StatusBadge>
-                <p className="break-all font-mono text-xs">{view.holderDid}</p>
+                <details>
+                  <summary className="cursor-pointer text-xs font-medium text-primary">Advanced details</summary>
+                  <p className="mt-2 break-all font-mono text-xs">{view.holderDid}</p>
+                </details>
               </CardContent>
             </Card>
             {view.credentials.map((credential) => {

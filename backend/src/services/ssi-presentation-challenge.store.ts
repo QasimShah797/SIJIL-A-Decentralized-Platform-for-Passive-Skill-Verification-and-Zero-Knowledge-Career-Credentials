@@ -126,6 +126,13 @@ export class SsiPresentationChallengeStore {
     this.inflight.delete(id);
   }
 
+  /** Drops an unused challenge after durable storage rejects it. */
+  async discardUnused(id: string): Promise<void> {
+    const record = this.rows.get(id);
+    if (record && record.usedAt == null) this.rows.delete(id);
+    this.inflight.delete(id);
+  }
+
   prune(): void {
     const now = this.now();
     for (const [id, row] of this.rows) {

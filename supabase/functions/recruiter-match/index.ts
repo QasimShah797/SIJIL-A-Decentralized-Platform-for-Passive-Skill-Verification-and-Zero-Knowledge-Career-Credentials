@@ -329,6 +329,10 @@ Deno.serve(async (req) => {
     const now = Date.now();
     const active = ((shareRows ?? []) as ShareRow[]).filter((row) => {
       if (!row.learner_id || row.revoked_at) return false;
+      const payload = row.disclosed_payload;
+      if (!payload || typeof payload !== "object" || (payload as { audience?: unknown }).audience !== "recruiter-directory") {
+        return false;
+      }
       if (!row.expires_at) return true;
       const expires = new Date(row.expires_at).getTime();
       return Number.isNaN(expires) || expires > now;

@@ -1,23 +1,14 @@
-import { fetchAllLearnerProfiles } from "@/lib/db/learner-profile";
-import { fetchDeclaredSkillsForUsers } from "@/lib/db/skills";
-import { fetchCredentialsForUsers } from "@/lib/db/credentials";
-import { fetchPeerReviewsForUsers } from "@/lib/db/peer-reviews";
 import { supabase } from "@/integrations/supabase/client";
-import { isMissingRelationError, isMissingColumnError } from "@/lib/supabase-errors";
+import { isMissingColumnError } from "@/lib/supabase-errors";
 import {
-  buildCandidateDetail,
-  collectCandidateSearchSkills,
   extractDisclosedCareerInfo,
-  mapWalletShareToView,
   mergeSkillEvidence,
   pickRecruiterDisplayName,
-  disclosedSkillNames,
-  skillEvidenceFromShares,
   type SkillEvidenceSignal,
 } from "@/lib/shared-presentation";
 import type { SharedCredentialView } from "@/lib/shared-presentation";
 import type { CandidateSkill } from "@/lib/sijil-data";
-import { analyzeDisclosedPayloads, type EvidenceStats, type SkillEvidenceStat } from "@/lib/recruiter-evidence";
+import type { EvidenceStats, SkillEvidenceStat } from "@/lib/recruiter-evidence";
 
 export type CandidateView = {
   id: string;
@@ -39,14 +30,6 @@ export type CandidateView = {
   /** Latest active share time, when the directory row includes one. */
   sharedAt?: string | null;
 };
-
-async function settle<T>(run: () => Promise<T>, fallback: T): Promise<T> {
-  try {
-    return await run();
-  } catch {
-    return fallback;
-  }
-}
 
 export function coalesceCandidateText(...values: (string | null | undefined)[]): string | null {
   for (const value of values) {
@@ -137,44 +120,6 @@ async function fetchDisclosedCareerByLearnerIds(
   const result = new Map<string, Pick<CandidateView, "skillsSummary" | "careerGoal">>();
   const uniqueIds = [...new Set(ids.filter(Boolean))];
   if (!uniqueIds.length) return result;
-
-  try {
-    const { data, error } = await (supabase as unknown as {
-      from: (table: string) => {
-        select: (columns: string) => {
-          in: (column: string, values: string[]) => {
-            is: (column: string, value: null) => Promise<{ data: Record<string, unknown>[] | null; error: { message?: string } | null }>;
-          };
-        };
-      };
-    })
-      .from("selective_disclosure_presentations")
-      .select("learner_id, selected_fields, selection_mode, disclosed_payload, proof_type, expires_at, revoked_at, created_at")
-      .in("learner_id", uniqueIds)
-      .is("revoked_at", null);
-
-    if (error) {
-      if (isMissingRelationError(error)) return result;
-      return result;
-    }
-
-    const sharesByLearner = new Map<string, SharedCredentialView[]>();
-    for (const row of data ?? []) {
-      const mapped = mapWalletShareToView(row as Parameters<typeof mapWalletShareToView>[0]);
-      const learnerId = typeof row.learner_id === "string" ? row.learner_id : null;
-      if (!learnerId || !mapped) continue;
-      const bucket = sharesByLearner.get(learnerId) ?? [];
-      bucket.push(mapped);
-      sharesByLearner.set(learnerId, bucket);
-    }
-
-    for (const [learnerId, shares] of sharesByLearner) {
-      result.set(learnerId, extractDisclosedCareerInfo(shares));
-    }
-  } catch {
-    return result;
-  }
-
   return result;
 }
 
@@ -238,144 +183,12 @@ export function applyCandidateCardFields(
   });
 }
 
-async function fetchCandidatesFromActiveShares(): Promise<CandidateView[]> {
-  try {
-    const { data, error } = await (supabase as unknown as {
-      from: (table: string) => {
-        select: (columns: string) => {
-          is: (column: string, value: null) => Promise<{ data: Record<string, unknown>[] | null; error: { message?: string } | null }>;
-        };
-      };
-    })
-      .from("selective_disclosure_presentations")
-      .select("id, learner_id, selected_fields, selection_mode, disclosed_payload, proof_type, expires_at, revoked_at, created_at")
-      .is("revoked_at", null);
-
-    if (error) {
-      if (isMissingRelationError(error)) return [];
-      throw error;
-    }
-
-    const sharesByLearner = new Map<string, ReturnType<typeof mapWalletShareToView>[]>();
-    for (const row of data ?? []) {
-      const mapped = mapWalletShareToView(row as Parameters<typeof mapWalletShareToView>[0]);
-      const learnerId = typeof row.learner_id === "string" ? row.learner_id : null;
-      if (!learnerId || !mapped) continue;
-      const bucket = sharesByLearner.get(learnerId) ?? [];
-      bucket.push(mapped);
-      sharesByLearner.set(learnerId, bucket);
-    }
-
-    if (!sharesByLearner.size) return [];
-
-    const learnerIds = [...sharesByLearner.keys()];
-    const profiles = await settle(() => fetchAllLearnerProfiles(), []);
-    const profileById = new Map(profiles.map((profile) => [profile.user_id, profile]));
-    const reviewsMap = await settle(() => fetchPeerReviewsForUsers(learnerIds), {});
-
-    return learnerIds.map((learnerId) => {
-      const shares = sharesByLearner.get(learnerId) ?? [];
-      const profile = profileById.get(learnerId);
-      const detail = buildCandidateDetail({
-        id: learnerId,
-        name: profile?.name ?? "Learner",
-        institution: profile?.institution ?? "—",
-        reviews: reviewsMap[learnerId]?.length ?? 0,
-        sharedCredentials: shares.filter((item): item is NonNullable<typeof item> => item !== null),
-      });
-      const activeShares = shares.filter((item): item is NonNullable<typeof item> => item !== null);
-      const career = resolveCareerFields(profile, activeShares);
-      const analysis = analyzeDisclosedPayloads(activeShares.map((share) => share.disclosedPayload));
-      return {
-        id: detail.id,
-        name: detail.name,
-        topSkill: detail.topSkill,
-        evidence: analysis.stats.evidenceTotal,
-        evidenceStats: analysis.stats,
-        skillStats: analysis.skills,
-        reviews: detail.reviews,
-        attestation: detail.attestation,
-        institution: detail.institution,
-        credentialCount: detail.credentialCount,
-        avatarUrl: profile?.avatarUrl ?? null,
-        skillsSummary: career.skillsSummary,
-        careerGoal: career.careerGoal,
-        searchableSkills: collectCandidateSearchSkills({
-          shares: activeShares,
-          skillsSummary: career.skillsSummary,
-          topSkill: detail.topSkill,
-        }),
-        verifiedSkills: disclosedSkillNames(activeShares),
-        skillEvidence: skillEvidenceFromShares(activeShares),
-        sharedAt: latestTimestamp(...activeShares.map((share) => share.createdAt)),
-      };
-    });
-  } catch (error) {
-    if (isMissingRelationError(error)) return [];
-    throw error;
-  }
-}
-
 export async function fetchCandidates(): Promise<CandidateView[]> {
-  const [profiles, sharedCandidates] = await Promise.all([
-    fetchAllLearnerProfiles(),
-    fetchCandidatesFromActiveShares(),
-  ]);
-
-  if (!sharedCandidates.length) return [];
-
-  const profileById = new Map(profiles.map((profile) => [profile.user_id, profile]));
-  return sharedCandidates
-    .filter((candidate) => candidate.credentialCount > 0)
-    .map((shared) => {
-      const profile = profileById.get(shared.id);
-      if (!profile) return shared;
-      return {
-        ...shared,
-        name: pickRecruiterDisplayName(shared.name, profile.name),
-        institution: shared.institution !== "—" ? shared.institution : profile.institution,
-        avatarUrl: coalesceText(shared.avatarUrl, profile.avatarUrl),
-        skillsSummary: coalesceText(shared.skillsSummary, profile.skillsSummary),
-        careerGoal: coalesceText(shared.careerGoal, profile.careerGoal),
-      };
-    });
+  return [];
 }
 
 export async function fetchCandidateSkillsMap(): Promise<Record<string, CandidateSkill[]>> {
-  const profiles = await settle(() => fetchAllLearnerProfiles(), []);
-  const userIds = profiles.map((p) => p.user_id);
-  const [skillsMap, credsMap, reviewsMap] = await Promise.all([
-    settle(() => fetchDeclaredSkillsForUsers(userIds), {}),
-    settle(() => fetchCredentialsForUsers(userIds), {}),
-    settle(() => fetchPeerReviewsForUsers(userIds), {}),
-  ]);
-
-  const result: Record<string, CandidateSkill[]> = {};
-  for (const p of profiles) {
-    const skills = skillsMap[p.user_id] ?? [];
-    const creds = credsMap[p.user_id] ?? [];
-    const reviews = reviewsMap[p.user_id] ?? [];
-
-    result[p.user_id] = skills.map((s) => {
-      const skillCreds = creds.filter((c) => c.skill.includes(s.name));
-      const skillReviews = reviews.filter((r) => r.skill === s.name);
-      return {
-        skill: s.name,
-        domain: s.domain,
-        evidence: skillCreds.reduce((n, c) => n + c.supportingRecords, 0) + (s.lastRelatedActivityAt ? 1 : 0),
-        reviews: skillReviews.length,
-        lmsRecords: 0,
-        githubRecords: s.lastRelatedActivityAt ? 1 : 0,
-        practicalTask: "—" as const,
-        externalCert: "—" as const,
-        attestation: skillCreds.some((c) => c.attestation === "Approved") ? "Approved" as const : "Pending" as const,
-        attestationSource: p.institution,
-        attestationDid: `did:web:issuer.${p.institution.toLowerCase().replace(/\s+/g, "")}.edu.pk`,
-        credentialId: skillCreds[0]?.id ?? null,
-      };
-    });
-  }
-  return result;
+  return {};
 }
 
 export async function fetchCandidateById(id: string): Promise<CandidateView | null> {

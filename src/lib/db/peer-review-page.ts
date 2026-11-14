@@ -784,36 +784,34 @@ export async function loadPeerReviewPageData(userId: string): Promise<{
     legacyInvitations,
     contextRequests,
     peerReviewInvites,
-  ] = await Promise.all([
-    safeLoad(() => fetchInvitations(userId), [] as ReviewInvitation[]),
-    safeLoad(() => fetchContextReviewRequests(userId), [] as ContextReviewRequestDisplay[]),
-    safeLoad(() => fetchPeerReviewInvites(userId), [] as ContextReviewRequestDisplay[]),
-  ]);
-
-  const allContextRequests = [...peerReviewInvites, ...contextRequests];
-  const declaredSkills = await safeLoad(
-    () => fetchDeclaredSkills(userId),
-    [],
-  );
-  const skillRefs = declaredSkills.map((skill) => ({ id: skill.id, name: skill.name }));
-
-  if (!skillRefs.length) {
-    await safeLoad(() => cleanupOrphanedLearnerReviewData(userId), undefined);
-  }
-
-  const [
+    declaredSkills,
     dbProjects,
     linkedEvidence,
     evidenceProjects,
     reviews,
     contributors,
+    apiProjects,
+    apiReviews,
   ] = await Promise.all([
+    safeLoad(() => fetchInvitations(userId), [] as ReviewInvitation[]),
+    safeLoad(() => fetchContextReviewRequests(userId), [] as ContextReviewRequestDisplay[]),
+    safeLoad(() => fetchPeerReviewInvites(userId), [] as ContextReviewRequestDisplay[]),
+    safeLoad(() => fetchDeclaredSkills(userId), []),
     safeLoad(() => fetchProjectsFromDb(userId), [] as Project[]),
     safeLoad(() => fetchLinkedProjectEvidence(userId), [] as ProjectEvidenceApiView[]),
     safeLoad(() => fetchEvidenceRecordProjects(userId), [] as ProjectEvidenceApiView[]),
     safeLoad(() => fetchPeerReviews(userId), [] as PeerReview[]),
     safeLoad(() => fetchContributors(userId), [] as Array<ProjectContributor & { repoId: number }>),
+    isApiEnabled() ? getPeerReviewProjectsApi() : Promise.resolve(null),
+    isApiEnabled() ? getPeerReviewsApi() : Promise.resolve(null),
   ]);
+
+  const allContextRequests = [...peerReviewInvites, ...contextRequests];
+  const skillRefs = declaredSkills.map((skill) => ({ id: skill.id, name: skill.name }));
+
+  if (!skillRefs.length) {
+    void safeLoad(() => cleanupOrphanedLearnerReviewData(userId), undefined);
+  }
 
   const localProjects = filterProjectsForDeclaredSkills(
     attachContributors(
@@ -827,21 +825,15 @@ export async function loadPeerReviewPageData(userId: string): Promise<{
   let projects = localProjects;
   let mergedReviews = localReviews;
 
-  if (isApiEnabled()) {
-    const [apiProjects, apiReviews] = await Promise.all([
-      getPeerReviewProjectsApi(),
-      getPeerReviewsApi(),
-    ]);
-    if (apiProjects) {
-      projects = mergeById(
-        filterProjectsForDeclaredSkills(apiProjects, skillRefs),
-        localProjects,
-      );
-      mergedReviews = mergeById(
-        filterReviewsForDeclaredSkills(apiReviews ?? [], skillRefs),
-        localReviews,
-      );
-    }
+  if (apiProjects) {
+    projects = mergeById(
+      filterProjectsForDeclaredSkills(apiProjects, skillRefs),
+      localProjects,
+    );
+    mergedReviews = mergeById(
+      filterReviewsForDeclaredSkills(apiReviews ?? [], skillRefs),
+      localReviews,
+    );
   }
 
   return {

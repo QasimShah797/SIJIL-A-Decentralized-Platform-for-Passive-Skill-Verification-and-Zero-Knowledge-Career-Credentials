@@ -130,15 +130,20 @@ export function ValidationDetailHero({
         </div>
       </div>
       {walletReady && (
-        <div className="flex shrink-0 flex-wrap gap-2">
-          <Button variant="outline" className="rounded-xl border-[#e2e8f0]" onClick={onOpenWallet}>
-            Open wallet record
-            <ArrowRight className="ml-1.5 h-4 w-4" />
-          </Button>
-          <Button className="rounded-xl bg-[#023E8A] hover:bg-[#012A5C]" onClick={onIssueCredential}>
-            <ShieldCheck className="mr-1.5 h-4 w-4" />
-            Issue verified credential
-          </Button>
+        <div className="flex max-w-md shrink-0 flex-col gap-2">
+          <p className="text-xs text-[#475569]">
+            A verified credential is a signed record of this competency. It uses the evidence SIJIL has already accepted. It does not re-check the original project, course, or review content.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" className="rounded-xl border-[#e2e8f0]" onClick={onOpenWallet}>
+              Open wallet record
+              <ArrowRight className="ml-1.5 h-4 w-4" />
+            </Button>
+            <Button className="rounded-xl bg-[#023E8A] hover:bg-[#012A5C]" onClick={onIssueCredential}>
+              <ShieldCheck className="mr-1.5 h-4 w-4" />
+              Get verified proof
+            </Button>
+          </div>
         </div>
       )}
     </div>

@@ -18,6 +18,8 @@ import {
   logWalletLoad,
   splitEvidenceRecordsBySource,
 } from "../utils/wallet-evidence-mapping";
+import { payloadVisibleToRecipient, shareLinkAccess } from "./share-access";
+import { shareStorageFailure } from "./share-storage";
 import {
   WALLET_SHARE_FIELD_IDS,
   type PublicPresentationVerification,
@@ -389,6 +391,20 @@ function throwDbError(error: { message?: string }, context: string): never {
     );
   }
   throw new AppError(message, 500);
+}
+
+async function fetchShareRowsStrict(
+  kind: "list" | "create",
+  run: () => PromiseLike<{ data: unknown[] | null; error: { message?: string } | null }>,
+): Promise<DbRow[]> {
+  try {
+    const { data, error } = await run();
+    if (error) throw shareStorageFailure(kind);
+    return asRows(data);
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+    throw shareStorageFailure(kind);
+  }
 }
 
 async function safeFetchRows(
@@ -937,7 +953,7 @@ async function listSharesForCompetency(
   userId: string,
   competencyId: string,
 ): Promise<WalletShareRecordView[]> {
-  const rows = await safeFetchRows("selective_disclosure_presentations", () =>
+  const rows = await fetchShareRowsStrict("list", () =>
     db()
       .from("selective_disclosure_presentations")
       .select("id, competency_id, selected_fields, selection_mode, proof_type, share_token_hint, expires_at, revoked_at, created_at, updated_at")
@@ -1684,7 +1700,7 @@ async function loadActiveShareForCompetency(
   userId: string,
   competencyId: string,
 ): Promise<PresentationRow | null> {
-  const rows = await safeFetchRows("selective_disclosure_presentations", () =>
+  const rows = await fetchShareRowsStrict("create", () =>
     db()
       .from("selective_disclosure_presentations")
       .select("*")
@@ -1834,9 +1850,7 @@ export class WalletService {
           .single(),
       );
 
-    if (error) {
-      throwDbError(error, "Could not create share link");
-    }
+    if (error) throw shareStorageFailure("create");
 
     if (existing) {
       await revokeDuplicateShares(userId, competencyId, asText((data as DbRow).id));
@@ -1870,20 +1884,30 @@ export class WalletService {
       row,
       disclosedPayload: row.disclosed_payload,
     }));
+    const access = shareLinkAccess({
+      revoked: verification.revoked,
+      expiresAt: row.expires_at,
+    });
+    const disclosedPayload = payloadVisibleToRecipient(
+      access,
+      access === "active"
+        ? await recruiterPayload(row, row.disclosed_payload, row.created_at)
+        : {},
+    );
 
     return {
       id: row.id,
       competencyId: row.competency_id,
       selectedFields: row.selected_fields,
       selectionMode: (row.selection_mode || "custom") as PublicPresentationView["selectionMode"],
-      disclosedPayload: await recruiterPayload(row, row.disclosed_payload, row.created_at),
+      disclosedPayload,
       proofType: row.proof_type || "SignedSelectiveDisclosure",
       verificationMethod: row.verification_method,
       createdAt: row.created_at,
       expiresAt: row.expires_at,
       revokedAt: row.revoked_at,
       payloadHash: row.payload_hash,
-      proofValue: row.proof_value,
+      proofValue: access === "active" ? row.proof_value : null,
       verification,
     };
   }
@@ -1910,20 +1934,24 @@ export class WalletService {
       row,
       disclosedPayload: checked,
     }));
+    const access = shareLinkAccess({
+      revoked: verification.revoked,
+      expiresAt: row.expires_at,
+    });
 
     return {
       id: row.id,
       competencyId: row.competency_id,
       selectedFields: row.selected_fields,
       selectionMode: (row.selection_mode || "custom") as PublicPresentationView["selectionMode"],
-      disclosedPayload: redacted,
+      disclosedPayload: payloadVisibleToRecipient(access, access === "active" ? redacted : {}),
       proofType: row.proof_type || "SignedSelectiveDisclosure",
       verificationMethod: row.verification_method,
       createdAt: row.created_at,
       expiresAt: row.expires_at,
       revokedAt: row.revoked_at,
       payloadHash: row.payload_hash,
-      proofValue: row.proof_value,
+      proofValue: access === "active" ? row.proof_value : null,
       verification,
     };
   }

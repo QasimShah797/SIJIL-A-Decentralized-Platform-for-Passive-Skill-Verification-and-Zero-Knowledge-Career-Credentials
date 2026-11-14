@@ -3,6 +3,7 @@
  */
 import { Request, Response } from "express";
 import { credentialsService } from "../services/credentials.service";
+import { exportOwnedCredential } from "../services/credential-portable";
 import { retryCredentialAnchor } from "../services/anchor-worker.service";
 import { revokeIssuedCredential } from "../services/credential-verify.service";
 import { sendSuccess } from "../utils/apiResponse";
@@ -36,6 +37,11 @@ export async function issueCredential(req: Request, res: Response): Promise<Resp
   const input = issueCredentialSchema.parse(req.body);
   const credential = await credentialsService.issue(req.user!.id, input);
   return sendSuccess(res, credential, "Credential issued", 201);
+}
+
+export async function exportCredentialDocument(req: Request, res: Response): Promise<Response> {
+  const file = await exportOwnedCredential(req.user!.id, paramString(req.params.id, "id"));
+  return sendSuccess(res, file);
 }
 
 export async function getCredential(req: Request, res: Response): Promise<Response> {

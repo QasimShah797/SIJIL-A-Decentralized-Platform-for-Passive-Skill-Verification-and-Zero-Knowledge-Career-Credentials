@@ -27,6 +27,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Plus, ChevronRight, AlertTriangle, Sparkles } from "lucide-react";
+import { IdentitySetupReminder } from "@/components/identity/IdentitySetupReminder";
+import { useSsiIdentity } from "@/hooks/useSsiIdentity";
 import { useAuth } from "@/hooks/useAuth";
 import { daysSince, SKILL_DECAY_DAYS, isSkillDecaying, type DeclaredSkill } from "@/lib/sijil-data";
 import {
@@ -51,6 +53,7 @@ export default function LearnerProfile() {
   const [name, setName] = useState("");
   const [declareQuery, setDeclareQuery] = useState("");
   const { user } = useAuth();
+  const identity = useSsiIdentity();
   const [saving, setSaving] = useState(false);
   const [removeTarget, setRemoveTarget] = useState<DeclaredSkill | null>(null);
   const [removing, setRemoving] = useState(false);
@@ -216,6 +219,11 @@ export default function LearnerProfile() {
   return (
     <LearnerWorkspaceShell variant="dashboard" rightRail={rightRail}>
       <div className="space-y-6">
+        <IdentitySetupReminder
+          loading={identity.loading}
+          status={identity.snapshot.status}
+          serverDid={identity.snapshot.server.did}
+        />
         {notifPanelOpen && decaying.length > 0 && (
           <div id="notifications" className="learner-stat-card space-y-2 border-amber-200/80 p-4">
             <div className="flex items-center justify-between">
