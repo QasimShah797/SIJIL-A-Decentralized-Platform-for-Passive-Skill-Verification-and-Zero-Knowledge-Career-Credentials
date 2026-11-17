@@ -283,7 +283,7 @@ export async function repairMoodleEvidenceRecords(
     const moodleSiteUrl = asText(row.moodle_site_url)
       || asText(course?.moodle_site_url)
       || Deno.env.get("MOODLE_EXPECTED_SITE_URL")?.trim().replace(/\/+$/, "")
-      || "https://sijil-fyp.moodlecloud.com";
+      || "https://sijil-lms.duckdns.org";
     const assignmentName = asText(row.name) || `Assignment ${assignmentId}`;
     const teacherFeedback = asText(row.feedback) || feedbackByAssignment.get(assignmentId) || null;
     const grade = asNumber(row.grade);

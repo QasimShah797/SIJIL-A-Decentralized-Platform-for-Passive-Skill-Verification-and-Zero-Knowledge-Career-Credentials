@@ -4,30 +4,40 @@ import {
   isMoodleSyncBridgeEnabled,
   moodleSyncBridgeMisconfiguredMessage,
   moodleSyncBridgeUnreachableMessage,
-  resolveMoodleSyncBridgeConfig,
+  resolveMoodleSyncRoute,
 } from "@/lib/moodle-sync-bridge";
 import {
-  DEFAULT_MOODLE_CLOUD_HOST,
-  DEFAULT_MOODLE_CLOUD_SITE_URL,
+  DEFAULT_MOODLE_SITE_HOST,
+  DEFAULT_MOODLE_SITE_URL,
   isConfiguredMoodleSiteUrl,
   isLegacyMoodleCloudHost,
+  isPreviousSijilMoodleSite,
   normalizeMoodleSiteUrl as normalizeMoodleSiteUrlShared,
   parseMoodleSiteUrl,
   resolveConfiguredMoodleSiteUrl,
 } from "../../supabase/functions/moodle-sync/moodle-site-url.ts";
 
 /**
- * Frontend display/filter URL only (VITE_MOODLE_SITE_URL).
- * Never a Moodle token. Defaults to MoodleCloud when unset.
+ * Frontend display and link URL (VITE_MOODLE_SITE_URL).
+ * Never a Moodle token. Defaults to the live SIJIL Moodle site.
+ * Server calls use MOODLE_BASE_URL, which must be the same wwwroot.
  */
 export const MOODLE_SITE_URL = resolveConfiguredMoodleSiteUrl(
   import.meta.env.VITE_MOODLE_SITE_URL as string | undefined,
-  DEFAULT_MOODLE_CLOUD_SITE_URL,
+  DEFAULT_MOODLE_SITE_URL,
 );
 
-/** Hostname of the configured Moodle site (Vite env or MoodleCloud default). */
+/** Hostname of the configured Moodle site. */
 export const CURRENT_MOODLE_SITE_HOST =
-  parseMoodleSiteUrl(MOODLE_SITE_URL)?.host ?? DEFAULT_MOODLE_CLOUD_HOST;
+  parseMoodleSiteUrl(MOODLE_SITE_URL)?.host ?? DEFAULT_MOODLE_SITE_HOST;
+
+/** Open a Moodle course in the browser. Moodle refuses to be embedded. */
+export function moodleCoursePageUrl(courseId: number, siteUrl: string = MOODLE_SITE_URL): string | null {
+  if (!Number.isInteger(courseId) || courseId <= 0) return null;
+  const parts = parseMoodleSiteUrl(siteUrl);
+  if (!parts) return null;
+  return `${parts.origin}/course/view.php?id=${courseId}`;
+}
 
 /** Legacy MoodleCloud host — remapped only when configured site is MoodleCloud. */
 export const LEGACY_MOODLE_SITE_HOST = "sijil.moodlecloud.com";
@@ -44,12 +54,8 @@ export function displayMoodleSiteHost(url: string = MOODLE_SITE_URL): string {
   if (!parts) {
     return url.replace(/^https?:\/\//, "").replace(/\/+$/, "").toLowerCase();
   }
-  // Legacy MoodleCloud remapping only applies when the app is configured for MoodleCloud.
-  if (
-    CURRENT_MOODLE_SITE_HOST.includes("sijil-fyp.moodlecloud.com") &&
-    isLegacyMoodleCloudHost(url)
-  ) {
-    return DEFAULT_MOODLE_CLOUD_HOST;
+  if (isPreviousSijilMoodleSite(url) && !isCurrentMoodleSiteUrl(url)) {
+    return CURRENT_MOODLE_SITE_HOST;
   }
   return parts.host;
 }
@@ -75,7 +81,7 @@ export function resolveMoodleConnectionSiteUrl(
   if (stored && isCurrentMoodleSiteUrl(stored)) {
     return normalizeMoodleSiteUrl(stored);
   }
-  if (stored && isLegacyMoodleSiteUrl(stored) && CURRENT_MOODLE_SITE_HOST.includes("moodlecloud.com")) {
+  if (stored && isPreviousSijilMoodleSite(stored)) {
     return normalizeMoodleSiteUrl(MOODLE_SITE_URL);
   }
   return normalizeMoodleSiteUrl(MOODLE_SITE_URL);
@@ -223,12 +229,13 @@ function mapSyncError(payload: MoodleFunctionPayload | null, fallback: string): 
 }
 
 /**
- * Prefer the local authenticated bridge when configured.
- * Hosted Edge cannot reach localhost Moodle; bridge reuses the same moodle-sync code.
+ * Public Moodle is called by the hosted moodle-sync function.
+ * A local bridge is used only when the configured Moodle site is on this computer.
  */
 async function invokeMoodleFunction(body: Record<string, unknown>): Promise<MoodleFunctionPayload> {
-  const bridge = resolveMoodleSyncBridgeConfig(
+  const bridge = resolveMoodleSyncRoute(
     import.meta.env.VITE_MOODLE_SYNC_BRIDGE_URL as string | undefined,
+    MOODLE_SITE_URL,
   );
   if (bridge.error) {
     throw new Error(moodleSyncBridgeMisconfiguredMessage(bridge.error));
@@ -290,8 +297,7 @@ async function invokeMoodleFunction(body: Record<string, unknown>): Promise<Mood
       || mapped.toLowerCase().includes("moodle api is unavailable")
     ) {
       throw new Error(
-        `${mapped} For local Moodle, set VITE_MOODLE_SYNC_BRIDGE_URL=http://127.0.0.1:8787 ` +
-          "and run: npm run moodle:serve-bridge (do not expect hosted Edge to reach localhost:8000).",
+        `${mapped} The hosted moodle-sync function must use MOODLE_BASE_URL and MOODLE_EXPECTED_SITE_URL ${MOODLE_SITE_URL}. The Moodle token stays in server secrets, not in the browser.`,
       );
     }
     throw new Error(mapped);
@@ -306,7 +312,10 @@ async function invokeMoodleFunction(body: Record<string, unknown>): Promise<Mood
 
 /** True when the UI should treat Moodle sync as local-bridge mode. */
 export function isLocalMoodleBridgeMode(): boolean {
-  return isMoodleSyncBridgeEnabled();
+  return isMoodleSyncBridgeEnabled(
+    import.meta.env.VITE_MOODLE_SYNC_BRIDGE_URL as string | undefined,
+    MOODLE_SITE_URL,
+  );
 }
 
 export type MoodleConnection = {
@@ -322,7 +331,7 @@ function rowToMoodleConnection(row: Record<string, unknown>): MoodleConnection {
   const rawSiteUrl = typeof row.moodle_site_url === "string" ? row.moodle_site_url : null;
   const moodle_site_url = rawSiteUrl && isCurrentMoodleSiteUrl(rawSiteUrl)
     ? normalizeMoodleSiteUrl(rawSiteUrl)
-    : rawSiteUrl && isLegacyMoodleSiteUrl(rawSiteUrl)
+    : rawSiteUrl && isPreviousSijilMoodleSite(rawSiteUrl)
       ? normalizeMoodleSiteUrl(MOODLE_SITE_URL)
       : rawSiteUrl;
   return {
@@ -337,7 +346,7 @@ function rowToMoodleConnection(row: Record<string, unknown>): MoodleConnection {
 
 async function repairStaleMoodleConnectionSiteUrl(userId: string, siteUrl: string | null): Promise<string | null> {
   if (!siteUrl || isCurrentMoodleSiteUrl(siteUrl)) return siteUrl;
-  if (!isLegacyMoodleSiteUrl(siteUrl)) return siteUrl;
+  if (!isPreviousSijilMoodleSite(siteUrl)) return siteUrl;
 
   const canonical = normalizeMoodleSiteUrl(MOODLE_SITE_URL);
   const { error } = await supabase

@@ -6,11 +6,12 @@ import {
   formatGradeDisplay,
   formatMoodleFeedbackDisplay,
   formatSubmissionStatusLabel,
+  MOODLE_SITE_URL,
 } from "@/lib/moodle-integration";
 import type { MoodleCourseActivity } from "@/lib/moodle-integration";
 import type { CustEvidence } from "@/lib/cust-lms";
 import { IntegrationEmptyState } from "./IntegrationEmptyState";
-import { LMSActivityRow } from "./LMSActivityRow";
+import { CourseLink, LMSActivityRow } from "./LMSActivityRow";
 
 export type LMSActivityPanelProps = {
   connected: boolean;
@@ -19,6 +20,7 @@ export type LMSActivityPanelProps = {
   error: string | null;
   moodleEmail?: string | null;
   moodleSiteHost: string;
+  moodleSiteUrl?: string;
   lastSync: string | null;
   recordCount: number;
   activities: MoodleCourseActivity[];
@@ -34,6 +36,7 @@ export function LMSActivityPanel({
   error,
   moodleEmail,
   moodleSiteHost,
+  moodleSiteUrl = MOODLE_SITE_URL,
   lastSync,
   recordCount,
   activities,
@@ -119,7 +122,7 @@ export function LMSActivityPanel({
                     ? [
                         <div key={`empty-${course.courseId}`} className="learner-stat-card border border-[#e2e8f0] p-5 lg:col-span-2">
                           <div className="flex items-center justify-between gap-2">
-                            <p className="font-semibold text-[#023E8A]">{course.courseName}</p>
+                            <CourseLink courseId={course.courseId} siteUrl={moodleSiteUrl} label={course.courseName} />
                           </div>
                           <p className="mt-2 text-sm text-[#64748b]">
                             No assignments are currently available for this course.
@@ -129,6 +132,8 @@ export function LMSActivityPanel({
                     : course.assignments.map((a) => (
                         <LMSActivityRow
                           key={a.id}
+                          courseId={course.courseId}
+                          siteUrl={moodleSiteUrl}
                           courseName={course.courseName}
                           courseShortname={course.shortname}
                           completionStatus={course.completionStatus}

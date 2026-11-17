@@ -59,6 +59,15 @@ function isLocalSupabaseApiUrl(value) {
   }
 }
 
+function isAllowedMoodleUrl(value) {
+  if (isLocalMoodleUrl(value)) return true;
+  try {
+    return new URL(value).protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 function isLocalMoodleUrl(value) {
   if (!value) return false;
   try {
@@ -116,9 +125,9 @@ for (const file of files) {
     }
   }
 
-  if ("VITE_MOODLE_SITE_URL" in env && !isLocalMoodleUrl(env.VITE_MOODLE_SITE_URL)) {
+  if ("VITE_MOODLE_SITE_URL" in env && !isAllowedMoodleUrl(env.VITE_MOODLE_SITE_URL)) {
     errors.push(
-      `${label}: VITE_MOODLE_SITE_URL must be a local Moodle host (got ${env.VITE_MOODLE_SITE_URL})`,
+      `${label}: VITE_MOODLE_SITE_URL must be HTTPS or a local Moodle host (got ${env.VITE_MOODLE_SITE_URL})`,
     );
   }
 
@@ -136,14 +145,14 @@ for (const file of files) {
     }
   }
 
-  if ("MOODLE_EXPECTED_SITE_URL" in env && !isLocalMoodleUrl(env.MOODLE_EXPECTED_SITE_URL)) {
+  if ("MOODLE_EXPECTED_SITE_URL" in env && !isAllowedMoodleUrl(env.MOODLE_EXPECTED_SITE_URL)) {
     errors.push(
-      `${label}: MOODLE_EXPECTED_SITE_URL must be local (got ${env.MOODLE_EXPECTED_SITE_URL})`,
+      `${label}: MOODLE_EXPECTED_SITE_URL must be HTTPS or local (got ${env.MOODLE_EXPECTED_SITE_URL})`,
     );
   }
-  if ("MOODLE_BASE_URL" in env && !isLocalMoodleUrl(env.MOODLE_BASE_URL)) {
+  if ("MOODLE_BASE_URL" in env && !isAllowedMoodleUrl(env.MOODLE_BASE_URL)) {
     errors.push(
-      `${label}: MOODLE_BASE_URL must be local / host.docker.internal (got ${env.MOODLE_BASE_URL})`,
+      `${label}: MOODLE_BASE_URL must be HTTPS or a local / host.docker.internal host (got ${env.MOODLE_BASE_URL})`,
     );
   }
   if ("MOODLE_TOKEN" in env && looksLikePlaceholder(env.MOODLE_TOKEN)) {

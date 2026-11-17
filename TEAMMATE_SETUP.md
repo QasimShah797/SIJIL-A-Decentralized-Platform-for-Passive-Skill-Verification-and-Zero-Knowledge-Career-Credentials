@@ -88,8 +88,8 @@ Edit `.env.local` (placeholders — never commit real values):
 | `VITE_API_BASE_URL` | `http://localhost:5000/api` |
 | `VITE_GITHUB_CLIENT_ID` | Same GitHub OAuth app as backend |
 | `VITE_GITHUB_REDIRECT_URI` | `http://localhost:8080/auth/github/callback` |
-| `VITE_MOODLE_SITE_URL` | Optional. Default when unset: MoodleCloud. For local Moodle: `http://localhost:8000` |
-| `VITE_MOODLE_SYNC_BRIDGE_URL` | Optional local bridge only: `http://127.0.0.1:8787` |
+| `VITE_MOODLE_SITE_URL` | Optional. Default when unset: `https://sijil-lms.duckdns.org` |
+| `VITE_MOODLE_SYNC_BRIDGE_URL` | Leave unset for the public Moodle site. Only a laptop Moodle uses `http://127.0.0.1:8787`. |
 
 Never put `service_role`, Moodle tokens, or issuer private keys in any `VITE_*` variable.
 
@@ -151,34 +151,26 @@ Teammates normally do **not** create a new Supabase project; they sign in agains
 
 ---
 
-## 8. Moodle: MoodleCloud vs local bridge
+## 8. Moodle: live site
 
-### A) Team default — MoodleCloud via hosted Edge
+The Moodle site is `https://sijil-lms.duckdns.org`.
 
-1. Leave `VITE_MOODLE_SITE_URL` unset (defaults to MoodleCloud) **or** set it to the shared MoodleCloud URL from the vault.
-2. Do **not** set `VITE_MOODLE_SYNC_BRIDGE_URL`.
-3. Sync from Integrations while logged in as a hosted learner whose email exists in MoodleCloud.
-4. Moodle webservice token lives only in **hosted Edge secrets** (lead-managed). Never in frontend env.
+`VITE_MOODLE_SITE_URL` is only the link learners open. Sync calls the hosted `moodle-sync` function. That function reads `MOODLE_BASE_URL`, `MOODLE_EXPECTED_SITE_URL`, and `MOODLE_TOKEN` from server secrets. Never put the token in a `VITE_` variable.
 
-### B) Optional demo — local Moodle → hosted Supabase (bridge)
+Do **not** set `VITE_MOODLE_SYNC_BRIDGE_URL` for the public site. A value of `http://127.0.0.1:8787` is ignored while the Moodle site is public, and it is not required on any teammate laptop.
 
-Hosted Edge **cannot** reach `http://localhost:8000` on your laptop. Use the local Deno bridge:
+### A) Team default — hosted function
 
-```bash
-cp env/bridge/moodle-sync.env.example env/bridge/moodle-sync.env
-# Fill SUPABASE_* from vault (hosted), MOODLE_* for local Moodle only.
-# Never commit env/bridge/*.env
+1. Leave `VITE_MOODLE_SITE_URL` unset, or set it to `https://sijil-lms.duckdns.org`.
+2. The lead sets these hosted secrets, then deploys the function:
+   `MOODLE_BASE_URL=https://sijil-lms.duckdns.org`
+   `MOODLE_EXPECTED_SITE_URL=https://sijil-lms.duckdns.org`
+   `MOODLE_TOKEN` from the live Moodle site's SIJIL web service (not from git).
+3. Sync from Integrations while logged in as a learner whose email exists on that Moodle site.
 
-npm run validate:bridge-moodle-env
-npm run moodle:serve-bridge    # http://127.0.0.1:8787
-```
+### B) Optional — Moodle running on your own computer
 
-In `.env.local` (FE):
-
-```bash
-VITE_MOODLE_SITE_URL=http://localhost:8000
-VITE_MOODLE_SYNC_BRIDGE_URL=http://127.0.0.1:8787
-```
+The local bridge is used only when `VITE_MOODLE_SITE_URL` is `localhost`, `127.0.0.1`, or `host.docker.internal`. It does not sync the public site.
 
 Identity for upserts always comes from the **hosted learner JWT**, not a hardcoded local user id.
 See `env/bridge/README.md` for details.

@@ -1,7 +1,7 @@
 # Local-only Moodle + Supabase env (preparation)
 
 These files configure an **isolated** Moodle integration test against local
-Supabase (`http://127.0.0.1:54321`) and Moodle (`http://localhost:8000`).
+Supabase (`http://127.0.0.1:54321`) and Moodle (`https://sijil-lms.duckdns.org`).
 
 ## Files
 

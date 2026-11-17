@@ -18,6 +18,7 @@ import {
   fetchMoodleCourseActivities,
   hasMoodleAccessControlWarning,
   isLocalMoodleBridgeMode,
+  MOODLE_SITE_URL,
   resolveMoodleConnectionSiteHost,
   syncMoodleData,
   testMoodleConnection,
@@ -524,6 +525,8 @@ export default function Integrations() {
             onConnect={connectMoodle}
             onSync={syncMoodle}
             onDisconnect={handleDisconnectMoodle}
+            externalHref={MOODLE_SITE_URL}
+            externalLabel="Open Moodle"
             connectLoading={lmsSyncing}
             syncLoading={lmsSyncing}
           />
@@ -588,6 +591,7 @@ export default function Integrations() {
           error={moodleError}
           moodleEmail={moodleConnection?.moodle_email}
           moodleSiteHost={moodleSiteHost}
+          moodleSiteUrl={MOODLE_SITE_URL}
           lastSync={lmsLastSync}
           recordCount={lmsImportedCount}
           activities={moodleActivities}

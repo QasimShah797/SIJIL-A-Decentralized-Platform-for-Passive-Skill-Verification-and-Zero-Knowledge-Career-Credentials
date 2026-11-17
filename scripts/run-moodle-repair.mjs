@@ -97,7 +97,7 @@ async function main() {
       const externalId = `moodle_assignment_${assignmentId}`;
       const grade = row.grade == null ? null : Number(row.grade);
       const gradeMax = row.grade_max == null ? null : Number(row.grade_max);
-      const moodleSiteUrl = String(row.moodle_site_url || course?.moodle_site_url || "https://sijil-fyp.moodlecloud.com");
+      const moodleSiteUrl = String(row.moodle_site_url || course?.moodle_site_url || "https://sijil-lms.duckdns.org");
       const teacherFeedback = row.feedback ? String(row.feedback) : feedbackByAssignment.get(assignmentId) ?? null;
       const now = row.synced_at ? String(row.synced_at) : new Date().toISOString();
       const metadata = {

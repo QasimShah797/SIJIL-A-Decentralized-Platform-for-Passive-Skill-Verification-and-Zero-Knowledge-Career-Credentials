@@ -1,11 +1,12 @@
 /**
- * Local Moodle → Hosted Supabase sync bridge helpers (pure; no I/O).
+ * Optional local bridge helpers (pure; no I/O).
  *
- * Hosted Edge cannot reach WSL localhost:8000. The bridge runs moodle-sync
- * locally (Deno) with MOODLE_* pointing at local Moodle and SUPABASE_* at
- * hosted project nhzvtqpplfruzocframc. The browser must call that local
- * process — never the hosted Edge — when VITE_MOODLE_SYNC_BRIDGE_URL is set.
+ * The public Moodle site is called by the hosted moodle-sync function.
+ * The browser uses a local bridge only when Moodle itself is on a local
+ * development host. A leftover VITE_MOODLE_SYNC_BRIDGE_URL must not force
+ * every teammate to run a process on port 8787.
  */
+import { parseMoodleSiteUrl } from "../../supabase/functions/moodle-sync/moodle-site-url.ts";
 
 const LOCAL_BRIDGE_HOSTS = new Set([
   "localhost",
@@ -78,15 +79,31 @@ export function resolveMoodleSyncBridgeConfig(
 
 export function isMoodleSyncBridgeEnabled(
   envValue: string | null | undefined = import.meta.env.VITE_MOODLE_SYNC_BRIDGE_URL,
+  moodleSiteUrl?: string | null,
 ): boolean {
-  return resolveMoodleSyncBridgeConfig(envValue).enabled;
+  return resolveMoodleSyncRoute(envValue, moodleSiteUrl).enabled;
+}
+
+/**
+ * Public Moodle always uses the hosted function, even if a local bridge URL
+ * is still set. The bridge is only for a Moodle site on this computer.
+ */
+export function resolveMoodleSyncRoute(
+  bridgeEnv: string | null | undefined,
+  moodleSiteUrl: string | null | undefined,
+): MoodleSyncBridgeConfig {
+  const site = moodleSiteUrl ? parseMoodleSiteUrl(moodleSiteUrl) : null;
+  if (!site?.isLocalDevHost) {
+    return { enabled: false, url: null, error: null };
+  }
+  return resolveMoodleSyncBridgeConfig(bridgeEnv);
 }
 
 export function moodleSyncBridgeUnreachableMessage(bridgeUrl: string): string {
   return (
     `Local Moodle sync bridge is unreachable at ${bridgeUrl}. ` +
-    "Start it with: npm run moodle:serve-bridge (local Moodle must be on :8000). " +
-    "Hosted Edge cannot reach localhost Moodle — the bridge is required."
+    "That bridge is only used when Moodle is running on this computer. " +
+    "For the public site, remove VITE_MOODLE_SYNC_BRIDGE_URL so sync uses the hosted moodle-sync function."
   );
 }
 

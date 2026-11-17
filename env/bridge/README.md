@@ -1,18 +1,18 @@
-# Local Moodle → Hosted Supabase sync bridge
+# Optional bridge for Moodle on this computer
 
-Hosted `moodle-sync` Edge **cannot** call `http://localhost:8000`. This bridge
-runs the **same** `supabase/functions/moodle-sync` code on your machine so it
-can reach local Moodle and write (via service role) to hosted Supabase.
+The public site `https://sijil-lms.duckdns.org` is synced by the hosted `moodle-sync` function. Do not start this bridge for that site, and do not set `VITE_MOODLE_SYNC_BRIDGE_URL`.
+
+This bridge is only for a Moodle site on your own computer (`localhost`, `127.0.0.1`, or `host.docker.internal`). It runs the same function locally and writes to hosted Supabase.
 
 ```
 Browser (JWT) → local moodle-sync (:8787)
-                    ├─ Moodle REST http://localhost:8000  (MOODLE_TOKEN server-side)
+                    ├─ local Moodle REST (MOODLE_TOKEN server-side)
                     └─ Hosted Supabase REST (service role; identity from JWT only)
 ```
 
 ## Prerequisites
 
-1. Local Moodle up at `http://localhost:8000` with webservice token.
+1. Moodle running on this computer, with a webservice token from that local site.
 2. FE/BE already pointed at hosted project `nhzvtqpplfruzocframc`.
 3. Hosted tables for Moodle sync present (see report). Apply
    `skill_evidence_links` from `20260620120000_github_evidence_records.sql`

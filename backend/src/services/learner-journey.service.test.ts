@@ -774,7 +774,7 @@ describe("LMS / Moodle evidence journey mapping", () => {
     suggested_skill_name: "Java",
     source: "LMS",
     repository_name: "Java Programming Fundamentals",
-    repository_url: "http://localhost:8000",
+    repository_url: "https://sijil-lms.duckdns.org",
     description: "Java Programming Fundamentals",
     status: "verified",
     external_id: "moodle_assignment_1",

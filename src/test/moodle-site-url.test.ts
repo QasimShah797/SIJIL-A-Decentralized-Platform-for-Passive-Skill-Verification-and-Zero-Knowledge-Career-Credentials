@@ -3,7 +3,8 @@ import {
   assertActualMoodleSiteMatchesExpected,
   assertMoodleUrlTransportPolicy,
   bodyAttemptsMoodleHostOverride,
-  DEFAULT_MOODLE_CLOUD_SITE_URL,
+  DEFAULT_MOODLE_SITE_URL,
+  isPreviousSijilMoodleSite,
   moodleSiteUrlsMatch,
   normalizeMoodleSiteUrl,
   resolveExpectedMoodleSiteUrlFromEnv,
@@ -11,16 +12,24 @@ import {
 } from "../../supabase/functions/moodle-sync/moodle-site-url.ts";
 
 describe("moodle site URL configuration", () => {
-  it("defaults to MoodleCloud when env is absent", () => {
+  it("defaults to the live SIJIL Moodle site when env is absent", () => {
     expect(resolveExpectedMoodleSiteUrlFromEnv({})).toBe(
-      normalizeMoodleSiteUrl(DEFAULT_MOODLE_CLOUD_SITE_URL),
+      normalizeMoodleSiteUrl(DEFAULT_MOODLE_SITE_URL),
     );
     expect(resolveConfiguredMoodleSiteUrl(undefined)).toBe(
-      normalizeMoodleSiteUrl(DEFAULT_MOODLE_CLOUD_SITE_URL),
+      "https://sijil-lms.duckdns.org",
     );
     expect(resolveConfiguredMoodleSiteUrl("")).toBe(
-      normalizeMoodleSiteUrl(DEFAULT_MOODLE_CLOUD_SITE_URL),
+      "https://sijil-lms.duckdns.org",
     );
+  });
+
+  it("recognizes the old local and MoodleCloud addresses", () => {
+    expect(isPreviousSijilMoodleSite("http://localhost:8000")).toBe(true);
+    expect(isPreviousSijilMoodleSite("http://127.0.0.1:8000")).toBe(true);
+    expect(isPreviousSijilMoodleSite("https://sijil-fyp.moodlecloud.com")).toBe(true);
+    expect(isPreviousSijilMoodleSite("https://sijil-lms.duckdns.org")).toBe(false);
+    expect(isPreviousSijilMoodleSite("http://localhost:5000")).toBe(false);
   });
 
   it("accepts local Moodle expected URL over HTTP", () => {

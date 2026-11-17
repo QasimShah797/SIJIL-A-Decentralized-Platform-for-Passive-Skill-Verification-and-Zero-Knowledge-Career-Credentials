@@ -4,6 +4,7 @@ import {
   moodleSyncBridgeUnreachableMessage,
   parseMoodleSyncBridgeUrl,
   resolveMoodleSyncBridgeConfig,
+  resolveMoodleSyncRoute,
 } from "@/lib/moodle-sync-bridge";
 
 describe("parseMoodleSyncBridgeUrl", () => {
@@ -54,10 +55,30 @@ describe("resolveMoodleSyncBridgeConfig", () => {
   });
 });
 
+describe("resolveMoodleSyncRoute", () => {
+  it("uses the hosted function for the public Moodle site even if a bridge URL is set", () => {
+    expect(resolveMoodleSyncRoute(
+      "http://127.0.0.1:8787",
+      "https://sijil-lms.duckdns.org",
+    )).toEqual({ enabled: false, url: null, error: null });
+  });
+
+  it("uses the local bridge only when Moodle itself is local", () => {
+    expect(resolveMoodleSyncRoute(
+      "http://127.0.0.1:8787",
+      "http://localhost:8000",
+    )).toEqual({
+      enabled: true,
+      url: "http://127.0.0.1:8787",
+      error: null,
+    });
+  });
+});
+
 describe("bridge error messages", () => {
-  it("explains unreachable local bridge without claiming hosted Moodle works", () => {
+  it("explains that the local bridge is not the public Moodle path", () => {
     const msg = moodleSyncBridgeUnreachableMessage("http://127.0.0.1:8787");
-    expect(msg).toMatch(/moodle:serve-bridge/);
-    expect(msg.toLowerCase()).toMatch(/hosted edge cannot reach localhost/);
+    expect(msg).toMatch(/VITE_MOODLE_SYNC_BRIDGE_URL/);
+    expect(msg.toLowerCase()).toMatch(/hosted moodle-sync function/);
   });
 });

@@ -50,6 +50,8 @@ export type IntegrationConnectionCardProps = {
   connectLoading?: boolean;
   syncLoading?: boolean;
   connectLabel?: string;
+  externalHref?: string;
+  externalLabel?: string;
   className?: string;
 };
 
@@ -73,6 +75,8 @@ export function IntegrationConnectionCard({
   connectLoading = false,
   syncLoading = false,
   connectLabel = "Connect",
+  externalHref,
+  externalLabel = "Open",
   className,
 }: IntegrationConnectionCardProps) {
   const isConnected = status === "connected";
@@ -199,6 +203,16 @@ export function IntegrationConnectionCard({
           </Button>
         ) : null}
       </div>
+      {externalHref ? (
+        <a
+          href={externalHref}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-3 inline-flex text-xs font-semibold text-[#023E8A] underline-offset-2 hover:underline"
+        >
+          {externalLabel}
+        </a>
+      ) : null}
     </div>
   );
 }

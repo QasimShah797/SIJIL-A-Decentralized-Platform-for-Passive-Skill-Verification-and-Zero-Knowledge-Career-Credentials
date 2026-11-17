@@ -9,6 +9,11 @@
  * Request bodies must never choose the Moodle host.
  */
 
+/** Live SIJIL Moodle. Used when MOODLE_BASE_URL / MOODLE_EXPECTED_SITE_URL / VITE_MOODLE_SITE_URL are unset. */
+export const DEFAULT_MOODLE_SITE_URL = "https://sijil-lms.duckdns.org";
+export const DEFAULT_MOODLE_SITE_HOST = "sijil-lms.duckdns.org";
+
+/** Retired hosted Moodle. Kept so old saved rows can be recognized. */
 export const DEFAULT_MOODLE_CLOUD_SITE_URL = "https://sijil-fyp.moodlecloud.com";
 export const LEGACY_MOODLE_CLOUD_HOST = "sijil.moodlecloud.com";
 export const DEFAULT_MOODLE_CLOUD_HOST = "sijil-fyp.moodlecloud.com";
@@ -127,7 +132,7 @@ export function assertMoodleUrlTransportPolicy(
 
 export function resolveConfiguredMoodleSiteUrl(
   envValue: string | null | undefined,
-  fallback: string = DEFAULT_MOODLE_CLOUD_SITE_URL,
+  fallback: string = DEFAULT_MOODLE_SITE_URL,
 ): string {
   const raw = typeof envValue === "string" ? envValue.trim() : "";
   const candidate = raw || fallback;
@@ -140,7 +145,7 @@ export function resolveExpectedMoodleSiteUrlFromEnv(
 ): string {
   return resolveConfiguredMoodleSiteUrl(
     env.MOODLE_EXPECTED_SITE_URL,
-    DEFAULT_MOODLE_CLOUD_SITE_URL,
+    DEFAULT_MOODLE_SITE_URL,
   );
 }
 
@@ -177,6 +182,22 @@ export function bodyAttemptsMoodleHostOverride(body: Record<string, unknown>): b
     "base_url",
   ];
   return keys.some((key) => Object.prototype.hasOwnProperty.call(body, key));
+}
+
+/**
+ * True for Moodle addresses this project used before the public site:
+ * MoodleCloud, and the local Docker site on port 8000.
+ */
+export function isPreviousSijilMoodleSite(url: string | null | undefined): boolean {
+  if (!url?.trim()) return false;
+  const parts = parseMoodleSiteUrl(url);
+  if (!parts) return false;
+  if (parts.hostname === "moodlecloud.com" || parts.hostname.endsWith(".moodlecloud.com")) {
+    return true;
+  }
+  if (!parts.isLocalDevHost) return false;
+  const port = parts.host.includes(":") ? parts.host.slice(parts.host.lastIndexOf(":") + 1) : "";
+  return port === "8000";
 }
 
 export function isLegacyMoodleCloudHost(url: string | null | undefined): boolean {

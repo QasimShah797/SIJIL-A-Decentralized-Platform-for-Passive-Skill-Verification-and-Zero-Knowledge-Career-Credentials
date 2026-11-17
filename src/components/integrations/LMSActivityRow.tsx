@@ -1,7 +1,9 @@
 import { BookOpen } from "lucide-react";
-import type { MoodleAssignmentActivity } from "@/lib/moodle-integration";
+import { moodleCoursePageUrl, type MoodleAssignmentActivity } from "@/lib/moodle-integration";
 
 export type LMSActivityRowProps = {
+  courseId?: number;
+  siteUrl?: string;
   courseName: string;
   courseShortname?: string | null;
   completionStatus?: string | null;
@@ -11,6 +13,31 @@ export type LMSActivityRowProps = {
   formatSubmission: (status: string) => string;
   activityStatusBadge: (status: string) => "verified" | "info" | "warning" | "neutral";
 };
+
+export function CourseLink({
+  courseId,
+  siteUrl,
+  label,
+}: {
+  courseId?: number;
+  siteUrl?: string;
+  label: string;
+}) {
+  const href = courseId != null ? moodleCoursePageUrl(courseId, siteUrl) : null;
+  if (!href) {
+    return <p className="truncate text-sm font-semibold text-[#023E8A]">{label}</p>;
+  }
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="truncate text-sm font-semibold text-[#023E8A] underline-offset-2 hover:underline"
+    >
+      {label}
+    </a>
+  );
+}
 
 function gradePercent(gradeText: string): number {
   const match = gradeText.match(/(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)/);
@@ -22,6 +49,8 @@ function gradePercent(gradeText: string): number {
 }
 
 export function LMSActivityRow({
+  courseId,
+  siteUrl,
   courseName,
   courseShortname,
   completionStatus,
@@ -51,7 +80,7 @@ export function LMSActivityRow({
             <BookOpen className="h-4 w-4" aria-hidden />
           </div>
           <div className="min-w-0">
-            <p className="truncate text-sm font-semibold text-[#023E8A]">{courseLabel}</p>
+            <CourseLink courseId={courseId} siteUrl={siteUrl} label={courseLabel} />
             <p className="text-[10px] uppercase tracking-wide text-[#64748b]">{a.activityType}</p>
           </div>
         </div>

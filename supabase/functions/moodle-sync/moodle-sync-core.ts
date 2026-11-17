@@ -12,7 +12,7 @@ import {
 import {
   assertActualMoodleSiteMatchesExpected,
   assertMoodleUrlTransportPolicy,
-  DEFAULT_MOODLE_CLOUD_SITE_URL,
+  DEFAULT_MOODLE_SITE_URL,
   normalizeMoodleSiteUrl as normalizeMoodleSiteUrlCanonical,
   resolveExpectedMoodleSiteUrlFromEnv,
   resolveMoodleRestEndpoint,
@@ -48,7 +48,7 @@ export function logMoodleEnvConfig(): {
   const tokenExists = Boolean(MOODLE_TOKEN?.trim());
   const tokenLength = MOODLE_TOKEN?.trim().length ?? 0;
   const restEndpoint = baseUrl ? `${baseUrl}/webservice/rest/server.php` : null;
-  let expectedSiteUrl = DEFAULT_MOODLE_CLOUD_SITE_URL;
+  let expectedSiteUrl = DEFAULT_MOODLE_SITE_URL;
   try {
     expectedSiteUrl = resolveExpectedMoodleSiteUrlFromEnv({
       MOODLE_EXPECTED_SITE_URL: Deno.env.get("MOODLE_EXPECTED_SITE_URL"),
@@ -194,7 +194,7 @@ export function getExpectedMoodleSiteUrl(): string {
 }
 
 /** @deprecated Use getExpectedMoodleSiteUrl() — default MoodleCloud when env unset. */
-export const EXPECTED_MOODLE_SITE_URL = DEFAULT_MOODLE_CLOUD_SITE_URL;
+export const EXPECTED_MOODLE_SITE_URL = DEFAULT_MOODLE_SITE_URL;
 
 export function logSyncStage(stage: string, data: Record<string, unknown> = {}) {
   const payload = { service: "moodle-sync", stage, ts: new Date().toISOString(), ...data };
