@@ -175,7 +175,9 @@ export default function RecruiterInterviews() {
         description:
           updated.emailStatus === "sent"
             ? `${updated.candidateName} has been emailed about the cancellation.`
-            : "The interview is cancelled. The candidate was not emailed because SMTP is not configured.",
+            : updated.emailStatus === "failed"
+              ? "The interview is cancelled, but the email provider did not accept the notice."
+              : "The interview is cancelled. The candidate was not emailed because email delivery is not configured.",
         variant: updated.emailStatus === "sent" ? "default" : "destructive",
       });
       setCancellingId(null);

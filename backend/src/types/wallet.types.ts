@@ -161,6 +161,8 @@ export interface WalletShareRecordView {
   updatedAt: string;
   expiresAt: string | null;
   revokedAt: string | null;
+  recipientName: string | null;
+  recipientOrganization: string | null;
 }
 
 export interface WalletCompetencyDetailView {
@@ -170,11 +172,26 @@ export interface WalletCompetencyDetailView {
 
 export type WalletShareScope = "all" | "selected" | "issued";
 
+export interface OwnerShareSummary {
+  id: string;
+  label: string;
+  shareKind: "all-recruiters" | "direct-recruiter" | "public-link";
+  recipientName: string | null;
+  recipientOrganization: string | null;
+  shareStatus: "Active" | "Expired" | "Revoked";
+  createdAt: string;
+  expiresAt: string | null;
+}
+
 export interface ShareWalletCompetencyInput {
   selectionMode: WalletShareSelectionMode;
   selectedFields: WalletShareFieldId[];
   shareScope?: WalletShareScope;
   expiresInDays?: number;
+  recipientUserId?: string;
+  shareAudience?: "all-recruiters";
+  consentToAllRecruiters?: boolean;
+  competencyVersionIds?: string[];
 }
 
 export interface ShareWalletCompetencyResult {
@@ -184,6 +201,9 @@ export interface ShareWalletCompetencyResult {
   tokenHint: string;
   proofType: string;
   expiresAt: string | null;
+  delivery: "public-link" | "direct-recruiter" | "all-recruiters";
+  recipientName: string | null;
+  recipientOrganization: string | null;
 }
 
 export interface PublicPresentationVerification {

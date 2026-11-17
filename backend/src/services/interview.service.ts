@@ -25,6 +25,11 @@ import {
 } from "../utils/interviewEmail";
 import { isSmtpConfigured } from "../utils/mailer";
 import type { AuthCaller } from "./learner-access";
+import {
+  finishInvitationDelivery,
+  interviewSaveFailure,
+  safeMailFailure,
+} from "./interview-delivery";
 
 type InterviewRow = Record<string, unknown>;
 
@@ -203,24 +208,16 @@ export class InterviewService {
       .single();
 
     if (error || !data) {
-      throw new AppError(error?.message ?? "Could not save the interview", 500);
+      console.error("interview save failed", { code: error && "code" in error ? error.code ?? null : null });
+      throw interviewSaveFailure();
     }
 
     const interview = rowToInterview(data as InterviewRow);
-
-    try {
-      const mail = await sendInterviewInvitationEmail(toEmailDetails(interview, recruiter.title));
-      const emailStatus = mail.delivered ? INTERVIEW_EMAIL_STATUS.SENT : INTERVIEW_EMAIL_STATUS.NOT_SENT;
-      await markEmailStatus(interview.id, emailStatus, accessToken);
-      return { ...interview, emailStatus };
-    } catch (err) {
-      await markEmailStatus(interview.id, INTERVIEW_EMAIL_STATUS.FAILED, accessToken);
-      const message = err instanceof Error ? err.message : "Could not send the interview invitation email";
-      throw new AppError(
-        `Interview was saved, but the invitation email could not be sent: ${message}`,
-        502,
-      );
-    }
+    const emailStatus = await finishInvitationDelivery({
+      send: () => sendInterviewInvitationEmail(toEmailDetails(interview, recruiter.title)),
+      mark: (status) => markEmailStatus(interview.id, status, accessToken),
+    });
+    return { ...interview, emailStatus };
   }
 
   async listForRecruiter(
@@ -284,19 +281,11 @@ export class InterviewService {
     const interview = rowToInterview(data as InterviewRow);
     const { title } = await resolveRecruiterProfile(recruiterId);
 
-    try {
-      const mail = await sendInterviewCancellationEmail(toEmailDetails(interview, title));
-      const emailStatus = mail.delivered ? INTERVIEW_EMAIL_STATUS.SENT : INTERVIEW_EMAIL_STATUS.NOT_SENT;
-      await markEmailStatus(interview.id, emailStatus, accessToken);
-      return { ...interview, emailStatus };
-    } catch (err) {
-      await markEmailStatus(interview.id, INTERVIEW_EMAIL_STATUS.FAILED, accessToken);
-      const message = err instanceof Error ? err.message : "Could not send the cancellation email";
-      throw new AppError(
-        `Interview was cancelled, but the candidate email could not be sent: ${message}`,
-        502,
-      );
-    }
+    const emailStatus = await finishInvitationDelivery({
+      send: () => sendInterviewCancellationEmail(toEmailDetails(interview, title)),
+      mark: (status) => markEmailStatus(interview.id, status, accessToken),
+    });
+    return { ...interview, emailStatus };
   }
 
   async resendEmail(
@@ -337,8 +326,8 @@ export class InterviewService {
       return { ...interview, emailStatus: INTERVIEW_EMAIL_STATUS.SENT };
     } catch (err) {
       await markEmailStatus(interview.id, INTERVIEW_EMAIL_STATUS.FAILED, accessToken);
-      const message = err instanceof Error ? err.message : "Could not send the email";
-      throw new AppError(`Could not send the interview email: ${message}`, 502);
+      console.error("[SIJIL Backend Error] Interview email was not accepted.", safeMailFailure(err));
+      throw new AppError("The email provider did not accept the invitation.", 502);
     }
   }
 }

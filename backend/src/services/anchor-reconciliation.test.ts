@@ -102,6 +102,17 @@ function memoryStore(row: ReconcileCredential, options: { refuseSecondInProgress
       current = { ...current, anchorTxId: newTxId };
       return true;
     },
+    async syncObservedAnchor(id, observation) {
+      if (current.id !== id || (current.anchorStatus !== "pending" && current.anchorStatus !== "failed")) {
+        return false;
+      }
+      current = {
+        ...current,
+        anchorStatus: "anchored",
+        revokeStatus: observation === "revoked" ? "revoked" : current.revokeStatus,
+      };
+      return true;
+    },
   };
   return { store, audits, getCurrent: () => current, setInProgress: () => { inProgress = options.refuseSecondInProgress !== false; } };
 }
@@ -214,6 +225,39 @@ describe("anchor reconciliation", () => {
     assert.equal(audits[0]?.outcome, "refused_hash_confirmation");
   });
 
+  it("records a pending credential that is already on the ledger without submitting", async () => {
+    let submitted = 0;
+    const { store, getCurrent } = memoryStore(credential({
+      anchorStatus: "pending",
+      anchorTxId: null,
+      anchoredAt: null,
+    }));
+    const result = await reconcileCredentialAnchor(request, {
+      store,
+      ledger: ledgerStub({ exists: true, hashMatches: true, status: "active" }, {
+        submit: async () => {
+          submitted += 1;
+          return { txId: "should-not" };
+        },
+      }),
+    });
+    assert.equal(result.outcome, "already_on_ledger");
+    assert.equal(submitted, 0);
+    assert.equal(getCurrent().anchorStatus, "anchored");
+  });
+
+  it("refuses a pending credential whose ledger hash differs", async () => {
+    const { store, audits } = memoryStore(credential({ anchorStatus: "failed", anchorTxId: null }));
+    await assert.rejects(
+      () => reconcileCredentialAnchor(request, {
+        store,
+        ledger: ledgerStub({ exists: true, hashMatches: false, status: "active" }),
+      }),
+      (error: unknown) => error instanceof AppError && error.statusCode === 409,
+    );
+    assert.equal(audits[0]?.outcome, "refused_conflicting_hash");
+  });
+
   it("preview is read-only and reports the missing-anchor plan", async () => {
     const { store, audits } = memoryStore(credential());
     const plan = await previewReconciliation(ID, {
@@ -235,16 +279,19 @@ describe("anchor reconciliation", () => {
 });
 
 describe("wallet ledger status", () => {
-  it("reports pending and failed from the database without querying Fabric", async () => {
+  it("reads the ledger for pending and failed rows and does not treat a disabled ledger as anchored", async () => {
     let queried = 0;
     const ledger = ledgerStub({ exists: true, hashMatches: true, status: "active" });
     ledger.verifyCredential = async () => {
       queried += 1;
       return { exists: true, hashMatches: true, status: "active" };
     };
-    assert.equal(await resolveWalletLedgerAnchorStatus({ id: ID, credential_hash: HASH, anchor_status: "pending" }, ledger), "pending");
-    assert.equal(await resolveWalletLedgerAnchorStatus({ id: ID, credential_hash: HASH, anchor_status: "failed" }, ledger), "failed");
-    assert.equal(queried, 0);
+    assert.equal(await resolveWalletLedgerAnchorStatus({ id: ID, credential_hash: HASH, anchor_status: "pending" }, ledger), "anchored");
+    assert.equal(await resolveWalletLedgerAnchorStatus({ id: `${ID.slice(0, -1)}d`, credential_hash: HASH, anchor_status: "failed", revoke_status: "pending" }, ledger), "revocation_pending");
+    assert.equal(queried, 2);
+    const offline = ledgerStub({ exists: true, hashMatches: true, status: "active" }, { enabled: false });
+    assert.equal(await resolveWalletLedgerAnchorStatus({ id: ID, credential_hash: HASH, anchor_status: "pending" }, offline), "pending");
+    assert.equal(await resolveWalletLedgerAnchorStatus({ id: ID, credential_hash: HASH, anchor_status: "failed" }, offline), "failed");
   });
 
   it("reports anchored only when the ledger hash matches", async () => {

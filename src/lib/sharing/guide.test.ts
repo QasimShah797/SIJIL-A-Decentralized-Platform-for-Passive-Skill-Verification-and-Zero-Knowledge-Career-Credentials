@@ -56,8 +56,10 @@ describe("privacy-preserving sharing", () => {
     expect(signedPresentationReview(["TypeScript"]).join(" ")).toMatch(/not hidden/);
   });
 
-  it("does not offer a privacy proof when the blockchain record is inactive", () => {
-    expect(zkpShareAvailability({ verified: true, fabric: "unavailable" }).available).toBe(false);
+  it("keeps a privacy proof available when the blockchain anchor is not active", () => {
+    const offline = zkpShareAvailability({ verified: true, fabric: "unavailable" });
+    expect(offline.available).toBe(true);
+    expect(offline.message).toMatch(/not checked/);
     expect(zkpShareAvailability({ verified: false, fabric: "active" }).available).toBe(false);
     expect(zkpShareAvailability({ verified: true, fabric: "active" }).available).toBe(true);
   });
@@ -74,6 +76,28 @@ describe("privacy-preserving sharing", () => {
       .some((line) => line.value === "Verification unavailable")).toBe(true);
     expect(recruiterVerificationLines({ access: "active", ledgerStatus: null })
       .some((line) => line.value === "Not checked yet")).toBe(true);
+  });
+
+  it("shows separate failures and does not treat an unchecked proof as passed", () => {
+    const lines = recruiterVerificationLines({
+      access: "active",
+      ledgerStatus: "verified",
+      checks: {
+        document: "valid",
+        signature: "invalid",
+        holder: "bound",
+        evidence: "match",
+        issuer: "trusted",
+        anchor: "hash_mismatch",
+        revocation: "pending",
+        zkp: "not_checked",
+      },
+    });
+    expect(lines.find((line) => line.label === "Signature")?.value).toBe("Failed");
+    expect(lines.find((line) => line.label === "Blockchain")?.value).toBe("Failed");
+    expect(lines.find((line) => line.label === "Revocation")?.value).toBe("Pending");
+    expect(lines.find((line) => line.label === "Privacy proof")?.value).toBe("Not checked");
+    expect(lines.some((line) => line.label === "Privacy proof" && line.value === "Passed")).toBe(false);
   });
 
   it("does not put a private key in a presentation submission", () => {

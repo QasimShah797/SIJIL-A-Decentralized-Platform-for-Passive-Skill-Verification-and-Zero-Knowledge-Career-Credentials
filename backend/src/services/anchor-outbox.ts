@@ -1,6 +1,7 @@
 /**
  * Pure outbox processing for Fabric credential anchors (inject ledger + store).
  */
+import { randomUUID } from "node:crypto";
 import {
   LedgerDisabledError,
   LedgerPermanentError,
@@ -9,6 +10,14 @@ import {
   publicErrorMessage,
 } from "./ledger.errors";
 import type { LedgerPort } from "./ledger.types";
+
+/** Claim columns are not on the database yet. The tick must stop rather than submit without a lease. */
+export class QueueSchemaMissingError extends Error {
+  constructor() {
+    super("anchor claim columns are not applied; queue was not submitted");
+    this.name = "QueueSchemaMissingError";
+  }
+}
 
 export interface OutboxCredential {
   id: string;
@@ -24,15 +33,22 @@ export interface OutboxCredential {
   revokeStatus?: string;
   revokeAttempts?: number;
   revocationReason?: string;
+  claimToken?: string | null;
 }
 
 export interface AnchorOutboxStore {
   listCandidates(limit: number, maxAttempts: number): Promise<OutboxCredential[]>;
-  markAnchored(id: string, txId: string, anchoredAt: string): Promise<void>;
+  markAnchored(id: string, txId: string, anchoredAt: string, claimToken?: string): Promise<void>;
+  /** Returns the claimed row, or null when another worker holds the lease. */
+  claimAnchor?(id: string, token: string, until: string): Promise<OutboxCredential | null>;
+  claimRevoke?(id: string, token: string, until: string): Promise<OutboxCredential | null>;
+  /** Revoked before any anchor existed. Does not submit a Fabric transaction. */
+  markAnchorSuppressed?(id: string, at: string): Promise<void>;
   markFailed(id: string, attempts: number, error: string, at: string): Promise<void>;
   getByIdOrUri(idOrUri: string): Promise<OutboxCredential | null>;
   resetForRetry(id: string, at: string): Promise<OutboxCredential>;
   countByStatus(status: "pending" | "failed"): Promise<number>;
+  countRevokeByStatus?(status: "pending" | "failed"): Promise<number | null>;
   listRevokeCandidates(limit: number, maxAttempts: number): Promise<OutboxCredential[]>;
   markRevokeSucceeded(id: string, txId: string, at: string): Promise<void>;
   markRevokeFailed(id: string, attempts: number, error: string, at: string): Promise<void>;
@@ -45,6 +61,13 @@ export interface AnchorWorkerOptions {
   maxAttempts: number;
   backoffBaseMs: number;
   now?: () => Date;
+  /** When true, the worker does not submit existing or new anchors. */
+  queueHeld?: boolean;
+  /** Only rows created at or after this ISO time are eligible. */
+  notBefore?: string;
+  /** When false, RevokeCredential is not submitted. */
+  revocationSubmit?: boolean;
+  leaseMs?: number;
 }
 
 export interface AnchorBatchResult {
@@ -68,13 +91,16 @@ export function isAnchorDue(
 
 export async function processAnchorBatch(options: AnchorWorkerOptions): Promise<AnchorBatchResult> {
   const result: AnchorBatchResult = { processed: 0, succeeded: 0, failed: 0, skipped: 0 };
-  if (!options.ledger.isEnabled()) {
+  if (!options.ledger.isEnabled() || options.queueHeld) {
     return result;
   }
 
   const now = options.now?.() ?? new Date();
   const candidates = await options.store.listCandidates(options.batchSize * 3, options.maxAttempts);
-  const due = candidates.filter((row) => isAnchorDue(row, now, options.backoffBaseMs)).slice(0, options.batchSize);
+  const due = candidates
+    .filter((row) => isAnchorDue(row, now, options.backoffBaseMs))
+    .filter((row) => !options.notBefore || row.createdAt >= options.notBefore)
+    .slice(0, options.batchSize);
 
   for (const row of due) {
     const outcome = await processOneAnchor(row, options, now, false);
@@ -99,6 +125,13 @@ export async function processOneAnchor(
   if (!ignoreBackoff && !isAnchorDue(row, now, options.backoffBaseMs)) {
     return "skipped";
   }
+  if (row.revokeStatus && row.revokeStatus !== "not_required") {
+    return "skipped";
+  }
+  const claimed = await claimRow(options.store.claimAnchor, row, options, now);
+  if (!claimed) return "skipped";
+  row = claimed;
+
   if (!row.credentialHash) {
     await options.store.markFailed(
       row.id,
@@ -117,7 +150,7 @@ export async function processOneAnchor(
       holderDid: row.holderDid,
       issuedAt: row.issuedAt,
     });
-    await options.store.markAnchored(row.id, anchored.txId, now.toISOString());
+    await options.store.markAnchored(row.id, anchored.txId, now.toISOString(), row.claimToken ?? undefined);
     return "succeeded";
   } catch (err) {
     if (err instanceof LedgerDisabledError) {
@@ -127,7 +160,7 @@ export async function processOneAnchor(
       try {
         const verify = await options.ledger.verifyCredential(row.id, row.credentialHash);
         if (verify.exists && verify.hashMatches) {
-          await options.store.markAnchored(row.id, "already-anchored", now.toISOString());
+          await options.store.markAnchored(row.id, "already-anchored", now.toISOString(), row.claimToken ?? undefined);
           return "succeeded";
         }
         await options.store.markFailed(
@@ -163,7 +196,7 @@ async function failTransient(
 
 export async function processRevokeBatch(options: AnchorWorkerOptions): Promise<AnchorBatchResult> {
   const result: AnchorBatchResult = { processed: 0, succeeded: 0, failed: 0, skipped: 0 };
-  if (!options.ledger.isEnabled()) {
+  if (!options.ledger.isEnabled() || options.revocationSubmit === false) {
     return result;
   }
 
@@ -199,8 +232,24 @@ async function processOneRevoke(
   if (!options.ledger.isEnabled()) {
     return "skipped";
   }
+  const claimed = await claimRow(options.store.claimRevoke, row, options, now);
+  if (!claimed) return "skipped";
+  row = claimed;
+
   if (row.anchorStatus !== "anchored") {
-    return "skipped";
+    try {
+      const view = await options.ledger.verifyCredential(row.id, row.credentialHash);
+      if (!view.exists) {
+        await options.store.markAnchorSuppressed?.(row.id, now.toISOString());
+        await options.store.markRevokeSucceeded(row.id, "revoked-before-anchor", now.toISOString());
+        return "succeeded";
+      }
+    } catch (err) {
+      if (err instanceof LedgerDisabledError) return "skipped";
+      const attempts = Math.min((row.revokeAttempts ?? 0) + 1, options.maxAttempts);
+      await options.store.markRevokeFailed(row.id, attempts, publicErrorMessage(err), now.toISOString());
+      return "failed";
+    }
   }
   const reason = (row.revocationReason ?? "").trim() || "unspecified";
 
@@ -229,4 +278,23 @@ async function processOneRevoke(
     await options.store.markRevokeFailed(row.id, attempts, publicErrorMessage(err), now.toISOString());
     return "failed";
   }
+}
+
+async function claimRow(
+  claim: ((id: string, token: string, until: string) => Promise<OutboxCredential | null>) | undefined,
+  row: OutboxCredential,
+  options: AnchorWorkerOptions,
+  now: Date,
+): Promise<OutboxCredential | null> {
+  if (!claim) return row;
+  const token = randomUUID();
+  const until = new Date(now.getTime() + (options.leaseMs ?? 60_000)).toISOString();
+  const claimed = await claim(row.id, token, until);
+  if (!claimed) return null;
+  return { ...claimed, claimToken: token };
+}
+
+export function anchorQueueHeld(notBefore: string | undefined): boolean {
+  if (!notBefore) return true;
+  return Number.isNaN(Date.parse(notBefore));
 }

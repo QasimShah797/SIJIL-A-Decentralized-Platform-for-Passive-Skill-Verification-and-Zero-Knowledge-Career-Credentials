@@ -14,6 +14,14 @@ export interface AssessmentCommitmentClaim {
   commitment: string;
 }
 
+export interface CompetencyVersionClaim {
+  competencyKey: string;
+  versionNumber: number;
+  previousCredentialId: string | null;
+  evidenceFingerprint: string;
+  validationReference: string;
+}
+
 export interface CredentialDocumentInput {
   credentialUri: string;
   issuerDid: string;
@@ -24,6 +32,7 @@ export interface CredentialDocumentInput {
   validFrom: string;
   types?: string[];
   assessmentCommitment?: AssessmentCommitmentClaim;
+  competencyVersion?: CompetencyVersionClaim;
 }
 
 export interface CredentialDocument {
@@ -38,6 +47,7 @@ export interface CredentialDocument {
     evidenceCount: number;
     evidenceHashes: string[];
     assessmentCommitment?: AssessmentCommitmentClaim;
+    competencyVersion?: CompetencyVersionClaim;
   };
 }
 
@@ -75,6 +85,7 @@ export function buildCredentialDocument(input: CredentialDocumentInput): Canonic
       evidenceCount: input.evidenceCount,
       evidenceHashes,
       ...(assessmentCommitment ? { assessmentCommitment } : {}),
+      ...(input.competencyVersion ? { competencyVersion: input.competencyVersion } : {}),
     },
   };
 

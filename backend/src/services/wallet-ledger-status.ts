@@ -10,6 +10,7 @@ export type WalletLedgerAnchorStatus =
   | "failed"
   | "anchored"
   | "revoked"
+  | "revocation_pending"
   | "not_on_ledger"
   | "hash_mismatch"
   | "unavailable";
@@ -18,6 +19,7 @@ export interface WalletLedgerRow {
   id: string;
   credential_hash?: string | null;
   anchor_status?: string | null;
+  revoke_status?: string | null;
 }
 
 const CACHE_TTL_MS = 60_000;
@@ -36,10 +38,13 @@ export async function resolveWalletLedgerAnchorStatus(
   ledger: LedgerPort,
 ): Promise<WalletLedgerAnchorStatus | null> {
   const dbStatus = row.anchor_status ?? null;
-  if (dbStatus === "pending" || dbStatus === "failed") return dbStatus;
-  if (dbStatus !== "anchored") return null;
+  const tracked = dbStatus === "pending" || dbStatus === "failed" || dbStatus === "anchored";
+  if (!tracked) return null;
   const hash = row.credential_hash ?? "";
-  if (!hash || !ledger.isEnabled()) return "unavailable";
+  if (!hash || !ledger.isEnabled()) {
+    if (dbStatus === "pending" || dbStatus === "failed") return dbStatus;
+    return "unavailable";
+  }
 
   const cached = cache.get(row.id, hash);
   if (cached) return cached;
@@ -47,11 +52,20 @@ export async function resolveWalletLedgerAnchorStatus(
   let status: WalletLedgerAnchorStatus;
   try {
     const result = await ledger.verifyCredential(row.id, hash);
-    if (!result.exists) status = "not_on_ledger";
-    else if (!result.hashMatches) status = "hash_mismatch";
-    else if (result.status === "revoked") status = "revoked";
-    else status = "anchored";
+    const revokePending = row.revoke_status === "pending" || row.revoke_status === "failed";
+    if (!result.exists) {
+      status = dbStatus === "failed" ? "failed" : dbStatus === "pending" ? "pending" : "not_on_ledger";
+    } else if (!result.hashMatches) {
+      status = "hash_mismatch";
+    } else if (result.status === "revoked") {
+      status = "revoked";
+    } else if (revokePending) {
+      status = "revocation_pending";
+    } else {
+      status = "anchored";
+    }
   } catch {
+    if (dbStatus === "pending" || dbStatus === "failed") return dbStatus;
     return "unavailable";
   }
   cache.set(row.id, hash, status);

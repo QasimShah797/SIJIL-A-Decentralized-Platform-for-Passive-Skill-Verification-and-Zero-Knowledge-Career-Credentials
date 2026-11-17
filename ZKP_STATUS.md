@@ -1,6 +1,10 @@
 # SIJIL ZKP status
 
-Updated: 2026-10-31 (automated, backend-controlled policy ZKP; local only)
+Updated: 2026-11-15. The 2026-10-31 notes below still describe the fixed 60% and 70% background policies. They are unchanged. A recruiter-selected score request was added beside them. See `docs/zkp-v1.md`.
+
+The published Groth16 keys remain a single-contributor development setup. Anyone who kept the trapdoor can forge proofs for those keys. The v1 circuit still has no one-time challenge. Request acceptance is single-use in the application, not cryptographic freshness. `supabase/migrations/20261115170000_zkp_score_verification_requests.sql` is local only and has not been applied to hosted Supabase. `FABRIC_ENABLED` was not turned on. Missing below-threshold and GitHub proving keys were not regenerated.
+
+## 2026-10-31 record
 
 ## Summary
 Both documented ZKP types (`score-threshold-v1`, `github-contributions-v1`) now run as backend-controlled policies with fixed thresholds. Each has a companion "below" circuit, so `BELOW_THRESHOLD` is backed by a valid Groth16 proof rather than a failed one. The code is complete and tested locally. **Live use is blocked until the new policy-table migration is approved and applied.**

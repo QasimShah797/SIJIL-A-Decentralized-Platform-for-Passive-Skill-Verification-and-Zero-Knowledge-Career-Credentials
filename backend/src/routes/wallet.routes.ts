@@ -11,10 +11,17 @@ import {
   getOwnerWalletResume,
   getWalletCompetencies,
   getWalletCompetency,
+  listOwnerShares,
+  listRegisteredRecruiters,
   revokeWalletShare,
   shareWalletCompetency,
   syncWalletCompetency,
 } from "../controllers/wallet.controller";
+import {
+  createPendingCompetencyVersion,
+  listMyCompetencyVersions,
+  requestCompetencyIssuance,
+} from "../controllers/competency-version.controller";
 
 const router = Router();
 
@@ -25,7 +32,12 @@ router.put("/disclosure-preferences", asyncHandler(updateDisclosurePreferences))
 router.get("/competencies", asyncHandler(getWalletCompetencies));
 router.get("/competencies/:competencyId", asyncHandler(getWalletCompetency));
 router.post("/competencies/:competencyId/sync", asyncHandler(syncWalletCompetency));
+router.get("/competency-versions", asyncHandler(listMyCompetencyVersions));
+router.post("/competency-versions", asyncHandler(createPendingCompetencyVersion));
+router.post("/competency-versions/:versionId/request-issuance", asyncHandler(requestCompetencyIssuance));
+router.get("/recruiters", asyncHandler(listRegisteredRecruiters));
 router.post("/competencies/:competencyId/share", asyncHandler(shareWalletCompetency));
+router.get("/shares", asyncHandler(listOwnerShares));
 router.post("/shares/:shareId/revoke", asyncHandler(revokeWalletShare));
 router.get("/resume", asyncHandler(getOwnerWalletResume));
 router.get("/resume.pdf", asyncHandler(downloadOwnerWalletResumePdf));

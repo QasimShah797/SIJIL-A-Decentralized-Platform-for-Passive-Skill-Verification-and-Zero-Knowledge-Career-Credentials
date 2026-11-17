@@ -24,13 +24,13 @@ export async function getCandidate(req: Request, res: Response): Promise<Respons
 
 export async function searchCandidates(req: Request, res: Response): Promise<Response> {
   const query = searchQuerySchema.parse(req.query);
-  const candidates = await recruiterService.search(query, req.accessToken);
+  const candidates = await recruiterService.search(query, req.user!.id, req.accessToken);
   return sendSuccess(res, candidates);
 }
 
 export async function getCandidateProfileFields(req: Request, res: Response): Promise<Response> {
   const { ids } = profileFieldsQuerySchema.parse(req.query);
   const idList = ids.split(",").map((id) => id.trim()).filter(Boolean);
-  const fields = await recruiterService.getCandidateProfileFields(idList);
+  const fields = await recruiterService.getCandidateProfileFields(idList, req.user!.id);
   return sendSuccess(res, fields);
 }

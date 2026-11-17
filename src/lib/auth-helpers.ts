@@ -4,7 +4,7 @@ export type AppRole = "learner" | "recruiter" | "admin" | "institution";
 
 export const ROLE_HOME: Record<AppRole, string> = {
   learner: "/learner/profile",
-  recruiter: "/recruiter/search",
+  recruiter: "/recruiter/dashboard",
   admin: "/learner/profile",
   institution: "/",
 };

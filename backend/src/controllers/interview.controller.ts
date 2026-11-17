@@ -7,6 +7,7 @@ import { sendSuccess } from "../utils/apiResponse";
 import { paramString } from "../utils/params";
 import { callerFromRequest } from "../services/learner-access";
 import { INTERVIEW_EMAIL_STATUS } from "../constants/interview";
+import { scheduleResultMessage } from "../services/interview-delivery";
 import {
   listInterviewsQuerySchema,
   scheduleInterviewSchema,
@@ -20,15 +21,7 @@ export async function scheduleInterview(req: Request, res: Response): Promise<Re
     callerFromRequest(req),
     req.accessToken,
   );
-  const emailed = interview.emailStatus === INTERVIEW_EMAIL_STATUS.SENT;
-  return sendSuccess(
-    res,
-    interview,
-    emailed
-      ? "Interview scheduled and invitation emailed"
-      : "Interview scheduled. Invitation was not emailed because SMTP_USER and SMTP_PASS are not set in backend/.env.",
-    201,
-  );
+  return sendSuccess(res, interview, scheduleResultMessage(interview.emailStatus), 201);
 }
 
 export async function listInterviews(req: Request, res: Response): Promise<Response> {

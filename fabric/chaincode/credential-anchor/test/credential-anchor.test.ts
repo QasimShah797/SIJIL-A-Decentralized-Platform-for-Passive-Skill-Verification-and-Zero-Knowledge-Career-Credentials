@@ -1,10 +1,11 @@
 import type { Context } from 'fabric-contract-api';
-import { CredentialAnchor, ISSUER_MSP_ID } from '../src/credential-anchor';
+import { APP_WRITER_CN, CredentialAnchor, ISSUER_MSP_ID } from '../src/credential-anchor';
 import type { CredentialAnchorRecord } from '../src/types';
 
-const CREDENTIAL_ID = 'cred-001';
-const HASH = 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
-const OTHER_HASH = 'sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+const CREDENTIAL_ID = '11111111-1111-4111-8111-111111111111';
+const OTHER_ID = '22222222-2222-4222-8222-222222222222';
+const HASH = 'a'.repeat(64);
+const OTHER_HASH = 'b'.repeat(64);
 const ISSUER_DID = 'did:sijil:issuer:org1';
 const HOLDER_DID = 'did:sijil:holder:learner-1';
 const ISSUED_AT = '2026-09-30T00:00:00.000Z';
@@ -29,10 +30,12 @@ function emptyState(): Uint8Array {
 
 function makeCtx(options: {
   mspId?: string;
+  enrollmentCn?: string;
   ledger?: LedgerMap;
 }): Context {
   const ledger = options.ledger ?? new Map<string, Uint8Array>();
   const mspId = options.mspId ?? ISSUER_MSP_ID;
+  const enrollmentCn = options.enrollmentCn ?? APP_WRITER_CN;
 
   const stub = {
     getState: jest.fn(async (key: string): Promise<Uint8Array> => {
@@ -72,6 +75,8 @@ function makeCtx(options: {
 
   const clientIdentity = {
     getMSPID: jest.fn(() => mspId),
+    getID: jest.fn(() => `x509::CN=${enrollmentCn},OU=client::CN=ca.org1.example.com`),
+    getAttributeValue: jest.fn(() => ''),
   };
 
   return { stub, clientIdentity } as unknown as Context;
@@ -229,7 +234,7 @@ describe('CredentialAnchor', () => {
     await expect(
       contract.AnchorCredential(
         org2Ctx,
-        'cred-002',
+        OTHER_ID,
         HASH,
         ISSUER_DID,
         HOLDER_DID,
@@ -240,5 +245,45 @@ describe('CredentialAnchor', () => {
     await expect(
       contract.RevokeCredential(org2Ctx, CREDENTIAL_ID, 'unauthorised'),
     ).rejects.toThrow(/not authorised/);
+  });
+
+  test('rejects Org1 admin and malformed writes', async () => {
+    const ledger: LedgerMap = new Map();
+    const admin = makeCtx({ ledger, enrollmentCn: 'Admin@org1.example.com' });
+    await expect(
+      contract.AnchorCredential(admin, CREDENTIAL_ID, HASH, ISSUER_DID, HOLDER_DID, ISSUED_AT),
+    ).rejects.toThrow(/not authorised to write/);
+
+    const writer = makeCtx({ ledger });
+    await expect(
+      contract.AnchorCredential(writer, 'cred-001', HASH, ISSUER_DID, HOLDER_DID, ISSUED_AT),
+    ).rejects.toThrow(/UUID/);
+    await expect(
+      contract.AnchorCredential(writer, CREDENTIAL_ID, 'sha256:not-a-digest', ISSUER_DID, HOLDER_DID, ISSUED_AT),
+    ).rejects.toThrow(/SHA-256/);
+    await expect(
+      contract.AnchorCredential(writer, CREDENTIAL_ID, HASH, 'issuer', HOLDER_DID, ISSUED_AT),
+    ).rejects.toThrow(/DID/);
+    await expect(
+      contract.AnchorCredential(writer, CREDENTIAL_ID, HASH, ISSUER_DID, HOLDER_DID, 'yesterday'),
+    ).rejects.toThrow(/ISO-8601/);
+  });
+
+  test('Org2 may read history but cannot write', async () => {
+    const ledger: LedgerMap = new Map();
+    await contract.AnchorCredential(
+      makeCtx({ ledger }),
+      CREDENTIAL_ID,
+      HASH,
+      ISSUER_DID,
+      HOLDER_DID,
+      ISSUED_AT,
+    );
+    const reader = makeCtx({ ledger, mspId: 'Org2MSP', enrollmentCn: 'reader' });
+    const verified = await contract.VerifyCredential(reader, CREDENTIAL_ID, HASH);
+    expect(verified.hashMatches).toBe(true);
+    const history = await contract.GetHistory(reader, CREDENTIAL_ID);
+    expect(history.length).toBe(1);
+    expect(history[0].record?.hash).toBe(HASH);
   });
 });

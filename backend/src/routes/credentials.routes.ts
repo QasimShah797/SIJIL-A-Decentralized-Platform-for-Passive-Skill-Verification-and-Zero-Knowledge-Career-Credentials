@@ -17,16 +17,20 @@ import {
   previewLedgerReconcile,
   reconcileLedgerAnchor,
   revokeCredential,
+  getLedgerHistory,
 } from "../controllers/credentials.controller";
+import { issueValidatedCompetencyVersionForLearner } from "../controllers/competency-version.controller";
 
 const router = Router();
 
 router.post("/issue", authMiddleware, requireLearner, rateLimit({ windowMs: 60_000, max: 10 }), asyncHandler(issueCredential));
+router.post("/versions/:versionId/issue", authMiddleware, requireReviewer, rateLimit({ windowMs: 60_000, max: 10 }), asyncHandler(issueValidatedCompetencyVersionForLearner));
 router.get("/wallet/:learnerId", authMiddleware, asyncHandler(getWallet));
 router.post("/:id/anchor/retry", authMiddleware, requireAdmin, asyncHandler(retryAnchor));
 router.get("/:id/ledger-reconcile", authMiddleware, requireAdmin, asyncHandler(previewLedgerReconcile));
 router.post("/:id/ledger-reconcile", authMiddleware, requireAdmin, asyncHandler(reconcileLedgerAnchor));
-router.post("/:id/revoke", authMiddleware, requireReviewer, asyncHandler(revokeCredential));
+router.get("/:id/ledger-history", authMiddleware, rateLimit({ windowMs: 60_000, max: 30 }), asyncHandler(getLedgerHistory));
+router.post("/:id/revoke", authMiddleware, rateLimit({ windowMs: 60_000, max: 10 }), asyncHandler(revokeCredential));
 router.get("/:id/document", authMiddleware, requireLearner, asyncHandler(exportCredentialDocument));
 router.get("/:id", authMiddleware, asyncHandler(getCredential));
 router.post("/share", authMiddleware, requireLearner, rateLimit({ windowMs: 60_000, max: 10 }), asyncHandler(shareCredential));

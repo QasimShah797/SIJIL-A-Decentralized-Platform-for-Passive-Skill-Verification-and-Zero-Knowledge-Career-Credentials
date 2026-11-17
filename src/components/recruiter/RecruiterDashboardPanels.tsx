@@ -315,7 +315,7 @@ export function RecruiterRecentlyShared({
       <h2 className="text-base font-semibold text-[#023E8A]">Recently shared</h2>
       <ul className="mt-4 space-y-3">
         {recent.length === 0 ? (
-          <li className="text-sm text-[#64748b]">No shared credentials yet.</li>
+          <li className="text-sm text-[#64748b]">No shared credentials yet. A learner must choose your recruiter account. A public verification link does not add a candidate here.</li>
         ) : (
           recent.map((candidate) => (
             <li key={candidate.id}>

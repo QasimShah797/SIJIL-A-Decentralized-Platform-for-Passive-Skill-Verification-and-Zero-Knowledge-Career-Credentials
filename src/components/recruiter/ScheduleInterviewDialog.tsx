@@ -95,19 +95,29 @@ export function ScheduleInterviewDialog({
         locationOrLink: locationOrLink.trim(),
         notes: notes.trim() || undefined,
       });
-      const emailed = interview.emailStatus === "sent";
-      toast({
-        title: emailed ? "Interview scheduled" : "Interview saved — email not sent",
-        description: emailed
-          ? `Invitation emailed to ${interview.candidateEmail}.`
-          : `Saved for ${candidateName}, but nothing was sent to Gmail. Add a Gmail App Password as SMTP_USER and SMTP_PASS in backend/.env, restart the backend, then schedule again.`,
-        variant: emailed ? "default" : "destructive",
-      });
+      if (interview.emailStatus === "sent") {
+        toast({
+          title: "Interview scheduled and invitation sent",
+          description: "The email provider accepted the invitation.",
+        });
+      } else if (interview.emailStatus === "failed") {
+        toast({
+          title: "Interview scheduled, but the email was not sent",
+          description: "The interview is saved. The email provider did not accept the invitation. Use a Gmail App Password for SMTP_USER and SMTP_PASS in backend/.env, restart the backend, then resend from Interviews.",
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "Interview scheduled, but the email was not sent",
+          description: "The interview is saved. Email delivery is not configured. Set SMTP_USER and SMTP_PASS in backend/.env, restart the backend, then resend from Interviews.",
+          variant: "destructive",
+        });
+      }
       onOpenChange(false);
       onScheduled?.();
     } catch (err) {
       toast({
-        title: "Could not schedule interview",
+        title: "Interview scheduling failed",
         description: err instanceof Error ? err.message : "Please try again.",
         variant: "destructive",
       });

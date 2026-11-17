@@ -20,7 +20,7 @@ import {
 import { CREDENTIAL_VERIFICATION, PIPELINE_STAGE, SKILL_STATUS } from "../constants/status";
 import { generateCredentialUri } from "../utils/generateHash";
 import { randomUUID } from "node:crypto";
-import { getEvaluateLedgerService, getLedgerService } from "./ledger.factory";
+import { getEvaluateLedgerService } from "./ledger.factory";
 import { resolveWalletLedgerAnchorStatus, type WalletLedgerRow } from "./wallet-ledger-status";
 import { evaluateIssuanceEligibility } from "./issuance-gate";
 import {
@@ -462,15 +462,22 @@ export class CredentialsService {
     if (issued.revoked_at) {
       throw new AppError("Cannot create a presentation for a revoked credential", 409);
     }
-    const ledger = getLedgerService();
-    if (ledger.isEnabled() && issued.credential_hash) {
+    const ledger = getEvaluateLedgerService();
+    if (issued.anchor_status === "anchored" && issued.credential_hash) {
+      if (!ledger.isEnabled()) {
+        throw new AppError("Cannot share while blockchain revocation status is unavailable", 503);
+      }
       try {
         const onChain = await ledger.verifyCredential(issued.id, issued.credential_hash);
-        if (onChain.exists && onChain.status === "revoked") {
+        if (!onChain.exists || !onChain.hashMatches) {
+          throw new AppError("Cannot share a credential whose blockchain record does not match", 409);
+        }
+        if (onChain.status === "revoked") {
           throw new AppError("Cannot create a presentation for a revoked credential", 409);
         }
       } catch (err) {
         if (err instanceof AppError) throw err;
+        throw new AppError("Cannot share while blockchain revocation status is unavailable", 503);
       }
     }
 

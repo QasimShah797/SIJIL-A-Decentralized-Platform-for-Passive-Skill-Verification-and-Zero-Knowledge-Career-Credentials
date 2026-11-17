@@ -64,6 +64,32 @@ describe("public credential verification outcomes", () => {
     assert.equal(result.hash, null);
   });
 
+  it("keeps a commitment-bearing credential verifiable when no threshold proof was supplied", async () => {
+    const withCommitment = buildCredentialDocument({
+      ...sampleInput,
+      assessmentCommitment: {
+        version: 1,
+        scheme: "poseidon-bn254-v1",
+        circuitId: "score-threshold-v1",
+        attemptId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        commitment: "123",
+      },
+    });
+    const signed = signSha256Hash(withCommitment.sha256Hash, privatePem);
+    const result = await evaluateCredentialVerification(snapshot({
+      storedHash: withCommitment.sha256Hash,
+      storedDocument: withCommitment.document,
+      proofValue: signed,
+      zkpApplicable: true,
+    }), {
+      ...depsBase,
+      ledger: ledgerStub({ exists: true, hashMatches: true, status: "active" }),
+    });
+    assert.equal(result.status, "verified");
+    assert.equal(result.checks.zkp, "not_checked");
+    assert.equal(credentialShowsVerified(result), false);
+  });
+
   it("returns tampered when the stored document is manually altered", async () => {
     const tampered = buildCredentialDocument({ ...sampleInput, skill: "Java" });
     const result = await evaluateCredentialVerification(

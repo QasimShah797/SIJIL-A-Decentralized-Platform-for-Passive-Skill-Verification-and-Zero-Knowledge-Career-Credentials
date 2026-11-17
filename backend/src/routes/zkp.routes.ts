@@ -13,6 +13,19 @@ import {
   getZkpWitness,
 } from "../controllers/zkp.controller";
 import {
+  declineLearnerScoreRequest,
+  listLearnerScoreRequests,
+  submitLearnerScoreProof,
+} from "../controllers/zkp-score-request.controller";
+import {
+  approveVerificationRequest,
+  listMyNotifications,
+  listMyVerificationRequests,
+  markMyNotificationRead,
+  rejectVerificationRequest,
+  proveGithubActivityRequest,
+} from "../controllers/zkp-notification.controller";
+import {
   createGitHubDisclosure,
   createGitHubSnapshot,
   evaluateGitHubZkp,
@@ -102,6 +115,74 @@ router.post(
   requireLearner,
   githubProofRateLimit,
   asyncHandler(evaluateAssessmentZkp),
+);
+
+router.get(
+  "/notifications",
+  authMiddleware,
+  requireLearner,
+  asyncHandler(listMyNotifications),
+);
+
+router.post(
+  "/notifications/:notificationId/read",
+  authMiddleware,
+  requireLearner,
+  asyncHandler(markMyNotificationRead),
+);
+
+router.get(
+  "/verification-requests",
+  authMiddleware,
+  requireLearner,
+  asyncHandler(listMyVerificationRequests),
+);
+
+router.post(
+  "/verification-requests/:requestId/approve",
+  authMiddleware,
+  requireLearner,
+  asyncHandler(approveVerificationRequest),
+);
+
+router.post(
+  "/verification-requests/:requestId/reject",
+  authMiddleware,
+  requireLearner,
+  asyncHandler(rejectVerificationRequest),
+);
+
+router.post(
+  "/verification-requests/:requestId/github-proof",
+  authMiddleware,
+  requireLearner,
+  asyncHandler(proveGithubActivityRequest),
+);
+
+router.get(
+  "/requests",
+  authMiddleware,
+  requireLearner,
+  asyncHandler(listLearnerScoreRequests),
+);
+
+router.post(
+  "/requests/:requestId/decline",
+  authMiddleware,
+  requireLearner,
+  asyncHandler(declineLearnerScoreRequest),
+);
+
+router.post(
+  "/requests/:requestId/proof",
+  authMiddleware,
+  requireLearner,
+  rateLimit({
+    windowMs: 60_000,
+    max: 6,
+    key: (req) => req.user?.id || req.ip || "unknown",
+  }),
+  asyncHandler(submitLearnerScoreProof),
 );
 
 router.get(

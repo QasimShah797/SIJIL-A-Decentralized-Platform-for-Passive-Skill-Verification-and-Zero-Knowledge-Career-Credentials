@@ -65,6 +65,7 @@ export default function SelectiveDisclosure() {
   const [working, setWorking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resultUrl, setResultUrl] = useState<string | null>(null);
+  const [resultNote, setResultNote] = useState<string | null>(null);
 
   useEffect(() => {
     if (!credential) return;
@@ -92,13 +93,19 @@ export default function SelectiveDisclosure() {
         if (!active) return;
         setShares(detail.shares.map((share) => ({
           token: share.id,
-          label: credential?.skill ?? "Achievement",
+          label: share.recipientName
+            ? `${credential?.skill ?? "Achievement"} · ${share.recipientName}`
+            : credential?.skill ?? "Achievement",
           access: share.shareStatus === "Revoked"
-            ? "revoked"
+            ? "revoked" as const
             : share.shareStatus === "Expired"
-              ? "expired"
-              : "active",
-          kind: "link" as const,
+              ? "expired" as const
+              : "active" as const,
+          kind: share.recipientName ? "direct" as const : "link" as const,
+          recipient: share.recipientOrganization
+            ? `${share.recipientName} at ${share.recipientOrganization}`
+            : share.recipientName,
+          sharedAt: share.createdAt,
         })));
       })
       .catch(() => {
@@ -118,6 +125,7 @@ export default function SelectiveDisclosure() {
     }
     setWorking(true);
     setError(null);
+    setResultNote(null);
     try {
       const request = walletShareRequest({
         competencyId,
@@ -134,7 +142,44 @@ export default function SelectiveDisclosure() {
         label: credential?.skill ?? "Achievement",
         access: "active",
         kind: "link",
+        sharedAt: new Date().toISOString(),
       }, ...current]);
+    } catch (next) {
+      setError(shareError(next));
+    } finally {
+      setWorking(false);
+    }
+  };
+
+  const createAll = async (input: { selectedFields: string[]; expiresInDays: number }) => {
+    if (!competencyId) {
+      setError("This achievement is not available to share yet.");
+      return;
+    }
+    setWorking(true);
+    setError(null);
+    setResultUrl(null);
+    try {
+      const request = walletShareRequest({
+        competencyId,
+        selectedFields: input.selectedFields,
+        expiresInDays: input.expiresInDays,
+      });
+      const created = await shareWalletCompetencyApi({
+        ...request,
+        selectedFields: request.selectedFields as WalletShareFieldId[],
+        shareAudience: "all-recruiters",
+        consentToAllRecruiters: true,
+      });
+      setResultNote("Your achievements are now visible to all SIJIL recruiters.");
+      setShares((current) => [{
+        token: created.shareId,
+        label: credential?.skill ?? "Achievement",
+        access: "active",
+        kind: "direct",
+        recipient: "All SIJIL recruiters",
+        sharedAt: new Date().toISOString(),
+      }, ...current.filter((item) => item.token !== created.shareId)]);
     } catch (next) {
       setError(shareError(next));
     } finally {
@@ -162,6 +207,7 @@ export default function SelectiveDisclosure() {
     }
     setWorking(true);
     setError(null);
+    setResultNote(null);
     try {
       const dbId = await getCredentialDbId(credential.id);
       const challenge = await createPresentationChallengeApi({
@@ -235,7 +281,7 @@ export default function SelectiveDisclosure() {
     <AppShell role="learner">
       <PageHeader
         title="Share Achievement"
-        description="Choose a link or a signed presentation. Advanced signature details stay optional."
+        description="Share with one registered recruiter, or create a public verification link. A public link does not add anyone to a recruiter dashboard."
         actions={(
           <Button variant="outline" onClick={() => navigate(-1)}>
             <ArrowLeft className="mr-1.5 h-4 w-4" />Back
@@ -251,7 +297,9 @@ export default function SelectiveDisclosure() {
         working={working}
         error={error}
         resultUrl={resultUrl}
+        resultNote={resultNote}
         onCreateLink={(input) => { void createLink(input); }}
+        onCreateAll={(input) => { void createAll(input); }}
         onCreateSigned={() => { void createSigned(); }}
         onRevoke={(share) => { void revoke(share); }}
         historyUnavailable={historyUnavailable}

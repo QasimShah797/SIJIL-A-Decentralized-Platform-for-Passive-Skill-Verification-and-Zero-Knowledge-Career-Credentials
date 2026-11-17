@@ -28,6 +28,25 @@ export const shareWalletCompetencySchema = z.object({
   selectedFields: z.array(z.enum(WALLET_SHARE_FIELD_IDS)).min(1),
   shareScope: z.enum(["all", "selected", "issued"]).optional(),
   expiresInDays: z.number().int().positive().max(365).optional(),
+  recipientUserId: z.string().uuid().optional(),
+  shareAudience: z.literal("all-recruiters").optional(),
+  consentToAllRecruiters: z.boolean().optional(),
+  competencyVersionIds: z.array(z.string().uuid()).max(20).optional(),
+}).superRefine((value, ctx) => {
+  if (value.shareAudience === "all-recruiters" && value.recipientUserId) {
+    ctx.addIssue({
+      code: "custom",
+      message: "Choose either one recruiter or all recruiters.",
+      path: ["shareAudience"],
+    });
+  }
+  if (value.shareAudience === "all-recruiters" && value.consentToAllRecruiters !== true) {
+    ctx.addIssue({
+      code: "custom",
+      message: "Confirm that all registered SIJIL recruiters may see this.",
+      path: ["consentToAllRecruiters"],
+    });
+  }
 });
 
 export const verifyPresentationSchema = z.object({

@@ -11,7 +11,7 @@ import type { CredentialVerifyResult } from "./credential-verify";
 import { verifyPublicCredential } from "./credential-verify.service";
 import { recruiterVerifyCredential } from "./recruiter-verify";
 import { canReadLearnerData, type AuthCaller } from "./learner-access";
-import { shareListedForRecruiters } from "./share-directory";
+import { directRecipientId, isAllRecruiterShare, shareVisibleToRecruiter } from "./share-directory";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { redactExactValues } from "../utils/exact-value-redaction";
 import {
@@ -636,11 +636,13 @@ async function redactShareRows<T extends Record<string, unknown>>(
   return out;
 }
 
-async function fetchActiveShareRows(db: SupabaseClient): Promise<ShareRow[]> {
+async function fetchActiveShareRows(db: SupabaseClient, recruiterUserId: string): Promise<ShareRow[]> {
   const { data, error } = await db
     .from("selective_disclosure_presentations")
     .select("id, learner_id, selected_fields, selection_mode, disclosed_payload, proof_type, expires_at, revoked_at, created_at")
-    .is("revoked_at", null);
+    .is("revoked_at", null)
+    .order("created_at", { ascending: false })
+    .limit(500);
 
   if (error) {
     if (/schema cache|does not exist|could not find the table/i.test(error.message)) return [];
@@ -648,10 +650,11 @@ async function fetchActiveShareRows(db: SupabaseClient): Promise<ShareRow[]> {
   }
 
   const active = (data ?? []).filter((row) =>
-    shareListedForRecruiters({
+    shareVisibleToRecruiter({
       revokedAt: asText(row.revoked_at),
       expiresAt: asText(row.expires_at),
       disclosedPayload: row.disclosed_payload,
+      recruiterUserId,
     }),
   ) as ShareRow[];
   return redactShareRows(active, (row) => asText(row.learner_id));
@@ -712,6 +715,7 @@ function buildCandidateFromShares(
 
 async function listActiveSharedCredentials(
   candidateId: string,
+  recruiterUserId: string,
   accessToken?: string,
 ): Promise<SharedCredentialView[]> {
   const db = recruiterDb(accessToken);
@@ -726,10 +730,11 @@ async function listActiveSharedCredentials(
   }
 
   const listedRows = ((walletRows ?? []) as Record<string, unknown>[]).filter((row) =>
-    shareListedForRecruiters({
+    shareVisibleToRecruiter({
       revokedAt: asText(row.revoked_at),
       expiresAt: asText(row.expires_at),
       disclosedPayload: row.disclosed_payload,
+      recruiterUserId,
     }),
   );
   const redactedWalletRows = await redactShareRows(listedRows, () => candidateId);
@@ -790,7 +795,7 @@ export class RecruiterService {
     caller: AuthCaller,
     accessToken?: string,
   ): Promise<CandidateDetailView | null> {
-    const sharedCredentials = await listActiveSharedCredentials(candidateId, accessToken);
+    const sharedCredentials = await listActiveSharedCredentials(candidateId, caller.id, accessToken);
     const hasActiveShare = sharedCredentials.length > 0;
     if (!canReadLearnerData({ caller, ownerId: candidateId, hasActiveShare })) {
       throw new AppError("Not authorized to read this candidate", 403);
@@ -819,11 +824,15 @@ export class RecruiterService {
     };
   }
 
-  async search(query: { q?: string; skill?: string; institution?: string }, accessToken?: string): Promise<CandidateView[]> {
+  async search(
+    query: { q?: string; skill?: string; institution?: string },
+    recruiterUserId: string,
+    accessToken?: string,
+  ): Promise<CandidateView[]> {
     const db = recruiterDb(accessToken);
     const [{ data: profiles, error: profileError }, shareRows] = await Promise.all([
       fetchAllDirectoryProfiles(),
-      fetchActiveShareRows(db),
+      fetchActiveShareRows(db, recruiterUserId),
     ]);
 
     if (profileError) throw new AppError("Candidate search is temporarily unavailable", 503);
@@ -851,10 +860,13 @@ export class RecruiterService {
         (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
       );
       const reviewCount = reviewsByLearner.get(learnerId) ?? 0;
-      const directoryName = await resolveDirectoryDisplayName(learnerId, profile);
-      const displayName = pickRecruiterDisplayName(extractDisclosedLearnerName(shared), directoryName);
+      const disclosedName = extractDisclosedLearnerName(shared);
+      const directoryShare = shared.some((item) => !directRecipientId(item.disclosedPayload) && !isAllRecruiterShare(item.disclosedPayload));
+      const directoryName = directoryShare ? await resolveDirectoryDisplayName(learnerId, profile) : null;
+      const displayName = pickRecruiterDisplayName(disclosedName, directoryName);
+      const visibleProfile = directoryShare ? profile : null;
 
-      return buildCandidateFromShares(learnerId, shared, profile, reviewCount, displayName);
+      return buildCandidateFromShares(learnerId, shared, visibleProfile, reviewCount, displayName);
     }));
 
     const q = query.q?.trim().toLowerCase();
@@ -879,13 +891,14 @@ export class RecruiterService {
 
   async getCandidateProfileFields(
     ids: string[],
+    recruiterUserId: string,
   ): Promise<Record<string, Pick<CandidateView, "avatarUrl" | "skillsSummary" | "careerGoal">>> {
     const uniqueIds = [...new Set(ids.filter(Boolean))];
     if (!uniqueIds.length) return {};
 
     const [{ data, error }, shareRows] = await Promise.all([
       fetchDirectoryProfilesByIds(uniqueIds),
-      fetchActiveShareRows(supabaseService.client),
+      fetchActiveShareRows(supabaseService.client, recruiterUserId),
     ]);
 
     if (error) throw new AppError(error.message, 500);
@@ -897,13 +910,17 @@ export class RecruiterService {
     const fields: Record<string, Pick<CandidateView, "avatarUrl" | "skillsSummary" | "careerGoal">> = {};
     for (const id of uniqueIds) {
       if (!sharesByLearner.has(id)) continue;
-      const profileRow = (data ?? []).find((row) => asText((row as ProfileRow).user_id) === id) as ProfileRow | undefined;
+      const shares = sharesByLearner.get(id) ?? [];
+      const directoryShare = shares.some((item) => !directRecipientId(item.disclosedPayload) && !isAllRecruiterShare(item.disclosedPayload));
+      const profileRow = directoryShare
+        ? (data ?? []).find((row) => asText((row as ProfileRow).user_id) === id) as ProfileRow | undefined
+        : undefined;
       const fromProfile = profileCardFields(profileRow);
-      const disclosed = extractDisclosedCareerInfo(sharesByLearner.get(id) ?? []);
+      const disclosed = extractDisclosedCareerInfo(shares);
       fields[id] = {
-        avatarUrl: fromProfile.avatarUrl,
-        skillsSummary: fromProfile.skillsSummary ?? disclosed.skillsSummary,
-        careerGoal: fromProfile.careerGoal ?? disclosed.careerGoal,
+        avatarUrl: directoryShare ? fromProfile.avatarUrl : null,
+        skillsSummary: disclosed.skillsSummary ?? (directoryShare ? fromProfile.skillsSummary : null),
+        careerGoal: disclosed.careerGoal ?? (directoryShare ? fromProfile.careerGoal : null),
       };
     }
     return fields;

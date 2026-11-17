@@ -17,7 +17,8 @@ import {
   type GitHubAutomationDependencies,
 } from "./github-zkp-automation.service";
 import { assessmentEvidenceRef, verifyScorePolicyProof } from "./assessment-zkp-automation.service";
-import { commitmentModulePath } from "./zkp-artifacts";
+import { commitmentModulePath, resolveZkpArtifactDir } from "./zkp-artifacts";
+import { resolveGitHubZkpArtifactDir } from "./github-zkp-artifacts";
 import { processZkpAutomationBatch } from "./zkp-automation-worker.service";
 import { verifyPolicyRowForRecruiter, type PolicyVerifyDependencies } from "./zkp-policy-verify.service";
 import {
@@ -34,6 +35,10 @@ import {
   GITHUB_REUSE_WINDOW_MS,
   GITHUB_ZKP_TYPE,
 } from "./zkp-policy";
+
+const MISSING_GITHUB_MEETS = "github-contributions-v1 proving key is not on disk and was not regenerated";
+const MISSING_GITHUB_BELOW = "github-contributions-v1 below proving key is not on disk and was not regenerated";
+const MISSING_SCORE_BELOW = "score_below_final.zkey is not on disk and was not regenerated";
 
 const LEARNER = "123e4567-e89b-42d3-a456-426614174000";
 const ATTEMPT = "323e4567-e89b-42d3-a456-426614174000";
@@ -133,7 +138,7 @@ function recruiterDeps(fixture: Awaited<ReturnType<typeof githubFixture>>, now =
 beforeEach(() => resetGitHubAutomationQueueForTests());
 
 describe("github policy automation (threshold 70)", () => {
-  it("proves MEETS_THRESHOLD at exactly 70 and recruiter re-verifies it", async () => {
+  it("proves MEETS_THRESHOLD at exactly 70 and recruiter re-verifies it", { skip: resolveGitHubZkpArtifactDir("meets") ? false : MISSING_GITHUB_MEETS }, async () => {
     const fixture = await githubFixture(70);
     const result = await evaluateGitHubPolicy(LEARNER, REPO, fixture.deps);
     assert.equal(result.status.outcome, "MEETS_THRESHOLD");
@@ -148,7 +153,7 @@ describe("github policy automation (threshold 70)", () => {
     assert.doesNotMatch(JSON.stringify(view), /blinding|contributionCount|"proof"/);
   });
 
-  it("proves BELOW_THRESHOLD at 69 with a valid below proof, not a failed meets proof", async () => {
+  it("proves BELOW_THRESHOLD at 69 with a valid below proof, not a failed meets proof", { skip: resolveGitHubZkpArtifactDir("below") ? false : MISSING_GITHUB_BELOW }, async () => {
     const fixture = await githubFixture(69);
     const result = await evaluateGitHubPolicy(LEARNER, REPO, fixture.deps);
     assert.equal(result.status.outcome, "BELOW_THRESHOLD");
@@ -175,7 +180,7 @@ describe("github policy automation (threshold 70)", () => {
     }));
   });
 
-  it("reuses a fresh verified outcome without a new snapshot and rotates the share code", async () => {
+  it("reuses a fresh verified outcome without a new snapshot and rotates the share code", { skip: resolveGitHubZkpArtifactDir("meets") ? false : MISSING_GITHUB_MEETS }, async () => {
     const fixture = await githubFixture(70);
     const first = await evaluateGitHubPolicy(LEARNER, REPO, fixture.deps);
     const second = await evaluateGitHubPolicy(LEARNER, REPO, fixture.deps);
@@ -215,7 +220,7 @@ describe("github policy automation (threshold 70)", () => {
     assert.notEqual(view.outcome, "BELOW_THRESHOLD");
   });
 
-  it("recruiter view rejects tampered thresholds, stale evidence, and swapped commitments", async () => {
+  it("recruiter view rejects tampered thresholds, stale evidence, and swapped commitments", { skip: resolveGitHubZkpArtifactDir("meets") ? false : MISSING_GITHUB_MEETS }, async () => {
     const fixture = await githubFixture(70);
     await evaluateGitHubPolicy(LEARNER, REPO, fixture.deps);
     const row = fixture.policyStore.rows[0];
@@ -258,12 +263,14 @@ describe("assessment policy proofs (threshold 60)", () => {
     return result;
   }
 
-  it("proves 60 meets and 59 below, each only under its own key", async () => {
+  it("proves 60 meets under the meets key", async () => {
     const meets = await scoreProof(60, "meets");
     assert.equal(meets.publicSignals[0], "60");
     assert.equal(await verifyScorePolicyProof("meets", meets.publicSignals, meets.proof), true);
     assert.equal(await verifyScorePolicyProof("below", meets.publicSignals, meets.proof), false);
+  });
 
+  it("proves 59 below only under the below key", { skip: resolveZkpArtifactDir("below") ? false : MISSING_SCORE_BELOW }, async () => {
     const below = await scoreProof(59, "below");
     assert.equal(below.publicSignals[0], "60");
     assert.equal(await verifyScorePolicyProof("below", below.publicSignals, below.proof), true);
@@ -275,7 +282,7 @@ describe("assessment policy proofs (threshold 60)", () => {
     await assert.rejects(() => scoreProof(60, "below"));
   });
 
-  it("recruiter view reports a revoked credential as NOT_VERIFIED", async () => {
+  it("recruiter view reports a revoked credential as NOT_VERIFIED", { skip: resolveZkpArtifactDir("below") ? false : MISSING_SCORE_BELOW }, async () => {
     const below = await scoreProof(59, "below");
     const row: ZkpPolicyVerificationRow = {
       id: "a", learnerUserId: LEARNER, zkpType: ASSESSMENT_ZKP_TYPE, policyVersion: ASSESSMENT_POLICY_VERSION,

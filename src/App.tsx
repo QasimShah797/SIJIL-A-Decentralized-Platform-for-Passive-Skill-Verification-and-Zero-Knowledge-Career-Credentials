@@ -24,6 +24,7 @@ import LearnerValidation from "./pages/learner/Validation";
 import LearnerWallet from "./pages/learner/WalletPage";
 import SecureIdentity from "./pages/learner/SecureIdentity";
 import LearnerPeerReviews from "./pages/learner/PeerReviews";
+import LearnerVerificationRequests from "./pages/learner/VerificationRequests";
 import LearnerCredentialDetails from "./pages/learner/CredentialDetails";
 import LearnerCredentialProof from "./pages/learner/CredentialProof";
 import LearnerSelectiveDisclosure from "./pages/learner/SelectiveDisclosure";
@@ -36,8 +37,10 @@ import PublicCompetencyPage from "./pages/public/PublicCompetencyPage";
 import LearnerPresentationVerifyPage from "./pages/public/LearnerPresentationVerifyPage";
 import RecruiterLogin from "./pages/login/RecruiterLogin";
 import RecruiterSearch from "./pages/recruiter/Search";
+import RecruiterDashboard from "./pages/recruiter/Dashboard";
 import RecruiterCandidateSummary from "./pages/recruiter/CandidateSummary";
 import RecruiterCompare from "./pages/recruiter/Compare";
+import RecruiterVerificationRequests from "./pages/recruiter/VerificationRequests";
 import RecruiterInterviews from "./pages/recruiter/Interviews";
 import RecruiterJobs from "./pages/recruiter/Jobs";
 import RecruiterJobDetail from "./pages/recruiter/JobDetail";
@@ -104,14 +107,18 @@ const App = () => (
           <Route path="/learner/secure-identity" element={<LR><SecureIdentity /></LR>} />
           <Route path="/learner/zkp" element={<Navigate to="/learner/wallet" replace />} />
           <Route path="/learner/peer-reviews" element={<LR><LearnerPeerReviews /></LR>} />
+          <Route path="/learner/verification-requests" element={<LR><LearnerVerificationRequests /></LR>} />
           <Route path="/learner/credential/:id" element={<LR><LearnerCredentialDetails /></LR>} />
           <Route path="/learner/credential/:id/proof" element={<LR><LearnerCredentialProof /></LR>} />
           <Route path="/learner/credential/:id/share" element={<LR><LearnerSelectiveDisclosure /></LR>} />
 
+          <Route path="/recruiter/dashboard" element={<RR><RecruiterDashboard /></RR>} />
+          <Route path="/recruiter" element={<RR><RecruiterDashboard /></RR>} />
           <Route path="/recruiter/search" element={<RR><RecruiterSearch /></RR>} />
           <Route path="/recruiter/jobs" element={<RR><RecruiterJobs /></RR>} />
           <Route path="/recruiter/jobs/:jobId" element={<RR><RecruiterJobDetail /></RR>} />
           <Route path="/recruiter/interviews" element={<RR><RecruiterInterviews /></RR>} />
+          <Route path="/recruiter/verification-requests" element={<RR><RecruiterVerificationRequests /></RR>} />
           <Route path="/recruiter/profile" element={<RR><RecruiterProfile /></RR>} />
           <Route path="/recruiter/candidate/:id" element={<RR><RecruiterCandidateSummary /></RR>} />
           <Route path="/recruiter/compare" element={<RR><RecruiterCompare /></RR>} />

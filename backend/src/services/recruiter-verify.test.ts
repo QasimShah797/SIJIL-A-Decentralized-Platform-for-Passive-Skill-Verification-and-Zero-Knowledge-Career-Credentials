@@ -11,6 +11,17 @@ function verifyResult(status: CredentialVerifyResult["status"], credentialId: st
     anchorTxId: "tx",
     anchoredAt: "2026-10-01T00:00:00.000Z",
     verifiedAt: "2026-10-01T00:00:00.000Z",
+    reason: status === "verified" ? "valid" : "incomplete",
+    checks: {
+      document: "valid",
+      signature: "valid",
+      holder: "bound",
+      evidence: "match",
+      issuer: "trusted",
+      anchor: status === "verified" ? "match" : "not_checked",
+      revocation: "active",
+      zkp: "not_applicable",
+    },
   };
 }
 

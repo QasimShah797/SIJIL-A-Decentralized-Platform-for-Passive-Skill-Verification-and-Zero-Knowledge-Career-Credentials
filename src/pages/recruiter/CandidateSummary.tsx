@@ -1,4 +1,4 @@
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { AppShell } from "@/components/sijil/AppShell";
 import { StatusBadge } from "@/components/sijil/StatusBadge";
 import { EmptyState } from "@/components/sijil/EmptyState";
@@ -8,6 +8,9 @@ import {
   displayRecruiterSkillName,
   recruiterSkillCards,
 } from "@/components/recruiter/RecruiterSkillEvidence";
+import { CompetencyJourney } from "@/components/recruiter/CompetencyJourney";
+import { listSharedCompetencyVersions } from "@/services/api/recruiter-workspace.api";
+import type { SharedCompetencyVersion } from "@/services/api/recruiter-workspace.api";
 import { ScheduleInterviewDialog } from "@/components/recruiter/ScheduleInterviewDialog";
 import { Button } from "@/components/ui/button";
 import { BookOpen, CalendarClock, GraduationCap, Lock, MapPin, ShieldCheck, Wallet } from "lucide-react";
@@ -49,6 +52,12 @@ export default function CandidateSummary() {
   const [error, setError] = useState<string | null>(null);
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [activeSkillId, setActiveSkillId] = useState<string | null>(null);
+  const [searchParams] = useSearchParams();
+  const requestedTab = searchParams.get("tab");
+  const [profileTab, setProfileTab] = useState<"overview" | "competencies" | "journey" | "verification">(
+    requestedTab === "competencies" || requestedTab === "journey" || requestedTab === "verification" ? requestedTab : "overview",
+  );
+  const [recordedVersions, setRecordedVersions] = useState<SharedCompetencyVersion[]>([]);
 
   useEffect(() => {
     if (!id) {
@@ -89,6 +98,18 @@ export default function CandidateSummary() {
   const skillCards = useMemo(() => recruiterSkillCards(sharedCredentials), [sharedCredentials]);
   const identity = useMemo(() => buildDisclosedIdentity(sharedCredentials), [sharedCredentials]);
   const activeSkill = skillCards.find((card) => card.id === activeSkillId) ?? skillCards[0] ?? null;
+
+  useEffect(() => {
+    if (!id || !activeSkill) {
+      setRecordedVersions([]);
+      return;
+    }
+    let active = true;
+    listSharedCompetencyVersions(id, activeSkill.name)
+      .then((result) => { if (active) setRecordedVersions(result?.versions ?? []); })
+      .catch(() => { if (active) setRecordedVersions([]); });
+    return () => { active = false; };
+  }, [id, activeSkill]);
 
   useEffect(() => {
     if (!skillCards.length) {
@@ -158,8 +179,64 @@ export default function CandidateSummary() {
               </dl>
             ) : null}
 
+            <div className="flex flex-wrap gap-2" role="tablist" aria-label="Candidate profile">
+              {([
+                ["overview", "Overview"],
+                ["competencies", "Competencies"],
+                ["journey", "Skill growth"],
+                ["verification", "Private verification"],
+              ] as const).map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  role="tab"
+                  aria-selected={profileTab === id}
+                  className={cn(
+                    "rounded-full border px-3 py-1.5 text-xs font-medium",
+                    profileTab === id ? "border-[#023E8A] bg-[#023E8A] text-white" : "border-[#e2e8f0] bg-white text-[#334155]",
+                  )}
+                  onClick={() => setProfileTab(id)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            {profileTab === "journey" && activeSkill ? (
+              <CompetencyJourney
+                skill={activeSkill.name}
+                recordedVersions={recordedVersions}
+                credentials={(candidate.sharedCredentials ?? []).map((credential) => ({
+                  id: credential.presentationId,
+                  skill: credential.skill || credential.title,
+                  issuedAt: credential.createdAt,
+                  issuer: credential.subtitle,
+                  status: credential.status,
+                }))}
+              />
+            ) : null}
+
+            {profileTab === "overview" ? (
+              <section className="learner-stat-card p-5">
+                <h2 className="text-base font-semibold text-[#023E8A]">Shared skill summary</h2>
+                {skillCards.length === 0 ? (
+                  <p className="mt-2 text-sm text-[#64748b]">No competencies are currently shared.</p>
+                ) : (
+                  <ul className="mt-3 space-y-2">
+                    {skillCards.map((card) => (
+                      <li key={card.id} className="text-sm text-[#334155]">
+                        <span className="font-medium text-[#023E8A]">{displayRecruiterSkillName(card.name)}</span>
+                        {card.domain ? ` · ${card.domain}` : ""}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
+            ) : null}
+
+            {profileTab === "competencies" || profileTab === "verification" ? (
             <section className="learner-stat-card p-5">
-              <h2 className="text-base font-semibold text-[#023E8A]">Verified competencies</h2>
+              <h2 className="text-base font-semibold text-[#023E8A]">Shared competencies</h2>
               <p className="mt-1 text-xs text-[#64748b]">Select a competency to inspect the shared evidence.</p>
 
               {skillCards.length === 0 ? (
@@ -202,7 +279,7 @@ export default function CandidateSummary() {
                                 ].filter(Boolean).join(" · ") || "Shared competency"}
                               </span>
                             </span>
-                            <span className="learner-tag-linked shrink-0">Verified</span>
+                            <span className="learner-tag-linked shrink-0">Shared</span>
                           </button>
                         </li>
                       );
@@ -211,12 +288,17 @@ export default function CandidateSummary() {
 
                   {activeSkill ? (
                     <div className="mt-5">
-                      <RecruiterCompetencyDetail card={activeSkill} />
+                      <RecruiterCompetencyDetail
+                        card={activeSkill}
+                        learnerUserId={candidate.id}
+                        section={profileTab === "verification" ? "requests" : "evidence"}
+                      />
                     </div>
                   ) : null}
                 </>
               )}
             </section>
+            ) : null}
           </div>
 
           <aside className="space-y-4 xl:sticky xl:top-20 xl:self-start">

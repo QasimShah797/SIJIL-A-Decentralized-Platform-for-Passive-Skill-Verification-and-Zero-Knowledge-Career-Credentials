@@ -58,6 +58,17 @@ describe("public verify cache", () => {
       anchorTxId: null,
       anchoredAt: null,
       verifiedAt: "2026-10-01T00:00:00.000Z",
+      reason: "incomplete" as const,
+      checks: {
+        document: "valid" as const,
+        signature: "valid" as const,
+        holder: "not_checked" as const,
+        evidence: "not_checked" as const,
+        issuer: "not_checked" as const,
+        anchor: "not_checked" as const,
+        revocation: "not_checked" as const,
+        zkp: "not_applicable" as const,
+      },
     };
     for (const status of ["evidence_unavailable", "ledger_unavailable", "pending_anchor"] as const) {
       rememberForTest(cache, "cred-1", "abc", { ...base, status });

@@ -19,9 +19,12 @@ import {
   splitEvidenceRecordsBySource,
 } from "../utils/wallet-evidence-mapping";
 import { payloadVisibleToRecipient, shareLinkAccess } from "./share-access";
-import { shareStorageFailure } from "./share-storage";
+import { ALL_RECRUITERS_SHARE, DIRECT_RECRUITER_SHARE, directRecipientId, isAllRecruiterShare } from "./share-directory";
+import { ROLES } from "../constants/roles";
+import { shareCreateFailure, shareStorageFailure } from "./share-storage";
 import {
   WALLET_SHARE_FIELD_IDS,
+  type OwnerShareSummary,
   type PublicPresentationVerification,
   type PublicPresentationView,
   type ShareWalletCompetencyInput,
@@ -129,6 +132,12 @@ const DISCLOSURE_REDACT_KEYS = new Set([
   "proof_value",
   "answer_key",
   "token",
+  "blinding",
+  "opening",
+  "privateKey",
+  "private_key",
+  "witness",
+  "secret",
 ]);
 
 function db() {
@@ -395,11 +404,11 @@ function throwDbError(error: { message?: string }, context: string): never {
 
 async function fetchShareRowsStrict(
   kind: "list" | "create",
-  run: () => PromiseLike<{ data: unknown[] | null; error: { message?: string } | null }>,
+  run: () => PromiseLike<{ data: unknown[] | null; error: { message?: string; code?: string } | null }>,
 ): Promise<DbRow[]> {
   try {
     const { data, error } = await run();
-    if (error) throw shareStorageFailure(kind);
+    if (error) throw kind === "create" ? shareCreateFailure(error) : shareStorageFailure(kind);
     return asRows(data);
   } catch (error) {
     if (error instanceof AppError) throw error;
@@ -956,7 +965,7 @@ async function listSharesForCompetency(
   const rows = await fetchShareRowsStrict("list", () =>
     db()
       .from("selective_disclosure_presentations")
-      .select("id, competency_id, selected_fields, selection_mode, proof_type, share_token_hint, expires_at, revoked_at, created_at, updated_at")
+      .select("id, competency_id, selected_fields, selection_mode, proof_type, share_token_hint, expires_at, revoked_at, created_at, updated_at, disclosed_payload")
       .eq("learner_id", userId)
       .eq("competency_id", competencyId)
       .order("created_at", { ascending: false }),
@@ -979,6 +988,12 @@ async function listSharesForCompetency(
     updatedAt: asNullableText(row.updated_at) ?? asNullableText(row.created_at) ?? new Date().toISOString(),
     expiresAt: asNullableText(row.expires_at),
     revokedAt: asNullableText(row.revoked_at),
+    recipientName: typeof asRecord(row.disclosed_payload)?.recipientName === "string"
+      ? asRecord(row.disclosed_payload)?.recipientName as string
+      : null,
+    recipientOrganization: typeof asRecord(row.disclosed_payload)?.recipientOrganization === "string"
+      ? asRecord(row.disclosed_payload)?.recipientOrganization as string
+      : null,
   }));
 }
 
@@ -1696,9 +1711,21 @@ function isShareActive(row: PresentationRow, now = Date.now()): boolean {
   return true;
 }
 
+type ShareTarget =
+  | { kind: "public" }
+  | { kind: "all-recruiters" }
+  | { kind: "direct"; recipientUserId: string };
+
+function sameShareTarget(payload: unknown, target: ShareTarget): boolean {
+  if (target.kind === "direct") return directRecipientId(payload) === target.recipientUserId;
+  if (target.kind === "all-recruiters") return isAllRecruiterShare(payload);
+  return !directRecipientId(payload) && !isAllRecruiterShare(payload);
+}
+
 async function loadActiveShareForCompetency(
   userId: string,
   competencyId: string,
+  target: ShareTarget = { kind: "public" },
 ): Promise<PresentationRow | null> {
   const rows = await fetchShareRowsStrict("create", () =>
     db()
@@ -1711,7 +1738,7 @@ async function loadActiveShareForCompetency(
   );
   const active = rows
     .map((row) => mapPresentationRow(row))
-    .filter((row) => isShareActive(row));
+    .filter((row) => isShareActive(row) && sameShareTarget(row.disclosed_payload, target));
   return active[0] ?? null;
 }
 
@@ -1719,17 +1746,18 @@ async function revokeDuplicateShares(
   userId: string,
   competencyId: string,
   keepId: string,
+  target: ShareTarget = { kind: "public" },
 ): Promise<void> {
   const rows = await safeFetchRows("selective_disclosure_presentations", () =>
     db()
       .from("selective_disclosure_presentations")
-      .select("id, expires_at, revoked_at")
+      .select("id, expires_at, revoked_at, disclosed_payload")
       .eq("learner_id", userId)
       .eq("competency_id", competencyId)
       .is("revoked_at", null),
   );
   const extras = rows
-    .filter((row) => asText(row.id) !== keepId)
+    .filter((row) => asText(row.id) !== keepId && sameShareTarget(row.disclosed_payload, target))
     .map((row) => asText(row.id))
     .filter(Boolean);
   if (extras.length === 0) return;
@@ -1741,6 +1769,29 @@ async function revokeDuplicateShares(
       .eq("competency_id", competencyId)
       .in("id", extras),
   );
+}
+
+async function assertRegisteredRecruiter(recipientUserId: string): Promise<{ name: string; organization: string }> {
+  const { data: role, error } = await getServiceSupabase()
+    .from("user_roles")
+    .select("user_id")
+    .eq("user_id", recipientUserId)
+    .eq("role", ROLES.RECRUITER)
+    .maybeSingle();
+  if (error) throw new AppError("Recruiter directory is unavailable", 503);
+  if (!role) throw new AppError("Choose a registered SIJIL recruiter.", 400);
+  const { data: profile, error: profileError } = await getServiceSupabase()
+    .from("recruiter_profiles")
+    .select("full_name, company_name")
+    .eq("user_id", recipientUserId)
+    .maybeSingle();
+  if (profileError) throw new AppError("Recruiter directory is unavailable", 503);
+  const name = typeof profile?.full_name === "string" ? profile.full_name.trim() : "";
+  const organization = typeof profile?.company_name === "string" ? profile.company_name.trim() : "";
+  if (!name || !organization) {
+    throw new AppError("That recruiter has not finished a public profile.", 409);
+  }
+  return { name, organization };
 }
 
 export class WalletService {
@@ -1793,10 +1844,50 @@ export class WalletService {
       recordsForShareScope(shareScope, record, records, issuedIds),
     );
     disclosedPayload.shareScope = shareScope;
+    if (input.competencyVersionIds && input.competencyVersionIds.length > 0) {
+      const { listLearnerVersions } = await import("./competency-version.store");
+      const owned = await listLearnerVersions(userId);
+      const allowed = input.competencyVersionIds.filter((id) => owned.some((row) => row.id === id && row.status === "issued" && row.credentialId));
+      if (allowed.length !== input.competencyVersionIds.length) {
+        throw new AppError("Only an issued credential version can be shared.", 409);
+      }
+      disclosedPayload.competencyVersionIds = allowed;
+    }
     await annotatePayloadSkillTrust(userId, disclosedPayload);
 
     if (Object.keys(disclosedPayload).length === 0) {
       throw new AppError("Selected fields did not produce a shareable payload", 400);
+    }
+
+    const recipientUserId = input.recipientUserId ?? null;
+    const shareWithAllRecruiters = input.shareAudience === "all-recruiters";
+    if (shareWithAllRecruiters && input.consentToAllRecruiters !== true) {
+      throw new AppError("Confirm that all registered SIJIL recruiters may see this.", 400);
+    }
+    if (shareWithAllRecruiters && recipientUserId) {
+      throw new AppError("Choose either one recruiter or all recruiters.", 400);
+    }
+    let recipientName: string | null = null;
+    let recipientOrganization: string | null = null;
+    const shareTarget: ShareTarget = recipientUserId
+      ? { kind: "direct", recipientUserId }
+      : shareWithAllRecruiters
+        ? { kind: "all-recruiters" }
+        : { kind: "public" };
+    if (recipientUserId) {
+      const recipient = await assertRegisteredRecruiter(recipientUserId);
+      if (recipientUserId === userId) {
+        throw new AppError("Choose a registered SIJIL recruiter.", 400);
+      }
+      recipientName = recipient.name;
+      recipientOrganization = recipient.organization;
+      disclosedPayload.shareKind = DIRECT_RECRUITER_SHARE;
+      disclosedPayload.recipientUserId = recipientUserId;
+      disclosedPayload.recipientName = recipient.name;
+      disclosedPayload.recipientOrganization = recipient.organization;
+    } else if (shareWithAllRecruiters) {
+      disclosedPayload.shareKind = ALL_RECRUITERS_SHARE;
+      disclosedPayload.consentedAt = new Date().toISOString();
     }
 
     const token = randomUUID();
@@ -1804,7 +1895,7 @@ export class WalletService {
     const now = new Date().toISOString();
     const expiresAt = new Date(Date.now() + (input.expiresInDays ?? 30) * 86_400_000).toISOString();
     const payloadHash = hashDisclosurePayload(disclosedPayload);
-    const existing = await loadActiveShareForCompetency(userId, competencyId);
+    const existing = await loadActiveShareForCompetency(userId, competencyId, shareTarget);
     const createdAt = existing?.created_at ?? now;
     const proof = buildSelectiveDisclosureProof({
       learnerDid: record.learnerDid,
@@ -1832,28 +1923,28 @@ export class WalletService {
       updated_at: now,
     };
 
+    const service = getServiceSupabase();
     const { data, error } = existing
-      ? await writeWithOwnerOrService((client) =>
-        client
-          .from("selective_disclosure_presentations")
-          .update(shareRow)
-          .eq("id", existing.id)
-          .eq("learner_id", userId)
-          .select("id, expires_at")
-          .single(),
-      )
-      : await writeWithOwnerOrService((client) =>
-        client
-          .from("selective_disclosure_presentations")
-          .insert({ ...shareRow, created_at: now })
-          .select("id, expires_at")
-          .single(),
-      );
+      ? await service
+        .from("selective_disclosure_presentations")
+        .update(shareRow)
+        .eq("id", existing.id)
+        .eq("learner_id", userId)
+        .select("id, expires_at")
+        .single()
+      : await service
+        .from("selective_disclosure_presentations")
+        .insert({ ...shareRow, created_at: now })
+        .select("id, expires_at")
+        .single();
 
-    if (error) throw shareStorageFailure("create");
+    if (error) {
+      console.error("share create failed", { code: error.code ?? null });
+      throw shareCreateFailure(error);
+    }
 
     if (existing) {
-      await revokeDuplicateShares(userId, competencyId, asText((data as DbRow).id));
+      await revokeDuplicateShares(userId, competencyId, asText((data as DbRow).id), shareTarget);
     }
 
     return {
@@ -1863,7 +1954,77 @@ export class WalletService {
       tokenHint: token.slice(0, 8),
       proofType: "SignedSelectiveDisclosure",
       expiresAt: asNullableText((data as DbRow).expires_at),
+      delivery: recipientUserId ? "direct-recruiter" : shareWithAllRecruiters ? "all-recruiters" : "public-link",
+      recipientName,
+      recipientOrganization,
     };
+  }
+
+  async listRegisteredRecruiters(query: string): Promise<Array<{
+    id: string;
+    name: string;
+    organization: string;
+    title: string;
+  }>> {
+    const { data: roles, error } = await getServiceSupabase()
+      .from("user_roles")
+      .select("user_id")
+      .eq("role", ROLES.RECRUITER)
+      .limit(100);
+    if (error) throw new AppError("Recruiter directory is unavailable", 503);
+    const ids = (roles ?? [])
+      .map((row) => (typeof row.user_id === "string" ? row.user_id : ""))
+      .filter(Boolean);
+    if (ids.length === 0) return [];
+    const { data: profiles, error: profileError } = await getServiceSupabase()
+      .from("recruiter_profiles")
+      .select("user_id, full_name, company_name, job_title")
+      .in("user_id", ids);
+    if (profileError) throw new AppError("Recruiter directory is unavailable", 503);
+    const needle = query.trim().toLowerCase();
+    return (profiles ?? [])
+      .map((row) => ({
+        id: typeof row.user_id === "string" ? row.user_id : "",
+        name: typeof row.full_name === "string" ? row.full_name.trim() : "",
+        organization: typeof row.company_name === "string" ? row.company_name.trim() : "",
+        title: typeof row.job_title === "string" ? row.job_title.trim() : "",
+      }))
+      .filter((row) => row.id && row.name && row.organization)
+      .filter((row) => !needle || `${row.name} ${row.organization} ${row.title}`.toLowerCase().includes(needle))
+      .slice(0, 20);
+  }
+
+  async listOwnerShares(userId: string): Promise<OwnerShareSummary[]> {
+    const rows = await fetchShareRowsStrict("list", () =>
+      db()
+        .from("selective_disclosure_presentations")
+        .select("id, disclosed_payload, expires_at, revoked_at, created_at")
+        .eq("learner_id", userId)
+        .order("created_at", { ascending: false })
+        .limit(50),
+    );
+    return rows.map((row) => {
+      const payload = asRecord(row.disclosed_payload) ?? {};
+      const competency = asRecord(payload.competency);
+      const shareKind = payload.shareKind === ALL_RECRUITERS_SHARE
+        ? "all-recruiters"
+        : payload.shareKind === DIRECT_RECRUITER_SHARE
+          ? "direct-recruiter"
+          : "public-link";
+      return {
+        id: asText(row.id),
+        label: typeof competency?.name === "string" && competency.name.trim() ? competency.name.trim() : "Achievement",
+        shareKind,
+        recipientName: typeof payload.recipientName === "string" ? payload.recipientName : null,
+        recipientOrganization: typeof payload.recipientOrganization === "string" ? payload.recipientOrganization : null,
+        shareStatus: mapPresentationStatus({
+          expires_at: asNullableText(row.expires_at),
+          revoked_at: asNullableText(row.revoked_at),
+        }),
+        createdAt: asNullableText(row.created_at) ?? new Date().toISOString(),
+        expiresAt: asNullableText(row.expires_at),
+      };
+    });
   }
 
   async revokeShare(userId: string, shareId: string): Promise<void> {
@@ -1910,6 +2071,25 @@ export class WalletService {
       proofValue: access === "active" ? row.proof_value : null,
       verification,
     };
+  }
+
+  async resolveDirectShareForRecruiter(
+    presentationId: string,
+    recruiterUserId: string,
+  ): Promise<{ learnerId: string; competencyId: string }> {
+    const { data, error } = await getServiceSupabase()
+      .from("selective_disclosure_presentations")
+      .select("*")
+      .eq("id", presentationId)
+      .maybeSingle();
+    if (error) throw new AppError("Share could not be checked", 503);
+    if (!data) throw new AppError("Not authorized to verify this credential", 403);
+    const row = mapPresentationRow(data as DbRow);
+    const addressedToCaller = directRecipientId(row.disclosed_payload) === recruiterUserId;
+    if (!isShareActive(row) || (!addressedToCaller && !isAllRecruiterShare(row.disclosed_payload))) {
+      throw new AppError("Not authorized to verify this credential", 403);
+    }
+    return { learnerId: row.learner_id, competencyId: row.competency_id };
   }
 
   async resolveShareForZkp(token: string): Promise<{ learnerId: string; competencyId: string }> {

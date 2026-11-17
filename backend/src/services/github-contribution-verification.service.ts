@@ -1,8 +1,12 @@
 /**
  * GitHub contribution verification helpers.
  *
- * This helper only deduplicates commit records.
- * It does not establish GitHub authenticity or API completeness.
+ * Authorship policy: a commit counts only when the GitHub commits API `author`
+ * object is a GitHub user whose numeric id equals the learner's connected
+ * account. The committer field, display name, and email are not identity
+ * evidence. Commits with a missing or different author are excluded.
+ * A truncated or failed collection throws. It is never returned as a count.
+ * This helper does not prove GitHub authenticity by itself.
  */
 
 export interface GitHubCommitRef {
@@ -195,14 +199,14 @@ export async function fetchPaginatedGitHubCommits({
       }
 
       const author = item.author;
-
       if (
         !author ||
         typeof author !== "object" ||
         typeof author.id !== "number" ||
+        !Number.isSafeInteger(author.id) ||
         author.id !== expectedGitHubUserId
       ) {
-        throw new Error("GitHub commit author does not match");
+        continue;
       }
 
       commits.push({ sha: item.sha });

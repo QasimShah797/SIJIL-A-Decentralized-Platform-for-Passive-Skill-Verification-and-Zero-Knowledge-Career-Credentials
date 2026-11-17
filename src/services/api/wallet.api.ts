@@ -17,6 +17,8 @@ export interface WalletShareRecordView {
   updatedAt: string;
   expiresAt: string | null;
   revokedAt: string | null;
+  recipientName?: string | null;
+  recipientOrganization?: string | null;
 }
 
 export interface WalletCompetencyDetailView {
@@ -31,6 +33,16 @@ export interface ShareWalletCompetencyResult {
   tokenHint: string;
   proofType: string;
   expiresAt: string | null;
+  delivery?: "public-link" | "direct-recruiter" | "all-recruiters";
+  recipientName?: string | null;
+  recipientOrganization?: string | null;
+}
+
+export interface RegisteredRecruiter {
+  id: string;
+  name: string;
+  organization: string;
+  title: string;
 }
 
 export interface PublicPresentationVerification {
@@ -80,12 +92,21 @@ export async function syncWalletCompetencyApi(
   );
 }
 
+export async function listRegisteredRecruitersApi(query: string): Promise<RegisteredRecruiter[]> {
+  const params = query.trim() ? `?q=${encodeURIComponent(query.trim())}` : "";
+  return apiRequest<RegisteredRecruiter[]>(`/wallet/recruiters${params}`);
+}
+
 export async function shareWalletCompetencyApi(input: {
   competencyId: string;
   selectionMode: WalletShareSelectionMode;
   selectedFields: WalletShareFieldId[];
   shareScope?: "all" | "selected" | "issued";
   expiresInDays?: number;
+  recipientUserId?: string;
+  shareAudience?: "all-recruiters";
+  consentToAllRecruiters?: boolean;
+  competencyVersionIds?: string[];
 }): Promise<ShareWalletCompetencyResult> {
   return apiRequest<ShareWalletCompetencyResult>(
     `/wallet/competencies/${encodeURIComponent(input.competencyId)}/share`,
@@ -96,9 +117,28 @@ export async function shareWalletCompetencyApi(input: {
         selectedFields: input.selectedFields,
         shareScope: input.shareScope,
         expiresInDays: input.expiresInDays,
+        recipientUserId: input.recipientUserId,
+        shareAudience: input.shareAudience,
+        consentToAllRecruiters: input.consentToAllRecruiters,
+        competencyVersionIds: input.competencyVersionIds,
       }),
     },
   );
+}
+
+export interface OwnerShareSummary {
+  id: string;
+  label: string;
+  shareKind: "all-recruiters" | "direct-recruiter" | "public-link";
+  recipientName: string | null;
+  recipientOrganization: string | null;
+  shareStatus: "Active" | "Expired" | "Revoked";
+  createdAt: string;
+  expiresAt: string | null;
+}
+
+export async function listOwnerSharesApi(): Promise<OwnerShareSummary[]> {
+  return apiRequest<OwnerShareSummary[]>("/wallet/shares");
 }
 
 export async function revokeWalletShareApi(shareId: string): Promise<boolean> {

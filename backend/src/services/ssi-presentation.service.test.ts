@@ -70,6 +70,17 @@ function verified(id: string): CredentialVerifyResult {
     anchorTxId: "tx",
     anchoredAt: "2026-10-16T18:30:00.000Z",
     verifiedAt: "2026-10-16T19:01:00.000Z",
+    reason: "valid",
+    checks: {
+      document: "valid",
+      signature: "valid",
+      holder: "bound",
+      evidence: "match",
+      issuer: "trusted",
+      anchor: "match",
+      revocation: "active",
+      zkp: "not_applicable",
+    },
   };
 }
 

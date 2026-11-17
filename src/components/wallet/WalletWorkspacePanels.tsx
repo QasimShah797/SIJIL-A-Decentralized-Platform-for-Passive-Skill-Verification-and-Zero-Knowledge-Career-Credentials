@@ -60,7 +60,7 @@ export type CommitChartPoint = {
 
 export type GithubPackageStats = {
   repos: number;
-  commits: number;
+  commits: number | null;
   activities: number;
   pullRequests: number;
   languages: string[];
@@ -370,16 +370,20 @@ export function CompetencyPackageCard({
               </div>
               <div>
                 <p className="text-[11px] text-[#94a3b8]">Commits</p>
-                <p className="text-lg font-semibold text-[#023E8A]">{github.commits}</p>
+                <p className="text-lg font-semibold text-[#023E8A]">{github.commits == null ? "Not disclosed" : github.commits}</p>
               </div>
-              <div>
-                <p className="text-[11px] text-[#94a3b8]">Activities</p>
-                <p className="text-lg font-semibold text-[#023E8A]">{github.activities}</p>
-              </div>
-              <div>
-                <p className="text-[11px] text-[#94a3b8]">Pull requests</p>
-                <p className="text-lg font-semibold text-[#023E8A]">{github.pullRequests}</p>
-              </div>
+              {github.activities > 0 ? (
+                <div>
+                  <p className="text-[11px] text-[#94a3b8]">Activities</p>
+                  <p className="text-lg font-semibold text-[#023E8A]">{github.activities}</p>
+                </div>
+              ) : null}
+              {github.pullRequests > 0 ? (
+                <div>
+                  <p className="text-[11px] text-[#94a3b8]">Pull requests</p>
+                  <p className="text-lg font-semibold text-[#023E8A]">{github.pullRequests}</p>
+                </div>
+              ) : null}
             </div>
             {github.languages.length > 0 ? (
               <p className="mt-2 text-xs text-[#64748b]">Languages · {github.languages.join(", ")}</p>
@@ -505,7 +509,7 @@ export function EvidenceInspectorCard({
               <TrustTierBadge trustTier="corroborating" trustTierLabel="Corroborating" />
             </div>
             <p className="text-[11px] text-[#64748b]">
-              {[repo.language, repo.commits != null ? `${repo.commits} commits` : null].filter(Boolean).join(" · ")}
+              {[repo.language, repo.commits != null ? `${repo.commits} commits` : "Commit count not disclosed"].filter(Boolean).join(" · ")}
             </p>
           </a>
         )))}

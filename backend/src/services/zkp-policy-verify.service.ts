@@ -5,6 +5,9 @@
  * trusted commitment (GitHub snapshot or signed, unrevoked credential).
  */
 import { readGroth16Proof } from "./zkp-verify";
+import { recomputeStoredDocumentHash } from "./credential-verify";
+import { verifyCredentialHash } from "./signing.service";
+import { AppError } from "../utils/AppError";
 import { verifyGitHubContributionProof } from "./github-zkp-verify.service";
 import { createSupabaseGitHubZkpStore, type GitHubZkpStore } from "./github-zkp-store";
 import { loadCredentialByIdOrUri } from "./credential-verify.service";
@@ -49,6 +52,7 @@ export type PolicyCheck =
   | "evidence_stale"
   | "evidence_revoked"
   | "evidence_missing"
+  | "credential_unauthenticated"
   | "not_evaluated";
 
 export interface RecruiterPolicyView extends ReturnType<typeof toPublicPolicyStatus> {
@@ -154,6 +158,20 @@ export async function verifyPolicyRowForRecruiter(
     if (credential.revoked_at) {
       return notVerified(row, "evidence_revoked", "The credential has been revoked.");
     }
+    const recomputed = recomputeStoredDocumentHash(credential.credential_document);
+    const signature = issuerProofValue(credential.proof);
+    let signatureOk = false;
+    if (recomputed && recomputed === credential.credential_hash && signature) {
+      try {
+        signatureOk = verifyCredentialHash(recomputed, signature);
+      } catch (err) {
+        if (err instanceof AppError && err.statusCode === 503) throw err;
+        signatureOk = false;
+      }
+    }
+    if (!signatureOk) {
+      return notVerified(row, "credential_unauthenticated", "The issuer signature or credential document did not check out.");
+    }
     const commitment = readAssessmentCommitment(credential.credential_document);
     if (commitment.status !== "ok" || commitment.claim.commitment !== signals[1]) {
       return notVerified(row, "commitment_mismatch", "Proof does not match the signed credential commitment.");
@@ -171,4 +189,10 @@ export async function verifyPolicyRowForRecruiter(
   }
 
   return notVerified(row, "policy_mismatch", "Unsupported ZKP type.");
+}
+
+function issuerProofValue(proof: unknown): string | null {
+  if (!proof || typeof proof !== "object") return null;
+  const value = (proof as { proofValue?: unknown }).proofValue;
+  return typeof value === "string" && value.length > 0 ? value : null;
 }

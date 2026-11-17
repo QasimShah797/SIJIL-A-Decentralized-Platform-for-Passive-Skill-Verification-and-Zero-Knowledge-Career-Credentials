@@ -13,7 +13,8 @@ import { ArrowLeft, Share2, ShieldCheck, FileText, Github, BookOpen, FileUp, Mes
 import { useCredentials } from "@/hooks/useLearnerData";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
-import { mapWalletAnchorStatus } from "@/lib/ledger-status";
+import { mapWalletAnchorStatus, shareShowsVerified } from "@/lib/ledger-status";
+import { fetchLedgerHistory, verifyCredentialLedgerApi, type LedgerHistoryEntry, type LedgerVerifyResult } from "@/services/api/ledger.api";
 
 type RepoEvidence = {
   id: string;
@@ -44,6 +45,10 @@ export default function CredentialDetails() {
   const { credentials, loading } = useCredentials();
   const c = credentials.find((x) => x.id === decodeURIComponent(id || ""));
   const [repoEvidence, setRepoEvidence] = useState<RepoEvidence[]>([]);
+  const [ledgerResult, setLedgerResult] = useState<LedgerVerifyResult | null>(null);
+  const [history, setHistory] = useState<LedgerHistoryEntry[] | null>(null);
+  const [historyAvailable, setHistoryAvailable] = useState<boolean | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     if (!user || !c) return;
@@ -56,6 +61,27 @@ export default function CredentialDetails() {
       setRepoEvidence((data ?? []).filter((r) => languageMatches(r.primary_language, tokens)));
     })();
   }, [user, c?.skill]);
+
+  const refreshLedger = async () => {
+    if (!c) return;
+    setRefreshing(true);
+    try {
+      const [verification, chainHistory] = await Promise.all([
+        verifyCredentialLedgerApi(c.id),
+        fetchLedgerHistory(c.id),
+      ]);
+      setLedgerResult(verification);
+      setHistory(chainHistory?.entries ?? null);
+      setHistoryAvailable(chainHistory?.available ?? false);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!c) return;
+    void refreshLedger();
+  }, [c?.id]);
 
   if (loading) {
     return (
@@ -79,7 +105,23 @@ export default function CredentialDetails() {
   }
 
   const totalSupporting = repoEvidence.length;
-  const anchorBadge = mapWalletAnchorStatus(c.ledgerAnchorStatus ?? c.anchorStatus);
+  const anchorBadge = mapWalletAnchorStatus(ledgerResult?.status === "verified"
+    ? "anchored"
+    : ledgerResult?.status === "revoked"
+      ? "revoked"
+      : ledgerResult?.status === "pending_anchor"
+        ? "pending"
+        : ledgerResult?.checks?.anchor === "hash_mismatch"
+          ? "hash_mismatch"
+          : ledgerResult?.status === "ledger_unavailable"
+            ? "unavailable"
+            : c.ledgerAnchorStatus ?? c.anchorStatus);
+  const blockchainConfirmed = shareShowsVerified({
+    ledgerStatus: ledgerResult?.status ?? null,
+    detail: ledgerResult?.detail,
+    reason: ledgerResult?.reason,
+    zkp: ledgerResult?.checks?.zkp,
+  });
 
   return (
     <AppShell role="learner">
@@ -109,7 +151,15 @@ export default function CredentialDetails() {
               </div>
             </div>
             <div className="flex flex-col items-end gap-2">
-              <StatusBadge variant="verified" icon={<ShieldCheck className="h-3 w-3" />}>{c.verification}</StatusBadge>
+              <StatusBadge variant={blockchainConfirmed ? "verified" : ledgerResult?.status === "verified" && ledgerResult.checks?.zkp === "not_checked" ? "warning" : "neutral"} icon={<ShieldCheck className="h-3 w-3" />}>
+                {blockchainConfirmed
+                  ? "Blockchain confirmed"
+                  : ledgerResult?.status === "verified" && ledgerResult.checks?.zkp === "not_checked"
+                    ? "Record matches. Privacy proof not checked"
+                    : ledgerResult?.status === "ledger_unavailable"
+                      ? "Blockchain not checked"
+                      : "Not blockchain-verified"}
+              </StatusBadge>
               <StatusBadge variant={c.attestation === "Approved" ? "verified" : "info"}>Attestation: {c.attestation}</StatusBadge>
               {anchorBadge ? (
                 <StatusBadge variant={anchorBadge.variant}>
@@ -183,6 +233,25 @@ export default function CredentialDetails() {
         </div>
 
         <div className="space-y-6">
+          <Section title="Blockchain record">
+            <FieldRow label="credential id" value={c.id} mono />
+            <FieldRow label="issued" value={c.validFrom} mono />
+            <FieldRow label="transaction id" value={ledgerResult?.anchorTxId ?? c.anchorTxId ?? "Not anchored yet"} mono />
+            <FieldRow label="verification" value={ledgerResult?.reason ?? ledgerResult?.status ?? "Not checked yet"} mono />
+            <FieldRow
+              label="history"
+              value={historyAvailable === false
+                ? "Ledger history is unavailable"
+                : history && history.length > 0
+                  ? history.map((entry) => `${entry.timestamp} ${entry.status ?? "update"} ${entry.txId}`).join("\n")
+                  : "No ledger history returned"}
+              mono
+            />
+            <Button variant="outline" className="mt-3" disabled={refreshing} onClick={() => void refreshLedger()}>
+              {refreshing ? "Checking ledger…" : "Refresh verification"}
+            </Button>
+          </Section>
+
           <Section title="Credential metadata">
             <FieldRow label="credentialSchema" value="https://schemas.sijil.dev/achievement/v2.json" mono />
             <FieldRow label="credentialStatus" value="StatusList2021Entry · index 142" mono hint="Revocation reference using a status list entry." />

@@ -46,6 +46,17 @@ function payload(): Record<string, unknown> {
 const FIELDS = ["github_evidence", "lms_evidence", "practical_task_result"];
 
 describe("exact value disclosure", () => {
+  it("never returns a private score opening", () => {
+    const out = redactExactValues({
+      ...payload(),
+      opening: "secret-opening",
+      evidence: { practicalTask: { scorePercent: 91, blinding: "secret-blinding", status: "Passed" } },
+    }, { ...DEFAULT_DISCLOSURE_PREFERENCES, shareExactAssessmentMarks: true }, "t");
+    assert.equal(JSON.stringify(out).includes("secret-opening"), false);
+    assert.equal(JSON.stringify(out).includes("secret-blinding"), false);
+    assert.equal(JSON.stringify(out).includes("blinding"), false);
+  });
+
   it("defaults both permissions to OFF", () => {
     assert.equal(DEFAULT_DISCLOSURE_PREFERENCES.shareExactAssessmentMarks, false);
     assert.equal(DEFAULT_DISCLOSURE_PREFERENCES.shareExactGithubCommitCount, false);

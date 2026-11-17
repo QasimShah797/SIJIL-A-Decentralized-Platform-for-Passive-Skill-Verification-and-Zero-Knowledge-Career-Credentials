@@ -1,4 +1,5 @@
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
+import { VerificationBell } from "@/components/zkp/VerificationBell";
 import { useEffect, useState, type ReactNode } from "react";
 import {
   LayoutDashboard,
@@ -453,6 +454,7 @@ export function LearnerWorkspaceShell({
 
           <div className="ml-auto flex items-center gap-2">
             <ThemeToggle />
+            {pathname === "/learner/profile" || pathname === "/learner/dashboard" ? <VerificationBell role="learner" /> : null}
 
             {decayCount > 0 && (
               <button
