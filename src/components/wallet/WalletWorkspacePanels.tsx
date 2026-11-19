@@ -398,7 +398,7 @@ export function PracticalTaskProgress({ attempts }: { attempts: WalletAttemptHis
         {sittings.map((item, index) => {
           const previous = index > 0 ? sittings[index - 1]?.scorePercent ?? null : null;
           const change = item.scorePercent != null && previous != null ? item.scorePercent - previous : null;
-          const passed = item.passed || (item.scorePercent != null && item.scorePercent >= 60);
+          const passed = item.passed || (item.scorePercent != null && Number.isFinite(item.scorePercent));
           return (
             <li key={item.attemptId} className="pt-attempt-timeline-item">
               <span className={cn("pt-attempt-dot", passed ? "pt-attempt-dot--pass" : "pt-attempt-dot--retry")} />

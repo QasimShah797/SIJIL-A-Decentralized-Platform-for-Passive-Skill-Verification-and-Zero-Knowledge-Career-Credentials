@@ -13,7 +13,6 @@ import {
   CalendarClock,
   LogOut,
   Menu,
-  Bell,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -68,13 +67,13 @@ function dashboardNav(): NavGroup[] {
     },
     {
       label: "Evidence",
-      items: [{ to: "/learner/integrations", icon: Plug, label: "Integrations" }],
+      items: [{ to: "/learner/integrations", icon: Plug, label: "Connected Platforms" }],
     },
     {
       label: "Assessment",
       items: [
         { to: "/learner/task", icon: ClipboardCheck, label: "Practical Tasks" },
-        { to: "/learner/validation", icon: ShieldCheck, label: "Validation Trail" },
+        { to: "/learner/validation", icon: ShieldCheck, label: "Competency Progress" },
       ],
     },
     {
@@ -115,13 +114,13 @@ function profileNav(): NavGroup[] {
     },
     {
       label: "Evidence",
-      items: [{ to: "/learner/integrations", icon: Plug, label: "Integrations" }],
+      items: [{ to: "/learner/integrations", icon: Plug, label: "Connected Platforms" }],
     },
     {
       label: "Assessment",
       items: [
         { to: "/learner/task", icon: ClipboardCheck, label: "Practical Tasks" },
-        { to: "/learner/validation", icon: ShieldCheck, label: "Validation Trail" },
+        { to: "/learner/validation", icon: ShieldCheck, label: "Competency Progress" },
       ],
     },
     {
@@ -135,14 +134,6 @@ function profileNav(): NavGroup[] {
     },
   ];
 }
-
-const TOP_LINKS: NavItem[] = [
-  { to: "/learner/my-profile", icon: UserCircle, label: "Profile", match: (p) => p.startsWith("/learner/my-profile") },
-  { to: "/learner/task", icon: ClipboardCheck, label: "Tasks" },
-  { to: "/learner/wallet", icon: Wallet, label: "Wallet" },
-  { to: "/learner/validation", icon: ShieldCheck, label: "Validation" },
-  { to: "/learner/peer-reviews", icon: MessageSquare, label: "Reviews" },
-];
 
 function isActive(pathname: string, item: NavItem) {
   if (item.match) return item.match(pathname);
@@ -482,49 +473,9 @@ export function LearnerWorkspaceShell({
           </div>
 
           <div className="flex min-w-0 flex-1 items-center gap-3 pl-3 pr-4 sm:pl-6 sm:pr-6">
-          <nav className="hidden min-w-0 items-center gap-2 lg:flex" aria-label="Learner">
-            {TOP_LINKS.map((item) => {
-              const active = isActive(pathname, item);
-              return (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  className={cn(
-                    "inline-flex items-center gap-2 rounded-full border py-1 pl-1 pr-3 text-sm font-semibold shadow-sm transition",
-                    active
-                      ? "border-[#023E8A] bg-[#023E8A] text-white shadow-[0_8px_18px_rgba(2,62,138,0.22)]"
-                      : "border-[#e2e8f0] bg-white text-[#334155] hover:-translate-y-px hover:border-[#bfdbfe] hover:shadow-md",
-                  )}
-                >
-                  <span className={cn(
-                    "flex h-7 w-7 items-center justify-center rounded-full",
-                    active ? "bg-white/15 text-white" : "bg-[#eff6ff] text-[#023E8A]",
-                  )}>
-                    <item.icon className="h-3.5 w-3.5" />
-                  </span>
-                  <span>{item.label}</span>
-                </NavLink>
-              );
-            })}
-          </nav>
-
           <div className="ml-auto flex items-center gap-2">
             <ThemeToggle />
-            {pathname === "/learner/profile" || pathname === "/learner/dashboard" ? <VerificationBell role="learner" /> : null}
-
-            {decayCount > 0 && (
-              <button
-                type="button"
-                onClick={() => navigate("/learner/profile#notifications")}
-                className="relative flex h-9 w-9 items-center justify-center rounded-full hover:bg-[#f1f5f9]"
-                aria-label={`${decayCount} notifications`}
-              >
-                <Bell className="h-4 w-4 text-[#334155]" />
-                <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-semibold text-white">
-                  {decayCount}
-                </span>
-              </button>
-            )}
+            <VerificationBell role="learner" />
 
             {isDark && profile && (
               <DropdownMenu>

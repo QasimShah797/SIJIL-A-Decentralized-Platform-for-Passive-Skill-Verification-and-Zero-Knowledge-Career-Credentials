@@ -35,7 +35,8 @@ const SINGLE_TYPES = new Set<ClosedScoreType>([
   "hotspot",
 ]);
 
-const PASS_RATIO = 0.6;
+/** No fail threshold — any completed sitting advances the competency. */
+const PASS_RATIO = 0;
 
 function optionId(value: unknown): string | null {
   if (typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 3) {
@@ -162,5 +163,6 @@ export function scoreClosedAssessment(
   const correctCount = entries.filter((entry) => responseIsCorrect(entry, answers?.[entry.id])).length;
   const percentage = totalQuestions > 0 ? Math.round((correctCount / totalQuestions) * 100) : 0;
   const passed = totalQuestions > 0 && correctCount / totalQuestions >= PASS_RATIO;
+  void PASS_RATIO;
   return { correctCount, totalQuestions, percentage, passed };
 }

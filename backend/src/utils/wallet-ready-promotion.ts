@@ -46,9 +46,12 @@ export function evaluateWalletReadyPromotion(
   if (input.storedPipelineStage === IN_WALLET_STAGE) {
     return { promote: false, reason: "already_in_wallet" };
   }
-  if (!input.scoredPassed || input.scoredPercent < WALLET_READY_PASS_PERCENT) {
-    return { promote: false, reason: "assessment_not_passed" };
+  // Any scored sitting advances the skill — no pass/fail mark gate.
+  if (!Number.isFinite(input.scoredPercent)) {
+    return { promote: false, reason: "assessment_not_scored" };
   }
+  void input.scoredPassed;
+  void WALLET_READY_PASS_PERCENT;
   if (!input.hasQualifyingGitHubEvidence) {
     return { promote: false, reason: "missing_github_evidence" };
   }

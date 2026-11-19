@@ -287,16 +287,22 @@ export async function generateSecureMcqTask(
   return parsed;
 }
 
-export const MCQ_PASS_PERCENT = 60;
+/** Kept for older UI copy; progression no longer uses a pass mark. */
+export const MCQ_PASS_PERCENT = 0;
 
+/** Any numeric score advances the skill — there is no fail threshold. */
 export function isMcqPassed(percentage: number | null | undefined): boolean {
-  return typeof percentage === "number" && percentage >= MCQ_PASS_PERCENT;
+  return typeof percentage === "number" && Number.isFinite(percentage);
 }
 
-export function mcqResultLabel(percentage: number | null | undefined, passed?: boolean | null): string | null {
+export function mcqResultLabel(
+  percentage: number | null | undefined,
+  _passed?: boolean | null,
+  attemptNumber?: number,
+): string | null {
   if (percentage == null) return null;
-  const didPass = typeof passed === "boolean" ? passed : isMcqPassed(percentage);
-  return didPass ? "Passed" : "Needs Improvement";
+  if (typeof attemptNumber === "number" && attemptNumber > 1) return "Retake";
+  return "Completed";
 }
 
 export async function evaluateSecureMcqAttempt(
@@ -336,7 +342,7 @@ export async function evaluateSecureMcqAttempt(
 
   const percentage = Number(data.percentage ?? 0);
   const passed = isMcqPassed(percentage);
-  const resultLabel = mcqResultLabel(percentage, passed) ?? "Needs Improvement";
+  const resultLabel = mcqResultLabel(percentage, passed) ?? "Completed";
 
   console.log("[mcq-submit] server result:", {
     percentage,

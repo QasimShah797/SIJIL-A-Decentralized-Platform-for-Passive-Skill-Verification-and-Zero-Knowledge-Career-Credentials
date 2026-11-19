@@ -372,7 +372,8 @@ export function buildAttemptHistoryItem(row: DbRow): WalletAttemptHistoryItem | 
   const scorePercent = asNumber(row.score ?? row.resultPercentage) ?? evaluation.scorePercent;
   const correctCount = asNumber(row.resultCorrectCount) ?? evaluation.correctCount;
   const totalQuestions = asNumber(row.resultTotalQuestions) ?? evaluation.totalQuestions;
-  const passed = row.passed === true || (scorePercent != null && scorePercent >= 60);
+  // Any numeric score counts as a completed practical sitting (no fail threshold).
+  const passed = row.passed === true || (scorePercent != null && Number.isFinite(scorePercent));
   const submittedAt = asNullableText(row.submitted_at ?? row.updated_at ?? row.created_at);
 
   if (!title && !submittedAt && scorePercent == null && !attemptId) {

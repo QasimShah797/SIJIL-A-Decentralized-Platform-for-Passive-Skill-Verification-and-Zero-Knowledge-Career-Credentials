@@ -1,13 +1,18 @@
 import { Link } from "react-router-dom";
 import {
   ArrowRight,
+  BarChart3,
+  Check,
   ChevronRight,
+  CircleDot,
   ExternalLink,
+  FileText,
   GitBranch,
   Github,
+  Layers,
   RefreshCw,
-  Route,
   ShieldCheck,
+  Wallet,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PipelineStepper, type PipelineStage as StepperStage } from "@/components/sijil/PipelineStepper";
@@ -15,7 +20,7 @@ import { cn } from "@/lib/utils";
 import { PIPELINE_STAGES, pipelineStageIndex, VERIFICATION_STAGE_TOOLTIP } from "@/lib/competency-pipeline";
 import type { ValidationSummary } from "@/lib/db/validation";
 
-const SKILL_COLORS = ["#023E8A", "#CA8A04", "#059669", "#DC2626", "#0891B2", "#7C3AED"];
+const SKILL_COLORS = ["#2563eb", "#f59e0b", "#10b981", "#ef4444", "#06b6d4", "#8b5cf6"];
 
 function skillInitials(name: string): string {
   const parts = name.trim().split(/\s+/);
@@ -47,57 +52,26 @@ const STAGE_BADGE: Record<ReturnType<typeof stageTone>, string> = {
   neutral: "bg-[#f1f5f9] text-[#64748b] border-[#e2e8f0]",
 };
 
-export function ValidationBreadcrumbBar({
-  didShort,
-  skillName,
-}: {
+export function ValidationBreadcrumbBar(_props: {
   didShort?: string;
   skillName?: string;
 }) {
-  return (
-    <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-      <nav className="flex flex-wrap items-center gap-1.5 text-xs text-[#64748b]">
-        <Link to="/learner/profile" className="hover:text-[#023E8A]">
-          Learner
-        </Link>
-        <ChevronRight className="h-3 w-3" aria-hidden />
-        <span>Verification workspace</span>
-        <ChevronRight className="h-3 w-3" aria-hidden />
-        {skillName ? (
-          <>
-            <Link to="/learner/validation" className="hover:text-[#023E8A]">
-              Validation Trail
-            </Link>
-            <ChevronRight className="h-3 w-3" aria-hidden />
-            <span className="font-semibold text-[#023E8A]">{skillName}</span>
-          </>
-        ) : (
-          <span className="font-semibold text-[#023E8A]">Validation Trail</span>
-        )}
-      </nav>
-      {didShort ? (
-        <span className="mono rounded-lg border border-[#e2e8f0] bg-white px-2.5 py-1 text-[10px] text-[#64748b]">
-          {didShort}
-        </span>
-      ) : null}
-    </div>
-  );
+  return null;
 }
 
 export function ValidationListHero({ competencyCount }: { competencyCount: number }) {
+  void competencyCount;
   return (
-    <div className="mb-5">
-      <p className="inline-flex items-center gap-1.5 rounded-full border border-[#bfdbfe] bg-[#eff6ff] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[#023E8A]">
-        <Route className="h-3 w-3" aria-hidden />
-        Evidence-driven verification
-      </p>
-      <h1 className="mt-3 text-2xl font-bold text-[#0f172a] sm:text-[1.65rem]">Validation Trail</h1>
-      {competencyCount > 0 && (
-        <p className="mt-2 text-xs font-medium text-[#94a3b8]">
-          {competencyCount} declared competenc{competencyCount === 1 ? "y" : "ies"} in pipeline
-        </p>
-      )}
-    </div>
+    <section className="cp-hero mb-6 overflow-hidden rounded-2xl px-5 py-6 sm:px-7">
+      <div className="relative z-[1] flex items-center gap-3">
+        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[#3b82f6] text-white shadow-lg shadow-blue-900/30">
+          <BarChart3 className="h-6 w-6" aria-hidden />
+        </div>
+        <h1 className="text-2xl font-bold tracking-tight text-white sm:text-[1.75rem]">
+          Competency Progress
+        </h1>
+      </div>
+    </section>
   );
 }
 
@@ -162,96 +136,192 @@ export function ValidationStatsGrid({
   evidenceRecords: number;
 }) {
   const items = [
-    { label: "Declared competencies", value: String(total), hint: "Active in verification pipeline" },
-    { label: "Wallet ready", value: String(walletReady), hint: "Eligible for credential issuance" },
-    { label: "In progress", value: String(inProgress), hint: "Evidence or assessment pending" },
-    { label: "Evidence records", value: String(evidenceRecords), hint: "Linked supporting records" },
+    {
+      label: "Declared Skills",
+      value: String(total),
+      icon: Layers,
+      iconClass: "bg-[#dbeafe] text-[#2563eb]",
+      cardClass: "bg-[#eff6ff]",
+    },
+    {
+      label: "Ready for Credential",
+      value: String(walletReady),
+      icon: Wallet,
+      iconClass: "bg-[#dcfce7] text-[#16a34a]",
+      cardClass: "bg-[#f0fdf4]",
+    },
+    {
+      label: "In Progress",
+      value: String(inProgress),
+      icon: CircleDot,
+      iconClass: "bg-[#ffedd5] text-[#ea580c]",
+      cardClass: "bg-[#fff7ed]",
+    },
+    {
+      label: "Supporting Records",
+      value: String(evidenceRecords),
+      icon: FileText,
+      iconClass: "bg-[#ede9fe] text-[#7c3aed]",
+      cardClass: "bg-[#f5f3ff]",
+    },
   ];
 
   return (
-    <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+    <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
       {items.map((item) => (
-        <div key={item.label} className="learner-stat-card p-4">
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-[#64748b]">{item.label}</p>
-          <p className="mt-1 text-2xl font-bold text-[#023E8A]">{item.value}</p>
-          <p className="mt-1 text-[11px] text-[#94a3b8]">{item.hint}</p>
+        <div
+          key={item.label}
+          className={cn(
+            "flex items-center justify-between gap-3 rounded-2xl px-5 py-4 shadow-sm",
+            item.cardClass,
+          )}
+        >
+          <div className="min-w-0">
+            <div className={cn("mb-3 flex h-10 w-10 items-center justify-center rounded-xl", item.iconClass)}>
+              <item.icon className="h-5 w-5" aria-hidden />
+            </div>
+            <p className="text-sm font-medium text-[#64748b]">{item.label}</p>
+          </div>
+          <p className="text-3xl font-bold tabular-nums text-[#0f172a]">{item.value}</p>
         </div>
       ))}
     </div>
   );
 }
 
+function progressBadge(stage: string): { label: string; className: string; icon: typeof Wallet | typeof Layers } {
+  if (stage === "in_wallet" || stage === "wallet_ready") {
+    return {
+      label: "In Wallet",
+      className: "bg-[#dcfce7] text-[#15803d]",
+      icon: Wallet,
+    };
+  }
+  if (stage === "declared") {
+    return {
+      label: "Declared Skill",
+      className: "bg-[#dbeafe] text-[#1d4ed8]",
+      icon: Layers,
+    };
+  }
+  if (stage === "practical_task") {
+    return {
+      label: "Practical Task",
+      className: "bg-[#ffedd5] text-[#c2410c]",
+      icon: CircleDot,
+    };
+  }
+  if (stage === "evidence_linked") {
+    return {
+      label: "Evidence",
+      className: "bg-[#e0f2fe] text-[#0369a1]",
+      icon: FileText,
+    };
+  }
+  if (stage === "peer_review" || stage === "verification_pending" || stage === "institution_attestation_pending") {
+    return {
+      label: "Peer Review",
+      className: "bg-[#ede9fe] text-[#6d28d9]",
+      icon: Layers,
+    };
+  }
+  return {
+    label: "In Progress",
+    className: "bg-[#e2e8f0] text-[#475569]",
+    icon: CircleDot,
+  };
+}
+
 export function ValidationTrailCard({
   summary,
   index,
-  onOpen,
 }: {
   summary: ValidationSummary;
   index: number;
-  onOpen: () => void;
+  onOpen?: () => void;
 }) {
-  const tone = stageTone(summary.pipelineStage);
   const stageIdx = pipelineStageIndex(summary.pipelineStage);
   const progress = Math.round(((stageIdx + 1) / PIPELINE_STAGES.length) * 100);
+  const badge = progressBadge(summary.pipelineStage);
+  const BadgeIcon = badge.icon;
+  const lineProgress = stageIdx <= 0
+    ? 0
+    : (stageIdx / (PIPELINE_STAGES.length - 1)) * 100;
 
   return (
-    <button
-      type="button"
-      onClick={onOpen}
-      className="learner-stat-card vt-trail-card group w-full p-4 text-left transition-shadow hover:shadow-md"
-    >
+    <div className="rounded-2xl border border-[#eef2f7] bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
       <div className="flex items-start gap-3">
         <div
-          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-sm font-bold text-white"
+          className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-sm font-bold text-white shadow-sm"
           style={{ backgroundColor: skillColor(index) }}
         >
           {skillInitials(summary.skill)}
         </div>
+
         <div className="min-w-0 flex-1">
-          <div className="flex items-start justify-between gap-2">
-            <h3 className="font-semibold text-[#0f172a] group-hover:text-[#023E8A]">{summary.skill}</h3>
-            <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-[#94a3b8] group-hover:text-[#023E8A]" />
-          </div>
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            <span className={cn("rounded-full border px-2 py-0.5 text-[10px] font-semibold", STAGE_BADGE[tone])}>
-              {summary.currentStageLabel}
-            </span>
-            <span className="text-[11px] text-[#64748b]">{summary.evidence}</span>
-          </div>
-          <div className="mt-3">
-            <div className="mb-1 flex justify-between text-[10px] text-[#64748b]">
-              <span>Pipeline progress</span>
-              <span className="font-semibold tabular-nums text-[#023E8A]">{progress}%</span>
-            </div>
-            <div className="h-1.5 overflow-hidden rounded-full bg-[#e2e8f0]">
-              <div
-                className="h-full rounded-full bg-[#023E8A] transition-all"
-                style={{ width: `${progress}%` }}
-              />
-            </div>
-          </div>
-          <p className="mt-3 text-xs leading-relaxed text-[#64748b]">
-            <span className="font-medium text-[#334155]">Next: </span>
-            {summary.nextStep}
-          </p>
-          <div className="mt-3 flex flex-wrap gap-1">
-            {PIPELINE_STAGES.map((stage, i) => (
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <h3 className="text-base font-semibold text-[#0f172a]">{summary.skill}</h3>
               <span
-                key={stage.key}
                 className={cn(
-                  "rounded border px-1.5 py-0.5 text-[9px] font-medium",
-                  i <= stageIdx
-                    ? "border-[#bfdbfe] bg-[#eff6ff] text-[#023E8A]"
-                    : "border-[#e2e8f0] bg-white text-[#94a3b8]",
+                  "inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold",
+                  badge.className,
                 )}
               >
-                {stage.label}
+                <BadgeIcon className="h-3 w-3" aria-hidden />
+                {badge.label}
               </span>
-            ))}
+            </div>
+
+            <div className="flex shrink-0 items-center gap-2">
+              <span className="rounded-full bg-[#eff6ff] px-3 py-1 text-xs font-bold tabular-nums text-[#1d4ed8]">
+                {progress}%
+              </span>
+              <span
+                className="flex h-8 w-8 items-center justify-center rounded-full border border-[#e2e8f0] bg-white text-[#94a3b8]"
+                aria-hidden
+              >
+                <ChevronRight className="h-4 w-4" />
+              </span>
+            </div>
+          </div>
+
+          <div className="cp-stepper mt-6">
+            <div className="cp-stepper-track" aria-hidden>
+              <div className="cp-stepper-track-fill" style={{ width: `${lineProgress}%` }} />
+            </div>
+            <ol className="relative z-[1] grid grid-cols-5">
+              {PIPELINE_STAGES.map((stage, i) => {
+                const reached = i <= stageIdx;
+                return (
+                  <li key={stage.key} className="flex flex-col items-center gap-2.5 text-center">
+                    <span
+                      className={cn(
+                        "flex h-8 w-8 items-center justify-center rounded-full border-[2.5px]",
+                        reached
+                          ? "border-[#1d4ed8] bg-[#1d4ed8] text-white"
+                          : "border-[#cbd5e1] bg-white text-transparent",
+                      )}
+                      aria-label={`${stage.label}${reached ? " complete" : ""}`}
+                    >
+                      {reached ? <Check className="h-4 w-4" strokeWidth={3} aria-hidden /> : null}
+                    </span>
+                    <span
+                      className={cn(
+                        "text-[11px] font-medium sm:text-xs",
+                        reached ? "text-[#334155]" : "text-[#94a3b8]",
+                      )}
+                    >
+                      {stage.label}
+                    </span>
+                  </li>
+                );
+              })}
+            </ol>
           </div>
         </div>
       </div>
-    </button>
+    </div>
   );
 }
 

@@ -5,8 +5,8 @@ import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useNavigate } from "react-router-dom";
-import { useDeclaredSkills, useCredentials, useLearnerProfile } from "@/hooks/useLearnerData";
-import { Github, BookOpen } from "lucide-react";
+import { useDeclaredSkills, useCredentials } from "@/hooks/useLearnerData";
+import { Github, BookOpen, Code2 } from "lucide-react";
 import {
   fetchLmsEvidence,
   toCardEvidence,
@@ -18,7 +18,6 @@ import {
   fetchMoodleCourseActivities,
   hasMoodleAccessControlWarning,
   userFacingMoodleWarnings,
-  resolveMoodleConnectionSiteHost,
   syncMoodleData,
   testMoodleConnection,
   type MoodleCourseActivity,
@@ -34,48 +33,18 @@ import {
 } from "@/lib/github-integration";
 import { fetchLinkedProjectEvidence, unlinkGitHubRepoFromSkill } from "@/lib/db/github-evidence";
 import type { ProjectEvidenceApiView } from "@/lib/db/github-evidence";
-import { IntegrationSummary } from "@/components/integrations/IntegrationSummary";
-import { IntegrationConnectionCard } from "@/components/integrations/IntegrationConnectionCard";
 import {
-  GitHubEvidencePanel,
-  type LanguageFilter,
-} from "@/components/integrations/GitHubEvidencePanel";
-import { LMSActivityPanel } from "@/components/integrations/LMSActivityPanel";
-import {
-  ConnectedSourcesHeader,
-  IntegrationsBreadcrumbBar,
-  IntegrationsFooter,
   IntegrationsHero,
+  LinkedPlatformCard,
+  LinkedPlatformsHeader,
 } from "@/components/integrations/IntegrationsPagePanels";
-import { shortDid } from "@/components/learner/ProfilePagePanels";
+import { IntegrationsEvidenceTabs } from "@/components/integrations/IntegrationsEvidenceTabs";
 
 function buildAllSkills(
   declared: { id: string; name: string }[],
   creds: { skill: string }[],
 ): { id: string; name: string }[] {
   return buildSkillsForGitHubSync(declared, creds);
-}
-
-const REPO_PAGE_SIZE = 6;
-
-function isProjectLinked(project: ProjectEvidenceApiView): boolean {
-  return project.skillLinks.length > 0;
-}
-
-function projectMatchesLanguageFilter(
-  breakdown: Record<string, number>,
-  primaryLanguage: string | null,
-  filter: LanguageFilter,
-): boolean {
-  if (filter === "all") return true;
-  const langs = [
-    ...Object.keys(breakdown),
-    primaryLanguage ?? "",
-  ].map((l) => l.trim().toLowerCase()).filter(Boolean);
-  if (filter === "other") {
-    return langs.some((l) => !["javascript", "typescript", "java", "python"].includes(l));
-  }
-  return langs.includes(filter);
 }
 
 type GhConn = {
@@ -86,22 +55,9 @@ type GhConn = {
   last_synced_at: string | null;
 };
 
-function formatPortfolioSyncTime(
-  ghSyncedAt: string | null | undefined,
-  lmsSyncedAt: string | null | undefined,
-): string | null {
-  const times = [ghSyncedAt, lmsSyncedAt]
-    .filter(Boolean)
-    .map((t) => new Date(String(t)).getTime())
-    .filter((n) => Number.isFinite(n));
-  if (!times.length) return null;
-  return new Date(Math.max(...times)).toLocaleString();
-}
-
 export default function Integrations() {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const { profile } = useLearnerProfile();
   const { skills: declaredSkills } = useDeclaredSkills();
   const { credentials } = useCredentials();
   const allSkills = buildAllSkills(declaredSkills, credentials);
@@ -110,7 +66,6 @@ export default function Integrations() {
   const [loading, setLoading] = useState(true);
   const [connecting, setConnecting] = useState(false);
   const [syncing, setSyncing] = useState(false);
-  const [portfolioSyncing, setPortfolioSyncing] = useState(false);
   const ghFetchGen = useRef(0);
   const prevSkillSyncKey = useRef("");
 
@@ -124,15 +79,9 @@ export default function Integrations() {
   const [moodleLoading, setMoodleLoading] = useState(false);
   const [moodleError, setMoodleError] = useState<string | null>(null);
 
-  const [repoSearch, setRepoSearch] = useState("");
-  const [languageFilter, setLanguageFilter] = useState<LanguageFilter>("all");
-  const [showAllRepos, setShowAllRepos] = useState(false);
-
   const [disconnectTarget, setDisconnectTarget] = useState<"github" | "moodle" | null>(null);
   const [disconnecting, setDisconnecting] = useState(false);
-
-  const linkedProjects = useMemo(() => ghProjects.filter(isProjectLinked), [ghProjects]);
-  const linkedRepoCount = linkedProjects.length;
+  const [recordsTab, setRecordsTab] = useState<"learning" | "repos">("learning");
 
   const skillSyncKey = useMemo(
     () => declaredSkills.map((s) => `${s.id}:${s.status}`).sort().join("|"),
@@ -142,40 +91,6 @@ export default function Integrations() {
     () => declaredSkills.map((s) => ({ id: s.id, name: s.name })),
     [declaredSkills],
   );
-
-  const filteredLinkedProjects = useMemo(() => {
-    let list = linkedProjects;
-    const q = repoSearch.trim().toLowerCase();
-    if (q) {
-      list = list.filter(
-        (p) =>
-          p.repositoryName.toLowerCase().includes(q) ||
-          p.repoFullName.toLowerCase().includes(q),
-      );
-    }
-    if (languageFilter !== "all") {
-      list = list.filter((p) =>
-        projectMatchesLanguageFilter(p.languageBreakdown, p.primaryLanguage, languageFilter),
-      );
-    }
-    return list;
-  }, [linkedProjects, repoSearch, languageFilter]);
-
-  const visibleGhProjects = showAllRepos
-    ? filteredLinkedProjects
-    : filteredLinkedProjects.slice(0, REPO_PAGE_SIZE);
-  const hasMoreRepos = filteredLinkedProjects.length > REPO_PAGE_SIZE;
-  const remainingRepoCount = Math.max(0, filteredLinkedProjects.length - REPO_PAGE_SIZE);
-
-  const connectedSources = (lmsConnected ? 1 : 0) + (ghConn ? 1 : 0);
-  const lastPortfolioSync = formatPortfolioSyncTime(
-    ghConn?.last_synced_at,
-    moodleConnection?.last_synced_at,
-  );
-
-  useEffect(() => {
-    setShowAllRepos(false);
-  }, [repoSearch, languageFilter]);
 
   const loadMoodleFromDb = async () => {
     setMoodleLoading(true);
@@ -457,141 +372,82 @@ export default function Integrations() {
     }
   };
 
-  const moodleSiteHost = resolveMoodleConnectionSiteHost(moodleConnection);
+  const courseRecordCount = moodleActivities.length;
+  const githubLastSync = ghConn?.last_synced_at
+    ? new Date(ghConn.last_synced_at).toLocaleString()
+    : null;
 
-  const syncPortfolio = async () => {
-    setPortfolioSyncing(true);
-    try {
-      if (ghConn) await syncGithub();
-      if (lmsConnected) await syncMoodle();
-      if (!ghConn && !lmsConnected) {
-        toast({ title: "Nothing to sync", description: "Connect Moodle or GitHub first." });
-      }
-    } finally {
-      setPortfolioSyncing(false);
-    }
+  const scrollToRecords = (tab: "learning" | "repos") => {
+    setRecordsTab(tab);
+    requestAnimationFrame(() => {
+      document.getElementById("integrations-records")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
   };
-
-  const scrollToSources = () => {
-    document.getElementById("connected-sources")?.scrollIntoView({ behavior: "smooth" });
-  };
-
-  const portfolioBusy = portfolioSyncing || syncing || lmsSyncing;
-  const didShort = profile?.did ? shortDid(profile.did) : undefined;
 
   return (
     <LearnerWorkspaceShell variant="dashboard">
-      <IntegrationsBreadcrumbBar didShort={didShort} allSynced={connectedSources > 0} />
+      <div className="space-y-8">
+        <IntegrationsHero />
 
-      <IntegrationsHero
-        portfolioSyncing={portfolioBusy}
-        onSyncPortfolio={() => void syncPortfolio()}
-        onAddIntegration={scrollToSources}
-        onViewSyncLog={() => toast({ title: "Sync log coming soon" })}
-        summary={
-          <IntegrationSummary
-            variant="embedded"
-            connectedSources={connectedSources}
-            githubEvidence={linkedRepoCount}
-            lmsRecords={lmsImportedCount}
-            lastPortfolioSync={lastPortfolioSync}
-          />
-        }
-      />
+        <section>
+          <LinkedPlatformsHeader />
+          <div className="grid gap-4 md:grid-cols-2">
+            <LinkedPlatformCard
+              name="Moodle LMS"
+              description="Institutional learning records."
+              icon={BookOpen}
+              iconClassName="bg-[#fff7ed] text-[#ea580c]"
+              active={lmsConnected}
+              metaIcon={BookOpen}
+              metaLabel={`${courseRecordCount} course record${courseRecordCount === 1 ? "" : "s"}`}
+              lastSync={lmsLastSync}
+              primaryLabel={lmsConnected ? "View Records" : "Connect Moodle"}
+              onPrimary={lmsConnected ? () => scrollToRecords("learning") : () => void connectMoodle()}
+              onConnect={() => void connectMoodle()}
+              onSync={() => void syncMoodle()}
+              onDisconnect={handleDisconnectMoodle}
+              syncing={lmsSyncing}
+              connecting={lmsSyncing}
+            />
 
-      <div className="mt-8 space-y-8">
-        <div id="connected-sources">
-          <ConnectedSourcesHeader onManageAll={scrollToSources} />
-          <div className="grid gap-4 sm:grid-cols-2">
-          <IntegrationConnectionCard
-            icon={BookOpen}
-            name="Moodle LMS"
-            status={lmsConnected ? "connected" : "disconnected"}
-            account={moodleConnection?.moodle_email ?? undefined}
-            subtitle={lmsConnected ? moodleSiteHost : undefined}
-            lastSync={lmsLastSync}
-            records={lmsImportedCount}
-            recordsLabel="LMS records"
-            primaryLabel={lmsConnected ? "Sync Moodle Activities" : "Connect Moodle"}
-            onPrimary={lmsConnected ? syncMoodle : connectMoodle}
-            primaryLoading={lmsSyncing}
-            onConnect={connectMoodle}
-            onSync={syncMoodle}
-            onDisconnect={handleDisconnectMoodle}
-            connectLoading={lmsSyncing}
-            syncLoading={lmsSyncing}
-          />
-
-          <IntegrationConnectionCard
-            icon={Github}
-            name="GitHub"
-            status={ghConn ? "connected" : "disconnected"}
-            account={ghConn ? `@${ghConn.github_username}` : undefined}
-            subtitle={ghConn ? ghConn.scopes ?? "Public repositories" : undefined}
-            lastSync={
-              ghConn?.last_synced_at
-                ? new Date(ghConn.last_synced_at).toLocaleString()
-                : ghConn
-                  ? "Not synced yet"
-                  : null
-            }
-            records={ghProjects.length}
-            recordsLabel="repositories imported"
-            primaryLabel={ghConn ? "Sync GitHub" : "Connect GitHub"}
-            onPrimary={ghConn ? () => void syncGithub() : connectGithub}
-            primaryLoading={syncing}
-            onConnect={connectGithub}
-            onSync={() => void syncGithub()}
-            onDisconnect={handleDisconnectGithub}
-            connectLoading={connecting}
-            syncLoading={syncing}
-            connectLabel="Connect GitHub"
-          />
+            <LinkedPlatformCard
+              name="GitHub"
+              description="Development work and project evidence."
+              icon={Github}
+              iconClassName="bg-[#0f172a] text-white"
+              active={!!ghConn}
+              metaIcon={Code2}
+              metaLabel={`${ghProjects.length} repositor${ghProjects.length === 1 ? "y" : "ies"}`}
+              lastSync={githubLastSync}
+              primaryLabel={ghConn ? "View Repositories" : "Connect GitHub"}
+              onPrimary={ghConn ? () => scrollToRecords("repos") : () => void connectGithub()}
+              onConnect={() => void connectGithub()}
+              onSync={() => void syncGithub()}
+              onDisconnect={handleDisconnectGithub}
+              syncing={syncing}
+              connecting={connecting}
+            />
           </div>
-        </div>
+        </section>
 
-        <GitHubEvidencePanel
-          connected={!!ghConn}
-          loading={loading}
-          syncing={syncing}
-          username={ghConn?.github_username}
-          lastSyncedAt={ghConn?.last_synced_at}
-          linkedCount={linkedRepoCount}
-          projects={ghProjects}
-          visibleProjects={visibleGhProjects}
-          declaredSkills={declaredSkills}
-          repoSearch={repoSearch}
-          onRepoSearchChange={setRepoSearch}
-          languageFilter={languageFilter}
-          onLanguageFilterChange={setLanguageFilter}
-          hasMoreRepos={hasMoreRepos}
-          showAllRepos={showAllRepos}
-          onShowMore={() => setShowAllRepos(true)}
-          remainingCount={remainingRepoCount}
-          onConnect={connectGithub}
-          onSync={() => void syncGithub()}
-          connecting={connecting}
-          onLinkSkill={handleLinkRepo}
-          onOpenSkill={(id) => navigate(`/learner/validation/${id}`)}
-        />
+        {moodleError ? (
+          <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            {moodleError}
+          </p>
+        ) : null}
 
-        <LMSActivityPanel
-          connected={lmsConnected}
-          loading={moodleLoading}
-          syncing={lmsSyncing}
-          error={moodleError}
-          moodleEmail={moodleConnection?.moodle_email}
-          moodleSiteHost={moodleSiteHost}
-          lastSync={lmsLastSync}
-          recordCount={lmsImportedCount}
+        <IntegrationsEvidenceTabs
           activities={moodleActivities}
-          otherRecords={lmsRecords}
-          onConnect={connectMoodle}
-          onSync={refreshMoodle}
+          lmsLoading={moodleLoading}
+          projects={ghProjects}
+          githubLoading={loading}
+          declaredSkills={declaredSkillRefs}
+          tab={recordsTab}
+          onTabChange={setRecordsTab}
+          onOpenSkill={(id) => navigate(`/learner/validation/${id}`)}
+          onLinkSkill={handleLinkRepo}
         />
       </div>
-
-      <IntegrationsFooter />
 
       <ConfirmDestructiveDialog
         open={disconnectTarget === "github"}

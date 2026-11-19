@@ -11,12 +11,12 @@ export type PipelineStage =
   | "wallet_ready"
   | "in_wallet";
 
-/** UI pipeline stages shown in Validation Trail stepper */
+/** UI pipeline stages shown in Competency Progress stepper */
 export const PIPELINE_STAGES: { key: string; label: string }[] = [
   { key: "declared", label: "Declared" },
   { key: "evidence_linked", label: "Evidence" },
   { key: "practical_task", label: "Assessment" },
-  { key: "verification", label: "Verification" },
+  { key: "verification", label: "Peer Review" },
   { key: "wallet_ready", label: "Wallet" },
 ];
 

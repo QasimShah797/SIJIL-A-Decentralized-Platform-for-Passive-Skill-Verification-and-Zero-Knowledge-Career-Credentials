@@ -1,16 +1,50 @@
-/* Validation Trail page */
+/* Competency Progress page */
 
-.vt-trail-card {
-  cursor: pointer;
+.cp-hero {
+  position: relative;
+  background: linear-gradient(105deg, #0b2f6b 0%, #123f8a 42%, #0f766e 100%);
+  box-shadow: 0 14px 30px rgba(11, 47, 107, 0.22);
 }
 
-.vt-trail-card:focus-visible {
-  outline: 2px solid var(--sijil-brand, #023e8a);
-  outline-offset: 2px;
+.cp-hero::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 55% 140% at 88% 20%, rgba(56, 189, 248, 0.28), transparent 58%),
+    radial-gradient(ellipse 40% 100% at 100% 100%, rgba(14, 165, 233, 0.18), transparent 55%);
+  opacity: 0.95;
+}
+
+.cp-stepper {
+  position: relative;
+  padding-top: 0.15rem;
+}
+
+.cp-stepper-track {
+  position: absolute;
+  top: 1rem; /* center of 32px node */
+  left: 10%;
+  right: 10%;
+  height: 3px;
+  border-radius: 999px;
+  background: #e2e8f0;
+}
+
+.cp-stepper-track-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: #1d4ed8;
+  transition: width 280ms ease;
+}
+
+.vt-trail-card {
+  cursor: default;
 }
 
 .vt-pipeline-stepper [class*="border-primary"] {
-  border-color: var(--sijil-brand, #023e8a) !important;
+  border-color: #1d4ed8 !important;
 }
 
 .vt-pipeline-stepper [class*="bg-primary"] {
@@ -18,19 +52,19 @@
 }
 
 .vt-pipeline-stepper [class*="text-primary"] {
-  color: var(--sijil-brand, #023e8a) !important;
+  color: #1d4ed8 !important;
 }
 
 .vt-pipeline-stepper [class*="border-success"] {
-  border-color: #059669 !important;
+  border-color: #1d4ed8 !important;
 }
 
 .vt-pipeline-stepper [class*="bg-success"] {
-  background-color: #059669 !important;
+  background-color: #1d4ed8 !important;
 }
 
 .vt-pipeline-stepper [class*="bg-success/60"] {
-  background-color: rgba(5, 150, 105, 0.45) !important;
+  background-color: rgba(29, 78, 216, 0.55) !important;
 }
 
 .vt-evidence-table tbody tr:last-child {

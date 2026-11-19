@@ -1,8 +1,15 @@
 import { Link } from "react-router-dom";
 import {
+  CalendarDays,
+  ChevronDown,
   ChevronRight,
+  Clock3,
+  Crosshair,
   Eye,
   Flag,
+  Keyboard,
+  ListOrdered,
+  MousePointer2,
   Play,
   RotateCcw,
 } from "lucide-react";
@@ -16,13 +23,13 @@ import {
 } from "@/lib/db/practical-attempts";
 import {
   isMcqPassed,
-  MCQ_PASS_PERCENT,
   mcqResultLabel,
   type McqQuestion,
   type McqQuestionKind,
 } from "@/lib/mcq-tasks";
+import { useState } from "react";
 
-export type TaskFilter = "all" | "in_progress" | "graded" | "locked";
+export type TaskFilter = "all" | "in_progress" | "completed" | "locked";
 
 const SKILL_ICON_COLORS = ["#023E8A", "#CA8A04", "#DC2626", "#059669", "#0891B2", "#7C3AED"];
 
@@ -81,20 +88,13 @@ export function PracticalTasksHero({
   hasNextTask: boolean;
 }) {
   return (
-    <section className="pt-lab-hero mb-5">
+    <section className="pt-lab-hero mb-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
       <div className="min-w-0">
         <p className="inline-flex items-center gap-1.5 rounded-full border border-white/20 bg-white/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-cyan-100">
           <Eye className="h-3 w-3" aria-hidden />
-          Competency lab
+          Skills Practice Area
         </p>
         <h1 className="mt-3 text-2xl font-bold text-white sm:text-[1.75rem]">Practical Tasks</h1>
-        <p className="mt-2 max-w-xl text-sm text-white/75">
-          Take a timed sitting, then retake it later if you want another score. Every attempt stays on the timeline with its marks, date, and time.
-        </p>
-        <div className="mt-4 flex flex-wrap gap-2">
-          <span className="pt-round-pill">Retake any time · history kept</span>
-          <span className="pt-round-pill pt-round-pill--code">Scenarios, code, order, and matching</span>
-        </div>
       </div>
       <Button
         className="rounded-xl bg-white text-[#023E8A] hover:bg-cyan-50"
@@ -102,7 +102,7 @@ export function PracticalTasksHero({
         disabled={!hasNextTask}
       >
         <Play className="mr-1.5 h-4 w-4" />
-        Start next task
+        Start Next Task
       </Button>
     </section>
   );
@@ -119,27 +119,26 @@ export function TaskFilterTabs({
 }) {
   const tabs: { id: TaskFilter; label: string }[] = [
     { id: "all", label: "All" },
-    { id: "in_progress", label: "In progress" },
-    { id: "graded", label: "Graded" },
-    { id: "locked", label: "Locked" },
+    { id: "in_progress", label: "In Progress" },
+    { id: "completed", label: "Completed" },
   ];
 
   return (
-    <div className="flex flex-wrap gap-1 rounded-lg bg-[#f1f5f9] p-1">
+    <div className="flex flex-wrap gap-1 rounded-full bg-[#f1f5f9] p-1">
       {tabs.map((tab) => (
         <button
           key={tab.id}
           type="button"
           onClick={() => onChange(tab.id)}
           className={cn(
-            "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-            value === tab.id ? "bg-[#0f172a] text-white" : "text-[#64748b] hover:text-[#0f172a]",
+            "rounded-full px-3 py-1.5 text-xs font-semibold transition-colors",
+            value === tab.id ? "bg-[#023E8A] text-white" : "text-[#64748b] hover:text-[#0f172a]",
           )}
         >
           {tab.label}
           {counts?.[tab.id] != null ? (
             <span className={cn("ml-1.5 tabular-nums", value === tab.id ? "text-white/80" : "text-[#94a3b8]")}>
-              {counts[tab.id]}
+              ({counts[tab.id]})
             </span>
           ) : null}
         </button>
@@ -199,13 +198,14 @@ export function gradedAttempts(rows: McqAttemptResultRow[]): GradedAttempt[] {
     })
     .map((row, index) => {
       const percentage = typeof row.percentage === "number" ? row.percentage : null;
+      const attemptNumber = index + 1;
       const passed = typeof row.passed === "boolean" ? row.passed : isMcqPassed(percentage);
       return {
         id: row.id,
-        attemptNumber: index + 1,
+        attemptNumber,
         percentage,
         passed,
-        label: mcqResultLabel(percentage, passed),
+        label: mcqResultLabel(percentage, passed, attemptNumber),
         at: row.submitted_at ?? row.created_at,
         title: row.title,
       };
@@ -215,46 +215,43 @@ export function gradedAttempts(rows: McqAttemptResultRow[]): GradedAttempt[] {
 export function AttemptMarksTimeline({
   rows,
   skillName,
+  compact = false,
 }: {
   rows: McqAttemptResultRow[];
   skillName?: string;
+  compact?: boolean;
 }) {
   const items = gradedAttempts(rows);
   if (items.length === 0) {
-    return <p className="text-xs text-[#94a3b8]">No graded attempts yet.</p>;
+    return <p className="text-xs text-[#94a3b8]">No attempts yet.</p>;
   }
 
   return (
-    <ol className="pt-attempt-timeline">
-      {items.map((item, index) => {
-        const previous = index > 0 ? items[index - 1].percentage : null;
-        const delta = item.percentage != null && previous != null ? item.percentage - previous : null;
+    <ol className={cn("space-y-3", !compact && "pt-attempt-timeline")}>
+      {items.map((item) => {
+        const isRetake = item.attemptNumber > 1;
         return (
-          <li key={item.id} className="pt-attempt-timeline-item">
-            <span
-              className={cn(
-                "pt-attempt-dot",
-                item.passed ? "pt-attempt-dot--pass" : "pt-attempt-dot--retry",
-              )}
-            />
+          <li key={item.id} className={cn("flex items-start gap-3", !compact && "pt-attempt-timeline-item")}>
+            <span className="mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full bg-[#059669]" aria-hidden />
             <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-                <p className="text-xs font-semibold text-[#0f172a]">
-                  {attemptOrdinal(item.attemptNumber)} attempt
+              <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+                <p className="text-sm font-semibold text-[#0f172a]">
+                  {isRetake ? `Retake ${item.attemptNumber - 1}` : `Attempt ${item.attemptNumber}`}
                   {skillName ? <span className="font-medium text-[#64748b]"> · {skillName}</span> : null}
+                  {isRetake ? (
+                    <span className="ml-2 rounded-full bg-[#eff6ff] px-2 py-0.5 text-[10px] font-semibold text-[#023E8A]">
+                      Retake
+                    </span>
+                  ) : null}
                 </p>
-                <p className={cn("text-xs font-bold tabular-nums", item.passed ? "text-[#059669]" : "text-[#CA8A04]")}>
+                <p className="text-sm font-bold tabular-nums text-[#0f172a]">
                   {item.percentage != null ? `${item.percentage}%` : "—"}
-                  {item.label ? <span className="ml-1 font-semibold">{item.label}</span> : null}
                 </p>
               </div>
-              <p className="mt-0.5 text-[11px] text-[#64748b]">{formatAttemptDateTime(item.at)}</p>
-              {delta != null && delta !== 0 ? (
-                <p className={cn("mt-0.5 text-[11px] font-medium", delta > 0 ? "text-[#059669]" : "text-[#CA8A04]")}>
-                  {delta > 0 ? "+" : ""}
-                  {delta} pts vs {attemptOrdinal(item.attemptNumber - 1)} attempt
-                </p>
-              ) : null}
+              <p className="mt-0.5 flex items-center gap-1.5 text-xs text-[#64748b]">
+                <CalendarDays className="h-3.5 w-3.5" aria-hidden />
+                {formatAttemptDateTime(item.at)}
+              </p>
             </div>
           </li>
         );
@@ -291,13 +288,14 @@ export function PracticalTaskCard({
   const color = skillIconColor(index);
   const score = display.percentage;
   const attempts = gradedAttempts(history);
-  const best = attempts.reduce<number | null>((highest, item) => {
-    if (item.percentage == null) return highest;
-    return highest == null ? item.percentage : Math.max(highest, item.percentage);
-  }, null);
+  const [timelineOpen, setTimelineOpen] = useState(attempts.length > 0);
+  const latestIsRetake = attempts.length > 1;
+  const taskTitle = skill.name.toLowerCase().includes("practical")
+    ? skill.name
+    : `${skill.name} Practical Task`;
 
   return (
-    <div className="learner-stat-card pt-task-card p-4">
+    <div className="learner-stat-card pt-task-card p-5">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
         <div className="flex min-w-0 flex-1 items-start gap-3">
           <div
@@ -307,101 +305,111 @@ export function PracticalTaskCard({
             {skillInitials(skill.name)}
           </div>
           <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <h3 className="font-semibold text-[#0f172a]">{skill.name}</h3>
-              {taskState === "COMPLETED" && display.label && (
-                <span
-                  className={cn(
-                    "rounded-full px-2 py-0.5 text-[10px] font-semibold",
-                    display.passed ? "bg-[#ecfdf5] text-[#059669]" : "bg-[#fef9c3] text-[#CA8A04]",
-                  )}
-                >
-                  Latest {score != null ? `${score}% · ` : ""}
-                  {display.label}
-                </span>
-              )}
-              {attempts.length > 0 && (
-                <span className="rounded-full bg-[#f8fafc] px-2 py-0.5 text-[10px] font-semibold text-[#334155] ring-1 ring-[#e2e8f0]">
-                  {attempts.length} attempt{attempts.length === 1 ? "" : "s"}
-                  {best != null ? ` · best ${best}%` : ""}
-                </span>
-              )}
-              {taskState === "IN_PROGRESS" && (
-                <span className="rounded-full bg-[#eff6ff] px-2 py-0.5 text-[10px] font-semibold text-[#023E8A]">
-                  {attempts.length > 0 ? "Retake in progress" : "In progress"}
-                </span>
-              )}
-              {locked && taskState !== "COMPLETED" && taskState !== "IN_PROGRESS" && (
-                <span className="rounded-full bg-[#f1f5f9] px-2 py-0.5 text-[10px] font-semibold text-[#64748b]">
-                  Locked
-                </span>
-              )}
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h3 className="font-semibold text-[#0f172a]">{taskTitle}</h3>
+                <p className="mt-0.5 text-xs text-[#64748b]">
+                  {skill.domain || "General"} | {skill.name}
+                </p>
+                <p className="mt-0.5 text-[11px] text-[#94a3b8]">
+                  Last synced: {lastDays === null ? "never" : lastDays === 0 ? "today" : `${lastDays} day${lastDays === 1 ? "" : "s"} ago`}
+                </p>
+              </div>
+              <MiniBarChart score={score} />
             </div>
-            <p className="mt-0.5 text-xs text-[#64748b]">
-              {skill.domain || "General"} · pass {MCQ_PASS_PERCENT}% · retake keeps every earlier score
-            </p>
-            <p className="mt-0.5 text-[11px] text-[#94a3b8]">
-              Last related sync: {lastDays === null ? "never" : `${lastDays}d ago`}
-              {locked && taskState === "NOT_STARTED" ? " · Locked until next credential sync" : ""}
-            </p>
+
             {score != null && taskState === "COMPLETED" && (
-              <div className="mt-3 max-w-md">
-                <div className="mb-1 flex justify-between text-[10px] text-[#64748b]">
-                  <span>Latest score</span>
-                  <span className="font-semibold tabular-nums text-[#023E8A]">{score}%</span>
+              <div className="mt-4 max-w-xl">
+                <div className="mb-1 flex items-center justify-between text-xs text-[#64748b]">
+                  <span>
+                    Latest score
+                    {latestIsRetake ? (
+                      <span className="ml-2 rounded-full bg-[#eff6ff] px-2 py-0.5 text-[10px] font-semibold text-[#023E8A]">
+                        Retake
+                      </span>
+                    ) : null}
+                  </span>
+                  <span className="font-semibold tabular-nums text-[#0f172a]">{score}%</span>
                 </div>
-                <div className="h-1.5 overflow-hidden rounded-full bg-[#e2e8f0]">
+                <div className="h-2.5 overflow-hidden rounded-full bg-[#e2e8f0]">
                   <div
-                    className="h-full rounded-full"
-                    style={{
-                      width: `${score}%`,
-                      backgroundColor: display.passed ? "#059669" : "#CA8A04",
-                    }}
+                    className="h-full rounded-full bg-[#22c55e]"
+                    style={{ width: `${Math.max(0, Math.min(100, score))}%` }}
                   />
                 </div>
               </div>
             )}
-            {attempts.length > 0 && (
-              <div className="mt-4 rounded-xl border border-[#e2e8f0] bg-[#f8fafc] p-3">
-                <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-[#64748b]">Attempt timeline</p>
-                <AttemptMarksTimeline rows={history} />
-              </div>
+
+            {taskState === "IN_PROGRESS" && (
+              <p className="mt-3 text-xs font-semibold text-[#023E8A]">
+                {attempts.length > 0 ? "Retake in progress" : "In progress"}
+              </p>
+            )}
+            {locked && taskState !== "COMPLETED" && taskState !== "IN_PROGRESS" && (
+              <p className="mt-3 text-xs text-[#64748b]">Locked until next credential sync</p>
             )}
           </div>
         </div>
 
-        <div className="flex shrink-0 items-center gap-3 lg:flex-col lg:items-end">
-          <MiniBarChart score={best ?? score} />
-          <div className="flex flex-wrap gap-2">
-            {taskState === "COMPLETED" ? (
-              <>
-                <Button variant="outline" size="sm" className="rounded-xl" onClick={onView}>
-                  View result
-                </Button>
-                <Button size="sm" className="rounded-xl bg-[#023E8A] hover:bg-[#012A5C]" onClick={onRetake}>
-                  <RotateCcw className="mr-1 h-3.5 w-3.5" />
-                  Retake task
-                </Button>
-              </>
-            ) : taskState === "IN_PROGRESS" ? (
-              <Button size="sm" className="rounded-xl bg-[#023E8A] hover:bg-[#012A5C]" onClick={onStart}>
-                <Play className="mr-1 h-3.5 w-3.5" />
-                Start again
+        <div className="flex shrink-0 flex-wrap items-center gap-2 lg:pt-1">
+          {taskState === "COMPLETED" ? (
+            <>
+              <Button variant="outline" size="sm" className="rounded-xl border-[#e2e8f0]" onClick={onView}>
+                View Result
               </Button>
-            ) : (
-              <Button
-                size="sm"
-                className="rounded-xl bg-[#023E8A] hover:bg-[#012A5C]"
-                onClick={onStart}
-                disabled={locked}
-              >
-                <Play className="mr-1 h-3.5 w-3.5" />
-                {locked ? "Link evidence" : "Start task"}
+              <Button size="sm" className="rounded-xl bg-[#023E8A] hover:bg-[#012A5C]" onClick={onRetake}>
+                <RotateCcw className="mr-1 h-3.5 w-3.5" />
+                Retake Task
               </Button>
-            )}
-          </div>
+            </>
+          ) : taskState === "IN_PROGRESS" ? (
+            <Button size="sm" className="rounded-xl bg-[#023E8A] hover:bg-[#012A5C]" onClick={onResume}>
+              <Play className="mr-1 h-3.5 w-3.5" />
+              Continue Task
+            </Button>
+          ) : (
+            <Button
+              size="sm"
+              className="rounded-xl bg-[#023E8A] hover:bg-[#012A5C]"
+              onClick={onStart}
+              disabled={locked}
+            >
+              <Play className="mr-1 h-3.5 w-3.5" />
+              {locked ? "Link evidence" : "Start Task"}
+            </Button>
+          )}
         </div>
       </div>
+
+      {attempts.length > 0 && (
+        <div className="mt-4 border-t border-[#e2e8f0] pt-3">
+          <button
+            type="button"
+            className="flex w-full items-center justify-between text-left text-sm font-semibold text-[#0f172a]"
+            onClick={() => setTimelineOpen((open) => !open)}
+          >
+            <span>Attempt Timeline ({attempts.length} attempt{attempts.length === 1 ? "" : "s"})</span>
+            <ChevronDown className={cn("h-4 w-4 text-[#64748b] transition", timelineOpen && "rotate-180")} />
+          </button>
+          {timelineOpen ? (
+            <div className="mt-3">
+              <AttemptMarksTimeline rows={history} compact />
+            </div>
+          ) : (
+            attempts.slice(-1).map((item) => (
+              <div key={item.id} className="mt-2 flex items-center justify-between text-xs text-[#64748b]">
+                <span className="inline-flex items-center gap-1.5">
+                  <CalendarDays className="h-3.5 w-3.5" aria-hidden />
+                  {formatAttemptDateTime(item.at)}
+                </span>
+                <span className="font-semibold tabular-nums text-[#0f172a]">
+                  {item.percentage != null ? `${item.percentage}%` : "—"}
+                </span>
+              </div>
+            ))
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -448,8 +456,8 @@ export function AssessmentRulesPanel() {
   const rules = [
     ["Format", "Closed-ended only"],
     ["Clock", "One sitting, not per question"],
-    ["Pass mark", `${MCQ_PASS_PERCENT}%`],
-    ["Retake", "Every score is kept"],
+    ["Progression", "Any score advances the skill"],
+    ["Retake", "Latest marks replace the previous score"],
     ["Before submit", "Flag, then review"],
     ["Keyboard", "A–D, arrows, F"],
     ["Based on", "Competency + platform evidence"],
@@ -666,6 +674,8 @@ export function McqScoreSummary({
   label,
   passed,
   message,
+  submittedAt,
+  variant = "result",
 }: {
   percentage: number | null;
   correctCount: number | null;
@@ -673,67 +683,110 @@ export function McqScoreSummary({
   label: string | null;
   passed: boolean | null;
   message?: string | null;
+  submittedAt?: string | null;
+  variant?: "result" | "previous";
 }) {
+  void passed;
   const pct = typeof percentage === "number" ? Math.max(0, Math.min(100, percentage)) : 0;
   const radius = 36;
   const circumference = 2 * Math.PI * radius;
   const offset = circumference * (1 - pct / 100);
-  const gap = typeof percentage === "number" ? percentage - MCQ_PASS_PERCENT : null;
-  const tone = passed ? "#059669" : "#CA8A04";
+  const tone = "#22c55e";
 
   return (
-    <div className="rounded-xl border border-[#e2e8f0] bg-[#f8fafc] p-4">
-      <div className="flex items-center gap-4">
-        <svg className="h-24 w-24 shrink-0 -rotate-90" viewBox="0 0 88 88" aria-hidden>
-          <circle cx="44" cy="44" r={radius} fill="none" stroke="#e2e8f0" strokeWidth="8" />
-          <circle
-            cx="44"
-            cy="44"
-            r={radius}
-            fill="none"
-            stroke={typeof percentage === "number" ? tone : "#cbd5e1"}
-            strokeWidth="8"
-            strokeLinecap="round"
-            strokeDasharray={circumference}
-            strokeDashoffset={offset}
-          />
-        </svg>
-        <div className="min-w-0">
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-[#64748b]">Score</p>
-          <p className="text-3xl font-bold tabular-nums text-[#0f172a]">
-            {percentage ?? "—"}
-            <span className="text-base font-semibold text-[#64748b]">%</span>
-          </p>
-          {label ? (
-            <p className="text-sm font-semibold" style={{ color: tone }}>{label}</p>
-          ) : null}
-          {correctCount != null && totalQuestions != null ? (
-            <p className="mt-1 text-xs text-[#64748b]">
-              {correctCount} of {totalQuestions} correct · pass mark {MCQ_PASS_PERCENT}%
+    <div className="rounded-xl border border-[#e2e8f0] bg-white p-4">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+        <div className="relative shrink-0">
+          <svg className="h-24 w-24 -rotate-90" viewBox="0 0 88 88" aria-hidden>
+            <circle cx="44" cy="44" r={radius} fill="none" stroke="#e2e8f0" strokeWidth="8" />
+            <circle
+              cx="44"
+              cy="44"
+              r={radius}
+              fill="none"
+              stroke={typeof percentage === "number" ? tone : "#cbd5e1"}
+              strokeWidth="8"
+              strokeLinecap="round"
+              strokeDasharray={circumference}
+              strokeDashoffset={offset}
+            />
+          </svg>
+          <div className="absolute inset-0 flex items-center justify-center">
+            <p className="text-xl font-bold tabular-nums text-[#0f172a]">
+              {percentage ?? "—"}
+              <span className="text-sm">%</span>
             </p>
-          ) : (
-            <p className="mt-1 text-xs text-[#64748b]">Pass mark {MCQ_PASS_PERCENT}%</p>
-          )}
+          </div>
+        </div>
+        <div className="grid min-w-0 flex-1 gap-3 sm:grid-cols-2">
+          <div className="flex items-start gap-2">
+            <Crosshair className="mt-0.5 h-4 w-4 text-[#023E8A]" aria-hidden />
+            <div>
+              <p className="text-xs text-[#64748b]">Correct Answers</p>
+              <p className="text-sm font-semibold text-[#0f172a]">
+                {correctCount != null && totalQuestions != null
+                  ? `${correctCount} of ${totalQuestions}`
+                  : "—"}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-start gap-2">
+            <CalendarDays className="mt-0.5 h-4 w-4 text-[#023E8A]" aria-hidden />
+            <div>
+              <p className="text-xs text-[#64748b]">
+                {variant === "previous" ? "Attempted" : "Submitted"}
+              </p>
+              <p className="text-sm font-semibold text-[#0f172a]">
+                {formatAttemptDateTime(submittedAt)}
+              </p>
+            </div>
+          </div>
         </div>
       </div>
-      <div className="mt-4">
-        <div className="relative h-2 overflow-hidden rounded-full bg-[#e2e8f0]">
-          <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: tone }} />
-          <span
-            className="absolute top-[-3px] h-3.5 w-px bg-[#0f172a]"
-            style={{ left: `${MCQ_PASS_PERCENT}%` }}
-            title={`Pass mark ${MCQ_PASS_PERCENT}%`}
-          />
-        </div>
-        {gap != null ? (
-          <p className="mt-2 text-xs text-[#64748b]">
-            {gap >= 0
-              ? `${gap} point${gap === 1 ? "" : "s"} above the pass mark.`
-              : `${Math.abs(gap)} point${Math.abs(gap) === 1 ? "" : "s"} short of the pass mark.`}
-          </p>
-        ) : null}
+      <div className="mt-4 h-2.5 overflow-hidden rounded-full bg-[#e2e8f0]">
+        <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: tone }} />
       </div>
-      {message ? <p className="mt-3 text-xs text-[#64748b]">{message}</p> : null}
+      {label ? <p className="mt-3 text-xs font-semibold text-[#023E8A]">{label}</p> : null}
+      {message ? <p className="mt-2 text-xs text-[#64748b]">{message}</p> : null}
+    </div>
+  );
+}
+
+export function RetakeIntroBanner() {
+  return (
+    <div className="flex items-start gap-3 rounded-xl border border-[#bfdbfe] bg-[#eff6ff] p-4">
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#023E8A] text-white">
+        <RotateCcw className="h-5 w-5" aria-hidden />
+      </div>
+      <div>
+        <p className="text-sm font-semibold text-[#0f172a]">Retake the Task</p>
+        <p className="mt-1 text-xs leading-relaxed text-[#64748b]">
+          You can try again. Your new result will replace the previous one.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+export function TaskDetailsGrid() {
+  const items = [
+    { icon: Clock3, title: "Time", detail: "One timed sitting" },
+    { icon: MousePointer2, title: "Navigation", detail: "Move between questions" },
+    { icon: Keyboard, title: "Keyboard", detail: "A-D or 1–4 to choose, arrow keys to move" },
+  ] as const;
+
+  return (
+    <div>
+      <p className="mb-3 text-sm font-semibold text-[#0f172a]">Task Details</p>
+      <div className="grid gap-3 sm:grid-cols-3">
+        {items.map(({ icon: Icon, title, detail }) => (
+          <div key={title} className="rounded-xl border border-[#e2e8f0] bg-white p-3">
+            <Icon className="mb-2 h-4 w-4 text-[#023E8A]" aria-hidden />
+            <p className="text-xs font-semibold text-[#0f172a]">{title}</p>
+            <p className="mt-1 text-[11px] leading-relaxed text-[#64748b]">{detail}</p>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

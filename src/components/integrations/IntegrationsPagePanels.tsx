@@ -1,118 +1,187 @@
-import type { ReactNode } from "react";
-import { Link } from "react-router-dom";
-import { ChevronRight, FolderSync, Plus } from "lucide-react";
+import type { LucideIcon, ReactNode } from "react";
+import {
+  BookOpen,
+  CheckCircle2,
+  Clock3,
+  Code2,
+  ExternalLink,
+  MoreHorizontal,
+  Plug,
+  RefreshCw,
+  Unplug,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 
-export function IntegrationsBreadcrumbBar({
-  didShort,
-  allSynced,
-}: {
-  didShort?: string;
-  allSynced?: boolean;
-}) {
+export function IntegrationsHero() {
   return (
-    <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-      <nav className="flex flex-wrap items-center gap-1.5 text-xs text-[#64748b]">
-        <Link to="/learner/profile" className="hover:text-[#023E8A]">
-          Learner workspace
-        </Link>
-        <ChevronRight className="h-3 w-3" aria-hidden />
-        <span>Evidence</span>
-        <ChevronRight className="h-3 w-3" aria-hidden />
-        <span className="font-semibold text-[#023E8A]">Integrations</span>
-      </nav>
-      <div className="flex flex-wrap items-center gap-2">
-        {allSynced !== false && (
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-[#bbf7d0] bg-[#ecfdf5] px-2.5 py-1 text-[10px] font-medium text-[#059669]">
-            <span className="h-1.5 w-1.5 rounded-full bg-[#059669]" aria-hidden />
-            All systems synced
-          </span>
-        )}
-        {didShort ? (
-          <span className="mono rounded-lg border border-[#e2e8f0] bg-white px-2.5 py-1 text-[10px] text-[#64748b]">
-            ID: {didShort}
-          </span>
-        ) : null}
+    <div className="flex items-start gap-3">
+      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#e8eef7] text-[#023E8A]">
+        <Plug className="h-5 w-5" aria-hidden />
+      </div>
+      <div className="min-w-0">
+        <h1 className="text-2xl font-bold text-[#0f172a] sm:text-[1.65rem]">Integrations</h1>
+        <p className="mt-1 max-w-2xl text-sm text-[#64748b]">
+          Linked learning platforms and development tools for evidence and competency development.
+        </p>
       </div>
     </div>
   );
 }
 
-export function IntegrationsHero({
-  portfolioSyncing,
-  onSyncPortfolio,
-  onAddIntegration,
-  onViewSyncLog,
-  summary,
-}: {
-  portfolioSyncing: boolean;
-  onSyncPortfolio: () => void;
-  onAddIntegration: () => void;
-  onViewSyncLog: () => void;
-  summary?: ReactNode;
-}) {
+export function LinkedPlatformsHeader() {
+  return <h2 className="mb-4 text-base font-semibold text-[#0f172a]">Linked Platforms</h2>;
+}
+
+export type LinkedPlatformCardProps = {
+  name: string;
+  description: string;
+  icon: LucideIcon;
+  iconClassName?: string;
+  active: boolean;
+  metaIcon: LucideIcon;
+  metaLabel: string;
+  lastSync: string | null;
+  primaryLabel: string;
+  onPrimary: () => void;
+  onConnect?: () => void;
+  onSync?: () => void;
+  onDisconnect?: () => void;
+  syncing?: boolean;
+  connecting?: boolean;
+};
+
+export function LinkedPlatformCard({
+  name,
+  description,
+  icon: Icon,
+  iconClassName,
+  active,
+  metaIcon: MetaIcon,
+  metaLabel,
+  lastSync,
+  primaryLabel,
+  onPrimary,
+  onConnect,
+  onSync,
+  onDisconnect,
+  syncing = false,
+  connecting = false,
+}: LinkedPlatformCardProps) {
   return (
-    <div className="flex min-w-0 flex-col gap-5">
-      <div>
-        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#6366f1]">External data sources</p>
-        <h1 className="mt-1 text-2xl font-bold text-[#0f172a] sm:text-[1.65rem]">External Integrations</h1>
-        <div className="mt-5 flex flex-wrap items-center gap-2">
-          <Button
-            className="rounded-xl bg-[#023E8A] hover:bg-[#012A5C]"
-            onClick={onSyncPortfolio}
-            disabled={portfolioSyncing}
+    <div className="rounded-2xl border border-[#e2e8f0] bg-white p-5 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 items-start gap-3">
+          <div
+            className={cn(
+              "flex h-11 w-11 shrink-0 items-center justify-center rounded-xl",
+              iconClassName ?? "bg-[#e8eef7] text-[#023E8A]",
+            )}
           >
-            <FolderSync className={cn("mr-1.5 h-4 w-4", portfolioSyncing && "animate-spin")} />
-            {portfolioSyncing ? "Syncing…" : "Sync Portfolio"}
-          </Button>
-          <Button variant="outline" className="rounded-xl border-[#e2e8f0]" onClick={onAddIntegration}>
-            <Plus className="mr-1.5 h-4 w-4" />
-            Add integration
-          </Button>
-          <button
-            type="button"
-            onClick={onViewSyncLog}
-            className="px-2 text-sm font-medium text-[#023E8A] hover:underline"
-          >
-            View sync log
-          </button>
+            <Icon className="h-5 w-5" aria-hidden />
+          </div>
+          <div className="min-w-0">
+            <h3 className="text-base font-semibold text-[#0f172a]">{name}</h3>
+            <p className="mt-0.5 text-sm text-[#64748b]">{description}</p>
+          </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          {active ? (
+            <span className="inline-flex items-center gap-1 rounded-full bg-[#ecfdf5] px-2.5 py-1 text-xs font-semibold text-[#059669]">
+              <CheckCircle2 className="h-3.5 w-3.5" aria-hidden />
+              Active
+            </span>
+          ) : (
+            <span className="inline-flex items-center rounded-full bg-[#f1f5f9] px-2.5 py-1 text-xs font-semibold text-[#64748b]">
+              Not connected
+            </span>
+          )}
+          {(onConnect || onSync || onDisconnect) && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className="flex h-8 w-8 items-center justify-center rounded-lg text-[#64748b] hover:bg-[#f8fafc]"
+                  aria-label={`${name} options`}
+                >
+                  <MoreHorizontal className="h-4 w-4" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-44">
+                {!active && onConnect ? (
+                  <DropdownMenuItem onClick={onConnect} disabled={connecting}>
+                    Connect
+                  </DropdownMenuItem>
+                ) : null}
+                {active && onSync ? (
+                  <DropdownMenuItem onClick={onSync} disabled={syncing}>
+                    <RefreshCw className={cn("mr-2 h-3.5 w-3.5", syncing && "animate-spin")} />
+                    {syncing ? "Syncing…" : "Sync now"}
+                  </DropdownMenuItem>
+                ) : null}
+                {active && onDisconnect ? (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      className="text-destructive focus:text-destructive"
+                      onClick={onDisconnect}
+                    >
+                      <Unplug className="mr-2 h-3.5 w-3.5" />
+                      Disconnect
+                    </DropdownMenuItem>
+                  </>
+                ) : null}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </div>
       </div>
-      {summary ? <div className="min-w-0">{summary}</div> : null}
+
+      <div className="mt-5 space-y-2 text-sm text-[#64748b]">
+        <div className="flex items-center gap-2">
+          <MetaIcon className="h-4 w-4 shrink-0 text-[#94a3b8]" aria-hidden />
+          <span>{metaLabel}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <Clock3 className="h-4 w-4 shrink-0 text-[#94a3b8]" aria-hidden />
+          <span>{lastSync ? `Last sync: ${lastSync}` : "Not synced yet"}</span>
+        </div>
+      </div>
+
+      <Button
+        type="button"
+        variant="secondary"
+        className="mt-5 h-10 rounded-xl bg-[#e8eef7] text-[#023E8A] hover:bg-[#dbe7f6]"
+        onClick={onPrimary}
+        disabled={connecting || syncing}
+      >
+        {primaryLabel}
+        <ExternalLink className="ml-1.5 h-3.5 w-3.5" aria-hidden />
+      </Button>
     </div>
   );
 }
 
 export function IntegrationsFooter() {
-  const auditDate = new Date().toLocaleDateString(undefined, {
-    month: "numeric",
-    day: "numeric",
-    year: "numeric",
-  });
-
-  return (
-    <footer className="mt-10 flex flex-col gap-2 border-t border-[#e2e8f0] pt-6 text-xs text-[#64748b] sm:flex-row sm:items-center sm:justify-between">
-      <p>SIJIL · Decentralized professional skill verification</p>
-      <p>Evidence integrity verified · last audit {auditDate}</p>
-    </footer>
-  );
+  return null;
 }
 
-export function ConnectedSourcesHeader({ onManageAll }: { onManageAll?: () => void }) {
-  return (
-    <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
-      <div>
-        <h2 className="text-base font-semibold text-[#023E8A]">Connected sources</h2>
-        <p className="mt-0.5 text-xs text-[#64748b]">
-          Manage platform connections and synchronize evidence from external systems.
-        </p>
-      </div>
-      {onManageAll ? (
-        <button type="button" onClick={onManageAll} className="text-xs font-medium text-[#023E8A] hover:underline">
-          Manage all
-        </button>
-      ) : null}
-    </div>
-  );
+export function IntegrationsBreadcrumbBar(_props: {
+  didShort?: string;
+  allSynced?: boolean;
+}): ReactNode {
+  return null;
 }
+
+export function ConnectedSourcesHeader(_props: { onManageAll?: () => void }): ReactNode {
+  return null;
+}
+
+export { BookOpen, Code2 };

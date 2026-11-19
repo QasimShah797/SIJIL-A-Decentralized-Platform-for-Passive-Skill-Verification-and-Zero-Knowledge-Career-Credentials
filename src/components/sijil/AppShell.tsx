@@ -13,7 +13,6 @@ import {
   ShieldCheck,
   Wallet,
   KeyRound,
-  Bell,
   BadgeCheck,
   MessageSquare,
   LogOut,
@@ -71,13 +70,13 @@ function useLearnerNav(): NavGroup[] {
     },
     {
       label: "Evidence",
-      items: [{ to: "/learner/integrations", icon: Plug, label: "Integrations", mobileTab: true }],
+      items: [{ to: "/learner/integrations", icon: Plug, label: "Connected Platforms", mobileTab: true }],
     },
     {
       label: "Assessment",
       items: [
         { to: "/learner/task", icon: ClipboardCheck, label: "Practical Task", mobileTab: true },
-        { to: "/learner/validation", icon: ShieldCheck, label: "Validation Trail", mobileTab: true },
+        { to: "/learner/validation", icon: ShieldCheck, label: "Competency Progress", mobileTab: true },
       ],
     },
     {
@@ -395,18 +394,6 @@ export function AppShell({
           <div className="flex items-center gap-1 sm:gap-2">
             <ThemeToggle />
             {role === "learner" || role === "recruiter" ? <VerificationBell role={role} /> : null}
-            {role === "learner" && decayCount > 0 && (
-              <button
-                onClick={() => navigate("/learner/profile#notifications")}
-                className="relative flex h-9 w-9 items-center justify-center rounded-full transition-colors hover:bg-muted/60"
-                aria-label={`${decayCount} competency notifications`}
-              >
-                <Bell className="h-4 w-4" />
-                <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-semibold text-white">
-                  {decayCount}
-                </span>
-              </button>
-            )}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 {role === "recruiter" ? (
