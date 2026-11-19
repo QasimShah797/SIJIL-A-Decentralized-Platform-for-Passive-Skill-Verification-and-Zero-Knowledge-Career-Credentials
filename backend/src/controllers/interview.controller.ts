@@ -24,6 +24,11 @@ export async function scheduleInterview(req: Request, res: Response): Promise<Re
   return sendSuccess(res, interview, scheduleResultMessage(interview.emailStatus), 201);
 }
 
+export async function listMyInterviews(req: Request, res: Response): Promise<Response> {
+  const interviews = await interviewService.listForLearner(req.user!.id, req.accessToken);
+  return sendSuccess(res, interviews);
+}
+
 export async function listInterviews(req: Request, res: Response): Promise<Response> {
   const { candidateId } = listInterviewsQuerySchema.parse(req.query);
   const interviews = await interviewService.listForRecruiter(req.user!.id, candidateId, req.accessToken);
@@ -33,14 +38,12 @@ export async function listInterviews(req: Request, res: Response): Promise<Respo
 export async function cancelInterview(req: Request, res: Response): Promise<Response> {
   const interviewId = paramString(req.params.id, "id");
   const interview = await interviewService.cancel(req.user!.id, interviewId, req.accessToken);
-  const emailed = interview.emailStatus === INTERVIEW_EMAIL_STATUS.SENT;
-  return sendSuccess(
-    res,
-    interview,
-    emailed
-      ? "Interview cancelled and candidate notified"
-      : "Interview cancelled. Notification was not emailed because SMTP is not configured.",
-  );
+  const message = interview.emailStatus === INTERVIEW_EMAIL_STATUS.SENT
+    ? "Interview cancelled and the candidate was emailed"
+    : interview.emailStatus === INTERVIEW_EMAIL_STATUS.FAILED
+      ? "Interview cancelled. The cancellation email was not accepted."
+      : "Interview cancelled. The cancellation email was not sent.";
+  return sendSuccess(res, interview, message);
 }
 
 export async function resendInterviewEmail(req: Request, res: Response): Promise<Response> {

@@ -8,6 +8,7 @@ import {
   assertContributorInviteEmail,
   assertReviewerIdentityForInvite,
   normalizeEmail,
+  unverifiedFeedbackLabels,
 } from "../utils/contributor-invite-email";
 import {
   REVIEW_TYPE,
@@ -29,8 +30,6 @@ import {
   categoricalTrustWeight,
   trustScoreForRelationship,
   displayRoleForRelationship,
-  CONTEXT_STATUS,
-  CONTRIBUTOR_VERIFICATION,
   PEER_REVIEW_INVITE_STATUS,
 } from "../constants/peer-review";
 import type { Relationship } from "../constants/peer-review";
@@ -379,12 +378,20 @@ export class ReviewsService {
       : "Learner";
     const reviewLink = buildReviewLink(token);
 
-    await sendReviewRequestEmail(
-      normalizedEmail,
-      learnerName,
-      evidence.repository_name,
-      reviewLink,
-    );
+    try {
+      const delivered = await sendReviewRequestEmail(
+        normalizedEmail,
+        learnerName,
+        evidence.repository_name,
+        reviewLink,
+      );
+      if (!delivered.delivered) {
+        console.warn("[SIJIL Review Email] Review request saved but email was not delivered");
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unknown SMTP error";
+      console.error("[SIJIL Review Email] Review request saved but email was not delivered:", message);
+    }
 
     return {
       requestId: request.id as string,
@@ -507,7 +514,7 @@ export class ReviewsService {
       });
       return {
         id: review.id,
-        reviewType: "Context Verified Review",
+        reviewType: "Context Pending Review",
         reviewerName: review.reviewerName,
         reviewerRole: review.reviewerRole,
         source: review.source,
@@ -562,32 +569,33 @@ export class ReviewsService {
     } | null;
     const skill = request.declared_skills as { id: string; name: string } | null;
 
-    const trust = reviewTrustFields(request.reviewer_context_role as string);
-    const { data: review, error: reviewErr } = await supabaseService.client
-      .from("peer_reviews")
-      .insert(withPeerReviewUserColumns({
-        learner_user_id: request.learner_user_id,
-        reviewer_name: request.reviewer_name,
-        reviewer_email: request.reviewer_email,
-        ...trust,
-        source: evidence?.source ?? (request.context_source as string),
-        origin: "SIJIL",
-        skill: skill?.name ?? "General",
-        project_id: evidence?.id ? `ev-${evidence.id}` : undefined,
-        project_name: evidence?.repository_name,
-        evidence_label: `${evidence?.repository_name ?? "Evidence"} (${evidence?.source ?? "Context"})`,
-        evidence_url: evidence?.repository_url,
-        rating: input.rating,
-        comment: input.feedback,
-        recommendation: input.recommendation,
-        review_type: REVIEW_TYPE.VERIFIED,
-        evidence_record_id: evidence?.id ?? request.evidence_record_id,
-        skill_id: skill?.id ?? request.skill_id,
-        review_request_id: request.id,
-        context_status: CONTEXT_STATUS.VERIFIED,
-        contributor_verification: CONTRIBUTOR_VERIFICATION.VERIFIED,
-        imported: false,
-      }))
+      const trust = reviewTrustFields(request.reviewer_context_role as string, false);
+      const labels = unverifiedFeedbackLabels();
+      const { data: review, error: reviewErr } = await supabaseService.client
+        .from("peer_reviews")
+        .insert(withPeerReviewUserColumns({
+          learner_user_id: request.learner_user_id,
+          reviewer_name: request.reviewer_name,
+          reviewer_email: request.reviewer_email,
+          ...trust,
+          source: evidence?.source ?? (request.context_source as string),
+          origin: "SIJIL",
+          skill: skill?.name ?? "General",
+          project_id: evidence?.id ? `ev-${evidence.id}` : undefined,
+          project_name: evidence?.repository_name,
+          evidence_label: `${evidence?.repository_name ?? "Evidence"} (${evidence?.source ?? "Context"})`,
+          evidence_url: evidence?.repository_url,
+          rating: input.rating,
+          comment: input.feedback,
+          recommendation: input.recommendation,
+          review_type: "Context Pending Review",
+          evidence_record_id: evidence?.id ?? request.evidence_record_id,
+          skill_id: skill?.id ?? request.skill_id,
+          review_request_id: request.id,
+          context_status: labels.contextStatus,
+          contributor_verification: labels.contributorVerification,
+          imported: false,
+        }))
       .select("*")
       .single();
 
@@ -595,13 +603,21 @@ export class ReviewsService {
       throw new AppError(reviewErr?.message ?? "Failed to store review", 500);
     }
 
-    await supabaseService.client
+    const { data: claimed } = await supabaseService.client
       .from("review_requests")
       .update({
         status: REVIEW_REQUEST_STATUS.COMPLETED,
         completed_review_id: review.id,
       })
-      .eq("id", request.id);
+      .eq("id", request.id)
+      .eq("status", REVIEW_REQUEST_STATUS.AWAITING)
+      .select("id")
+      .maybeSingle();
+
+    if (!claimed) {
+      await supabaseService.client.from("peer_reviews").delete().eq("id", review.id);
+      throw new AppError("Review already submitted", 409);
+    }
 
     return rowToReview(review as Record<string, unknown>);
   }

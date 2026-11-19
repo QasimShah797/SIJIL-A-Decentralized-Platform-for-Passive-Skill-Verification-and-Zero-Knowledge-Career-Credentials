@@ -1,6 +1,7 @@
 import { addWeeks, format, startOfWeek, subWeeks } from "date-fns";
 import type { PeerReview, ReviewInvitation } from "@/lib/sijil-data";
 import type { ContributorRow } from "@/lib/db/peer-review-page";
+import { isInvitationRow } from "@/lib/invite-delivery";
 
 export type TrustFilter = "all" | "high" | "medium";
 export type ContributorViewFilter = "all" | "reviewed" | "invited" | "pending";
@@ -369,7 +370,34 @@ export function contributorStory(row: ContributorRow): ContributorStory {
     return {
       group: "waiting",
       label: "Waiting",
-      hint: invitedOn ? `Sent ${invitedOn}` : "",
+      hint: invitedOn ? `Email accepted ${invitedOn}` : "Email accepted",
+      action: "resend",
+      stale: false,
+    };
+  }
+  if (row.status === "Email pending") {
+    return {
+      group: "waiting",
+      label: "Sending email",
+      hint: "Delivery is not confirmed yet",
+      action: "none",
+      stale: false,
+    };
+  }
+  if (row.status === "Email failed" || row.status === "Email not sent") {
+    return {
+      group: "action",
+      label: row.status === "Email failed" ? "Email not accepted" : "Email not sent",
+      hint: "The invitation is saved. Resend to try once.",
+      action: "resend",
+      stale: false,
+    };
+  }
+  if (row.status === "Delivery not confirmed") {
+    return {
+      group: "waiting",
+      label: "Delivery not confirmed",
+      hint: "Saved before email acceptance was recorded. Resend only if you mean to email again.",
       action: "resend",
       stale: false,
     };
@@ -378,7 +406,7 @@ export function contributorStory(row: ContributorRow): ContributorStory {
     return {
       group: "action",
       label: "Needs invite",
-      hint: row.contributor.email ? "" : "Add email to invite",
+      hint: row.contributor.email ? "" : "Email unavailable",
       action: "invite",
       stale: false,
     };
@@ -408,7 +436,7 @@ export function coverageFromRows(rows: ContributorRow[]): CoverageStats {
   const reviewed = rows.filter(
     (row) => row.status === "Review Received" || row.status === "Imported Review Found",
   ).length;
-  const invited = rows.filter((row) => row.status === "Invite Sent").length;
+  const invited = rows.filter((row) => isInvitationRow(row.status)).length;
   const pending = rows.filter((row) => row.status === "Review Pending").length;
   const ineligible = rows.filter((row) => row.status === "Not a Project Contributor").length;
   const eligible = Math.max(1, rows.length - ineligible);
@@ -529,7 +557,7 @@ export function filterContributorRows(
       (row) => row.status === "Review Received" || row.status === "Imported Review Found",
     );
   }
-  if (view === "invited") return rows.filter((row) => row.status === "Invite Sent");
+  if (view === "invited") return rows.filter((row) => isInvitationRow(row.status));
   if (view === "pending") return rows.filter((row) => row.status === "Review Pending");
   return rows;
 }

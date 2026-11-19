@@ -14,23 +14,38 @@ function isHttpUrl(value: string): boolean {
   return /^https?:\/\//i.test(value.trim());
 }
 
-export function formatInterviewWhen(scheduledAt: Date): { date: string; time: string } {
+/** Legacy rows have no stored zone and keep the previous UTC email label. */
+export function storedInterviewTimeZone(value: string | null | undefined): string {
+  const zone = (value ?? "").trim() || "UTC";
+  try {
+    Intl.DateTimeFormat("en-GB", { timeZone: zone }).format(new Date());
+    return zone;
+  } catch {
+    return "UTC";
+  }
+}
+
+export function formatInterviewWhen(
+  scheduledAt: Date,
+  timeZone?: string | null,
+): { date: string; time: string } {
+  const zone = storedInterviewTimeZone(timeZone);
   const date = new Intl.DateTimeFormat("en-GB", {
     weekday: "long",
     day: "numeric",
     month: "long",
     year: "numeric",
-    timeZone: "UTC",
+    timeZone: zone,
   }).format(scheduledAt);
 
   const time = new Intl.DateTimeFormat("en-GB", {
     hour: "numeric",
     minute: "2-digit",
     hour12: true,
-    timeZone: "UTC",
+    timeZone: zone,
   }).format(scheduledAt);
 
-  return { date, time: `${time} UTC` };
+  return { date, time: `${time} (${zone})` };
 }
 
 export function formatDuration(minutes: number): string {
@@ -66,7 +81,7 @@ function locationHtml(mode: InterviewMode, locationOrLink: string): string {
 }
 
 export function buildInterviewInviteText(details: InterviewEmailDetails): string {
-  const { date, time } = formatInterviewWhen(details.scheduledAt);
+  const { date, time } = formatInterviewWhen(details.scheduledAt, details.timeZone);
   const locationLabel = INTERVIEW_LOCATION_LABELS[details.mode];
   const lines = [
     `Hello ${details.candidateName},`,
@@ -85,6 +100,10 @@ export function buildInterviewInviteText(details: InterviewEmailDetails): string
     lines.push("", "Notes from the recruiter:", notes);
   }
 
+  if (details.portalUrl) {
+    lines.push("", "View this invitation in SIJIL:", details.portalUrl);
+  }
+
   lines.push(
     "",
     "Please add this interview to your calendar and reach out to the recruiter if you need to reschedule.",
@@ -96,7 +115,7 @@ export function buildInterviewInviteText(details: InterviewEmailDetails): string
 }
 
 export function buildInterviewInviteHtml(details: InterviewEmailDetails): string {
-  const { date, time } = formatInterviewWhen(details.scheduledAt);
+  const { date, time } = formatInterviewWhen(details.scheduledAt, details.timeZone);
   const notes = details.notes?.trim();
   const greeting = `Hello ${escapeHtml(details.candidateName)},`;
   const recruiter = escapeHtml(recruiterLine(details));
@@ -119,6 +138,7 @@ export function buildInterviewInviteHtml(details: InterviewEmailDetails): string
                   </td>
                 </tr>
               </table>
+              ${details.portalUrl ? `<p style="margin:0 0 16px;font-size:15px;line-height:1.6;"><a href="${escapeHtml(details.portalUrl)}" style="color:#2563eb;">View this invitation in SIJIL</a></p>` : ""}
               <p style="margin:0;font-size:13px;line-height:1.5;color:#64748b;">
                 If you cannot attend, please contact the recruiter so they can reschedule.
               </p>`;
@@ -131,7 +151,7 @@ export function buildInterviewInviteHtml(details: InterviewEmailDetails): string
 }
 
 export function buildInterviewCancelText(details: InterviewEmailDetails): string {
-  const { date, time } = formatInterviewWhen(details.scheduledAt);
+  const { date, time } = formatInterviewWhen(details.scheduledAt, details.timeZone);
   const lines = [
     `Hello ${details.candidateName},`,
     "",
@@ -153,7 +173,7 @@ export function buildInterviewCancelText(details: InterviewEmailDetails): string
 }
 
 export function buildInterviewCancelHtml(details: InterviewEmailDetails): string {
-  const { date, time } = formatInterviewWhen(details.scheduledAt);
+  const { date, time } = formatInterviewWhen(details.scheduledAt, details.timeZone);
   const greeting = `Hello ${escapeHtml(details.candidateName)},`;
   const recruiter = escapeHtml(recruiterLine(details));
 

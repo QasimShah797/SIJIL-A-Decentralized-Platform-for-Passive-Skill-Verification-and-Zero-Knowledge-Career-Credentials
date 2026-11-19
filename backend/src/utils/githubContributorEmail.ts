@@ -1,6 +1,6 @@
 /**
- * Resolve deliverable email addresses for GitHub contributors.
- * GitHub rarely exposes profile emails; we also scan recent commit metadata.
+ * Resolve a contributor invitation address from the public GitHub profile.
+ * GET /users/{login} is the only source. Commit author addresses are not used.
  */
 import { supabaseService } from "../services/supabase.service";
 
@@ -12,7 +12,7 @@ type CachedEmail = { email: string | null; at: number };
 const emailCache = new Map<string, CachedEmail>();
 
 function emailCacheKey(repoFullName: string | undefined, login: string): string {
-  return `${(repoFullName ?? "").toLowerCase()}::${login.toLowerCase()}`;
+  return `profile::${(repoFullName ?? "").toLowerCase()}::${login.toLowerCase()}`;
 }
 
 function readCachedEmail(repoFullName: string | undefined, login: string): string | null | undefined {
@@ -66,6 +66,12 @@ export function isDeliverableEmail(email: string | null | undefined): boolean {
   return true;
 }
 
+/** GitHub returns this only when the user published it on their profile. Commit author addresses are not accepted. */
+export function publicGitHubProfileEmail(email: string | null | undefined): string | null {
+  if (!isDeliverableEmail(email)) return null;
+  return email!.trim().toLowerCase();
+}
+
 export async function getGitHubConnection(userId: string): Promise<GitHubConnection | null> {
   const { data } = await supabaseService.client
     .from("github_connections")
@@ -82,30 +88,11 @@ export async function getGitHubConnection(userId: string): Promise<GitHubConnect
 async function lookupGitHubUserEmail(
   login: string,
   token: string,
-  repoFullName?: string,
 ): Promise<string | null> {
-  const headers = ghHeaders(token);
-  const userUrl = `${GH}/users/${encodeURIComponent(login)}`;
-  const commitsUrl = repoFullName
-    ? `${GH}/repos/${repoFullName}/commits?author=${encodeURIComponent(login)}&per_page=5`
-    : null;
-
-  const [userResult, commitsResult] = await Promise.all([
-    fetch(userUrl, { headers }).then(async (resp) => (resp.ok ? resp.json() as Promise<{ email?: string | null }> : null)).catch(() => null),
-    commitsUrl
-      ? fetch(commitsUrl, { headers }).then(async (resp) => (resp.ok ? resp.json() : null)).catch(() => null)
-      : Promise.resolve(null),
-  ]);
-
-  const profileEmail = userResult?.email?.trim().toLowerCase();
-  if (isDeliverableEmail(profileEmail)) return profileEmail!;
-
-  if (!Array.isArray(commitsResult)) return null;
-  for (const commit of commitsResult as Array<{ commit?: { author?: { email?: string | null } } }>) {
-    const email = commit.commit?.author?.email?.trim().toLowerCase();
-    if (isDeliverableEmail(email)) return email!;
-  }
-  return null;
+  const resp = await fetch(`${GH}/users/${encodeURIComponent(login)}`, { headers: ghHeaders(token) });
+  if (!resp.ok) return null;
+  const user = await resp.json() as { email?: string | null };
+  return publicGitHubProfileEmail(user.email);
 }
 
 export async function resolveGitHubUserEmail(
@@ -119,12 +106,12 @@ export async function resolveGitHubUserEmail(
   const cached = readCachedEmail(repoFullName, normalizedLogin);
   if (cached !== undefined) return cached;
 
-  const email = await lookupGitHubUserEmail(normalizedLogin, token, repoFullName);
+  const email = await lookupGitHubUserEmail(normalizedLogin, token);
   writeCachedEmail(repoFullName, normalizedLogin, email);
   return email;
 }
 
-/** Fill many contributor emails with one recent-commit scan, then a small parallel fallback. */
+/** Fill contributor addresses from each user's public GitHub profile. */
 export async function resolveGitHubUserEmails(
   logins: string[],
   token: string,
@@ -148,38 +135,8 @@ export async function resolveGitHubUserEmails(
 
   if (!pending.length) return result;
 
-  const stillMissing = new Set(pending.map((login) => login.toLowerCase()));
-  if (repoFullName) {
-    try {
-      const resp = await fetch(
-        `${GH}/repos/${repoFullName}/commits?per_page=100`,
-        { headers: ghHeaders(token) },
-      );
-      if (resp.ok) {
-        const commits = await resp.json() as Array<{
-          author?: { login?: string } | null;
-          commit?: { author?: { email?: string | null } };
-        }>;
-        if (Array.isArray(commits)) {
-          for (const commit of commits) {
-            const login = commit.author?.login?.toLowerCase();
-            if (!login || !stillMissing.has(login)) continue;
-            const email = commit.commit?.author?.email?.trim().toLowerCase() ?? null;
-            if (!isDeliverableEmail(email)) continue;
-            result.set(login, email);
-            writeCachedEmail(repoFullName, login, email);
-            stillMissing.delete(login);
-          }
-        }
-      }
-    } catch {
-      // Fall through to per-author lookup.
-    }
-  }
-
-  const fallback = pending.filter((login) => stillMissing.has(login.toLowerCase()));
-  await mapWithLimit(fallback, 6, async (login) => {
-    const email = await lookupGitHubUserEmail(login, token, repoFullName);
+  await mapWithLimit(pending, 6, async (login) => {
+    const email = await lookupGitHubUserEmail(login, token);
     result.set(login.toLowerCase(), email);
     writeCachedEmail(repoFullName, login, email);
   });
@@ -195,6 +152,7 @@ export async function persistContributorEmail(
 ): Promise<void> {
   const normalizedEmail = email.trim().toLowerCase();
   const normalizedLogin = login.trim();
+  if (!isDeliverableEmail(normalizedEmail)) return;
 
   if (options?.repoId != null) {
     await supabaseService.client

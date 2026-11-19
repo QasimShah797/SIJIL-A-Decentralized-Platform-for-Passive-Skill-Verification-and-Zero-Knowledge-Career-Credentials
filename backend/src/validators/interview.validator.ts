@@ -26,6 +26,15 @@ export const scheduleInterviewSchema = z.object({
   ]),
   locationOrLink: z.string().trim().min(3).max(2000),
   notes: z.string().trim().max(2000).optional(),
+  timeZone: z.string().trim().min(1).max(100).optional().refine((value) => {
+    if (!value) return true;
+    try {
+      Intl.DateTimeFormat(undefined, { timeZone: value });
+      return true;
+    } catch {
+      return false;
+    }
+  }, "A valid IANA timezone is required"),
 });
 
 export const listInterviewsQuerySchema = z.object({

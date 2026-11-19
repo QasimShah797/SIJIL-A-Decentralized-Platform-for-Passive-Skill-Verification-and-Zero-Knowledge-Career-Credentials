@@ -85,6 +85,7 @@ function useLearnerNav(): NavGroup[] {
       items: [
         { to: "/learner/wallet", icon: Wallet, label: "Wallet", mobileTab: true },
         { to: "/learner/peer-reviews", icon: MessageSquare, label: "Peer Reviews" },
+        { to: "/learner/interviews", icon: CalendarClock, label: "Interviews" },
       ],
     },
   ];

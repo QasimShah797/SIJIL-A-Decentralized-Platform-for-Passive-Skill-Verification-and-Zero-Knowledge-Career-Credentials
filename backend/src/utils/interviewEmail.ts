@@ -46,7 +46,7 @@ export async function sendInterviewInvitationEmail(
 export async function sendInterviewCancellationEmail(
   details: InterviewEmailDetails,
 ): Promise<MailSendResult> {
-  const { date } = formatInterviewWhen(details.scheduledAt);
+  const { date } = formatInterviewWhen(details.scheduledAt, details.timeZone);
   const subject = `Interview cancelled — ${date} — SIJIL`;
 
   try {

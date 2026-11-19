@@ -26,6 +26,9 @@ export const HIGH_TRUST_THRESHOLD = 0.85;
 export const MEDIUM_TRUST_THRESHOLD = 0.65;
 
 export const PEER_REVIEW_INVITE_STATUS = {
+  /** Open invitation. This does not mean SMTP accepted the message. */
+  PENDING: "pending",
+  /** Legacy open invitation. Email acceptance was not recorded for these rows. */
   SENT: "sent",
   COMPLETED: "completed",
   EXPIRED: "expired",

@@ -2,6 +2,7 @@
  * Real data loaders for the Peer Reviews page (replaces sijil-data mock/localStorage).
  */
 import { supabase } from "@/integrations/supabase/client";
+import { deliverableContributorEmail } from "@/lib/contributor-email";
 import { fetchProjectsFromDb } from "@/lib/db/projects";
 import { fetchLinkedProjectEvidence } from "@/lib/db/github-evidence";
 import type { ProjectEvidenceApiView } from "@/lib/db/github-evidence";
@@ -543,7 +544,7 @@ export async function sendPeerReviewInvite(input: {
       skill_id: input.skillId,
       skill: input.skillName,
       token,
-      status: "sent",
+      status: "pending",
       expires_at: expiresAt.toISOString(),
     })
     .select("*")
@@ -736,6 +737,7 @@ export async function createPeerReviewInviteLocal(input: {
   token: string;
   reviewLink: string;
   status: string;
+  emailDeliveryStatus?: "not_sent";
 } | null> {
   const { data: { session } } = await supabase.auth.getSession();
   const userId = session?.user?.id;
@@ -770,7 +772,8 @@ export async function createPeerReviewInviteLocal(input: {
     inviteId: result.invite.id,
     token: result.invite.token,
     reviewLink: `${window.location.origin}/review/request/${result.invite.token}`,
-    status: "sent",
+    status: "email_not_sent",
+    emailDeliveryStatus: "not_sent" as const,
   };
 }
 

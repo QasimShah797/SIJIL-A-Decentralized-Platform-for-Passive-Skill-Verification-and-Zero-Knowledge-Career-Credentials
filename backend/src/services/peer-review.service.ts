@@ -18,7 +18,7 @@ import {
   trustScoreForRelationship,
   displayRoleForRelationship,
 } from "../constants/peer-review";
-import { REVIEW_TYPE, REVIEW_REQUEST_STATUS, REVIEW_TOKEN_TTL_DAYS } from "../constants/reviews";
+import { REVIEW_REQUEST_STATUS, REVIEW_TOKEN_TTL_DAYS } from "../constants/reviews";
 import {
   fetchDeclaredSkillRefs,
   filterInvitationsForDeclaredSkills,
@@ -40,10 +40,22 @@ import { withPeerReviewUserColumns } from "../utils/peerReviewInsert";
 import { resolvePeerReviewDate } from "../utils/peerReviewDate";
 import {
   getGitHubConnection,
+  isDeliverableEmail,
   persistContributorEmail,
   resolveGitHubUserEmail,
   resolveGitHubUserEmails,
 } from "../utils/githubContributorEmail";
+import {
+  EMAIL_DELIVERY_STATUS,
+  OPEN_INVITE_LIFECYCLE,
+  inviteSendDecision,
+  safeSmtpFailure,
+  storedDeliveryStatus,
+  withTimeout,
+  type EmailDeliveryStatus,
+} from "../utils/invite-email-delivery";
+import { isMissingColumnError, isUniqueViolation } from "../utils/supabase-errors";
+import { isSmtpConfigured } from "../utils/mailer";
 
 type EvidenceRow = {
   id: string;
@@ -66,6 +78,49 @@ type ResolvedProject = {
   githubRepoId?: number;
   repoFullName?: string;
 };
+
+function publicContributorEmail(email: string | null | undefined): string | undefined {
+  return isDeliverableEmail(email) ? email!.trim() : undefined;
+}
+
+const SMTP_SEND_TIMEOUT_MS = 20_000;
+
+async function deliverReviewInviteEmail(
+  to: string,
+  learnerName: string,
+  evidenceName: string,
+  reviewLink: string,
+  options?: { reviewerName?: string; skillName?: string },
+): Promise<"sent" | "failed" | "not_sent"> {
+  if (!isSmtpConfigured()) return "not_sent";
+  try {
+    const result = await withTimeout(
+      sendReviewRequestEmail(to, learnerName, evidenceName, reviewLink, options),
+      SMTP_SEND_TIMEOUT_MS,
+    );
+    return result.delivered ? "sent" : "not_sent";
+  } catch (err) {
+    console.error("[SIJIL Review Email] invitation kept category=" + safeSmtpFailure(err));
+    return "failed";
+  }
+}
+
+async function markEmailDelivery(
+  table: "peer_review_invites" | "review_requests",
+  inviteId: string,
+  userId: string,
+  delivery: "pending" | "sent" | "failed" | "not_sent",
+): Promise<EmailDeliveryStatus> {
+  const { error } = await supabaseService.client
+    .from(table)
+    .update({ email_delivery_status: delivery })
+    .eq("id", inviteId)
+    .eq("learner_user_id", userId);
+  if (!error) return delivery;
+  if (isMissingColumnError(error)) return "unknown";
+  console.error("[SIJIL Review Email] delivery status was not stored category=" + delivery);
+  return "unknown";
+}
 
 function generateToken(): string {
   return randomBytes(32).toString("hex");
@@ -104,9 +159,11 @@ function contributorIdentityMatches(
 }
 
 import {
-  assertContributorInviteEmail,
   assertReviewerIdentityForInvite,
+  canResendStoredInvitation,
+  invitationRecipient,
   normalizeEmail,
+  unverifiedFeedbackLabels,
 } from "../utils/contributor-invite-email";
 
 function reviewerNameFromEmail(email: string): string {
@@ -368,7 +425,7 @@ async function fetchContributorsForProject(
         id: c.id as string,
         name: c.reviewer_name as string,
         handle: (c.reviewer_login as string) ?? undefined,
-        email: (c.reviewer_email as string) ?? undefined,
+        email: publicContributorEmail(c.reviewer_email as string | null),
         role: displayRoleForRelationship(relationship),
         relationship,
         verified: true,
@@ -389,7 +446,7 @@ async function fetchContributorsForProject(
         id: c.id as string,
         name: c.full_name as string,
         handle: c.contributor_login as string,
-        email: (c.contributor_email as string) ?? undefined,
+        email: publicContributorEmail(c.contributor_email as string | null),
         role: displayRoleForRelationship(RELATIONSHIP.CONTRIBUTOR),
         relationship: RELATIONSHIP.CONTRIBUTOR,
         avatarUrl: (c.contributor_avatar_url as string) ?? undefined,
@@ -409,34 +466,21 @@ async function enrichContributorEmails(
 ): Promise<PeerReviewContributorView[]> {
   if (project.source !== "GitHub") return contributors;
 
-  const missing = contributors.filter((c) => !c.email?.trim() && c.handle?.trim());
-  if (!missing.length) return contributors;
+  const handles = contributors
+    .map((contributor) => contributor.handle?.trim())
+    .filter((handle): handle is string => Boolean(handle));
+  const ghConn = handles.length ? await getGitHubConnection(userId) : null;
+  if (!ghConn) {
+    return contributors.map((contributor) => ({ ...contributor, email: undefined }));
+  }
 
-  const ghConn = await getGitHubConnection(userId);
-  if (!ghConn) return contributors;
-
-  const resolved = await resolveGitHubUserEmails(
-    missing.map((contributor) => contributor.handle!),
-    ghConn.token,
-    project.repoFullName,
-  );
-
-  const enriched = await Promise.all(
-    contributors.map(async (contributor) => {
-      if (contributor.email?.trim() || !contributor.handle?.trim()) return contributor;
-      const email = resolved.get(contributor.handle.toLowerCase()) ?? null;
-      if (!email) return contributor;
-
-      await persistContributorEmail(userId, contributor.handle, email, {
-        repoId: project.githubRepoId,
-        evidenceRecordId: project.evidenceRecordId,
-      });
-
-      return { ...contributor, email };
-    }),
-  );
-
-  return enriched;
+  const resolved = await resolveGitHubUserEmails(handles, ghConn.token, project.repoFullName);
+  return contributors.map((contributor) => {
+    const email = contributor.handle
+      ? resolved.get(contributor.handle.toLowerCase()) ?? null
+      : null;
+    return { ...contributor, email: email ?? undefined };
+  });
 }
 
 async function ensureContributorVerified(
@@ -451,22 +495,12 @@ async function ensureContributorVerified(
     throw new AppError("Only verified contributors of the same project can submit reviews", 403);
   }
 
-  if (!contributor.email?.trim() && contributor.handle?.trim() && project.source === "GitHub") {
+  if (contributor.handle?.trim() && project.source === "GitHub") {
     const ghConn = await getGitHubConnection(userId);
-    if (ghConn) {
-      const email = await resolveGitHubUserEmail(
-        contributor.handle,
-        ghConn.token,
-        project.repoFullName,
-      );
-      if (email) {
-        await persistContributorEmail(userId, contributor.handle, email, {
-          repoId: project.githubRepoId,
-          evidenceRecordId: project.evidenceRecordId,
-        });
-        contributor = { ...contributor, email };
-      }
-    }
+    const email = ghConn
+      ? await resolveGitHubUserEmail(contributor.handle, ghConn.token, project.repoFullName)
+      : null;
+    contributor = { ...contributor, email: email ?? undefined };
   }
 
   return contributor;
@@ -488,41 +522,49 @@ async function findPendingPeerReviewInvite(
   projectId: string,
   opts: { contributorId?: string; contributorEmail?: string; inviteId?: string },
 ): Promise<Record<string, unknown> | null> {
-  const select = "id, token, status, expires_at, contributor_id, contributor_name, contributor_email, skill_id, skill, project_id, project_name";
+  const select = "id, token, status, expires_at, contributor_id, contributor_name, contributor_email, skill_id, skill, project_id, project_name, email_delivery_status";
+
+  const firstOpen = async (
+    filter: (query: any) => any,
+  ): Promise<Record<string, unknown> | null> => {
+    const run = async (columns: string) => {
+      const query = filter(
+        supabaseService.client.from("peer_review_invites").select(columns),
+      );
+      const { data, error } = await query
+        .in("status", [...OPEN_INVITE_LIFECYCLE])
+        .order("created_at", { ascending: false })
+        .limit(1);
+      return { data, error };
+    };
+    let result = await run(select);
+    if (result.error && isMissingColumnError(result.error)) {
+      result = await run(select.replace(", email_delivery_status", ""));
+    }
+    return (result.data?.[0] as Record<string, unknown> | undefined) ?? null;
+  };
 
   if (opts.inviteId) {
-    const { data } = await supabaseService.client
-      .from("peer_review_invites")
-      .select(select)
+    const data = await firstOpen((query) => query
       .eq("learner_user_id", userId)
-      .eq("id", opts.inviteId)
-      .in("status", [PEER_REVIEW_INVITE_STATUS.SENT])
-      .maybeSingle();
-    if (data) return data as Record<string, unknown>;
+      .eq("id", opts.inviteId));
+    if (data) return data;
   }
 
   if (opts.contributorId) {
-    const { data } = await supabaseService.client
-      .from("peer_review_invites")
-      .select(select)
+    const data = await firstOpen((query) => query
       .eq("learner_user_id", userId)
       .eq("project_id", projectId)
-      .eq("contributor_id", opts.contributorId)
-      .in("status", [PEER_REVIEW_INVITE_STATUS.SENT])
-      .maybeSingle();
-    if (data) return data as Record<string, unknown>;
+      .eq("contributor_id", opts.contributorId));
+    if (data) return data;
   }
 
   if (opts.contributorEmail) {
-    const { data } = await supabaseService.client
-      .from("peer_review_invites")
-      .select(select)
+    const data = await firstOpen((query) => query
       .eq("learner_user_id", userId)
       .eq("project_id", projectId)
-      .eq("contributor_email", opts.contributorEmail)
-      .in("status", [PEER_REVIEW_INVITE_STATUS.SENT])
-      .maybeSingle();
-    if (data) return data as Record<string, unknown>;
+      .eq("contributor_email", opts.contributorEmail));
+    if (data) return data;
   }
 
   return null;
@@ -552,24 +594,26 @@ async function resendStoredInviteEmail(input: {
   if (isExpired) {
     token = generateToken();
     reviewLink = buildReviewLink(token);
+    const { error: updateError } = await supabaseService.client
+      .from(input.table)
+      .update({
+        token,
+        expires_at: expiresAt.toISOString(),
+        status: input.statusValue,
+      })
+      .eq("id", input.inviteId)
+      .eq("learner_user_id", input.userId);
+    if (updateError) {
+      throw new AppError(updateError.message ?? "Failed to resend review invitation", 500);
+    }
   }
 
-  const { error: updateError } = await supabaseService.client
-    .from(input.table)
-    .update({
-      token,
-      expires_at: expiresAt.toISOString(),
-      status: input.statusValue,
-    })
-    .eq("id", input.inviteId)
-    .eq("learner_user_id", input.userId);
-
-  if (updateError) {
-    throw new AppError(updateError.message ?? "Failed to resend review invitation", 500);
+  if (input.table === "peer_review_invites") {
+    await markEmailDelivery(input.table, input.inviteId, input.userId, EMAIL_DELIVERY_STATUS.PENDING);
   }
 
   const learnerName = await getLearnerName(input.userId);
-  await sendReviewRequestEmail(
+  const delivered = await deliverReviewInviteEmail(
     normalizeEmail(input.contributorEmail),
     learnerName,
     input.projectName,
@@ -579,12 +623,16 @@ async function resendStoredInviteEmail(input: {
       skillName: input.skillName,
     },
   );
+  if (input.table === "peer_review_invites") {
+    await markEmailDelivery(input.table, input.inviteId, input.userId, delivered);
+  }
 
   return {
     inviteId: input.inviteId,
     token,
     reviewLink,
-    status: "resent",
+    status: delivered === "sent" ? "resent" : "email_not_sent",
+    emailDeliveryStatus: delivered,
   };
 }
 
@@ -638,9 +686,12 @@ function buildReviewInsertPayload(input: {
   evidenceUrl?: string;
   inviteId?: string;
   reviewerEmail?: string;
+  contributorVerification?: string;
+  contextStatus?: string;
 }) {
   const relationship = input.contributor.relationship;
-  const score = trustScoreForRelationship(relationship, true);
+  const contextVerified = input.contextStatus === CONTEXT_STATUS.VERIFIED;
+  const score = trustScoreForRelationship(relationship, contextVerified);
   const trustWeight = categoricalTrustWeight(score);
   const reviewedAt = new Date().toISOString();
 
@@ -664,8 +715,8 @@ function buildReviewInsertPayload(input: {
     review_type: input.reviewType,
     evidence_record_id: input.project.evidenceRecordId ?? null,
     skill_id: input.skillId,
-    context_status: CONTEXT_STATUS.VERIFIED,
-    contributor_verification: CONTRIBUTOR_VERIFICATION.VERIFIED,
+      context_status: input.contextStatus ?? CONTEXT_STATUS.PENDING,
+    contributor_verification: input.contributorVerification ?? CONTRIBUTOR_VERIFICATION.PENDING,
     trust_weight: trustWeight,
     trust_weight_score: score,
     relationship,
@@ -875,14 +926,21 @@ export class PeerReviewService {
       ? reviewQuery.or(`project_id.eq.${project.projectId},evidence_record_id.eq.${project.evidenceRecordId}`)
       : reviewQuery.eq("project_id", project.projectId);
 
-    const [{ data: reviewRows }, { data: invites }] = await Promise.all([
-      reviewQuery,
-      supabaseService.client
+    const reviewResult = await reviewQuery;
+    const reviewRows = reviewResult.data;
+    const inviteResult = await supabaseService.client
+      .from("peer_review_invites")
+      .select("id, contributor_id, status, completed_review_id, email_delivery_status")
+      .eq("learner_user_id", userId)
+      .eq("project_id", projectId);
+    const legacyInvites = inviteResult.error && isMissingColumnError(inviteResult.error)
+      ? await supabaseService.client
         .from("peer_review_invites")
         .select("id, contributor_id, status, completed_review_id")
         .eq("learner_user_id", userId)
-        .eq("project_id", projectId),
-    ]);
+        .eq("project_id", projectId)
+      : null;
+    const invites = (legacyInvites?.data ?? inviteResult.data) as Array<Record<string, unknown>> | null;
 
     const reviews = (reviewRows ?? []).map((row) => rowToPeerReview(row as Record<string, unknown>));
 
@@ -909,10 +967,20 @@ export class PeerReviewService {
           inviteId: invite?.id as string | undefined,
         };
       }
-      if (invite && invite.status !== PEER_REVIEW_INVITE_STATUS.COMPLETED) {
+      if (invite && invite.status !== PEER_REVIEW_INVITE_STATUS.COMPLETED && invite.status !== PEER_REVIEW_INVITE_STATUS.EXPIRED) {
+        const delivery = storedDeliveryStatus(invite.email_delivery_status);
+        const reviewStatus = delivery === "sent"
+          ? "Invite Sent"
+          : delivery === "failed"
+            ? "Email failed"
+            : delivery === "not_sent"
+              ? "Email not sent"
+              : delivery === "pending"
+                ? "Email pending"
+                : "Delivery not confirmed";
         return {
           ...c,
-          reviewStatus: "Invite Sent",
+          reviewStatus,
           inviteId: invite.id as string,
         };
       }
@@ -925,39 +993,9 @@ export class PeerReviewService {
     input: CreatePeerReviewInviteInput,
   ): Promise<PeerReviewInviteResult> {
     const project = await resolveProject(userId, input.projectId);
-    const normalizedEmail = normalizeEmail(input.contributorEmail);
-
-    if (input.resend) {
-      const pendingForResend = await findPendingPeerReviewInvite(userId, input.projectId, {
-        inviteId: input.inviteId,
-        contributorId: input.contributorId,
-        contributorEmail: normalizedEmail,
-      });
-      if (pendingForResend) {
-        const projectName = (pendingForResend.project_name as string | undefined) ?? project.name;
-        return resendStoredInviteEmail({
-          userId,
-          inviteId: pendingForResend.id as string,
-          projectId: input.projectId,
-          projectName,
-          contributorName: pendingForResend.contributor_name as string,
-          contributorEmail: pendingForResend.contributor_email as string,
-          skillName: (pendingForResend.skill as string) ?? "Declared competency",
-          token: pendingForResend.token as string,
-          expiresAt: pendingForResend.expires_at as string,
-          table: "peer_review_invites",
-          statusValue: PEER_REVIEW_INVITE_STATUS.SENT,
-        });
-      }
-    }
 
     const [contributor, skillResult] = await Promise.all([
-      ensureContributorVerified(
-        userId,
-        project,
-        input.contributorId,
-        normalizedEmail,
-      ),
+      ensureContributorVerified(userId, project, input.contributorId),
       supabaseService.client
         .from("declared_skills")
         .select("id, name")
@@ -967,6 +1005,11 @@ export class PeerReviewService {
     ]);
     const skill = skillResult.data;
     if (!skill) throw new AppError("Skill not found", 404);
+
+    const recipient = invitationRecipient({
+      profileEmail: contributor.email,
+      requestedEmail: input.contributorEmail,
+    });
 
     const existing = await findExistingReview(userId, project, contributor);
     if (existing) {
@@ -980,30 +1023,32 @@ export class PeerReviewService {
       };
     }
 
-    const { data: pendingInvite } = await supabaseService.client
-      .from("peer_review_invites")
-      .select("id, token, status, expires_at, contributor_email, contributor_name, project_name, skill")
-      .eq("learner_user_id", userId)
-      .eq("project_id", input.projectId)
-      .eq("contributor_id", input.contributorId)
-      .in("status", [PEER_REVIEW_INVITE_STATUS.SENT])
-      .maybeSingle();
-
-    const pendingInviteByEmail = !pendingInvite && input.resend
-      ? await findPendingPeerReviewInvite(userId, input.projectId, { contributorEmail: normalizedEmail })
-      : null;
-    const resolvedPendingInvite = pendingInvite ?? pendingInviteByEmail;
+    const resolvedPendingInvite = await findPendingPeerReviewInvite(userId, input.projectId, {
+      inviteId: input.inviteId,
+      contributorId: input.contributorId,
+    });
 
     if (resolvedPendingInvite) {
-      assertContributorInviteEmail({
-        contributorId: input.contributorId,
-        contributorHandle: contributor.handle,
-        contributorEmailOnFile: contributor.email,
-        requestedEmail: normalizedEmail,
-        existingInviteEmail: resolvedPendingInvite.contributor_email as string,
+      const storedInviteEmail = resolvedPendingInvite.contributor_email as string;
+      const delivery = storedDeliveryStatus(resolvedPendingInvite.email_delivery_status);
+      if (input.resend && !canResendStoredInvitation({
+        storedInviteEmail,
+        profileEmail: recipient,
+      })) {
+        return {
+          inviteId: resolvedPendingInvite.id as string,
+          token: resolvedPendingInvite.token as string,
+          reviewLink: buildReviewLink(resolvedPendingInvite.token as string),
+          status: "resend_blocked",
+          emailDeliveryStatus: delivery,
+        };
+      }
+      const decision = inviteSendDecision({
+        existing: true,
+        resend: Boolean(input.resend),
+        delivery,
       });
-
-      if (input.resend) {
+      if (decision === "resend" && recipient) {
         const projectName = (resolvedPendingInvite.project_name as string | undefined) ?? project.name;
         return resendStoredInviteEmail({
           userId,
@@ -1011,12 +1056,12 @@ export class PeerReviewService {
           projectId: input.projectId,
           projectName,
           contributorName: (resolvedPendingInvite.contributor_name as string) ?? contributor.name,
-          contributorEmail: (resolvedPendingInvite.contributor_email as string) ?? normalizedEmail,
+          contributorEmail: recipient,
           skillName: (resolvedPendingInvite.skill as string) ?? (skill.name as string),
           token: resolvedPendingInvite.token as string,
           expiresAt: resolvedPendingInvite.expires_at as string,
           table: "peer_review_invites",
-          statusValue: PEER_REVIEW_INVITE_STATUS.SENT,
+          statusValue: PEER_REVIEW_INVITE_STATUS.PENDING,
         });
       }
 
@@ -1025,19 +1070,20 @@ export class PeerReviewService {
         token: resolvedPendingInvite.token as string,
         reviewLink: buildReviewLink(resolvedPendingInvite.token as string),
         status: "already_invited",
+        emailDeliveryStatus: delivery,
       };
+    }
+
+    if (!recipient) {
+      throw new AppError(
+        "Email unavailable. GitHub has not published a profile email for this contributor.",
+        400,
+      );
     }
 
     const token = generateToken();
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + PEER_REVIEW_TOKEN_TTL_DAYS);
-
-    assertContributorInviteEmail({
-      contributorId: input.contributorId,
-      contributorHandle: contributor.handle,
-      contributorEmailOnFile: contributor.email,
-      requestedEmail: normalizedEmail,
-    });
 
     let reviewerContextId: string | null = null;
     if (project.evidenceRecordId) {
@@ -1051,28 +1097,56 @@ export class PeerReviewService {
       reviewerContextId = (ctx?.id as string) ?? null;
     }
 
-    const { data: invite, error } = await supabaseService.client
+    const inviteRow = {
+      learner_user_id: userId,
+      evidence_record_id: project.evidenceRecordId ?? null,
+      project_id: input.projectId,
+      project_name: project.name,
+      source: project.source,
+      contributor_id: input.contributorId,
+      contributor_name: contributor.name,
+      contributor_email: recipient,
+      contributor_role: contributor.role,
+      relationship: contributor.relationship,
+      skill_id: skill.id,
+      skill: skill.name,
+      reviewer_context_id: reviewerContextId,
+      token,
+      status: PEER_REVIEW_INVITE_STATUS.PENDING,
+      email_delivery_status: EMAIL_DELIVERY_STATUS.PENDING,
+      expires_at: expiresAt.toISOString(),
+    };
+    let { data: invite, error } = await supabaseService.client
       .from("peer_review_invites")
-      .insert({
-        learner_user_id: userId,
-        evidence_record_id: project.evidenceRecordId ?? null,
-        project_id: input.projectId,
-        project_name: project.name,
-        source: project.source,
-        contributor_id: input.contributorId,
-        contributor_name: contributor.name,
-        contributor_email: normalizedEmail,
-        contributor_role: contributor.role,
-        relationship: contributor.relationship,
-        skill_id: skill.id,
-        skill: skill.name,
-        reviewer_context_id: reviewerContextId,
-        token,
-        status: PEER_REVIEW_INVITE_STATUS.SENT,
-        expires_at: expiresAt.toISOString(),
-      })
+      .insert(inviteRow)
       .select("*")
       .single();
+
+    if (error && isMissingColumnError(error)) {
+      const { email_delivery_status: _ignored, ...withoutDelivery } = inviteRow;
+      const retry = await supabaseService.client
+        .from("peer_review_invites")
+        .insert(withoutDelivery)
+        .select("*")
+        .single();
+      invite = retry.data;
+      error = retry.error;
+    }
+
+    if (error && isUniqueViolation(error)) {
+      const existing = await findPendingPeerReviewInvite(userId, input.projectId, {
+        contributorId: input.contributorId,
+      });
+      if (existing) {
+        return {
+          inviteId: existing.id as string,
+          token: existing.token as string,
+          reviewLink: buildReviewLink(existing.token as string),
+          status: "already_invited",
+          emailDeliveryStatus: storedDeliveryStatus(existing.email_delivery_status),
+        };
+      }
+    }
 
     if (error || !invite) {
       throw new AppError(error?.message ?? "Failed to create peer review invite", 500);
@@ -1080,8 +1154,8 @@ export class PeerReviewService {
 
     const learnerName = await getLearnerName(userId);
     const reviewLink = buildReviewLink(token);
-    await sendReviewRequestEmail(
-      normalizedEmail,
+    const delivered = await deliverReviewInviteEmail(
+      recipient,
       learnerName,
       project.name,
       reviewLink,
@@ -1090,12 +1164,14 @@ export class PeerReviewService {
         skillName: skill.name as string,
       },
     );
+    await markEmailDelivery("peer_review_invites", invite.id as string, userId, delivered);
 
     return {
       inviteId: invite.id as string,
       token,
       reviewLink,
-      status: PEER_REVIEW_INVITE_STATUS.SENT,
+      status: delivered === "sent" ? "created" : "email_not_sent",
+      emailDeliveryStatus: delivered,
     };
   }
 
@@ -1169,6 +1245,7 @@ export class PeerReviewService {
       submittedGithub: input.reviewerGithubUsername,
     });
 
+    const labels = unverifiedFeedbackLabels();
     const contributor: PeerReviewContributorView = {
       id: invite.contributor_id as string,
       name: invite.contributor_name as string,
@@ -1176,7 +1253,7 @@ export class PeerReviewService {
       role: invite.contributor_role as string,
       relationship: (invite.relationship as Relationship) ?? RELATIONSHIP.CONTRIBUTOR,
       email: invite.contributor_email as string,
-      verified: true,
+      verified: false,
       reviewStatus: "Review Pending",
     };
 
@@ -1191,9 +1268,12 @@ export class PeerReviewService {
       recommendation: input.recommendation,
       origin: "SIJIL",
       imported: false,
-      reviewType: REVIEW_TYPE.VERIFIED,
+      reviewType: "Context Pending Review",
       inviteId: invite.id as string,
       reviewerEmail: invite.contributor_email as string,
+      externalReference: `sijil-invite:${invite.id as string}`,
+      contributorVerification: labels.contributorVerification,
+      contextStatus: labels.contextStatus,
     });
 
     const { data: review, error: reviewErr } = await supabaseService.client
@@ -1202,17 +1282,34 @@ export class PeerReviewService {
       .select("*")
       .single();
 
+    if (reviewErr?.code === "23505") {
+      await supabaseService.client
+        .from("peer_review_invites")
+        .update({ status: PEER_REVIEW_INVITE_STATUS.COMPLETED })
+        .eq("id", invite.id)
+        .in("status", [...OPEN_INVITE_LIFECYCLE]);
+      throw new AppError("Review already submitted", 409);
+    }
+
     if (reviewErr || !review) {
       throw new AppError(reviewErr?.message ?? "Failed to store review", 500);
     }
 
-    await supabaseService.client
+    const { data: claimed } = await supabaseService.client
       .from("peer_review_invites")
       .update({
         status: PEER_REVIEW_INVITE_STATUS.COMPLETED,
         completed_review_id: review.id,
       })
-      .eq("id", invite.id);
+      .eq("id", invite.id)
+      .in("status", [...OPEN_INVITE_LIFECYCLE])
+      .select("id")
+      .maybeSingle();
+
+    if (!claimed) {
+      await supabaseService.client.from("peer_reviews").delete().eq("id", review.id);
+      throw new AppError("Review already submitted", 409);
+    }
 
     const skillId = (invite.skill_id as string) ?? null;
     if (skillId) {
@@ -1348,27 +1445,13 @@ export class PeerReviewService {
         throw new AppError("This review is already completed", 409);
       }
 
-      const skillData = request.declared_skills as { name?: string } | { name?: string }[] | null;
-      const skillName = Array.isArray(skillData)
-        ? skillData[0]?.name ?? "Declared competency"
-        : skillData?.name ?? "Declared competency";
-      const evidence = request.evidence_records as { repository_name?: string } | null;
-
-      return resendStoredInviteEmail({
-        userId,
+      return {
         inviteId: request.id as string,
-        projectId: request.evidence_record_id ? `ev-${request.evidence_record_id as string}` : invitationId,
-        projectName: evidence?.repository_name ?? "Project evidence",
-        contributorName: request.reviewer_name as string,
-        contributorEmail: request.reviewer_email as string,
-        skillName,
         token: request.token as string,
-        expiresAt: request.expires_at as string,
-        table: "review_requests",
-        statusValue: (request.status as string) === REVIEW_REQUEST_STATUS.AWAITING
-          ? REVIEW_REQUEST_STATUS.AWAITING
-          : REVIEW_REQUEST_STATUS.SENT,
-      });
+        reviewLink: buildReviewLink(request.token as string),
+        status: "resend_blocked",
+        emailDeliveryStatus: "not_sent",
+      };
     }
 
     const { data: invite, error } = await supabaseService.client
@@ -1383,6 +1466,31 @@ export class PeerReviewService {
     if (invite.status === PEER_REVIEW_INVITE_STATUS.COMPLETED) {
       throw new AppError("This review is already completed", 409);
     }
+    const delivery = storedDeliveryStatus(invite.email_delivery_status);
+    if (inviteSendDecision({ existing: true, resend: true, delivery }) === "return_existing") {
+      return {
+        inviteId: invite.id as string,
+        token: invite.token as string,
+        reviewLink: buildReviewLink(invite.token as string),
+        status: "already_invited",
+        emailDeliveryStatus: delivery,
+      };
+    }
+
+    const project = await resolveProject(userId, invite.project_id as string);
+    const contributor = await ensureContributorVerified(userId, project, invite.contributor_id as string);
+    if (!canResendStoredInvitation({
+      storedInviteEmail: invite.contributor_email as string,
+      profileEmail: contributor.email,
+    })) {
+      return {
+        inviteId: invite.id as string,
+        token: invite.token as string,
+        reviewLink: buildReviewLink(invite.token as string),
+        status: "resend_blocked",
+        emailDeliveryStatus: delivery,
+      };
+    }
 
     return resendStoredInviteEmail({
       userId,
@@ -1390,12 +1498,12 @@ export class PeerReviewService {
       projectId: invite.project_id as string,
       projectName: invite.project_name as string,
       contributorName: invite.contributor_name as string,
-      contributorEmail: invite.contributor_email as string,
+      contributorEmail: contributor.email as string,
       skillName: (invite.skill as string) ?? "Declared competency",
       token: invite.token as string,
       expiresAt: invite.expires_at as string,
       table: "peer_review_invites",
-      statusValue: PEER_REVIEW_INVITE_STATUS.SENT,
+      statusValue: PEER_REVIEW_INVITE_STATUS.PENDING,
     });
   }
 }

@@ -1,13 +1,27 @@
 import { supabase } from "@/integrations/supabase/client";
 import { isMissingColumnError, isMissingRelationError } from "@/lib/supabase-errors";
 
-export const MOODLE_SITE_URL = "https://sijil-fyp.moodlecloud.com";
+/**
+ * Live SIJIL Moodle. VITE_MOODLE_SITE_URL overrides this for display and
+ * for the moodle_courses / moodle_assignments site filter. It is never a token.
+ */
+export const MOODLE_SITE_URL = (
+  (import.meta.env.VITE_MOODLE_SITE_URL as string | undefined)?.trim() ||
+  "https://sijil-lms.duckdns.org"
+).replace(/\/+$/, "");
 
-/** Hostname of the only supported MoodleCloud instance. */
-export const CURRENT_MOODLE_SITE_HOST = "sijil-fyp.moodlecloud.com";
+/** Hostname of the configured Moodle site. */
+export const CURRENT_MOODLE_SITE_HOST = (() => {
+  try {
+    return new URL(MOODLE_SITE_URL).host.toLowerCase();
+  } catch {
+    return "sijil-lms.duckdns.org";
+  }
+})();
 
-/** Legacy MoodleCloud host — must never be shown in UI. */
+/** Retired MoodleCloud hosts. Rows for these sites are not the live catalog. */
 export const LEGACY_MOODLE_SITE_HOST = "sijil.moodlecloud.com";
+export const RETIRED_MOODLE_CLOUD_HOST = "sijil-fyp.moodlecloud.com";
 
 /** Expected edge function version — mismatch means remote deploy is stale. */
 export const MOODLE_SYNC_FUNCTION_VERSION = "3.4.0";
@@ -19,32 +33,52 @@ export function normalizeMoodleSiteUrl(url: string): string {
 export function displayMoodleSiteHost(url: string = MOODLE_SITE_URL): string {
   try {
     const host = new URL(url.startsWith("http") ? url : `https://${url}`).host.toLowerCase();
-    if (host === LEGACY_MOODLE_SITE_HOST || (host.includes("moodlecloud.com") && !host.includes("sijil-fyp"))) {
+    if (host === LEGACY_MOODLE_SITE_HOST || host === RETIRED_MOODLE_CLOUD_HOST || host.endsWith(".moodlecloud.com")) {
       return CURRENT_MOODLE_SITE_HOST;
     }
     return host;
   } catch {
     const stripped = url.replace(/^https?:\/\//, "").replace(/\/+$/, "").toLowerCase();
-    if (stripped === LEGACY_MOODLE_SITE_HOST) return CURRENT_MOODLE_SITE_HOST;
+    if (
+      stripped === LEGACY_MOODLE_SITE_HOST ||
+      stripped === RETIRED_MOODLE_CLOUD_HOST ||
+      stripped.endsWith(".moodlecloud.com")
+    ) {
+      return CURRENT_MOODLE_SITE_HOST;
+    }
     return stripped;
   }
 }
 
-/** True when URL belongs to the current sijil-fyp MoodleCloud site. */
-export function isCurrentMoodleSiteUrl(url: string | null | undefined): boolean {
-  if (!url?.trim()) return false;
-  return displayMoodleSiteHost(url) === CURRENT_MOODLE_SITE_HOST;
+function rawMoodleHost(url: string): string | null {
+  try {
+    return new URL(url.startsWith("http") ? url : `https://${url}`).host.toLowerCase();
+  } catch {
+    return null;
+  }
 }
 
-/** True when URL points at the retired sijil.moodlecloud.com instance. */
+/** Site key used to read moodle_courses and moodle_assignments. */
+export function moodleActivityQuerySite(): string {
+  return normalizeMoodleSiteUrl(MOODLE_SITE_URL);
+}
+
+/** True when URL belongs to the configured live Moodle site. */
+export function isCurrentMoodleSiteUrl(url: string | null | undefined): boolean {
+  if (!url?.trim()) return false;
+  return rawMoodleHost(url) === CURRENT_MOODLE_SITE_HOST;
+}
+
+/** True when URL points at a retired MoodleCloud instance. */
 export function isLegacyMoodleSiteUrl(url: string | null | undefined): boolean {
   if (!url?.trim()) return false;
-  const host = displayMoodleSiteHost(url);
+  const host = rawMoodleHost(url) ?? "";
   const normalized = normalizeMoodleSiteUrl(url);
   return (
     host === LEGACY_MOODLE_SITE_HOST ||
-    normalized.includes(LEGACY_MOODLE_SITE_HOST) ||
-    (normalized.includes("moodlecloud.com") && !normalized.includes("sijil-fyp"))
+    host === RETIRED_MOODLE_CLOUD_HOST ||
+    host.endsWith(".moodlecloud.com") ||
+    normalized.includes("moodlecloud.com")
   );
 }
 
@@ -348,7 +382,7 @@ export async function repairMoodleEvidenceRecords(): Promise<{
   };
 }
 
-/** Force full Moodle resync: purge stale data, fetch fresh from sijil-fyp.moodlecloud.com, update DB. */
+/** Force full Moodle resync through the hosted moodle-sync function. */
 export async function syncMoodleData(): Promise<MoodleSyncResult> {
   const { data: session } = await supabase.auth.getSession();
   if (!session.session) {
@@ -483,7 +517,7 @@ export async function disconnectMoodle(): Promise<void> {
 
 export async function fetchMoodleCourseActivities(): Promise<MoodleCourseActivity[]> {
   const userId = await requireUserId();
-  const currentSite = normalizeMoodleSiteUrl(MOODLE_SITE_URL);
+  const currentSite = moodleActivityQuerySite();
 
   const { data: courses, error: courseErr } = await supabase
     .from("moodle_courses")

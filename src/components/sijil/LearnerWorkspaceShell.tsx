@@ -10,6 +10,7 @@ import {
   Wallet,
   KeyRound,
   MessageSquare,
+  CalendarClock,
   LogOut,
   Menu,
   Bell,
@@ -85,6 +86,7 @@ function dashboardNav(): NavGroup[] {
         { to: "/learner/wallet", icon: Wallet, label: "Wallet" },
         { to: "/learner/secure-identity", icon: KeyRound, label: "Privacy & Security" },
         { to: "/learner/peer-reviews", icon: MessageSquare, label: "Peer Reviews" },
+        { to: "/learner/interviews", icon: CalendarClock, label: "Interviews" },
       ],
     },
   ];
@@ -131,6 +133,7 @@ function profileNav(): NavGroup[] {
         { to: "/learner/wallet", icon: Wallet, label: "Wallet" },
         { to: "/learner/secure-identity", icon: KeyRound, label: "Privacy & Security" },
         { to: "/learner/peer-reviews", icon: MessageSquare, label: "Peer Reviews" },
+        { to: "/learner/interviews", icon: CalendarClock, label: "Interviews" },
       ],
     },
   ];

@@ -16,6 +16,8 @@ import {
   type ReviewInvitation,
 } from "@/lib/sijil-data";
 import { useAuth } from "@/hooks/useAuth";
+import { isDeliverableContributorEmail } from "@/lib/contributor-email";
+import { deliveryToast } from "@/lib/invite-delivery";
 import { useDeclaredSkills } from "@/hooks/useLearnerData";
 import {
   PeerReviewsHero,
@@ -46,7 +48,6 @@ import {
   loadPeerReviewPageData,
   buildContributorRows,
   contextRequestToInvitation,
-  sendPeerReviewInvite,
   type PeerReviewProject,
   type ContextReviewRequestDisplay,
 } from "@/lib/db/peer-review-page";
@@ -156,11 +157,29 @@ function contributorToInviteReviewer(
   };
 }
 
+function inviteDeliveryToast(
+  status: string,
+  _email: string,
+  resend: boolean,
+  skillName?: string,
+  projectName?: string,
+  delivery?: string | null,
+): { title: string; description: string; variant?: "destructive" } {
+  return deliveryToast({
+    requestStatus: status,
+    delivery,
+    resend,
+    skillName,
+    projectName,
+  });
+}
+
 export default function PeerReviewsPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { skills: declaredSkills, loading: skillsLoading } = useDeclaredSkills();
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [projects, setProjects] = useState<PeerReviewProject[]>([]);
   const [reviews, setReviews] = useState<PeerReview[]>([]);
   const [legacyInvitations, setLegacyInvitations] = useState<ReviewInvitation[]>([]);
@@ -255,23 +274,26 @@ export default function PeerReviewsPage() {
       setLoading(false);
     } else if (!opts?.silent) {
       setLoading(true);
+      setLoadError("");
     }
 
     try {
       const [data, stats, githubConn] = await Promise.all([
         loadPeerReviewPageData(userId),
-        isApiEnabled() ? getPeerReviewStatsApi() : Promise.resolve(null),
+        isApiEnabled() ? getPeerReviewStatsApi().catch(() => null) : Promise.resolve(null),
         supabase
           .from("github_connections")
           .select("github_username")
           .eq("user_id", userId)
           .maybeSingle()
-          .then(({ data: row }) => row?.github_username ?? null),
+          .then(({ data: row }) => row?.github_username ?? null)
+          .catch(() => null),
       ]);
       if (gen !== loadGenRef.current) return;
 
       const merged = applyPageData(data, stats, walletReviewsRef.current);
       setLearnerGithub(githubConn);
+      setLoadError("");
       setLoading(false);
 
       peerReviewPageCache = {
@@ -302,9 +324,10 @@ export default function PeerReviewsPage() {
           })
           .catch(() => undefined);
       }
-    } catch {
+    } catch (err) {
       if (gen !== loadGenRef.current) return;
       setLoading(false);
+      setLoadError(err instanceof Error ? err.message : "Could not load peer reviews");
       throw new Error("load failed");
     }
   }, [applyPageData, declaredSkills, user?.id]);
@@ -314,7 +337,7 @@ export default function PeerReviewsPage() {
     void reload().catch(() => {
       toast({
         title: "Could not load reviews",
-        description: "Check GitHub sync on Integrations and try refreshing.",
+        description: "Check that the backend is running and GitHub is connected on Integrations, then refresh.",
         variant: "destructive",
       });
     });
@@ -394,10 +417,10 @@ export default function PeerReviewsPage() {
   const [inviteResendSource, setInviteResendSource] = useState<"peer" | "request" | "legacy">("peer");
   const [inviteContrib, setInviteContrib] = useState<ProjectContributor | null>(null);
   const [inviteSkill, setInviteSkill] = useState<string>(skillForProject);
-  const [inviteEmail, setInviteEmail] = useState<string>("");
   const [generatedLink, setGeneratedLink] = useState<string | null>(null);
   const [learnerGithub, setLearnerGithub] = useState<string | null>(null);
   const [sendingInviteId, setSendingInviteId] = useState<string | null>(null);
+  const [selectedContributorIds, setSelectedContributorIds] = useState<string[]>([]);
 
   const selectedReviewer = useMemo(
     () => (inviteContrib ? contributorToInviteReviewer(inviteContrib, learnerGithub) : null),
@@ -410,7 +433,6 @@ export default function PeerReviewsPage() {
     setInviteResendSource("peer");
     setInviteContrib(c);
     setInviteSkill(skillForProject);
-    setInviteEmail(c.email ?? "");
     setGeneratedLink(null);
     setInviteOpen(true);
   };
@@ -427,7 +449,6 @@ export default function PeerReviewsPage() {
     setInviteResendSource(pendingInvite?.recordSource ?? "peer");
     setInviteContrib(c);
     setInviteSkill(pendingInvite?.skill ?? skillForProject);
-    setInviteEmail(pendingInvite?.contributorEmail ?? c.email ?? "");
     setGeneratedLink(null);
     setInviteOpen(true);
   };
@@ -526,24 +547,21 @@ export default function PeerReviewsPage() {
       return;
     }
 
-    setContextRequests((prev) => prev.map((item) => (
-      item.id === invitation.id
-        ? { ...item, token: result.token, status: "Sent", sentAt: new Date().toISOString() }
-        : item
-    )));
-    if (result.viaFallback) {
-      await navigator.clipboard.writeText(result.reviewLink);
-      toast({
-        title: "Review link refreshed",
-        description: `Backend is offline — link copied to clipboard. Share it with ${invitation.contributorEmail} manually, or start the backend to send email.`,
-      });
-      return;
+    if (result.status !== "resend_blocked") {
+      setContextRequests((prev) => prev.map((item) => (
+        item.id === invitation.id
+          ? { ...item, token: result.token, status: "Sent", sentAt: new Date().toISOString() }
+          : item
+      )));
     }
-
-    toast({
-      title: "Invitation resent",
-      description: `Review link emailed again to ${invitation.contributorEmail}.`,
-    });
+    toast(inviteDeliveryToast(
+      result.status,
+      invitation.contributorEmail,
+      true,
+      invitation.skill,
+      undefined,
+      result.emailDeliveryStatus,
+    ));
   };
 
   const quickSendInvite = async (c: ProjectContributor) => {
@@ -551,7 +569,10 @@ export default function PeerReviewsPage() {
 
     const email = (c.email ?? "").trim().toLowerCase();
     if (!email) {
-      openInvite(c);
+      toast({
+        title: "Email unavailable",
+        description: "GitHub has not published a profile email for this contributor. No invitation was created.",
+      });
       return;
     }
 
@@ -585,7 +606,7 @@ export default function PeerReviewsPage() {
 
         if (result) {
           rememberSentInvite(c, email, skillName, skillId, result);
-          toast({ title: "Review invitation sent successfully" });
+          toast(inviteDeliveryToast(result.status, email, false, undefined, undefined, result.emailDeliveryStatus));
           return;
         }
 
@@ -595,36 +616,17 @@ export default function PeerReviewsPage() {
             description: apiError,
             variant: "destructive",
           });
+          return;
         }
-      }
-
-      const result = await sendPeerReviewInvite({
-        userId: user.id,
-        project: selectedProject,
-        contributor: c,
-        skillName,
-        skillId,
-        contributorEmail: email,
-      });
-
-      if (!result.ok) {
-        toast({
-          title: "Could not send invitation",
-          description: result.error === "email_required"
-            ? "Contributor email is required before sending an invite."
-            : result.error ?? "Try again later.",
-          variant: "destructive",
-        });
         return;
       }
 
-      if (result.invite) {
-        setContextRequests((prev) => [
-          result.invite!,
-          ...prev.filter((item) => item.id !== result.invite!.id),
-        ]);
-      }
-      toast({ title: "Review invitation sent successfully" });
+      toast({
+        title: "Backend required",
+        description: "Contributor invitations are created only after the backend confirms a public GitHub profile email.",
+        variant: "destructive",
+      });
+      return;
     } finally {
       setSendingInviteId(null);
     }
@@ -633,20 +635,17 @@ export default function PeerReviewsPage() {
   const sendInvite = async () => {
     if (!selectedProject) return;
     if (!inviteContrib) return;
-    if (!inviteEmail.trim()) {
-      toast({ title: "Email required", description: "We need a contact email to send the review invitation." });
-      return;
-    }
-
-    const normalizedEmail = (inviteContrib.email ?? inviteEmail).trim().toLowerCase();
-    if (!normalizedEmail) {
+    const storedEmail = isDeliverableContributorEmail(inviteContrib.email)
+      ? inviteContrib.email!.trim().toLowerCase()
+      : "";
+    if (!inviteResend && !storedEmail) {
       toast({
-        title: "Contributor email required",
-        description: "Sync GitHub contributors or wait for a verified contact email before inviting this reviewer.",
-        variant: "destructive",
+        title: "Email unavailable",
+        description: "GitHub has not published a profile email for this contributor. No invitation was created.",
       });
       return;
     }
+    const normalizedEmail = storedEmail;
 
     const contributorId = inviteContrib.id;
     const inviteTargetName = inviteContrib.name;
@@ -671,24 +670,15 @@ export default function PeerReviewsPage() {
         return;
       }
 
-      setGeneratedLink(result.reviewLink);
-      setContextRequests((prev) => prev.map((item) => (
-        item.id === result.inviteId
-          ? { ...item, token: result.token, status: "Sent", sentAt: new Date().toISOString() }
-          : item
-      )));
-      if (result.viaFallback) {
-        toast({
-          title: "Review link refreshed",
-          description: `Backend is offline — share this link with ${normalizedEmail} manually, or start the backend to send email.`,
-        });
-        return;
+      if (result.status !== "resend_blocked") {
+        setGeneratedLink(result.reviewLink);
+        setContextRequests((prev) => prev.map((item) => (
+          item.id === result.inviteId
+            ? { ...item, token: result.token, status: "Sent", sentAt: new Date().toISOString() }
+            : item
+        )));
       }
-
-      toast({
-        title: "Invitation resent",
-        description: `Review link emailed again to ${normalizedEmail}.`,
-      });
+      toast(inviteDeliveryToast(result.status, normalizedEmail, true, inviteSkillName, selectedProject.name, result.emailDeliveryStatus));
       return;
     }
 
@@ -731,45 +721,15 @@ export default function PeerReviewsPage() {
 
         setGeneratedLink(result.reviewLink);
         rememberSentInvite(inviteContrib, normalizedEmail, inviteSkillName, skillId, result);
-        toast({
-          title: inviteResend
-            ? "Invitation resent"
-            : result.status === "already_invited"
-              ? "Invitation already pending"
-              : "Review invitation sent successfully",
-          description: inviteResend
-            ? `Review link emailed again to ${normalizedEmail}.`
-            : result.status === "already_invited"
-              ? `An invitation is already pending for ${normalizedEmail}. Use Resend if you need to email the link again.`
-              : `Review invitation emailed to ${normalizedEmail} for ${inviteSkillName} on ${selectedProject.name}.`,
-        });
+        toast(inviteDeliveryToast(result.status, normalizedEmail, inviteResend, inviteSkillName, selectedProject.name, result.emailDeliveryStatus));
         return;
       }
 
-      const result = await sendPeerReviewInvite({
-        userId: user!.id,
-        project: selectedProject,
-        contributor: inviteContrib,
-        skillName: inviteSkillName,
-        skillId,
-        contributorEmail: normalizedEmail,
+      toast({
+        title: "Backend required",
+        description: "Contributor invitations are created only after the backend confirms a public GitHub profile email.",
+        variant: "destructive",
       });
-
-      if (!result.ok || !result.invite) {
-        toast({
-          title: "Could not send invitation",
-          description: result.error ?? "Try again later.",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      setGeneratedLink(`${window.location.origin}/review/request/${result.invite.token}`);
-      setContextRequests((prev) => [
-        result.invite!,
-        ...prev.filter((item) => item.id !== result.invite!.id),
-      ]);
-      toast({ title: "Review invitation sent successfully" });
     } finally {
       setSendingInviteId(null);
     }
@@ -825,20 +785,62 @@ export default function PeerReviewsPage() {
     }
   };
 
-  const inviteRemaining = async () => {
-    const pending = contributorRows.filter((row) => row.status === "Review Pending");
-    const needsEmail = pending.find((row) => !row.contributor.email);
-    if (needsEmail) {
-      openInvite(needsEmail.contributor);
+  const requestSelectedFeedback = async () => {
+    const selected = contributorRows.filter((row) => selectedContributorIds.includes(row.contributor.id));
+    if (!selected.length) {
+      toast({ title: "Select contributors", description: "Choose one or more contributors, then request feedback." });
+      return;
+    }
+    const needsEmail = selected.find((row) => !isDeliverableContributorEmail(row.contributor.email));
+    const ready = selected.filter((row) => isDeliverableContributorEmail(row.contributor.email));
+    if (needsEmail && ready.length === 0) {
+      toast({
+        title: "Email unavailable",
+        description: "No invitation was created. GitHub has not published a profile email for the selected contributors.",
+      });
       return;
     }
     setBulkBusy(true);
     try {
-      for (const row of pending) {
+      for (const row of ready) {
         await quickSendInvite(row.contributor);
       }
     } finally {
       setBulkBusy(false);
+      setSelectedContributorIds([]);
+    }
+    if (needsEmail) {
+      toast({
+        title: "Email unavailable",
+        description: "Contributors without a public GitHub profile email were skipped. No invitation was created for them.",
+      });
+    }
+  };
+
+  const inviteRemaining = async () => {
+    const pending = contributorRows.filter((row) => row.status === "Review Pending");
+    const ready = pending.filter((row) => isDeliverableContributorEmail(row.contributor.email));
+    const skipped = pending.length - ready.length;
+    if (!ready.length) {
+      toast({
+        title: "Email unavailable",
+        description: "No invitation was created. GitHub has not published a profile email for these contributors.",
+      });
+      return;
+    }
+    setBulkBusy(true);
+    try {
+      for (const row of ready) {
+        await quickSendInvite(row.contributor);
+      }
+    } finally {
+      setBulkBusy(false);
+    }
+    if (skipped > 0) {
+      toast({
+        title: "Email unavailable",
+        description: "Contributors without a public GitHub profile email were skipped.",
+      });
     }
   };
 
@@ -869,6 +871,19 @@ export default function PeerReviewsPage() {
     <LearnerWorkspaceShell variant="dashboard">
       {loading ? (
         <div className="mb-6"><PageSkeleton rows={4} /></div>
+      ) : loadError && projects.length === 0 && reviews.length === 0 ? (
+        <div className="learner-stat-card mb-6 px-6 py-10 text-center">
+          <p className="font-semibold text-[#0f172a]">Peer reviews could not load</p>
+          <p className="mt-1 text-sm text-[#64748b]">
+            Start the backend with FABRIC_ENABLED=false, then refresh this page.
+          </p>
+          <Button
+            className="mt-4 rounded-xl bg-[#023E8A] hover:bg-[#012A5C]"
+            onClick={() => void reload().catch(() => undefined)}
+          >
+            Retry
+          </Button>
+        </div>
       ) : declaredSkills.length === 0 ? (
         <PeerReviewsEmptySkills onGoProfile={() => navigate("/learner/my-profile")} />
       ) : projects.length === 0 && reviews.length === 0 ? (
@@ -931,6 +946,11 @@ export default function PeerReviewsPage() {
             {projects.length > 0 && (
             <PeerReviewContributorsBoard
               rows={contributorRows}
+              selectedIds={selectedContributorIds}
+              onToggleSelect={(id) => setSelectedContributorIds((current) => (
+                current.includes(id) ? current.filter((item) => item !== id) : [...current, id]
+              ))}
+              onRequestSelected={() => void requestSelectedFeedback()}
               visibleRows={visibleContributorRows}
               coverage={coverage}
               filter={contributorFilter}
@@ -939,7 +959,13 @@ export default function PeerReviewsPage() {
               sendingId={sendingInviteId}
               onViewReview={scrollToReview}
               onResend={openResendInvite}
-              onInvite={(contributor) => void quickSendInvite(contributor)}
+              onInvite={(contributor) => {
+                if (isDeliverableContributorEmail(contributor.email)) {
+                  void quickSendInvite(contributor);
+                  return;
+                }
+                openInvite(contributor);
+              }}
             />
             )}
 
@@ -1008,10 +1034,10 @@ export default function PeerReviewsPage() {
                     <div className="font-medium text-[#0f172a]">{selectedReviewer.name}</div>
                     {selectedReviewer.githubUsername ? (
                       <p className="text-xs text-[#64748b]">@{selectedReviewer.githubUsername}</p>
-                    ) : inviteEmail.trim() ? (
-                      <p className="text-xs text-[#64748b]">{inviteEmail.trim()}</p>
+                    ) : isDeliverableContributorEmail(inviteContrib.email) ? (
+                      <p className="text-xs text-[#64748b]">{inviteContrib.email}</p>
                     ) : (
-                      <p className="text-xs text-[#64748b]">Enter contact email below</p>
+                      <p className="text-xs text-[#64748b]">Email unavailable</p>
                     )}
                     <div className="mt-0.5 text-xs text-[#94a3b8]">{selectedReviewer.role}</div>
                   </div>
@@ -1019,29 +1045,30 @@ export default function PeerReviewsPage() {
               )}
               <div>
                 <Label className="text-[11px] font-semibold uppercase tracking-wide text-[#64748b]">Contact email</Label>
-                <Input
-                  className="mt-1.5 rounded-xl border-[#e2e8f0]"
-                  value={inviteContrib.email ?? inviteEmail}
-                  readOnly={Boolean(inviteContrib.email) || inviteResend}
-                  onChange={(e) => {
-                    if (!inviteContrib.email && !inviteResend) {
-                      setInviteEmail(e.target.value);
-                    }
-                  }}
-                  placeholder="contributor@example.com"
-                />
+                {isDeliverableContributorEmail(inviteContrib.email) ? (
+                  <Input
+                    className="mt-1.5 rounded-xl border-[#e2e8f0]"
+                    value={inviteContrib.email}
+                    readOnly
+                  />
+                ) : (
+                  <p className="mt-1 text-xs font-medium text-[#CA8A04]">Email unavailable</p>
+                )}
                 <p className="mt-1 text-xs text-[#94a3b8]">
-                  {inviteContrib.email || inviteResend
-                    ? "Locked to this contributor."
-                    : "Enter their email. It stays locked after send."}
+                  {isDeliverableContributorEmail(inviteContrib.email)
+                    ? "This address comes from the public GitHub profile and cannot be changed."
+                    : "GitHub has not published a profile email. Request Feedback stays off, and no invitation is created."}
                 </p>
               </div>
               <div>
                 <Label className="text-[11px] font-semibold uppercase tracking-wide text-[#64748b]">Skill</Label>
-                <Select value={inviteSkill} onValueChange={setInviteSkill}>
-                  <SelectTrigger className="mt-1.5 rounded-xl border-[#e2e8f0]"><SelectValue /></SelectTrigger>
+                <Select
+                  value={skillOptions.includes(inviteSkill) ? inviteSkill : undefined}
+                  onValueChange={setInviteSkill}
+                >
+                  <SelectTrigger className="mt-1.5 rounded-xl border-[#e2e8f0]"><SelectValue placeholder="Select a skill" /></SelectTrigger>
                   <SelectContent>
-                    {skillOptions.map((name) => (
+                    {skillOptions.filter(Boolean).map((name) => (
                       <SelectItem key={name} value={name}>{name}</SelectItem>
                     ))}
                   </SelectContent>
@@ -1068,9 +1095,17 @@ export default function PeerReviewsPage() {
           <DialogFooter className="border-t border-[#e2e8f0] px-6 py-4">
             <Button variant="outline" className="rounded-xl border-[#e2e8f0]" onClick={() => setInviteOpen(false)}>Close</Button>
             {!generatedLink && (
-              <Button className="rounded-xl bg-[#023E8A] hover:bg-[#012A5C]" onClick={() => void sendInvite()} disabled={Boolean(sendingInviteId)}>
+              <Button
+                className="rounded-xl bg-[#023E8A] hover:bg-[#012A5C]"
+                onClick={() => void sendInvite()}
+                disabled={
+                  Boolean(sendingInviteId)
+                  || !inviteContrib
+                  || !isDeliverableContributorEmail(inviteContrib.email)
+                }
+              >
                 <Mail className="mr-1.5 h-4 w-4" />
-                {inviteResend ? "Resend email" : "Send invite"}
+                {inviteResend ? "Resend email" : "Request Feedback"}
               </Button>
             )}
           </DialogFooter>

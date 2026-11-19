@@ -287,7 +287,7 @@ export function RecruiterUpcomingInterviews({
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium text-[#023E8A]">{row.candidateName}</p>
                   <p className="text-xs text-[#64748b]">
-                    {formatInterviewDateTime(row.scheduledAt)} · {INTERVIEW_MODE_LABELS[row.mode]}
+                    {formatInterviewDateTime(row.scheduledAt, row.timeZone)} · {INTERVIEW_MODE_LABELS[row.mode]}
                   </p>
                 </div>
               </button>

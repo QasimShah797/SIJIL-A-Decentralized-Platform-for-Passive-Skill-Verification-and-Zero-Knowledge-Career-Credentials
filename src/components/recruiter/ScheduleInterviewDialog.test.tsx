@@ -27,6 +27,7 @@ function saved(emailStatus: string): ScheduledInterviewView {
     mode: "video_call",
     locationOrLink: "https://meet.example.com/sijil",
     notes: null,
+    timeZone: "Asia/Karachi",
     status: "scheduled",
     cancelledAt: null,
     emailStatus,
@@ -59,6 +60,10 @@ describe("schedule interview dialog", () => {
       }));
     });
     expect(JSON.stringify(vi.mocked(toast).mock.calls)).not.toContain("learner@example.com");
+    const payload = vi.mocked(scheduleInterviewApi).mock.calls[0][0];
+    expect(payload.timeZone).toBeTruthy();
+    expect(payload).not.toHaveProperty("candidateEmail");
+    expect(payload.candidateId).toBe("learner-1");
   });
 
   it("keeps a saved interview separate from an email rejection", async () => {

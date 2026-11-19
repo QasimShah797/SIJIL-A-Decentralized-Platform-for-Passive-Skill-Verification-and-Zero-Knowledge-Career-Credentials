@@ -21,7 +21,7 @@ export interface PeerReviewContributorView {
   relationship: Relationship;
   avatarUrl?: string;
   verified: boolean;
-  reviewStatus: "Imported Review Found" | "Review Received" | "Invite Sent" | "Review Pending";
+  reviewStatus: "Imported Review Found" | "Review Received" | "Invite Sent" | "Email failed" | "Email not sent" | "Email pending" | "Delivery not confirmed" | "Review Pending";
   reviewId?: string;
   inviteId?: string;
 }
@@ -94,6 +94,7 @@ export interface PeerReviewInviteResult {
   token: string;
   reviewLink: string;
   status: string;
+  emailDeliveryStatus?: "pending" | "sent" | "failed" | "not_sent" | "unknown";
   importedReviewId?: string;
   alreadyReviewed?: boolean;
 }

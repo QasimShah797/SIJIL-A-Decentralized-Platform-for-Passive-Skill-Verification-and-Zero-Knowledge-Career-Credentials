@@ -24,6 +24,7 @@ import LearnerValidation from "./pages/learner/Validation";
 import LearnerWallet from "./pages/learner/WalletPage";
 import SecureIdentity from "./pages/learner/SecureIdentity";
 import LearnerPeerReviews from "./pages/learner/PeerReviews";
+import LearnerInterviews from "./pages/learner/Interviews";
 import LearnerVerificationRequests from "./pages/learner/VerificationRequests";
 import LearnerCredentialDetails from "./pages/learner/CredentialDetails";
 import LearnerCredentialProof from "./pages/learner/CredentialProof";
@@ -107,6 +108,7 @@ const App = () => (
           <Route path="/learner/secure-identity" element={<LR><SecureIdentity /></LR>} />
           <Route path="/learner/zkp" element={<Navigate to="/learner/wallet" replace />} />
           <Route path="/learner/peer-reviews" element={<LR><LearnerPeerReviews /></LR>} />
+          <Route path="/learner/interviews" element={<LR><LearnerInterviews /></LR>} />
           <Route path="/learner/verification-requests" element={<LR><LearnerVerificationRequests /></LR>} />
           <Route path="/learner/credential/:id" element={<LR><LearnerCredentialDetails /></LR>} />
           <Route path="/learner/credential/:id/proof" element={<LR><LearnerCredentialProof /></LR>} />

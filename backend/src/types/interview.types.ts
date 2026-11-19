@@ -7,6 +7,7 @@ export interface ScheduleInterviewInput {
   mode: InterviewMode;
   locationOrLink: string;
   notes?: string;
+  timeZone?: string;
 }
 
 export interface ScheduledInterviewView {
@@ -22,6 +23,7 @@ export interface ScheduledInterviewView {
   mode: InterviewMode;
   locationOrLink: string;
   notes: string | null;
+  timeZone?: string | null;
   status: InterviewStatus;
   cancelledAt: string | null;
   emailStatus: string;
@@ -39,4 +41,6 @@ export interface InterviewEmailDetails {
   mode: InterviewMode;
   locationOrLink: string;
   notes?: string | null;
+  timeZone?: string | null;
+  portalUrl?: string | null;
 }

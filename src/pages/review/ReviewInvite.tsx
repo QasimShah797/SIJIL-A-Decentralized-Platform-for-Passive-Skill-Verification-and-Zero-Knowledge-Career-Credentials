@@ -98,25 +98,25 @@ export default function ReviewInvite() {
     const emailMatch = Boolean(invitedEmail && entered && entered === invitedEmail);
     const githubMatch = Boolean(invitedGithub && enteredGithub && enteredGithub === invitedGithub);
 
-    if (invitedEmail && invitedGithub) {
-      if (!emailMatch && !githubMatch) {
-        toast({
-          title: "Not authorized",
-          description: "This review link is only for the invited reviewer. Enter your invited email or GitHub username.",
-          variant: "destructive",
-        });
-        return;
-      }
-    } else if (invitedEmail) {
-      if (!emailMatch) {
-        toast({
-          title: "Not authorized",
-          description: "This review link is only for the invited reviewer.",
-          variant: "destructive",
-        });
-        return;
-      }
-    } else if (invitedGithub) {
+    if (invitedEmail && !emailMatch) {
+      toast({
+        title: "Not authorized",
+        description: "Enter the invited email address. A GitHub username does not replace it and does not prove GitHub account ownership.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (enteredGithub && invitedGithub && !githubMatch) {
+      toast({
+        title: "Not authorized",
+        description: "The GitHub username does not match the invited contributor.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!invitedEmail && invitedGithub) {
       if (!githubMatch) {
         toast({
           title: "Not authorized",
@@ -186,7 +186,10 @@ export default function ReviewInvite() {
 
       await markInvitationUsed(freshInvitation.id);
       setState("submitted");
-      toast({ title: "Review submitted", description: "Stored as a context-verified trust signal." });
+      toast({
+        title: "Review submitted",
+        description: "Stored for this invitation. Possessing the email link does not prove GitHub account ownership.",
+      });
     } catch (e) {
       const message = e instanceof Error ? e.message : "Could not submit review";
       toast({
@@ -311,7 +314,7 @@ export default function ReviewInvite() {
           <CardHeader>
             <CardTitle className="text-base">Verify your identity</CardTitle>
             <p className="text-sm text-muted-foreground">
-              Please verify your invited email or GitHub username before submitting this review.
+              Enter the invited email. That shows you received this link. It does not prove you control the contributor's GitHub account.
             </p>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -347,7 +350,7 @@ export default function ReviewInvite() {
           <CardHeader>
             <CardTitle className="text-base">Review form</CardTitle>
             <p className="text-sm text-muted-foreground">
-              Please verify your invited email or GitHub username before submitting this review.
+              Enter the invited email. That shows you received this link. It does not prove you control the contributor's GitHub account.
             </p>
           </CardHeader>
           <CardContent className="space-y-4">
