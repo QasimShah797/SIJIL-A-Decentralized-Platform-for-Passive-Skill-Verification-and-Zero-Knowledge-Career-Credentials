@@ -104,7 +104,8 @@ export function LMSActivityPanel({
               <IntegrationEmptyState
                 compact
                 icon={BookOpen}
-                title="This Moodle account is connected but is not enrolled in any courses."
+                title="No Moodle courses are imported for this account yet."
+                hint="Sync again. Assignment grades still import when the Moodle grade report is unavailable."
                 action={
                   <Button size="sm" variant="outline" className="rounded-xl" onClick={onSync} disabled={syncing}>
                     <RefreshCw className={"mr-1.5 h-3.5 w-3.5 " + (syncing ? "animate-spin" : "")} />

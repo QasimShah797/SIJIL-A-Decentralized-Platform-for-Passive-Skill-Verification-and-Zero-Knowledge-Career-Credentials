@@ -12,7 +12,7 @@ import {
 import { repairMoodleEvidenceRecords } from "./moodle-evidence-records.ts";
 
 /** Bump when deploying — exposed in test/sync responses so frontend can detect stale deploys. */
-const FUNCTION_VERSION = "3.4.0";
+const FUNCTION_VERSION = "3.5.0";
 
 const SUPPORTED_ACTIONS = [
   "test",

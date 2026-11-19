@@ -4,6 +4,7 @@ import { useCredentials } from "@/hooks/useLearnerData";
 import type { CredentialView } from "@/lib/db/credentials";
 import type { WalletShareFieldId } from "@/lib/wallet-competency-shared";
 import {
+  emailPublicShareApi,
   getWalletCompetenciesApi,
   listOwnerSharesApi,
   revokeWalletShareApi,
@@ -108,9 +109,53 @@ export function SignedPresentationCard({ onBack }: { onBack: () => void }) {
     toast({ title: "Visible to all SIJIL recruiters" });
   };
 
+  const createPublicLink = async (input: {
+    credentialId: string;
+    selectedFields: string[];
+    expiresInDays: number;
+  }) => {
+    const rows = await getWalletCompetenciesApi();
+    if (!rows) {
+      throw new Error("The wallet service is unavailable. Start the SIJIL API and try again.");
+    }
+    const credential = credentials.find((item) => item.id === input.credentialId);
+    if (!credential) throw new Error("Select an issued credential.");
+    const skill = credential.skill !== "—" ? credential.skill : credential.name;
+    const wanted = skill.trim().toLowerCase();
+    const matches = rows.filter((row) => row.competencyName.trim().toLowerCase() === wanted);
+    if (matches.length !== 1) {
+      throw new Error(`${skill} is not available to share from the wallet yet.`);
+    }
+    const request = walletShareRequest({
+      competencyId: matches[0].competencyId,
+      selectedFields: input.selectedFields,
+      expiresInDays: input.expiresInDays,
+    });
+    const created = await shareWalletCompetencyApi({
+      ...request,
+      selectedFields: request.selectedFields as WalletShareFieldId[],
+    });
+    try {
+      sessionStorage.setItem(
+        `sijil.share.${created.shareId}`,
+        JSON.stringify({ token: created.token, url: created.shareUrl }),
+      );
+    } catch {
+      // ignore quota / private-mode failures
+    }
+    await loadShares();
+    toast({ title: "Public verification link created" });
+    return {
+      shareUrl: created.shareUrl,
+      shareId: created.shareId,
+      token: created.token,
+      skillName: skill,
+    };
+  };
+
   const revokeManagedShare = async (shareId: string) => {
     const confirmed = window.confirm(
-      "Stop this share? Recruiters will lose access the next time they open SIJIL. A copy they already saved is not deleted.",
+      "Stop this share? Access ends the next time someone opens SIJIL or the public link. A copy they already saved is not deleted.",
     );
     if (!confirmed) return;
     const stopped = await revokeWalletShareApi(shareId);
@@ -129,6 +174,10 @@ export function SignedPresentationCard({ onBack }: { onBack: () => void }) {
       }))}
       onBack={onBack}
       onShareAll={shareWithAllRecruiters}
+      onCreatePublicLink={createPublicLink}
+      onEmailPublicLink={async (input) => {
+        await emailPublicShareApi(input);
+      }}
       managedShares={managedShares}
       onRevokeManagedShare={revokeManagedShare}
     />

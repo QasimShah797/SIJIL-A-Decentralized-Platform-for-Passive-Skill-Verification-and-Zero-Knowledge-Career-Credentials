@@ -9,6 +9,12 @@ export const shareIdParamSchema = z.object({
   shareId: z.string().uuid(),
 });
 
+export const emailPublicShareSchema = z.object({
+  recipientEmail: z.string().trim().email("Enter a valid recipient email address."),
+  /** Raw share token from link creation; never logged. Must match the stored hash. */
+  token: z.string().min(16).max(128),
+});
+
 export const presentationTokenParamSchema = z.object({
   token: z.string().min(16),
 });

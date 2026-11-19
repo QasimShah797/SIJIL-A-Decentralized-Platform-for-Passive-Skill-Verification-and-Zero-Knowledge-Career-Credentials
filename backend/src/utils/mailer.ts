@@ -11,6 +11,7 @@ import { safeSmtpFailure, smtpResponseCode } from "./invite-email-delivery";
 export { escapeHtml, wrapSijilEmail };
 
 let transporter: Transporter | null = null;
+let transporterKey: string | null = null;
 
 export function isSmtpConfigured(): boolean {
   return Boolean(env.SMTP_USER && env.SMTP_PASS);
@@ -24,7 +25,9 @@ function getTransporter(): Transporter {
   if (!isSmtpConfigured()) {
     throw new Error("SMTP is not configured");
   }
-  if (!transporter) {
+  // Rebuild when host/user/port change after an env update without full process insight.
+  const nextKey = `${env.SMTP_HOST}|${env.SMTP_PORT}|${env.SMTP_USER}`;
+  if (!transporter || transporterKey !== nextKey) {
     transporter = nodemailer.createTransport({
       host: env.SMTP_HOST,
       port: env.SMTP_PORT,
@@ -38,6 +41,7 @@ function getTransporter(): Transporter {
       greetingTimeout: 15_000,
       socketTimeout: 20_000,
     });
+    transporterKey = nextKey;
   }
   return transporter;
 }

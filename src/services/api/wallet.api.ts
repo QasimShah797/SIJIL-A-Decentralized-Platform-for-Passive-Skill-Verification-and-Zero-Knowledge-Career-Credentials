@@ -154,6 +154,23 @@ export async function revokeWalletShareApi(shareId: string): Promise<boolean> {
   }
 }
 
+export async function emailPublicShareApi(input: {
+  shareId: string;
+  recipientEmail: string;
+  token: string;
+}): Promise<{ sent: true; recipientEmail: string }> {
+  return apiRequest<{ sent: true; recipientEmail: string }>(
+    `/wallet/shares/${encodeURIComponent(input.shareId)}/email`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        recipientEmail: input.recipientEmail,
+        token: input.token,
+      }),
+    },
+  );
+}
+
 export async function getPublicPresentationApi(
   token: string,
 ): Promise<PublicPresentationView> {

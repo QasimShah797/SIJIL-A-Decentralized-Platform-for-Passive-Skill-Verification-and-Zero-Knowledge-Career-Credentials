@@ -301,10 +301,27 @@ async function fetchCourseGradeReport(
     }
   };
 
-  const result = await tryCallMoodle("gradereport_user_get_grade_items", {
-    userid: moodleUserId,
-    courseid: courseId,
-  });
+  let result: Awaited<ReturnType<typeof tryCallMoodle>>;
+  try {
+    result = await tryCallMoodle("gradereport_user_get_grade_items", {
+      userid: moodleUserId,
+      courseid: courseId,
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    logSyncStage("gradereport_user_get_grade_items_failed", {
+      courseId,
+      courseName,
+      moodleUserId,
+      error: msg,
+    });
+    return {
+      byAssignmentId,
+      byName,
+      accessDenied: false,
+      failedWsfunction: "gradereport_user_get_grade_items",
+    };
+  }
 
   if (!result.ok && byAssignmentId.size === 0) {
     logSyncStage("gradereport_user_get_grade_items_failed", {
@@ -1220,14 +1237,18 @@ function extractFromSubmissionStatusResponse(
   const submission = lastAttempt ?? undefined;
   const submissionFound = Boolean(lastAttempt);
 
-  const gradeBlock = lastAttempt?.grade as Record<string, unknown> | undefined;
+  const feedbackGrade = (response?.feedback as Record<string, unknown> | undefined)?.grade as Record<string, unknown> | undefined;
+  const gradeBlock = (lastAttempt?.grade as Record<string, unknown> | undefined) ?? feedbackGrade;
   const grade = parseMoodleGrade(
     gradeBlock?.value
     ?? gradeBlock?.grade
     ?? gradeBlock?.graderaw
     ?? gradeBlock?.rawgrade
     ?? gradeBlock?.strgrade
-    ?? gradeBlock?.formatted,
+    ?? gradeBlock?.formatted
+    ?? feedbackGrade?.grade
+    ?? feedbackGrade?.graderaw
+    ?? feedbackGrade?.gradeformatted,
   );
   const gradeMax = parseNum(
     gradeBlock?.max
@@ -2197,6 +2218,205 @@ type PendingGradeItem = {
   raw: Record<string, unknown>;
 };
 
+type EnrolledMoodleCourse = {
+  id: number;
+  fullname?: string;
+  shortname?: string | null;
+  summary?: string | null;
+  [key: string]: unknown;
+};
+
+/** Moodle sometimes returns a course list as an id-keyed object instead of an array. */
+function coerceMoodleCourseList(value: unknown): EnrolledMoodleCourse[] {
+  const rawItems: unknown[] = [];
+  if (Array.isArray(value)) {
+    rawItems.push(...value);
+  } else if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    if (Array.isArray(record.courses)) rawItems.push(...record.courses);
+    else {
+      for (const item of Object.values(record)) {
+        if (item && typeof item === "object") rawItems.push(item);
+      }
+    }
+  }
+
+  const courses: EnrolledMoodleCourse[] = [];
+  for (const item of rawItems) {
+    if (!item || typeof item !== "object") continue;
+    const row = item as Record<string, unknown>;
+    const id = Number(row.id ?? row.courseid ?? 0);
+    // Course id 1 is the Moodle site home, not a learner course.
+    if (!Number.isFinite(id) || id <= 1) continue;
+    const fullname = typeof row.fullname === "string"
+      ? row.fullname
+      : typeof row.displayname === "string"
+        ? row.displayname
+        : undefined;
+    courses.push({
+      ...row,
+      id,
+      fullname,
+      shortname: typeof row.shortname === "string" ? row.shortname : null,
+      summary: typeof row.summary === "string" ? row.summary : null,
+    });
+  }
+  return courses;
+}
+
+function rememberCourses(
+  collected: Map<number, EnrolledMoodleCourse>,
+  list: unknown,
+  source: string,
+) {
+  const courses = coerceMoodleCourseList(list);
+  logSyncStage("enrolled_course_source", {
+    source,
+    count: courses.length,
+    ids: courses.map((course) => course.id),
+    names: courses.map((course) => course.fullname || course.shortname || `Course ${course.id}`),
+  });
+  for (const course of courses) {
+    const existing = collected.get(course.id);
+    collected.set(course.id, existing ? { ...course, ...existing, id: course.id } : course);
+  }
+}
+
+function payloadHasLearner(
+  payload: unknown,
+  moodleUserId: number,
+  collectionKey: "grades" | "submissions",
+): boolean {
+  const blocks = (payload as { assignments?: Array<Record<string, unknown>> } | null)?.assignments ?? [];
+  for (const block of blocks) {
+    const rows = (block[collectionKey] as Array<{ userid?: number }> | undefined) ?? [];
+    if (rows.some((row) => Number(row.userid) === moodleUserId)) return true;
+  }
+  return false;
+}
+
+/**
+ * Enrolment web services can return an empty list while assignment grade APIs
+ * still contain the learner (suspended enrolment, object-shaped responses, or
+ * a grade-report permission gap). A graded assignment is still learner evidence.
+ */
+async function discoverCoursesWithLearnerGrades(
+  moodleUserId: number,
+): Promise<EnrolledMoodleCourse[]> {
+  let listed: unknown;
+  try {
+    const all = await tryCallMoodle("core_course_get_courses");
+    if (!all.ok) {
+      logSyncStage("course_catalogue_unavailable", { error: all.message });
+      return [];
+    }
+    listed = all.data;
+  } catch (err) {
+    logSyncStage("course_catalogue_unavailable", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return [];
+  }
+
+  const matched: EnrolledMoodleCourse[] = [];
+  for (const course of coerceMoodleCourseList(listed).slice(0, 40)) {
+    const courseName = course.fullname || course.shortname || `Course ${course.id}`;
+    const assigns = await fetchModAssignAssignments(course.id, courseName);
+    const assignmentIds = assigns.assignments.map((assignment) => assignment.id).filter((id) => id > 0);
+    if (!assignmentIds.length) continue;
+
+    try {
+      const grades = await tryCallMoodle("mod_assign_get_grades", { assignmentids: assignmentIds });
+      if (grades.ok && payloadHasLearner(grades.data, moodleUserId, "grades")) {
+        matched.push(course);
+        continue;
+      }
+      const submissions = await tryCallMoodle("mod_assign_get_submissions", { assignmentids: assignmentIds });
+      if (submissions.ok && payloadHasLearner(submissions.data, moodleUserId, "submissions")) {
+        matched.push(course);
+      }
+    } catch (err) {
+      logSyncStage("assignment_course_discovery_skipped", {
+        courseId: course.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  logSyncStage("assignment_course_discovery", {
+    moodleUserId,
+    count: matched.length,
+    ids: matched.map((course) => course.id),
+    names: matched.map((course) => course.fullname || course.shortname || `Course ${course.id}`),
+  });
+  return matched;
+}
+
+async function fetchLearnerEnrolledCourses(moodleUserId: number): Promise<EnrolledMoodleCourse[]> {
+  const collected = new Map<number, EnrolledMoodleCourse>();
+
+  try {
+    const enrolled = await tryCallMoodle("core_enrol_get_users_courses", {
+      userid: moodleUserId,
+      returnusercount: 0,
+    });
+    if (enrolled.ok) rememberCourses(collected, enrolled.data, "core_enrol_get_users_courses");
+    else {
+      logSyncStage("enrol_courses_unavailable", {
+        error: enrolled.message,
+        accessDenied: enrolled.accessDenied,
+      });
+    }
+  } catch (err) {
+    logSyncStage("enrol_courses_unavailable", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
+  if (collected.size === 0) {
+    for (const classification of ["inprogress", "past", "future"]) {
+      try {
+        const timeline = await tryCallMoodle(
+          "core_course_get_enrolled_courses_by_timeline_classification",
+          { classification, limit: 50, offset: 0, sort: "fullname" },
+        );
+        if (timeline.ok) {
+          const data = timeline.data as { courses?: unknown } | null;
+          rememberCourses(collected, data?.courses ?? timeline.data, `timeline:${classification}`);
+        }
+      } catch (err) {
+        logSyncStage("timeline_courses_unavailable", {
+          classification,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+      if (collected.size > 0) break;
+    }
+  }
+
+  if (collected.size === 0) {
+    try {
+      const recent = await tryCallMoodle("core_course_get_recent_courses", {
+        userid: moodleUserId,
+        limit: 20,
+      });
+      if (recent.ok) rememberCourses(collected, recent.data, "core_course_get_recent_courses");
+    } catch (err) {
+      logSyncStage("recent_courses_unavailable", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  if (collected.size === 0) {
+    for (const course of await discoverCoursesWithLearnerGrades(moodleUserId)) {
+      rememberCourses(collected, [course], "assignment_grade_discovery");
+    }
+  }
+
+  return [...collected.values()];
+}
+
 export async function syncLearnerMoodleActivities(
   admin: SupabaseClient,
   userId: string,
@@ -2252,10 +2472,7 @@ export async function syncLearnerMoodleActivities(
   );
 
   logSyncStage("fetch_enrolled_courses", { moodleUserId, moodleSiteUrl, sijilEmail: authEmail });
-  const enrolled = await callMoodle("core_enrol_get_users_courses", { userid: moodleUserId });
-  const courses = (Array.isArray(enrolled) ? enrolled : []).filter(
-    (c: { id?: number }) => c?.id && Number(c.id) > 1,
-  );
+  const courses = await fetchLearnerEnrolledCourses(moodleUserId);
 
   logMoodleIdentitySync({
     sijilEmail: authEmail,
@@ -2298,16 +2515,17 @@ export async function syncLearnerMoodleActivities(
     warnings.push(...courseWarnings);
 
     const gradeReport = await fetchCourseGradeReport(moodleUserId, courseId, courseName);
-    if (courseAssignApiDenied || gradeReport.accessDenied) {
-      if (!gradePermissionWarningAdded) {
-        warnings.push(MOODLE_GRADE_PERMISSION_WARNING);
-        gradePermissionWarningAdded = true;
-      }
+    // Grade report is enrichment only. Assignment APIs already carry grades and feedback.
+    if (courseAssignApiDenied && gradeReport.accessDenied && !gradePermissionWarningAdded) {
+      warnings.push(MOODLE_GRADE_PERMISSION_WARNING);
+      gradePermissionWarningAdded = true;
     }
-    if (gradeReport.accessDenied && gradeReport.failedWsfunction) {
-      warnings.push(
-        `${gradeReport.failedWsfunction} access denied for "${courseName}" (course id ${courseId}).`,
-      );
+    if (gradeReport.accessDenied || gradeReport.failedWsfunction) {
+      logSyncStage("grade_report_enrichment_unavailable", {
+        courseId,
+        courseName,
+        wsfunction: gradeReport.failedWsfunction ?? "gradereport_user_get_grade_items",
+      });
     }
 
     for (const assign of courseAssignments) {
@@ -2483,7 +2701,7 @@ export async function syncLearnerMoodleActivities(
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      warnings.push(`Grade report unavailable for ${courseName}: ${msg}`);
+      logSyncStage("grade_report_enrichment_unavailable", { courseId, courseName, error: msg });
     }
   }
 
@@ -2496,7 +2714,10 @@ export async function syncLearnerMoodleActivities(
     pendingGradeItems: pendingGradeItems.length,
   });
 
-  const courseRecordCleanup = await purgeLearnerMoodleCourseRecords(admin, userId);
+  // An empty enrolment response must not delete a previous successful import.
+  const courseRecordCleanup = courses.length > 0
+    ? await purgeLearnerMoodleCourseRecords(admin, userId)
+    : { moodle_feedback: 0, moodle_assignments: 0, moodle_courses: 0 };
   const cleanupStats: MoodleCleanupStats = {
     ...emptyCleanupStats(),
     ...courseRecordCleanup,

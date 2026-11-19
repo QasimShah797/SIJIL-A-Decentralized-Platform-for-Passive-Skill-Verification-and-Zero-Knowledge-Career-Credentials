@@ -17,6 +17,7 @@ import {
   fetchMoodleConnection,
   fetchMoodleCourseActivities,
   hasMoodleAccessControlWarning,
+  userFacingMoodleWarnings,
   resolveMoodleConnectionSiteHost,
   syncMoodleData,
   testMoodleConnection,
@@ -362,13 +363,14 @@ export default function Integrations() {
         title: "Moodle data updated successfully.",
         description: `${result.courses} courses · ${result.assignments} assignments · ${result.feedback} feedback records imported.`,
       });
-      if (result.warnings.length) {
+      const notes = userFacingMoodleWarnings(result.warnings);
+      if (notes.length) {
         toast({
-          title: hasMoodleAccessControlWarning(result.warnings)
+          title: hasMoodleAccessControlWarning(notes)
             ? "Moodle permission issue"
             : "Sync notes",
-          description: result.warnings.slice(0, 2).join(" "),
-          variant: hasMoodleAccessControlWarning(result.warnings) ? "destructive" : "default",
+          description: notes.slice(0, 2).join(" "),
+          variant: hasMoodleAccessControlWarning(notes) ? "destructive" : "default",
         });
       }
     } catch (err) {
@@ -394,13 +396,14 @@ export default function Integrations() {
         title: "Moodle data updated successfully.",
         description: `${result.assignments} assignments · ${result.feedback} feedback records across ${result.courses} courses.`,
       });
-      if (result.warnings.length) {
+      const notes = userFacingMoodleWarnings(result.warnings);
+      if (notes.length) {
         toast({
-          title: hasMoodleAccessControlWarning(result.warnings)
+          title: hasMoodleAccessControlWarning(notes)
             ? "Moodle permission issue"
             : "Sync notes",
-          description: result.warnings.slice(0, 2).join(" "),
-          variant: hasMoodleAccessControlWarning(result.warnings) ? "destructive" : "default",
+          description: notes.slice(0, 2).join(" "),
+          variant: hasMoodleAccessControlWarning(notes) ? "destructive" : "default",
         });
       }
     } catch (e) {
