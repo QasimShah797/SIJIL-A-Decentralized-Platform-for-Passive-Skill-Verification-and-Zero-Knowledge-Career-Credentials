@@ -4,7 +4,9 @@ import { toast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import {
   completeOAuthLearnerSignIn,
+  consumeOAuthSignInIntent,
   OAuthCancelledError,
+  setOAuthSignInIntent,
   startSocialSignIn,
   type SocialAuthProvider,
 } from "@/lib/oauth-signin";
@@ -55,12 +57,15 @@ export function AuthSocialLogin() {
     if (busyProvider) return;
     setBusyProvider(provider);
     try {
+      setOAuthSignInIntent("learner");
       const session = await startSocialSignIn(provider);
       const destination = await completeOAuthLearnerSignIn(session.user);
+      consumeOAuthSignInIntent();
       await refreshRoles();
       toast({ title: "Signed in" });
       navigate(destination, { replace: true });
     } catch (err) {
+      consumeOAuthSignInIntent();
       if (err instanceof OAuthCancelledError) return;
       toast({
         title: `${label} sign-in failed`,

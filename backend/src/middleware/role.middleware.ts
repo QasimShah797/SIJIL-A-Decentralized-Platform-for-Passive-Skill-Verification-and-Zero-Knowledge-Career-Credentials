@@ -5,6 +5,7 @@
 import { Request, Response, NextFunction } from "express";
 import { AppRole, ROLES } from "../constants/roles";
 import { AppError } from "../utils/AppError";
+import { isSupabaseEmailConfirmed } from "../utils/email-confirmed";
 
 export function requireRole(...allowed: AppRole[]) {
   return (req: Request, _res: Response, next: NextFunction): void => {
@@ -25,7 +26,31 @@ export function requireRole(...allowed: AppRole[]) {
 
 export const REVIEWER_ROLES: AppRole[] = [ROLES.REVIEWER, ROLES.INSTITUTION, ROLES.ADMIN];
 
-export const requireLearner = requireRole(ROLES.LEARNER, ROLES.ADMIN);
+/**
+ * Learner APIs require a learner/admin role and a Supabase-confirmed email
+ * (or OAuth identity). Recruiters are unaffected — they use requireRecruiter.
+ */
+export function requireLearner(req: Request, res: Response, next: NextFunction): void {
+  try {
+    requireRole(ROLES.LEARNER, ROLES.ADMIN)(req, res, () => {
+      if (req.userRoles?.includes(ROLES.ADMIN)) {
+        next();
+        return;
+      }
+      if (!isSupabaseEmailConfirmed(req.user)) {
+        next(new AppError(
+          "Email verification required. Confirm your email before using learner features.",
+          403,
+        ));
+        return;
+      }
+      next();
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 export const requireReviewer = requireRole(...REVIEWER_ROLES);
 /** @deprecated Institution UI is retired; use requireReviewer. Kept as a legacy alias. */
 export const requireInstitution = requireReviewer;

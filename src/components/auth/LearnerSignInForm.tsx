@@ -11,6 +11,11 @@ import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { ROLE_HOME, isDeniedAccess } from "@/lib/auth-helpers";
 import { verifyLearnerAccess } from "@/lib/learner-auth";
+import {
+  isEmailNotConfirmedAuthError,
+  isEmailVerifiedUser,
+  rememberPendingSignupEmail,
+} from "@/lib/email-verification";
 import { formatSupabaseError } from "@/lib/utils";
 
 const REMEMBER_EMAIL_KEY = "sijil.rememberedEmail";
@@ -53,6 +58,14 @@ export function LearnerSignInForm({
 
   useEffect(() => {
     if (loading || !user || !rolesReady) return;
+    if (!isEmailVerifiedUser(user)) {
+      rememberPendingSignupEmail(user.email ?? "");
+      navigate("/signup/learner/verify-email", {
+        replace: true,
+        state: { email: user.email ?? "" },
+      });
+      return;
+    }
     verifyLearnerAccess(user.id).then((result) => {
       if (!result.ok) return;
       navigate(result.profileComplete ? ROLE_HOME.learner : "/learner/complete-profile", {
@@ -80,6 +93,18 @@ export function LearnerSignInForm({
         password,
       });
       if (error) {
+        if (isEmailNotConfirmedAuthError(error)) {
+          rememberPendingSignupEmail(trimmedEmail);
+          toast({
+            title: "Email not verified",
+            description: "Enter the 6-digit code from your signup email to continue.",
+          });
+          navigate("/signup/learner/verify-email", {
+            replace: true,
+            state: { email: trimmedEmail.toLowerCase() },
+          });
+          return;
+        }
         toast({
           title: "Invalid credentials",
           description: "The email or password is incorrect. Please try again.",
@@ -88,6 +113,15 @@ export function LearnerSignInForm({
         return;
       }
       if (!data?.user) return;
+
+      if (!isEmailVerifiedUser(data.user)) {
+        rememberPendingSignupEmail(trimmedEmail);
+        navigate("/signup/learner/verify-email", {
+          replace: true,
+          state: { email: trimmedEmail.toLowerCase() },
+        });
+        return;
+      }
 
       const access = await verifyLearnerAccess(data.user.id);
       if (isDeniedAccess(access)) {

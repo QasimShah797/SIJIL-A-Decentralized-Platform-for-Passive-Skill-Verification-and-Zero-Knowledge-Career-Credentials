@@ -3,6 +3,7 @@ import { Link, Navigate, useLocation } from "react-router-dom";
 import { ShieldAlert } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { isDeniedAccess } from "@/lib/auth-helpers";
+import { isEmailVerifiedUser, rememberPendingSignupEmail } from "@/lib/email-verification";
 import { verifyLearnerAccess } from "@/lib/learner-auth";
 import sijilLogo from "@/assets/sijil-logo.png";
 
@@ -70,13 +71,20 @@ export function RequireLearnerRoute({
   const userId = user?.id;
   const loc = useLocation();
   const [access, setAccess] = useState<
-    "pending" | "allowed" | "wrong_role" | "no_profile" | "incomplete_profile"
+    "pending" | "allowed" | "unverified_email" | "wrong_role" | "no_profile" | "incomplete_profile"
   >("pending");
 
   useEffect(() => {
     if (loading || !rolesReady) return;
-    if (!userId) {
+    if (!userId || !user) {
       setAccess("pending");
+      return;
+    }
+
+    // Trusted Supabase Auth user fields only — never a frontend-forged flag.
+    if (!isEmailVerifiedUser(user)) {
+      rememberPendingSignupEmail(user.email ?? "");
+      setAccess("unverified_email");
       return;
     }
 
@@ -97,7 +105,7 @@ export function RequireLearnerRoute({
     return () => {
       cancelled = true;
     };
-  }, [userId, loading, rolesReady, requireCompleteProfile]);
+  }, [user, userId, loading, rolesReady, requireCompleteProfile]);
 
   if (loading || (user && access === "pending")) {
     return <AuthLoading />;
@@ -105,6 +113,16 @@ export function RequireLearnerRoute({
 
   if (!user) {
     return <Navigate to="/login/learner" state={{ from: loc.pathname }} replace />;
+  }
+
+  if (access === "unverified_email") {
+    return (
+      <Navigate
+        to="/signup/learner/verify-email"
+        replace
+        state={{ email: user.email ?? "", from: loc.pathname }}
+      />
+    );
   }
 
   if (access === "wrong_role") {

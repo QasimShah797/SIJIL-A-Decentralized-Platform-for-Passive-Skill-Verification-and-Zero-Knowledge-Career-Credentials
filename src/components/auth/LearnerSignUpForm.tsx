@@ -9,9 +9,13 @@ import { Field } from "@/components/sijil/Field";
 import { PasswordRequirements } from "@/components/sijil/PasswordRequirements";
 import { toast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
-import { signupLearner, LearnerSignupError } from "@/lib/learner-signup";
+import {
+  signupLearner,
+  LearnerSignupError,
+  formatSignupToastError,
+} from "@/lib/learner-signup";
 import { verifyLearnerAccess } from "@/lib/learner-auth";
-import { formatSupabaseError } from "@/lib/utils";
+import { isEmailVerifiedUser, rememberPendingSignupEmail } from "@/lib/email-verification";
 
 const SignupSchema = z
   .object({
@@ -45,6 +49,13 @@ export function LearnerSignUpForm({ onSwitchToSignin, showSigninLink = true }: L
 
   useEffect(() => {
     if (loading || !user || !rolesReady) return;
+    if (!isEmailVerifiedUser(user)) {
+      navigate("/signup/learner/verify-email", {
+        replace: true,
+        state: { email: user.email ?? "" },
+      });
+      return;
+    }
     verifyLearnerAccess(user.id).then((result) => {
       if (!result.ok) return;
       navigate(result.profileComplete ? "/learner/profile" : "/learner/complete-profile", {
@@ -83,11 +94,23 @@ export function LearnerSignUpForm({ onSwitchToSignin, showSigninLink = true }: L
     setBusy(true);
 
     try {
-      await signupLearner({
+      const result = await signupLearner({
         fullName: parsed.data.fullName,
         email: parsed.data.email,
         password: parsed.data.password,
       });
+
+      if (result.needsEmailVerification) {
+        toast({
+          title: "Check your email",
+          description: "Enter the 6-digit code we sent to verify your SIJIL account.",
+        });
+        navigate("/signup/learner/verify-email", {
+          replace: true,
+          state: { email: result.email },
+        });
+        return;
+      }
 
       await refreshRoles();
 
@@ -97,14 +120,28 @@ export function LearnerSignUpForm({ onSwitchToSignin, showSigninLink = true }: L
       });
       navigate("/learner/complete-profile", { replace: true });
     } catch (err) {
+      const message = formatSignupToastError(err);
       if (err instanceof LearnerSignupError) {
         if (err.field === "email" || err.field === "password" || err.field === "fullName") {
           setErrors({ [err.field]: err.message });
         }
-        toast({ title: "Sign up failed", description: err.message, variant: "destructive" });
+        if (err.recoveryHint) {
+          rememberPendingSignupEmail(parsed.data.email);
+        }
+        toast({
+          title: err.recoveryHint ? "Signup interrupted" : "Sign up failed",
+          description: message,
+          variant: "destructive",
+        });
+        if (err.recoveryHint) {
+          // Do not call signUp again — send the learner to OTP recovery.
+          navigate("/signup/learner/verify-email", {
+            replace: false,
+            state: { email: parsed.data.email.trim().toLowerCase() },
+          });
+        }
         return;
       }
-      const message = err instanceof Error ? err.message : formatSupabaseError(err);
       toast({ title: "Sign up failed", description: message, variant: "destructive" });
     } finally {
       setBusy(false);

@@ -10,6 +10,7 @@ import attestationRoutes from "./attestation.routes";
 import credentialsRoutes from "./credentials.routes";
 import recruiterRoutes from "./recruiter.routes";
 import integrationsRoutes from "./integrations.routes";
+import googleCalendarRoutes from "./google-calendar.routes";
 import reviewsRoutes from "./reviews.routes";
 import peerReviewRoutes from "./peer-review.routes";
 import institutionStudentsRoutes from "./institution-students.routes";
@@ -31,6 +32,8 @@ router.use("/attestation", attestationRoutes);
 router.use("/credentials", credentialsRoutes);
 router.use("/zkp", zkpRoutes);
 router.use("/recruiter", recruiterRoutes);
+// Register before /integrations so learner middleware does not capture Calendar admin routes.
+router.use("/integrations/google-calendar", googleCalendarRoutes);
 router.use("/integrations", integrationsRoutes);
 router.use("/github", integrationsRoutes);
 router.use("/reviews", reviewsRoutes);

@@ -77,9 +77,27 @@ export default function LearnerInterviews() {
                     {interview.status === "cancelled" ? "Cancelled" : "Scheduled"}
                   </StatusBadge>
                 </div>
-                <p className="mt-3 flex items-center gap-2 text-sm text-[#334155]">
+                <p className="mt-3 flex flex-wrap items-center gap-2 text-sm text-[#334155]">
                   <ModeIcon className="h-4 w-4 text-[#023E8A]" />
-                  {INTERVIEW_MODE_LABELS[interview.mode]} · {interview.locationOrLink}
+                  <span>{INTERVIEW_MODE_LABELS[interview.mode]}</span>
+                  <span>·</span>
+                  {(() => {
+                    const href = interview.locationOrLink.trim().match(/^https?:\/\//i)
+                      ? interview.locationOrLink.trim()
+                      : null;
+                    return href ? (
+                      <a
+                        href={href}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="font-medium text-[#023E8A] underline underline-offset-2"
+                      >
+                        Join Google Meet
+                      </a>
+                    ) : (
+                      <span>{interview.locationOrLink}</span>
+                    );
+                  })()}
                 </p>
                 {interview.notes ? (
                   <p className="mt-2 text-sm text-[#64748b]">{interview.notes}</p>

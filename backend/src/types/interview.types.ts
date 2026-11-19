@@ -5,7 +5,8 @@ export interface ScheduleInterviewInput {
   scheduledAt: string;
   durationMinutes: number;
   mode: InterviewMode;
-  locationOrLink: string;
+  /** Optional for video_call when SIJIL generates a Google Meet link. */
+  locationOrLink?: string;
   notes?: string;
   timeZone?: string;
 }
@@ -24,6 +25,7 @@ export interface ScheduledInterviewView {
   locationOrLink: string;
   notes: string | null;
   timeZone?: string | null;
+  googleCalendarEventId?: string | null;
   status: InterviewStatus;
   cancelledAt: string | null;
   emailStatus: string;

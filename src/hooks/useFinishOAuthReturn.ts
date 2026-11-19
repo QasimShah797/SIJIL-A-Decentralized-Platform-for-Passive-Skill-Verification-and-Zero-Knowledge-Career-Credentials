@@ -4,10 +4,13 @@ import { toast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import {
-  completeOAuthLearnerSignIn,
+  completeOAuthSignInForIntent,
+  consumeOAuthSignInIntent,
   hasOAuthReturnInUrl,
   oauthCallbackErrorFromUrl,
+  peekOAuthSignInIntent,
   recoverSessionFromUrl,
+  type OAuthSignInIntent,
 } from "@/lib/oauth-signin";
 import { formatSupabaseError } from "@/lib/utils";
 
@@ -33,6 +36,7 @@ export function useFinishOAuthReturn() {
       return;
     }
 
+    let intent: OAuthSignInIntent = peekOAuthSignInIntent();
     setActive(true);
 
     void (async () => {
@@ -46,21 +50,27 @@ export function useFinishOAuthReturn() {
           throw new Error("Sign-in did not complete. Please try again.");
         }
 
-        setMessage("Setting up your account…");
-        const destination = await completeOAuthLearnerSignIn(session.user);
+        intent = consumeOAuthSignInIntent();
+        setMessage(intent === "admin" ? "Verifying administrator access…" : "Setting up your account…");
+        const destination = await completeOAuthSignInForIntent(session.user, intent);
         await refreshRoles();
         toast({ title: "Signed in" });
         navigate(destination, { replace: true });
       } catch (err) {
         toast({
-          title: "Sign-in failed",
+          title: intent === "admin" ? "Admin access denied" : "Sign-in failed",
           description: formatSupabaseError(err),
           variant: "destructive",
         });
+        try {
+          consumeOAuthSignInIntent();
+        } catch {
+          /* ignore */
+        }
         await supabase.auth.signOut();
         window.history.replaceState(null, "", window.location.pathname);
         setActive(false);
-        navigate("/login/learner", { replace: true });
+        navigate(intent === "admin" ? "/login/admin" : "/login/learner", { replace: true });
       }
     })();
   }, [navigate, refreshRoles]);
