@@ -975,6 +975,10 @@ export const existingPlatformReviews: Record<string, ExistingPlatformReview> = {
 export type ContributorReviewStatus =
   | "Imported Review Found"
   | "Invite Sent"
+  | "Email failed"
+  | "Email not sent"
+  | "Email pending"
+  | "Delivery not confirmed"
   | "Review Pending"
   | "Review Received"
   | "Not a Project Contributor";

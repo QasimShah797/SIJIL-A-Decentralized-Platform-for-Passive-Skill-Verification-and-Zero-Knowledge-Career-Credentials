@@ -19,6 +19,7 @@ import publicPresentationsRoutes from "./public-presentations.routes";
 import publicCredentialsRoutes from "./public-credentials.routes";
 import zkpRoutes from "./zkp.routes";
 import ssiRoutes from "./ssi.routes";
+import learnerInterviewRoutes from "./learner-interviews.routes";
 
 const router = Router();
 
@@ -40,5 +41,6 @@ router.use("/wallet", walletRoutes);
 router.use("/public/presentations", publicPresentationsRoutes);
 router.use("/public", publicCredentialsRoutes);
 router.use("/ssi", ssiRoutes);
+router.use("/learner", learnerInterviewRoutes);
 
 export default router;

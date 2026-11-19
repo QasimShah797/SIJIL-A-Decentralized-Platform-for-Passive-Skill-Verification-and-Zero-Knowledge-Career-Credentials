@@ -145,13 +145,13 @@ export async function sendReviewRequestEmail(
   evidenceName: string,
   reviewLink: string,
   options?: ReviewEmailOptions,
-): Promise<void> {
+): Promise<{ delivered: boolean }> {
   const subject = `Review requested: ${evidenceName} — SIJIL`;
   const text = buildPlainTextBody(learnerName, evidenceName, reviewLink, options);
   const html = buildHtmlBody(learnerName, evidenceName, reviewLink, options);
 
   try {
-    await sendSijilMail({
+    return await sendSijilMail({
       to,
       subject,
       text,

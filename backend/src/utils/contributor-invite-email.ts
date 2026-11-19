@@ -1,4 +1,6 @@
 import { AppError } from "./AppError";
+import { isDeliverableEmail, publicGitHubProfileEmail } from "./githubContributorEmail";
+import { CONTEXT_STATUS, CONTRIBUTOR_VERIFICATION } from "../constants/peer-review";
 
 export function normalizeEmail(value: string | null | undefined): string {
   return (value ?? "").trim().toLowerCase();
@@ -21,6 +23,43 @@ export function assertVerifiedContributorOnly(contributorId: string): void {
   }
 }
 
+/** The browser recipient is never used. Only the current public profile email can be invited. */
+export function invitationRecipient(params: {
+  profileEmail?: string | null;
+  requestedEmail?: string | null;
+}): string | null {
+  return publicGitHubProfileEmail(params.profileEmail);
+}
+
+export function canResendStoredInvitation(params: {
+  storedInviteEmail?: string | null;
+  profileEmail?: string | null;
+}): boolean {
+  const profile = publicGitHubProfileEmail(params.profileEmail);
+  const stored = normalizeEmail(params.storedInviteEmail);
+  return Boolean(profile && stored && profile === stored);
+}
+
+export function bulkInvitationPlan<T extends { profileEmail?: string | null; requestedEmail?: string | null }>(
+  rows: T[],
+): Array<T & { send: boolean; email: string | null }> {
+  return rows.map((row) => {
+    const email = invitationRecipient(row);
+    return { ...row, email, send: Boolean(email) };
+  });
+}
+
+/** Email discovery, delivery, and link possession are not GitHub or context verification. */
+export function unverifiedFeedbackLabels(): {
+  contributorVerification: typeof CONTRIBUTOR_VERIFICATION.PENDING;
+  contextStatus: typeof CONTEXT_STATUS.PENDING;
+} {
+  return {
+    contributorVerification: CONTRIBUTOR_VERIFICATION.PENDING,
+    contextStatus: CONTEXT_STATUS.PENDING,
+  };
+}
+
 /** Learner cannot redirect an invite to a different person than the verified contributor. */
 export function assertContributorInviteEmail(params: {
   contributorId: string;
@@ -37,7 +76,7 @@ export function assertContributorInviteEmail(params: {
   }
 
   const onFile = normalizeEmail(params.contributorEmailOnFile);
-  if (onFile && requested !== onFile) {
+  if (onFile && isDeliverableEmail(onFile) && requested !== onFile) {
     throw new AppError(
       "The invite must use the verified contributor's contact email already on file",
       403,
@@ -45,18 +84,29 @@ export function assertContributorInviteEmail(params: {
   }
 
   const existingInvite = normalizeEmail(params.existingInviteEmail);
-  if (existingInvite && requested !== existingInvite) {
+  if (existingInvite && isDeliverableEmail(existingInvite) && requested !== existingInvite) {
     throw new AppError(
       "Review invite email cannot be changed to a different recipient",
       403,
     );
   }
+}
 
-  if (!onFile) {
-    // Manual entry is allowed only when GitHub did not expose a deliverable email.
-    // Once an invite exists, the recipient cannot be changed.
-    return;
+/**
+ * A typed address or a public GitHub username is not proof that the sender
+ * controls the GitHub account. A matching published address is still only email
+ * discovery. It does not authenticate the reviewer.
+ */
+export function contributorAssurance(params: {
+  invitedEmail?: string | null;
+  githubPublishedEmail?: string | null;
+}): "github_published" | "email_link" {
+  const invited = normalizeEmail(params.invitedEmail);
+  const published = normalizeEmail(params.githubPublishedEmail);
+  if (invited && published && invited === published && isDeliverableEmail(published)) {
+    return "github_published";
   }
+  return "email_link";
 }
 
 export function assertReviewerIdentityForInvite(params: {
@@ -74,24 +124,18 @@ export function assertReviewerIdentityForInvite(params: {
     throw new AppError("This review invite has no reviewer identity configured", 403);
   }
 
-  const emailMatch = Boolean(invitedEmail && submittedEmail && submittedEmail === invitedEmail);
-  const githubMatch = Boolean(invitedGithub && submittedGithub && submittedGithub === invitedGithub);
-
-  if (invitedEmail && invitedGithub) {
-    if (!emailMatch && !githubMatch) {
-      throw new AppError(
-        "This review link is only for the invited contributor. Enter your invited email or GitHub username.",
-        403,
-      );
-    }
-    return;
+  if (invitedEmail && submittedEmail !== invitedEmail) {
+    throw new AppError(
+      "This review link is only for the invited email address. A GitHub username does not replace it.",
+      403,
+    );
   }
 
-  if (invitedEmail && !emailMatch) {
-    throw new AppError("This review link is only for the invited contributor email", 403);
+  if (submittedGithub && invitedGithub && submittedGithub !== invitedGithub) {
+    throw new AppError("The GitHub username does not match the invited contributor", 403);
   }
 
-  if (invitedGithub && !githubMatch) {
+  if (!invitedEmail && invitedGithub && submittedGithub !== invitedGithub) {
     throw new AppError("This review link is only for the invited GitHub contributor", 403);
   }
 }

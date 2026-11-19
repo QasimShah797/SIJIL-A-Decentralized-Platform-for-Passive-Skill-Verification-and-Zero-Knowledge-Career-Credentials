@@ -1,7 +1,8 @@
 /**
  * Express application setup — middleware, routes, and error handlers.
  */
-import express from "express";
+import { randomUUID } from "node:crypto";
+import express, { type NextFunction, type Request, type Response } from "express";
 import cors from "cors";
 import helmet from "helmet";
 import morgan from "morgan";
@@ -24,6 +25,12 @@ app.use(cors({
   origin: env.CORS_ORIGIN.split(",").map((origin) => origin.trim()).filter(Boolean),
   credentials: true,
 }));
+app.use((req: Request, res: Response, next: NextFunction) => {
+  const incoming = req.header("x-request-id");
+  const requestId = incoming && incoming.length <= 80 ? incoming : randomUUID();
+  res.setHeader("x-request-id", requestId);
+  next();
+});
 app.use(morgan(env.NODE_ENV === "development" ? "dev" : "combined"));
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { applyCandidateCardFields, fetchCandidateCardFieldsByIds, coalesceCandidateText, type CandidateView } from "@/lib/db/candidates";
+import { applyCandidateCardFields, fetchCandidateCardFieldsByIds, type CandidateView } from "@/lib/db/candidates";
 import { apiRequest, isApiEnabled } from "@/services/api/client";
 import { getCandidateProfileFieldsApi } from "@/services/api/recruiter.api";
 import type { CandidateSkill } from "@/lib/sijil-data";
@@ -14,8 +14,8 @@ export function useCandidates() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const refresh = useCallback(async () => {
-    setLoading(true);
+  const refresh = useCallback(async (options?: { silent?: boolean }) => {
+    if (!options?.silent) setLoading(true);
     setError(null);
     try {
       let viaApi: CandidateView[] | null = null;
@@ -61,14 +61,11 @@ export function useCandidates() {
         }
       }
 
-      const fromSupabase = await fetchCandidateCardFieldsByIds(ids);
-      for (const [id, fields] of fromSupabase.entries()) {
-        const existing = cardFields.get(id);
-        cardFields.set(id, {
-          avatarUrl: coalesceCandidateText(existing?.avatarUrl, fields.avatarUrl),
-          skillsSummary: coalesceCandidateText(existing?.skillsSummary, fields.skillsSummary),
-          careerGoal: coalesceCandidateText(existing?.careerGoal, fields.careerGoal),
-        });
+      if (cardFields.size === 0) {
+        const fromSupabase = await fetchCandidateCardFieldsByIds(ids);
+        for (const [id, fields] of fromSupabase.entries()) {
+          cardFields.set(id, fields);
+        }
       }
 
       c = applyCandidateCardFields(c, cardFields)
@@ -89,7 +86,12 @@ export function useCandidates() {
     }
   }, []);
 
-  useEffect(() => { refresh(); }, [refresh]);
+  useEffect(() => { void refresh(); }, [refresh]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => { void refresh({ silent: true }); }, 20_000);
+    return () => window.clearInterval(timer);
+  }, [refresh]);
 
   return { candidates, candidateSkills, loading, error, refresh };
 }

@@ -1,10 +1,12 @@
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
+import { VerificationBell } from "@/components/zkp/VerificationBell";
 import { useState } from "react";
 import {
   Briefcase,
   CalendarClock,
   CheckCircle2,
   LayoutDashboard,
+  Users,
   UserCircle,
   Plug,
   ClipboardCheck,
@@ -42,7 +44,8 @@ const recruiterNavGroups: NavGroup[] = [
   {
     label: "Workspace",
     items: [
-      { to: "/recruiter/search", icon: LayoutDashboard, label: "Dashboard", mobileTab: true },
+      { to: "/recruiter/dashboard", icon: LayoutDashboard, label: "Dashboard", mobileTab: true },
+      { to: "/recruiter/search", icon: Users, label: "Directory" },
       { to: "/recruiter/jobs", icon: Briefcase, label: "Jobs", mobileTab: true },
       { to: "/recruiter/interviews", icon: CalendarClock, label: "Interviews", mobileTab: true },
     ],
@@ -51,7 +54,7 @@ const recruiterNavGroups: NavGroup[] = [
     label: "Review",
     items: [
       { to: "/recruiter/compare", icon: BadgeCheck, label: "Compare", mobileTab: true },
-      { to: "/recruiter/github-proof", icon: KeyRound, label: "GitHub proof" },
+      { to: "/recruiter/github-proof", icon: KeyRound, label: "GitHub Proof" },
     ],
   },
 ];
@@ -82,6 +85,7 @@ function useLearnerNav(): NavGroup[] {
       items: [
         { to: "/learner/wallet", icon: Wallet, label: "Wallet", mobileTab: true },
         { to: "/learner/peer-reviews", icon: MessageSquare, label: "Peer Reviews" },
+        { to: "/learner/interviews", icon: CalendarClock, label: "Interviews" },
       ],
     },
   ];
@@ -95,10 +99,12 @@ function SidebarLink({
   item,
   pathname,
   onNavigate,
+  tone = "default",
 }: {
   item: NavItem;
   pathname: string;
   onNavigate?: () => void;
+  tone?: "default" | "recruiter";
 }) {
   const active = navActive(pathname, item.to);
   return (
@@ -108,7 +114,9 @@ function SidebarLink({
       className={cn(
         "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring",
         active
-          ? "relative bg-white/15 font-medium text-sidebar-accent-foreground shadow-sm before:absolute before:left-0 before:top-2 before:h-[calc(100%-1rem)] before:w-1 before:rounded-full before:bg-sidebar-primary"
+          ? tone === "recruiter"
+            ? "bg-[#16325c] font-medium text-white shadow-sm"
+            : "relative bg-white/15 font-medium text-sidebar-accent-foreground shadow-sm before:absolute before:left-0 before:top-2 before:h-[calc(100%-1rem)] before:w-1 before:rounded-full before:bg-sidebar-primary"
           : "text-sidebar-foreground/85 hover:bg-white/10 hover:text-sidebar-accent-foreground",
       )}
     >
@@ -122,10 +130,12 @@ function NavGroupSection({
   group,
   pathname,
   onNavigate,
+  tone = "default",
 }: {
   group: NavGroup;
   pathname: string;
   onNavigate?: () => void;
+  tone?: "default" | "recruiter";
 }) {
   return (
     <div className="mb-5">
@@ -134,7 +144,7 @@ function NavGroupSection({
       </p>
       <nav className="space-y-0.5">
         {group.items.map((item) => (
-          <SidebarLink key={item.to} item={item} pathname={pathname} onNavigate={onNavigate} />
+          <SidebarLink key={item.to} item={item} pathname={pathname} onNavigate={onNavigate} tone={tone} />
         ))}
       </nav>
     </div>
@@ -296,9 +306,10 @@ export function AppShell({
   const sidebarContent = (
     <>
       <div className="border-b border-sidebar-border px-6 py-6">
-        <div className="text-[11px] text-sidebar-foreground/60">{roleLabel} workspace</div>
+        <div className="text-[11px] uppercase tracking-[0.14em] text-sidebar-foreground/60">{role === "recruiter" ? "Recruiter Workspace" : `${roleLabel} workspace`}</div>
         <div className="mt-2">
           <SidebarBrand />
+          {role === "recruiter" ? <p className="mt-1 text-[11px] text-white/55">Verified skills. Trusted talent.</p> : null}
         </div>
       </div>
       <div className="flex-1 overflow-y-auto px-3 py-4">
@@ -318,6 +329,7 @@ export function AppShell({
               group={group}
               pathname={pathname}
               onNavigate={() => setDrawerOpen(false)}
+              tone="recruiter"
             />
           ))
         )}
@@ -350,7 +362,10 @@ export function AppShell({
   return (
     <div className="flex min-h-screen w-full bg-background">
       {/* Desktop sidebar */}
-      <aside className="sticky top-0 z-30 hidden h-screen w-[17.5rem] shrink-0 flex-col overflow-hidden border-r border-sidebar-border bg-[image:var(--sidebar-gradient)] text-sidebar-foreground lg:flex">
+      <aside className={cn(
+        "sticky top-0 z-30 hidden h-screen w-[17.5rem] shrink-0 flex-col overflow-hidden border-r text-sidebar-foreground lg:flex",
+        role === "recruiter" ? "border-white/10 bg-[#071833]" : "border-sidebar-border bg-[image:var(--sidebar-gradient)]",
+      )}>
         {sidebarContent}
       </aside>
 
@@ -363,7 +378,7 @@ export function AppShell({
                   <Menu className="h-5 w-5" />
                 </Button>
               </SheetTrigger>
-              <SheetContent side="left" className="w-64 bg-[image:var(--sidebar-gradient)] p-0 text-sidebar-foreground">
+              <SheetContent side="left" className={cn("w-64 p-0 text-sidebar-foreground", role === "recruiter" ? "bg-[#071833]" : "bg-[image:var(--sidebar-gradient)]")}>
                 <SheetHeader className="sr-only">
                   <SheetTitle>Navigation</SheetTitle>
                 </SheetHeader>
@@ -379,6 +394,7 @@ export function AppShell({
           </div>
           <div className="flex items-center gap-1 sm:gap-2">
             <ThemeToggle />
+            {role === "learner" || role === "recruiter" ? <VerificationBell role={role} /> : null}
             {role === "learner" && decayCount > 0 && (
               <button
                 onClick={() => navigate("/learner/profile#notifications")}

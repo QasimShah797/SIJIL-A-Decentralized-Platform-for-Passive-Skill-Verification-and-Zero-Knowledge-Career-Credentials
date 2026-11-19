@@ -85,5 +85,7 @@ export async function createTrustedGitHubContributionSnapshot(
     repositoryFullName: snapshot.repositoryFullName,
     verifiedAt: snapshot.verifiedAt,
     commitment: result.publicCommitment,
+    contributionCount: snapshot.contributionCount,
+    blinding: result.opening.blinding,
   };
 }

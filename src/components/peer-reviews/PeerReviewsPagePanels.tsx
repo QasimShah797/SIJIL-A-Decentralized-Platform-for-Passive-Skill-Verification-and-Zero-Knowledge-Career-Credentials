@@ -297,7 +297,10 @@ export function PeerReviewProjectToolbar({
           <label className="text-[11px] font-semibold uppercase tracking-wide text-[#64748b]">
             Project
           </label>
-          <Select value={selectedProjectId} onValueChange={onSelectProject}>
+          <Select
+            value={projects.some((project) => project.id === selectedProjectId) ? selectedProjectId : undefined}
+            onValueChange={onSelectProject}
+          >
             <SelectTrigger className="mt-1.5 rounded-xl border-[#e2e8f0]">
               <SelectValue placeholder="Select a project" />
             </SelectTrigger>
@@ -314,12 +317,15 @@ export function PeerReviewProjectToolbar({
           <label className="text-[11px] font-semibold uppercase tracking-wide text-[#64748b]">
             Skill
           </label>
-          <Select value={skillValue} onValueChange={onSkillChange}>
+          <Select
+            value={skillOptions.includes(skillValue) ? skillValue : undefined}
+            onValueChange={onSkillChange}
+          >
             <SelectTrigger className="mt-1.5 rounded-xl border-[#e2e8f0]">
               <SelectValue placeholder="Select a skill" />
             </SelectTrigger>
             <SelectContent>
-              {skillOptions.map((name) => (
+              {skillOptions.filter(Boolean).map((name) => (
                 <SelectItem key={name} value={name}>
                   {name}
                 </SelectItem>

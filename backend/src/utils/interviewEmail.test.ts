@@ -12,6 +12,7 @@ import {
   buildInterviewInviteText,
   formatDuration,
   formatInterviewWhen,
+  storedInterviewTimeZone,
 } from "./interviewEmailContent";
 
 const details: InterviewEmailDetails = {
@@ -46,6 +47,29 @@ describe("SIJIL email HTML chrome", () => {
 });
 
 describe("interview invitation email", () => {
+  it("keeps a stored timezone on resend and leaves legacy rows in UTC", () => {
+    assert.equal(storedInterviewTimeZone("Asia/Karachi"), "Asia/Karachi");
+    assert.equal(storedInterviewTimeZone(null), "UTC");
+    assert.equal(storedInterviewTimeZone("Not/AZone"), "UTC");
+
+    const karachi = formatInterviewWhen(details.scheduledAt, storedInterviewTimeZone("Asia/Karachi"));
+    assert.match(karachi.time, /2:00/i);
+    assert.match(karachi.time, /Asia\/Karachi/);
+
+    const resent = buildInterviewInviteText({
+      ...details,
+      timeZone: storedInterviewTimeZone("Asia/Karachi"),
+    });
+    assert.match(resent, /Asia\/Karachi/);
+
+    const legacy = buildInterviewInviteText({
+      ...details,
+      timeZone: storedInterviewTimeZone(null),
+    });
+    assert.match(legacy, /UTC/);
+    assert.doesNotMatch(legacy, /Asia\/Karachi/);
+  });
+
   it("formats date, time, and duration for the candidate", () => {
     const when = formatInterviewWhen(details.scheduledAt);
     assert.match(when.date, /15/);
@@ -72,6 +96,20 @@ describe("interview invitation email", () => {
     assert.match(text, /Date: .*15.*October 2026/);
     assert.match(text, /Duration: 45 minutes/);
     assert.match(text, /Meeting link: https:\/\/meet\.example\.com\/sijil-interview/);
+    const linked = buildInterviewInviteText({
+      ...details,
+      timeZone: "Asia/Karachi",
+      portalUrl: "https://sijil.example/learner/interviews",
+    });
+    assert.match(linked, /Asia\/Karachi/);
+    assert.match(linked, /https:\/\/sijil\.example\/learner\/interviews/);
+    const linkedHtml = buildInterviewInviteHtml({
+      ...details,
+      timeZone: "Asia/Karachi",
+      portalUrl: "https://sijil.example/learner/interviews",
+    });
+    assert.match(linkedHtml, /View this invitation in SIJIL/);
+    assert.match(linkedHtml, /href="https:\/\/sijil\.example\/learner\/interviews"/);
     assert.match(text, /— SIJIL · Passive Skill Verification/);
   });
 

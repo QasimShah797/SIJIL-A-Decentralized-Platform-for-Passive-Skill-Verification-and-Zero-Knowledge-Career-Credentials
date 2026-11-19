@@ -17,6 +17,21 @@ export function outcomeLabel(outcome: string | null | undefined): string {
   }
 }
 
+export function requestStatusLabel(status: string): string {
+  switch (status) {
+    case "open":
+      return "Waiting for the learner";
+    case "consumed":
+      return "Accepted once";
+    case "declined":
+      return "Declined";
+    case "expired":
+      return "Expired";
+    default:
+      return "Not available";
+  }
+}
+
 export function formatTimestamp(value: string | null | undefined): string {
   if (!value) return "—";
   const parsed = Date.parse(value);

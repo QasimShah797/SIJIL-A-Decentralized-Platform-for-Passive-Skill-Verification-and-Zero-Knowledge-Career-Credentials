@@ -1,5 +1,7 @@
 # SIJIL teammate setup
 
+Start with [SETUP.md](SETUP.md). This file has the same local-run rules plus Fabric and chaincode notes. Stay on `main`. Do not check out `feature/ssi-holder-keys`.
+
 This guide is for cloning SIJIL on a **new machine** and running the learner, recruiter, and (optional) Fabric stack. It does not issue credentials, submit ledger transactions, or deploy anything.
 
 ## Shared vs local
@@ -215,7 +217,7 @@ Do **not** run:
 ```bash
 git clone https://github.com/QasimShah797/SIJIL-A-Decentralized-Platform-for-Passive-Skill-Verification-and-Zero-Knowledge-Career-Credentials.git
 cd SIJIL-A-Decentralized-Platform-for-Passive-Skill-Verification-and-Zero-Knowledge-Career-Credentials
-git checkout feature/ssi-holder-keys
+git checkout main
 npm install
 cp .env.example .env.local
 # edit .env.local with team vault values

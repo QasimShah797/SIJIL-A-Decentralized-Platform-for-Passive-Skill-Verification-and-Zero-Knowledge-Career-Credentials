@@ -25,6 +25,15 @@ const ASSESSMENT_MARK_KEYS = new Set([
   "final_grade",
 ]);
 
+const NEVER_DISCLOSE_KEYS = new Set([
+  "blinding",
+  "opening",
+  "privateKey",
+  "private_key",
+  "witness",
+  "secret",
+]);
+
 const GITHUB_COUNT_KEYS = new Set([
   "commit_count",
   "commitCount",
@@ -56,6 +65,7 @@ function walk(value: unknown, prefs: DisclosurePreferences): unknown {
   if (!value || typeof value !== "object") return value;
   const out: Record<string, unknown> = {};
   for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+    if (NEVER_DISCLOSE_KEYS.has(key)) continue;
     if (!prefs.shareExactAssessmentMarks && ASSESSMENT_MARK_KEYS.has(key)) continue;
     if (!prefs.shareExactGithubCommitCount && GITHUB_COUNT_KEYS.has(key)) continue;
     // Individual commit rows would let a recruiter count commits exactly.

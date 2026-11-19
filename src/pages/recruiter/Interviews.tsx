@@ -175,7 +175,9 @@ export default function RecruiterInterviews() {
         description:
           updated.emailStatus === "sent"
             ? `${updated.candidateName} has been emailed about the cancellation.`
-            : "The interview is cancelled. The candidate was not emailed because SMTP is not configured.",
+            : updated.emailStatus === "failed"
+              ? "The interview is cancelled, but the email provider did not accept the notice."
+              : "The interview is cancelled. The candidate was not emailed because email delivery is not configured.",
         variant: updated.emailStatus === "sent" ? "default" : "destructive",
       });
       setCancellingId(null);
@@ -371,7 +373,7 @@ export default function RecruiterInterviews() {
                               <StatusBadge variant="warning">Email not sent</StatusBadge>
                             )}
                           </span>
-                          <span className="mt-1 block text-sm text-[#334155]">{formatInterviewDateTime(interview.scheduledAt)}</span>
+                          <span className="mt-1 block text-sm text-[#334155]">{formatInterviewDateTime(interview.scheduledAt, interview.timeZone)}</span>
                           <span className="mt-1 block text-sm text-[#64748b]">{interview.candidateEmail}</span>
                           <span className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-[#64748b]">
                             <span>{INTERVIEW_MODE_LABELS[interview.mode]}</span>

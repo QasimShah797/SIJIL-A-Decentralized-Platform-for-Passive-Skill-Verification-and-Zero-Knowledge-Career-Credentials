@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { LearnerWorkspaceShell } from "@/components/sijil/LearnerWorkspaceShell";
 import { PageSkeleton } from "@/components/sijil/SkeletonLoader";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -40,6 +40,9 @@ import {
   type WalletShareRecordView,
 } from "@/services/api/wallet.api";
 import { ZkpProofCard } from "@/components/wallet/ZkpProofCard";
+import { GitHubActivityWalletCard } from "@/components/wallet/GitHubActivityWalletCard";
+import { CompetencyVersionCard } from "@/components/wallet/CompetencyVersionCard";
+import { listVerificationRequests } from "@/services/api/zkp.api";
 import { GitHubPolicyStatusCard } from "@/components/wallet/GitHubPolicyStatusCard";
 import { WalletPrivacySettingsCard } from "@/components/wallet/WalletPrivacySettingsCard";
 import {
@@ -413,6 +416,8 @@ function WalletEvidenceDialog(props: {
 
 export default function WalletPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const verificationFocus = searchParams.get("verification");
   const { user } = useAuth();
   const { profile, loading: profileLoading } = useLearnerProfile();
   const { credentials, loading: credentialsLoading, refresh: refreshCredentials } = useCredentials();
@@ -477,6 +482,24 @@ export default function WalletPage() {
   useEffect(() => {
     void loadRecords();
   }, [user?.id]);
+
+  useEffect(() => {
+    if (!verificationFocus || records.length === 0) return;
+    let cancelled = false;
+    void listVerificationRequests("learner")
+      .then((listed) => {
+        if (cancelled) return;
+        const request = listed.requests.find((row) => row.id === verificationFocus);
+        const skill = request?.skillLabel.trim().toLowerCase();
+        if (!skill) return;
+        const match = records.find((record) => record.competencyName.trim().toLowerCase() === skill);
+        if (match) setSelectedId(match.competencyId);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [verificationFocus, records]);
 
   const activeRecord = records.find((record) => record.competencyId === selectedId) ?? records[0] ?? null;
   const summary = activeRecord?.evidencePackage ?? null;
@@ -832,11 +855,14 @@ export default function WalletPage() {
                 }))}
                 onViewPackage={() => setSelectedRecord(activeRecord)}
               />
+              <GitHubActivityWalletCard focusRequestId={verificationFocus} />
+              <CompetencyVersionCard />
               {zkpCommitment && issuedCredential ? (
                 <ZkpProofCard
                   credentialId={issuedCredential.id}
                   commitment={zkpCommitment.commitment}
                   competencyId={activeRecord.competencyId}
+                  focusVerificationId={verificationFocus}
                 />
               ) : null}
               <GitHubPolicyStatusCard competencyId={activeRecord.competencyId} />

@@ -30,6 +30,21 @@ export interface ScoreProofResult {
 const CANONICAL_DECIMAL = /^(0|[1-9][0-9]*)$/;
 const SHA256_HEX = /^[0-9a-f]{64}$/;
 
+/**
+ * Public signals are exactly [threshold, commitment].
+ * A score equal to the threshold matches the first signal on purpose.
+ * There is no third signal, so the score is not published beside the threshold.
+ */
+export function proofSignalsMatch(
+  publicSignals: string[],
+  threshold: number,
+  commitment: string,
+): boolean {
+  return publicSignals.length === 2
+    && publicSignals[0] === String(threshold)
+    && publicSignals[1] === commitment;
+}
+
 export function assertProofInputs(witness: ScoreWitness, threshold: number, commitment: string): void {
   if (!Number.isInteger(threshold) || threshold < 0 || threshold > 100) {
     throw new Error("Choose a whole-number threshold from 0 to 100.");
@@ -95,13 +110,7 @@ export async function generateScoreThresholdProof(input: {
     commitment: input.commitment,
   };
   const { proof, publicSignals } = await snarkjs.groth16.fullProve(circuitInput, input.wasm, input.zkey);
-  const signalsMatch = publicSignals.length === 2
-    && publicSignals[0] === String(input.threshold)
-    && publicSignals[1] === input.commitment
-    && !publicSignals.includes(input.witness.score)
-    && !publicSignals.includes(input.witness.blinding)
-    && !publicSignals.includes(input.witness.learnerId)
-    && !publicSignals.includes(input.witness.attemptId);
+  const signalsMatch = proofSignalsMatch(publicSignals, input.threshold, input.commitment);
   const locallyVerified = signalsMatch && await snarkjs.groth16.verify(verificationKey, publicSignals, proof);
   if (!locallyVerified) {
     throw new Error("The local proof check did not succeed.");

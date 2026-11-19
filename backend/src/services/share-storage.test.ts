@@ -2,7 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { SHARE_CREATE_UNAVAILABLE, SHARE_HISTORY_UNAVAILABLE, shareStorageFailure } from "./share-storage";
+import { SHARE_CREATE_UNAVAILABLE, SHARE_HISTORY_UNAVAILABLE, SHARE_TABLE_UNAVAILABLE, SHARE_WRITE_REFUSED, shareCreateFailure, shareStorageFailure } from "./share-storage";
 
 describe("share storage errors", () => {
   it("hides database failures behind a retryable learner message", () => {
@@ -15,6 +15,15 @@ describe("share storage errors", () => {
     const leaked = "relation selective_disclosure_presentations does not exist";
     assert.equal(listed.message.includes(leaked), false);
     assert.equal(created.message.includes("schema cache"), false);
+  });
+
+  it("names a missing table or a refused write without returning database text", () => {
+    const missing = shareCreateFailure({ code: "PGRST205", message: "Could not find the table public.selective_disclosure_presentations in the schema cache" });
+    const refused = shareCreateFailure({ code: "42501", message: "new row violates row-level security policy for table selective_disclosure_presentations" });
+    assert.equal(missing.message, SHARE_TABLE_UNAVAILABLE);
+    assert.equal(refused.message, SHARE_WRITE_REFUSED);
+    assert.equal(missing.message.includes("schema cache"), false);
+    assert.equal(refused.message.includes("row-level security"), false);
   });
 });
 

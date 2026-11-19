@@ -5,10 +5,12 @@
  * The caller must separately verify the trusted snapshot binding.
  * Use the matching verification key for the circuit variant.
  */
+import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import {
+  GITHUB_LEGACY_VERIFICATION_KEY_SHA256,
   githubArtifactFilenames,
   resolveGitHubZkpArtifactDir,
 } from "./github-zkp-artifacts";
@@ -106,11 +108,18 @@ export async function verifyGitHubContributionProof(
       };
     };
 
-    const valid = await snarkjs.groth16.verify(
-      verificationKey,
-      [threshold, commitment],
-      proof,
-    );
+    const signals = [threshold, commitment];
+    let valid = await snarkjs.groth16.verify(verificationKey, signals, proof);
+    if (valid !== true && variant === "meets") {
+      const legacyPath = path.resolve(__dirname, "../../../zkp-artifacts/github-contributions-v1-legacy/verification_key.json");
+      if (existsSync(legacyPath)) {
+        const legacyBytes = readFileSync(legacyPath);
+        const legacyHash = createHash("sha256").update(legacyBytes).digest("hex");
+        if (legacyHash === GITHUB_LEGACY_VERIFICATION_KEY_SHA256) {
+          valid = await snarkjs.groth16.verify(JSON.parse(legacyBytes.toString("utf8")), signals, proof);
+        }
+      }
+    }
 
     return {
       cryptographicallyValid: valid === true,

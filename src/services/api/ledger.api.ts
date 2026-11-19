@@ -15,6 +15,25 @@ export interface LedgerVerifyResult {
   anchoredAt: string | null;
   verifiedAt: string;
   detail?: LedgerVerifyDetail;
+  reason?: string;
+  checks?: {
+    document: string;
+    signature: string;
+    holder: string;
+    evidence: string;
+    issuer: string;
+    anchor: string;
+    revocation: string;
+    zkp: string;
+  };
+}
+
+export interface LedgerHistoryEntry {
+  txId: string;
+  timestamp: string;
+  isDelete: boolean;
+  status: string | null;
+  hash: string | null;
 }
 
 function unavailableResult(credentialId: string): LedgerVerifyResult {
@@ -36,4 +55,11 @@ export async function verifyCredentialLedgerApi(
   );
   if (!data) return unavailableResult(credentialId);
   return data;
+}
+
+export async function fetchLedgerHistory(credentialId: string): Promise<{
+  available: boolean;
+  entries: LedgerHistoryEntry[];
+} | null> {
+  return tryApiRequest(`/credentials/${encodeURIComponent(credentialId)}/ledger-history`);
 }

@@ -22,6 +22,7 @@ export type WalletAnchorStatus =
   | "not_on_ledger"
   | "hash_mismatch"
   | "unavailable"
+  | "revocation_pending"
   | "revoked";
 
 export interface LedgerStatusBadge {
@@ -57,6 +58,7 @@ const WALLET_ANCHOR_BADGE: Record<WalletAnchorStatus, WalletAnchorBadge> = {
   not_on_ledger: { variant: "warning", label: "Fabric: not found on ledger" },
   hash_mismatch: { variant: "destructive", label: "Fabric: hash mismatch" },
   unavailable: { variant: "warning", label: "Fabric verification unavailable" },
+  revocation_pending: { variant: "pending", label: "Fabric: revocation pending" },
   revoked: { variant: "destructive", label: "Fabric: revoked" },
 };
 
@@ -78,7 +80,11 @@ export function shareShowsVerified(input: {
   ledgerStatus?: string | null;
   verified?: boolean;
   detail?: string | null;
+  reason?: string | null;
+  zkp?: string | null;
 }): boolean {
+  if (input.reason && input.reason !== "valid") return false;
+  if (input.zkp === "invalid" || input.zkp === "not_checked") return false;
   return isLedgerVerified(input.ledgerStatus, input.detail);
 }
 

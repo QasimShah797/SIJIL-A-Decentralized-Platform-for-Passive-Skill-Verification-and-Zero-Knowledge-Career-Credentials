@@ -25,6 +25,7 @@ import {
 import { SijilMatchBot } from "@/components/recruiter/SijilMatchBot";
 import { useCandidates } from "@/hooks/useCandidates";
 import { listInterviewsApi } from "@/services/api/interview.api";
+import { deleteShortlist, listShortlist, saveShortlist } from "@/services/api/recruiter-workspace.api";
 import type { ScheduledInterviewView } from "@/lib/interview";
 export default function RecruiterSearch() {
   const navigate = useNavigate();
@@ -34,6 +35,11 @@ export default function RecruiterSearch() {
   const [focusIds, setFocusIds] = useState<string[] | null>(null);
   const [statFilter, setStatFilter] = useState<RecruiterStatFilter>("all");
   const [query, setQuery] = useState("");
+  const [skill, setSkill] = useState("all");
+  const [sort, setSort] = useState<"recent" | "name">("recent");
+  const [layout, setLayout] = useState<"grid" | "list">("grid");
+  const [page, setPage] = useState(1);
+  const [shortlistMode, setShortlistMode] = useState<"browser" | "account" | "unknown">("unknown");
 
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -41,6 +47,10 @@ export default function RecruiterSearch() {
       if (focusIds && !focusIds.includes(candidate.id)) return false;
       if (statFilter === "verified" && candidate.attestation !== "Approved") return false;
       if (statFilter === "credentials" && (candidate.credentialCount ?? 0) <= 0) return false;
+      if (skill !== "all") {
+        const skills = [...(candidate.verifiedSkills ?? []), ...(candidate.searchableSkills ?? []), candidate.topSkill];
+        if (!skills.some((item) => item?.trim().toLowerCase() === skill)) return false;
+      }
       if (!needle) return true;
       const haystack = [
         candidate.name,
@@ -50,8 +60,25 @@ export default function RecruiterSearch() {
         ...(candidate.verifiedSkills ?? []),
       ].join(" ").toLowerCase();
       return haystack.includes(needle);
-    });
-  }, [candidates, focusIds, statFilter, query]);
+    }).sort((left, right) => sort === "name"
+      ? left.name.localeCompare(right.name)
+      : Date.parse(right.sharedAt ?? "") - Date.parse(left.sharedAt ?? ""));
+  }, [candidates, focusIds, statFilter, query, skill, sort]);
+
+  const skills = useMemo(() => {
+    const values = new Set<string>();
+    for (const candidate of candidates) {
+      for (const item of [...(candidate.verifiedSkills ?? []), ...(candidate.searchableSkills ?? [])]) {
+        const trimmed = item.trim().toLowerCase();
+        if (trimmed) values.add(trimmed);
+      }
+    }
+    return [...values].sort();
+  }, [candidates]);
+  const pageSize = 9;
+  const pageCount = Math.max(1, Math.ceil(visible.length / pageSize));
+  const safePage = Math.min(page, pageCount);
+  const pageItems = visible.slice((safePage - 1) * pageSize, safePage * pageSize);
 
   useEffect(() => {
     writeRecruiterShortlist(selected);
@@ -66,6 +93,19 @@ export default function RecruiterSearch() {
       return next;
     });
   }, [candidates, loading]);
+
+  useEffect(() => {
+    let active = true;
+    listShortlist().then((result) => {
+      if (!active || !result?.available) {
+        if (active) setShortlistMode("browser");
+        return;
+      }
+      setShortlistMode("account");
+      setSelected(result.entries.map((entry) => entry.learnerUserId));
+    }).catch(() => { if (active) setShortlistMode("browser"); });
+    return () => { active = false; };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -85,8 +125,16 @@ export default function RecruiterSearch() {
     setStatFilter(filter !== "all" && statFilter === filter ? "all" : filter);
   };
 
-  const toggleSelect = (id: string) =>
-    setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : s.length >= 4 ? s : [...s, id]));
+  const toggleSelect = (id: string) => {
+    setSelected((current) => {
+      const next = current.includes(id) ? current.filter((item) => item !== id) : current.length >= 4 ? current : [...current, id];
+      if (shortlistMode === "account" && next.length !== current.length) {
+        const action = current.includes(id) ? deleteShortlist(id) : saveShortlist(id);
+        void action.catch(() => setSelected(current));
+      }
+      return next;
+    });
+  };
 
   const goCompare = () => {
     if (selected.length < 2) return;
@@ -185,6 +233,23 @@ export default function RecruiterSearch() {
             </DropdownMenuContent>
           </DropdownMenu>
 
+          <label className="text-xs text-[#334155]">
+            Skill
+            <select className="ml-2 h-9 rounded-lg border border-border/70 bg-background px-2" value={skill} onChange={(event) => { setSkill(event.target.value); setPage(1); }}>
+              <option value="all">All disclosed skills</option>
+              {skills.map((item) => <option key={item} value={item}>{item}</option>)}
+            </select>
+          </label>
+          <label className="text-xs text-[#334155]">
+            Sort
+            <select className="ml-2 h-9 rounded-lg border border-border/70 bg-background px-2" value={sort} onChange={(event) => setSort(event.target.value as "recent" | "name")}>
+              <option value="recent">Recent share</option>
+              <option value="name">Name</option>
+            </select>
+          </label>
+          <button type="button" className="h-9 rounded-lg border border-border/70 bg-background px-3 text-xs" onClick={() => setLayout((current) => current === "grid" ? "list" : "grid")}>
+            {layout === "grid" ? "List view" : "Grid view"}
+          </button>
           {focusIds ? (
             <button
               type="button"
@@ -196,7 +261,8 @@ export default function RecruiterSearch() {
           ) : null}
         </div>
 
-        <div className="mt-4 grid w-full gap-3 md:grid-cols-2 xl:grid-cols-3">
+        {shortlistMode === "browser" ? <p className="mt-3 text-xs text-[#64748b]">Shortlist is saved in this browser until the shortlist table is applied.</p> : null}
+        <div className={layout === "grid" ? "mt-4 grid w-full gap-3 md:grid-cols-2 xl:grid-cols-3" : "mt-4 space-y-3"}>
           {error && (
             <div className="md:col-span-2 xl:col-span-3">
               <EmptyState
@@ -215,7 +281,7 @@ export default function RecruiterSearch() {
                 description={focusIds
                   ? "Clear the answer filter to see every shared learner."
                   : candidates.length === 0
-                    ? "Learners appear here after they share a credential with recruiters."
+                    ? "Learners appear here after they share with your account or with all SIJIL recruiters. A public link does not add them."
                     : "Try another filter or search."}
                 action={focusIds
                   ? { label: "Show all", onClick: () => setFocusIds(null) }
@@ -225,7 +291,7 @@ export default function RecruiterSearch() {
               />
             </div>
           )}
-          {visible.map((c) => (
+          {pageItems.map((c) => (
             <RecruiterCandidateCard
               key={c.id}
               candidate={c}
@@ -236,6 +302,15 @@ export default function RecruiterSearch() {
             />
           ))}
         </div>
+        {pageCount > 1 ? (
+          <div className="mt-4 flex items-center justify-between text-xs text-[#334155]">
+            <span>Page {safePage} of {pageCount}</span>
+            <div className="flex gap-2">
+              <button type="button" className="rounded-lg border px-3 py-1" disabled={safePage === 1} onClick={() => setPage(safePage - 1)}>Previous</button>
+              <button type="button" className="rounded-lg border px-3 py-1" disabled={safePage === pageCount} onClick={() => setPage(safePage + 1)}>Next</button>
+            </div>
+          </div>
+        ) : null}
       </section>
 
       <div className="grid gap-4 lg:grid-cols-2">

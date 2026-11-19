@@ -1,4 +1,5 @@
 import { Eye, Mail, RefreshCw, Users } from "lucide-react";
+import { isDeliverableContributorEmail } from "@/lib/contributor-email";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { ProjectContributor } from "@/lib/sijil-data";
@@ -19,6 +20,8 @@ function ContributorRowView({
   onViewReview,
   onResend,
   onInvite,
+  selected,
+  onToggleSelect,
 }: {
   row: ContributorRow;
   learnerGithub: string | null;
@@ -26,6 +29,8 @@ function ContributorRowView({
   onViewReview: (reviewId: string) => void;
   onResend: (contributor: ProjectContributor) => void;
   onInvite: (contributor: ProjectContributor) => void;
+  selected?: boolean;
+  onToggleSelect?: (id: string) => void;
 }) {
   const contributor = row.contributor;
   const story = contributorStory(row);
@@ -51,6 +56,16 @@ function ContributorRowView({
       )}
     >
       <div className="flex min-w-0 items-center gap-3">
+        {story.action === "invite" && onToggleSelect ? (
+          <input
+            type="checkbox"
+            className="h-4 w-4 shrink-0 accent-[#023E8A]"
+            checked={Boolean(selected)}
+            disabled={!isDeliverableContributorEmail(contributor.email)}
+            aria-label={`Select ${contributor.name}`}
+            onChange={() => onToggleSelect(contributor.id)}
+          />
+        ) : null}
         {contributor.avatarUrl ? (
           <img src={contributor.avatarUrl} alt="" className="h-10 w-10 shrink-0 rounded-full object-cover" />
         ) : (
@@ -62,6 +77,8 @@ function ContributorRowView({
           <p className="truncate font-semibold text-[#023E8A]">{contributor.name}</p>
           <p className="mt-0.5 truncate text-xs text-[#64748b]">
             {displayHandle ? `@${displayHandle}` : contributor.role}
+            {" · "}
+            {isDeliverableContributorEmail(contributor.email) ? contributor.email : "Email unavailable"}
           </p>
         </div>
       </div>
@@ -108,7 +125,9 @@ function ContributorRowView({
                 ? "Read review"
                 : story.action === "resend"
                   ? (story.stale ? "Resend now" : "Remind")
-                  : "Invite"}
+                  : isDeliverableContributorEmail(contributor.email)
+                    ? "Request Feedback"
+                    : "Email unavailable"}
           </Button>
         )}
       </div>
@@ -127,6 +146,9 @@ export function PeerReviewContributorsBoard({
   onViewReview,
   onResend,
   onInvite,
+  selectedIds,
+  onToggleSelect,
+  onRequestSelected,
 }: {
   rows: ContributorRow[];
   visibleRows: ContributorRow[];
@@ -138,6 +160,9 @@ export function PeerReviewContributorsBoard({
   onViewReview: (reviewId: string) => void;
   onResend: (contributor: ProjectContributor) => void;
   onInvite: (contributor: ProjectContributor) => void;
+  selectedIds?: string[];
+  onToggleSelect?: (id: string) => void;
+  onRequestSelected?: () => void;
 }) {
   const sourceRows = filter === "all"
     ? rows.filter((row) => contributorStory(row).group !== "skip")
@@ -166,9 +191,17 @@ export function PeerReviewContributorsBoard({
             </span>
             <p className="text-base font-semibold text-[#023E8A]">Contributors</p>
           </div>
-          <p className="rounded-full bg-[#e8eef7] px-3 py-1 text-xs font-semibold text-[#023E8A]">
-            {coverage.reviewed} of {eligible} reviewed
-          </p>
+          <div className="flex items-center gap-2">
+            {onRequestSelected && (selectedIds?.length ?? 0) > 0 ? (
+              <Button size="sm" className="h-8 rounded-lg bg-[#023E8A] hover:bg-[#012A5C]" onClick={onRequestSelected}>
+                <Mail className="mr-1 h-3 w-3" />
+                Request Feedback ({selectedIds?.length})
+              </Button>
+            ) : null}
+            <p className="rounded-full bg-[#e8eef7] px-3 py-1 text-xs font-semibold text-[#023E8A]">
+              {coverage.reviewed} of {eligible} reviewed
+            </p>
+          </div>
         </div>
 
         <div className="mt-4 grid gap-2 sm:grid-cols-3">
@@ -225,6 +258,8 @@ export function PeerReviewContributorsBoard({
                     onViewReview={onViewReview}
                     onResend={onResend}
                     onInvite={onInvite}
+                    selected={selectedIds?.includes(row.contributor.id)}
+                    onToggleSelect={onToggleSelect}
                   />
                 ))}
               </div>

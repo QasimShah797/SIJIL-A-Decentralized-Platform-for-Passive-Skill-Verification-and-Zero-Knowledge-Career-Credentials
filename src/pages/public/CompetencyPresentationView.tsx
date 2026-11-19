@@ -24,6 +24,7 @@ import {
   type PublicPresentationView,
 } from "@/services/api/wallet.api";
 import { ReusableScoreProofCard } from "@/components/recruiter/ReusableScoreProofCard";
+import { AssessmentProofRequestCard } from "@/components/recruiter/AssessmentProofRequestCard";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -399,6 +400,10 @@ export default function CompetencyPresentationView() {
                   </CardContent>
                 </Card>
 
+                <p className="text-sm text-muted-foreground">
+                  The badge above is the credential record. A minimum-score proof is a separate check, and it is not accepted until the result below says so.
+                </p>
+                {token ? <AssessmentProofRequestCard shareToken={decodeURIComponent(token)} /> : null}
                 {token ? <ReusableScoreProofCard shareToken={decodeURIComponent(token)} /> : null}
 
                 <Card>

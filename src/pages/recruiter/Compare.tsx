@@ -91,7 +91,7 @@ export default function RecruiterCompare() {
           <EmptyState
             icon={GitCompare}
             title="No candidates yet"
-            description="Learners appear here after they share a credential with recruiters."
+            description="Learners appear here after they share a credential with your recruiter account."
             action={{ label: "Back to dashboard", onClick: () => navigate("/recruiter/search") }}
           />
         ) : (

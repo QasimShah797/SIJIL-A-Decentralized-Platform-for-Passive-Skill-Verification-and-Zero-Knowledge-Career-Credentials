@@ -59,10 +59,17 @@ export default function RecruiterCredentialView() {
     expiresAt: presentation.expiresAt,
   });
   const open = access === "active";
-  const ledgerBadge = ledgerResult ? mapLedgerStatusToBadge(ledgerResult.status, ledgerResult.detail) : null;
+  const ledgerBadge = !ledgerResult
+    ? null
+    : ledgerResult.checks?.zkp === "not_checked"
+      ? { variant: "warning" as const, label: "record matches, privacy proof not checked" }
+      : ledgerResult.checks?.zkp === "invalid"
+        ? { variant: "destructive" as const, label: "privacy proof failed" }
+        : mapLedgerStatusToBadge(ledgerResult.status, ledgerResult.detail);
   const checks = recruiterVerificationLines({
     access,
     ledgerStatus: ledgerResult?.status ?? null,
+    checks: ledgerResult?.checks ?? null,
   });
 
   const runIntegrityCheck = async () => {
@@ -70,14 +77,24 @@ export default function RecruiterCredentialView() {
     try {
       const next = await verifyCredentialLedgerApi(presentation.credentialId);
       setLedgerResult(next);
-      const badge = mapLedgerStatusToBadge(next.status, next.detail);
-      const shown = shareShowsVerified({ ledgerStatus: next.status, detail: next.detail });
+      const zkp = next.checks?.zkp;
+      const badge = zkp === "not_checked"
+        ? { variant: "warning" as const, label: "record matches, privacy proof not checked" }
+        : zkp === "invalid"
+          ? { variant: "destructive" as const, label: "privacy proof failed" }
+          : mapLedgerStatusToBadge(next.status, next.detail);
+      const shown = shareShowsVerified({
+        ledgerStatus: next.status,
+        detail: next.detail,
+        reason: next.reason,
+        zkp: next.checks?.zkp,
+      });
       toast({
         title: badge.label,
         description: shown
           ? "The blockchain record matches this credential."
           : badge.label,
-        variant: shown ? "default" : "destructive",
+        variant: shown || zkp === "not_checked" ? "default" : "destructive",
       });
     } finally {
       setVerifying(false);

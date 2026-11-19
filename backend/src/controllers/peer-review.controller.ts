@@ -27,12 +27,19 @@ export async function createPeerReviewInvite(req: Request, res: Response): Promi
   const result = await peerReviewService.createInvite(req.user!.id, input);
   const message = result.alreadyReviewed
     ? "Contributor already has a review for this project"
-    : result.status === "resent"
-      ? "Review invite resent by email"
+    : result.status === "resend_blocked"
+      ? "Resend blocked. The saved address is not the current public GitHub profile email."
       : result.status === "already_invited"
         ? "Review invite already pending"
-        : "Review invitation created";
-  return sendSuccess(res, result, message, result.alreadyReviewed ? 200 : 201);
+        : result.emailDeliveryStatus === "sent"
+          ? "Review invitation emailed"
+          : result.emailDeliveryStatus === "failed"
+            ? "Review invitation saved, but the email was not accepted"
+            : result.emailDeliveryStatus === "not_sent"
+              ? "Review invitation saved, but the email was not sent"
+              : "Review invitation saved";
+  const created = result.status === "created" || result.status === "email_not_sent";
+  return sendSuccess(res, result, message, created ? 201 : 200);
 }
 
 export async function resendPeerReviewInvitation(req: Request, res: Response): Promise<Response> {

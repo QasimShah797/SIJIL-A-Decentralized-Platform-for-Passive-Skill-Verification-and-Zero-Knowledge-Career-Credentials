@@ -4,7 +4,9 @@
 import { z } from "zod";
 import { AppError } from "../utils/AppError";
 import { supabaseService } from "./supabase.service";
-import { getEvaluateLedgerService, getLedgerService } from "./ledger.factory";
+import { getEvaluateLedgerService } from "./ledger.factory";
+import { canRevokeIssuedCredential } from "./credential-revoke-auth";
+import type { AuthCaller } from "./learner-access";
 import { verifyCredentialHash } from "./signing.service";
 import {
   evaluateCredentialVerification,
@@ -83,7 +85,17 @@ export function snapshotFromRow(
     evidenceHashMismatch: evidence?.mismatch,
     evidenceUnavailable: evidence?.unavailable,
     legacyUnverifiedEvidence: evidence?.legacy,
+    holderDid: row.holder_did,
+    issuerDid: row.issuer_did,
+    revokeStatus: row.revoke_status ?? null,
+    zkpApplicable: hasAssessmentCommitment(row.credential_document),
   };
+}
+
+function hasAssessmentCommitment(document: unknown): boolean {
+  if (!document || typeof document !== "object") return false;
+  const subject = (document as { credentialSubject?: { assessmentCommitment?: unknown } }).credentialSubject;
+  return Boolean(subject?.assessmentCommitment);
 }
 
 async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
@@ -192,9 +204,13 @@ export async function verifyPublicCredential(idOrUri: string): Promise<Credentia
 export async function revokeIssuedCredential(
   idOrUri: string,
   reason: string,
+  caller: AuthCaller,
 ): Promise<RevokeCredentialResult> {
   const row = await loadCredentialByIdOrUri(idOrUri);
   if (!row) throw new AppError("Credential not found", 404);
+  if (!canRevokeIssuedCredential(caller, row.user_id)) {
+    throw new AppError("Only the credential holder or an administrator can revoke this credential", 403);
+  }
 
   const now = new Date().toISOString();
   const alreadyRevoked = Boolean(row.revoked_at);
@@ -261,8 +277,8 @@ export async function isIssuedCredentialRevoked(
   if (!row) return false;
   if (row.revoked_at) return true;
 
-  const ledger = getLedgerService();
-  if (!ledger.isEnabled() || !row.credential_hash) return false;
+  const ledger = getEvaluateLedgerService();
+  if (!ledger.isEnabled() || !row.credential_hash) return Boolean(row.revoke_status === "pending");
   try {
     const result = await ledger.verifyCredential(row.id, row.credential_hash);
     return result.exists && result.status === "revoked";

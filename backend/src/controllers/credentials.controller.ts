@@ -22,7 +22,9 @@ import {
   type ReconcileDeps,
 } from "../services/anchor-reconciliation.service";
 import { supabaseReconcileStore } from "../services/anchor-reconciliation.store";
-import { getLedgerService } from "../services/ledger.factory";
+import { getEvaluateLedgerService, getLedgerService } from "../services/ledger.factory";
+import { env } from "../config/env";
+import { readCredentialLedgerHistory } from "../services/ledger-history.service";
 import { publicVerifyCache } from "../services/verify-cache";
 import { invalidateWalletLedgerStatus } from "../services/wallet-ledger-status";
 
@@ -77,10 +79,11 @@ export async function retryAnchor(req: Request, res: Response): Promise<Response
   return sendSuccess(res, result, "Anchor retry completed");
 }
 
-function reconcileDeps(): ReconcileDeps {
+function reconcileDeps(ledger: ReconcileDeps["ledger"]): ReconcileDeps {
   return {
     store: supabaseReconcileStore,
-    ledger: getLedgerService(),
+    ledger,
+    allowSubmit: env.FABRIC_RECONCILE_SUBMIT,
     onReconciled: (id) => {
       publicVerifyCache.invalidateCredential(id);
       invalidateWalletLedgerStatus(id);
@@ -91,7 +94,7 @@ function reconcileDeps(): ReconcileDeps {
 /** Admin read-only preview: current ledger state and the action reconciliation would take. */
 export async function previewLedgerReconcile(req: Request, res: Response): Promise<Response> {
   const { id } = reconcileParamSchema.parse({ id: paramString(req.params.id, "id") });
-  return sendSuccess(res, await previewReconciliation(id, reconcileDeps()));
+  return sendSuccess(res, await previewReconciliation(id, reconcileDeps(getEvaluateLedgerService())));
 }
 
 /** Admin-approved reconciliation of one credential recorded as anchored but missing from the ledger. */
@@ -100,13 +103,25 @@ export async function reconcileLedgerAnchor(req: Request, res: Response): Promis
   const body = reconcileBodySchema.parse(req.body ?? {});
   const result = await reconcileCredentialAnchor(
     { credentialId: id, expectedHash: body.expectedHash, reason: body.reason, requestedBy: req.user!.id },
-    reconcileDeps(),
+    reconcileDeps(getLedgerService()),
   );
   return sendSuccess(res, result, result.outcome === "reconciled" ? "Credential re-anchored" : "Already on ledger");
 }
 
 export async function revokeCredential(req: Request, res: Response): Promise<Response> {
   const input = revokeCredentialSchema.parse(req.body);
-  const result = await revokeIssuedCredential(paramString(req.params.id, "id"), input.reason);
-  return sendSuccess(res, result, "Credential revoked");
+  const result = await revokeIssuedCredential(
+    paramString(req.params.id, "id"),
+    input.reason,
+    callerFromRequest(req),
+  );
+  return sendSuccess(res, result, "Credential revocation recorded");
+}
+
+export async function getLedgerHistory(req: Request, res: Response): Promise<Response> {
+  const history = await readCredentialLedgerHistory(
+    paramString(req.params.id, "id"),
+    callerFromRequest(req),
+  );
+  return sendSuccess(res, history);
 }

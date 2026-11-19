@@ -85,4 +85,30 @@ export const supabaseReconcileStore: ReconcileStore = {
     if (error) throw new AppError("Could not update credential anchor record", 500);
     return Array.isArray(data) && data.length === 1;
   },
+
+  async syncObservedAnchor(id, observation, at) {
+    const patch = observation === "revoked"
+      ? {
+          anchor_status: "anchored",
+          revoke_status: "revoked",
+          revoked_at: at,
+          anchor_last_error: null,
+          revoke_last_error: null,
+          updated_at: at,
+        }
+      : {
+          anchor_status: "anchored",
+          anchor_last_error: null,
+          anchored_at: at,
+          updated_at: at,
+        };
+    const { data, error } = await supabaseService.client
+      .from("credentials")
+      .update(patch)
+      .eq("id", id)
+      .in("anchor_status", ["pending", "failed"])
+      .select("id");
+    if (error) throw new AppError("Could not record the ledger observation", 500);
+    return Array.isArray(data) && data.length === 1;
+  },
 };

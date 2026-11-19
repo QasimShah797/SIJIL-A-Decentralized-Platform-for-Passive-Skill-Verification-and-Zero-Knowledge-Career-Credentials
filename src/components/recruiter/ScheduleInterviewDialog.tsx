@@ -28,8 +28,10 @@ import {
   INTERVIEW_LOCATION_PLACEHOLDERS,
   INTERVIEW_MODE,
   INTERVIEW_MODE_LABELS,
+  browserTimeZone,
   defaultInterviewDateTime,
   toDateTimeLocalValue,
+  zonedDateTimeToIso,
   type InterviewMode,
 } from "@/lib/interview";
 
@@ -51,6 +53,7 @@ export function ScheduleInterviewDialog({
   const [mode, setMode] = useState<InterviewMode>(INTERVIEW_MODE.VIDEO_CALL);
   const [locationOrLink, setLocationOrLink] = useState("");
   const [notes, setNotes] = useState("");
+  const [timeZone, setTimeZone] = useState(() => browserTimeZone());
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -60,6 +63,7 @@ export function ScheduleInterviewDialog({
     setMode(INTERVIEW_MODE.VIDEO_CALL);
     setLocationOrLink("");
     setNotes("");
+    setTimeZone(browserTimeZone());
   }, [open, candidateId]);
 
   const minDateTime = useMemo(() => toDateTimeLocalValue(new Date()), [open]);
@@ -67,7 +71,16 @@ export function ScheduleInterviewDialog({
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    const localDate = new Date(scheduledAt);
+    if (submitting) return;
+    const zone = timeZone.trim() || "UTC";
+    let scheduledIso = "";
+    try {
+      scheduledIso = zonedDateTimeToIso(scheduledAt, zone);
+    } catch {
+      toast({ title: "Choose a valid timezone", variant: "destructive" });
+      return;
+    }
+    const localDate = new Date(scheduledIso);
     if (Number.isNaN(localDate.getTime())) {
       toast({ title: "Choose a valid date and time", variant: "destructive" });
       return;
@@ -89,25 +102,36 @@ export function ScheduleInterviewDialog({
     try {
       const interview = await scheduleInterviewApi({
         candidateId,
-        scheduledAt: localDate.toISOString(),
+        scheduledAt: scheduledIso,
         durationMinutes: Number(durationMinutes),
         mode,
         locationOrLink: locationOrLink.trim(),
         notes: notes.trim() || undefined,
+        timeZone: zone,
       });
-      const emailed = interview.emailStatus === "sent";
-      toast({
-        title: emailed ? "Interview scheduled" : "Interview saved — email not sent",
-        description: emailed
-          ? `Invitation emailed to ${interview.candidateEmail}.`
-          : `Saved for ${candidateName}, but nothing was sent to Gmail. Add a Gmail App Password as SMTP_USER and SMTP_PASS in backend/.env, restart the backend, then schedule again.`,
-        variant: emailed ? "default" : "destructive",
-      });
+      if (interview.emailStatus === "sent") {
+        toast({
+          title: "Interview scheduled and invitation sent",
+          description: "The email provider accepted the invitation.",
+        });
+      } else if (interview.emailStatus === "failed") {
+        toast({
+          title: "Interview scheduled, but the email was not sent",
+          description: "The interview is saved. The email provider did not accept the invitation. Use a Gmail App Password for SMTP_USER and SMTP_PASS in backend/.env, restart the backend, then resend from Interviews.",
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "Interview scheduled, but the email was not sent",
+          description: "The interview is saved. Email delivery is not configured. Set SMTP_USER and SMTP_PASS in backend/.env, restart the backend, then resend from Interviews.",
+          variant: "destructive",
+        });
+      }
       onOpenChange(false);
       onScheduled?.();
     } catch (err) {
       toast({
-        title: "Could not schedule interview",
+        title: "Interview scheduling failed",
         description: err instanceof Error ? err.message : "Please try again.",
         variant: "destructive",
       });
@@ -168,6 +192,19 @@ export function ScheduleInterviewDialog({
                 </SelectContent>
               </Select>
             </div>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="interview-timezone">Timezone</Label>
+            <Input
+              id="interview-timezone"
+              value={timeZone}
+              onChange={(event) => setTimeZone(event.target.value)}
+              placeholder="Asia/Karachi"
+              required
+            />
+            <p className="text-xs text-muted-foreground">
+              The date and time above are read in this timezone. Example: Asia/Karachi or UTC.
+            </p>
           </div>
           <div className="space-y-2">
             <Label htmlFor="interview-location">{locationLabel}</Label>

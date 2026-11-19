@@ -53,6 +53,11 @@ export interface ReconcileStore {
   completeAudit(auditId: string, outcome: "completed" | "failed", detail: { newAnchorTxId?: string; error?: string }): Promise<void>;
   /** Compare-and-set: only updates while the row still holds the previous anchor record. */
   replaceAnchorTx(id: string, previousTxId: string | null, newTxId: string, at: string): Promise<boolean>;
+  /**
+   * Database-only repair when Fabric already has this hash.
+   * Does not submit a transaction. Returns false if the row changed.
+   */
+  syncObservedAnchor(id: string, observation: "anchored" | "revoked", at: string): Promise<boolean>;
 }
 
 export class ReconcileInProgressError extends Error {}
@@ -62,6 +67,8 @@ export interface ReconcileDeps {
   ledger: LedgerPort;
   now?: () => Date;
   onReconciled?: (credentialId: string) => void;
+  /** False blocks a new Fabric submit. Database-only observation stays in preview. */
+  allowSubmit?: boolean;
 }
 
 export interface ReconcileRequest {
@@ -76,7 +83,11 @@ export type ReconcilePlan =
   | { action: "none_already_on_ledger"; ledgerExists: true; hashMatches: true }
   | { action: "refuse_conflicting_hash"; ledgerExists: true; hashMatches: false }
   | { action: "refuse_revoked" }
-  | { action: "refuse_not_anchored"; anchorStatus: string | null };
+  | { action: "refuse_not_anchored"; anchorStatus: string | null }
+  | { action: "await_anchor"; anchorStatus: string | null; ledgerExists: false }
+  | { action: "observe_anchored"; ledgerExists: true; hashMatches: true }
+  | { action: "observe_revoked"; ledgerExists: true; hashMatches: true }
+  | { action: "ledger_unavailable"; anchorStatus: string | null };
 
 export interface ReconcileResult {
   credentialId: string;
@@ -114,7 +125,21 @@ async function loadCredential(store: ReconcileStore, id: string): Promise<Reconc
 /** Read-only preview for administrators; performs no writes. */
 export async function previewReconciliation(credentialId: string, deps: ReconcileDeps): Promise<ReconcilePlan> {
   const credential = await loadCredential(deps.store, credentialId);
-  if (credential.anchorStatus !== "anchored") return { action: "refuse_not_anchored", anchorStatus: credential.anchorStatus };
+  if (credential.anchorStatus !== "anchored") {
+    if (!deps.ledger.isEnabled()) {
+      return { action: "ledger_unavailable", anchorStatus: credential.anchorStatus };
+    }
+    let view;
+    try {
+      view = await readLedger(deps.ledger, credential);
+    } catch {
+      return { action: "ledger_unavailable", anchorStatus: credential.anchorStatus };
+    }
+    if (!view.exists) return { action: "await_anchor", anchorStatus: credential.anchorStatus, ledgerExists: false };
+    if (!view.hashMatches) return { action: "refuse_conflicting_hash", ledgerExists: true, hashMatches: false };
+    if (view.status === "revoked") return { action: "observe_revoked", ledgerExists: true, hashMatches: true };
+    return { action: "observe_anchored", ledgerExists: true, hashMatches: true };
+  }
   if (isRevoked(credential)) return { action: "refuse_revoked" };
   const view = await readLedger(deps.ledger, credential);
   if (!view.exists) return { action: "anchor_missing", ledgerExists: false };
@@ -151,6 +176,33 @@ async function runReconciliation(request: ReconcileRequest, deps: ReconcileDeps)
       ledgerHashMatches,
     });
 
+  if (credential.anchorStatus === "pending" || credential.anchorStatus === "failed") {
+    const observed = await readLedger(ledger, credential);
+    if (!observed.exists) {
+      await audit("refused_not_anchored", false, false);
+      throw new AppError("Credential is not on the ledger. The existing queue stays held and was not submitted.", 409);
+    }
+    if (!observed.hashMatches) {
+      await audit("refused_conflicting_hash", true, false);
+      throw new AppError("Ledger holds a different hash for this credential; refusing to overwrite", 409);
+    }
+    const at = (deps.now?.() ?? new Date()).toISOString();
+    const observation = observed.status === "revoked" ? "revoked" : "anchored";
+    const synced = await store.syncObservedAnchor(credential.id, observation, at);
+    if (!synced) {
+      await audit("failed", true, true);
+      throw new AppError("Credential record changed during reconciliation", 409);
+    }
+    const auditId = await audit("already_on_ledger", true, true);
+    deps.onReconciled?.(credential.id);
+    return {
+      credentialId: credential.id,
+      outcome: "already_on_ledger",
+      previousAnchorTxId: credential.anchorTxId,
+      anchorTxId: credential.anchorTxId,
+      auditId,
+    };
+  }
   if (credential.anchorStatus !== "anchored") {
     await audit("refused_not_anchored", null, null);
     throw new AppError("Only credentials recorded as anchored can be reconciled; use the anchor retry for failed credentials", 409);
@@ -188,6 +240,11 @@ async function runReconciliation(request: ReconcileRequest, deps: ReconcileDeps)
       throw new AppError("Reconciliation already in progress for this credential", 409);
     }
     throw err;
+  }
+
+  if (deps.allowSubmit === false) {
+    await store.completeAudit(auditId, "failed", { error: "Fabric submit is held" });
+    throw new AppError("Fabric submit is held until FABRIC_RECONCILE_SUBMIT=true is approved", 409);
   }
 
   try {

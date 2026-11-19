@@ -60,15 +60,21 @@ export function zkpShareAvailability(input: { verified: boolean; fabric: string 
   available: boolean;
   message: string;
 } {
-  if (input.verified && input.fabric === "active") {
+  if (!input.verified) {
+    return {
+      available: false,
+      message: "A privacy proof can be prepared after this achievement has a signed credential. The exact score stays hidden.",
+    };
+  }
+  if (input.fabric !== "active") {
     return {
       available: true,
-      message: "A privacy proof can be checked for this achievement. The exact score stays hidden.",
+      message: "A privacy proof can be prepared. The blockchain anchor is not active, so that part is reported as not checked.",
     };
   }
   return {
-    available: false,
-    message: "A privacy proof is not shown as verified. The blockchain record this proof needs is not active.",
+    available: true,
+    message: "A privacy proof can be checked for this achievement. The exact score stays hidden.",
   };
 }
 
@@ -87,14 +93,38 @@ export function shareAccess(input: {
 
 export type VerificationLine = { label: string; value: string };
 
+export interface RecruiterCheckDetails {
+  document?: string;
+  signature?: string;
+  holder?: string;
+  evidence?: string;
+  issuer?: string;
+  anchor?: string;
+  revocation?: string;
+  zkp?: string;
+}
+
 export function recruiterVerificationLines(input: {
   access: ShareAccess;
   ledgerStatus: string | null;
+  checks?: RecruiterCheckDetails | null;
 }): VerificationLine[] {
   if (input.access === "revoked") {
     return [
       { label: "Shared access", value: "Stopped" },
       { label: "Credential", value: "Not shown. Stopping a link does not delete copies someone already saved." },
+    ];
+  }
+  if (input.access === "active" && input.checks) {
+    return [
+      { label: "Document", value: labelCheck(input.checks.document) },
+      { label: "Signature", value: labelCheck(input.checks.signature) },
+      { label: "Holder", value: labelCheck(input.checks.holder) },
+      { label: "Evidence", value: labelCheck(input.checks.evidence) },
+      { label: "Issuer", value: labelCheck(input.checks.issuer) },
+      { label: "Blockchain", value: labelCheck(input.checks.anchor) },
+      { label: "Revocation", value: labelCheck(input.checks.revocation) },
+      { label: "Privacy proof", value: labelCheck(input.checks.zkp) },
     ];
   }
   if (input.access === "expired") {
@@ -140,6 +170,36 @@ export function recruiterVerificationLines(input: {
         { label: "Credential", value: "Verification unavailable" },
         { label: "Blockchain", value: "Could not be checked" },
       ];
+  }
+}
+
+export function labelCheck(value: string | undefined): string {
+  switch (value) {
+    case "valid":
+    case "match":
+    case "bound":
+    case "trusted":
+    case "active":
+      return "Passed";
+    case "invalid":
+    case "mismatch":
+    case "untrusted":
+    case "hash_mismatch":
+      return "Failed";
+    case "revoked":
+      return "Revoked";
+    case "pending":
+      return "Pending";
+    case "missing":
+      return "Missing";
+    case "unavailable":
+      return "Unavailable";
+    case "legacy":
+      return "Legacy evidence was not re-checked";
+    case "not_applicable":
+      return "Not applicable";
+    default:
+      return "Not checked";
   }
 }
 

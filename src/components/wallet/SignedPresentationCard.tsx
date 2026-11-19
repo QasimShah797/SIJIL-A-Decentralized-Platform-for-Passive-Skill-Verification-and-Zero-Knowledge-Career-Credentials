@@ -1,19 +1,35 @@
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "@/hooks/use-toast";
-import { useAuth } from "@/hooks/useAuth";
-import { useSsiIdentity } from "@/hooks/useSsiIdentity";
 import { useCredentials } from "@/hooks/useLearnerData";
-import { getCredentialDbId, type CredentialView } from "@/lib/db/credentials";
-import { isDidKeyEd25519 } from "@/lib/did";
-import { eligiblePresentationCredentials } from "@/lib/ssi/presentation-selection";
-import { signUtf8 } from "@/lib/ssi/keystore";
-import { getUnlockedIdentity } from "@/lib/ssi/session";
+import type { CredentialView } from "@/lib/db/credentials";
+import type { WalletShareFieldId } from "@/lib/wallet-competency-shared";
 import {
-  createPresentationChallengeApi,
-  revokeLearnerPresentationApi,
-  submitLearnerPresentationApi,
-} from "@/services/api/ssi.api";
-import { GuidedShareFlow } from "./GuidedShareFlow";
+  getWalletCompetenciesApi,
+  listOwnerSharesApi,
+  revokeWalletShareApi,
+  shareWalletCompetencyApi,
+  type OwnerShareSummary,
+} from "@/services/api/wallet.api";
+import { walletShareRequest } from "@/lib/sharing/guide";
+import { apiRequest } from "@/services/api/client";
+import { GuidedShareFlow, type ManagedShare } from "./GuidedShareFlow";
+
+function toManagedShare(row: OwnerShareSummary): ManagedShare {
+  const status = row.shareStatus === "Revoked" ? "revoked" : row.shareStatus === "Expired" ? "expired" : "active";
+  const detail = row.shareKind === "direct-recruiter"
+    ? [row.recipientName, row.recipientOrganization].filter(Boolean).join(" at ")
+    : row.expiresAt
+      ? `Until ${new Date(row.expiresAt).toLocaleDateString()}`
+      : "";
+  return {
+    id: row.id,
+    label: row.label,
+    kind: row.shareKind === "all-recruiters" ? "all-recruiters" : row.shareKind === "direct-recruiter" ? "direct" : "public",
+    detail,
+    status,
+    sharedAt: row.createdAt,
+  };
+}
 
 function statusLabel(credential: CredentialView): string {
   if (credential.ledgerAnchorStatus === "anchored" || credential.anchorStatus === "anchored") {
@@ -27,116 +43,94 @@ function statusLabel(credential: CredentialView): string {
 
 export function SignedPresentationCard({ onBack }: { onBack: () => void }) {
   const { credentials } = useCredentials();
-  const { user } = useAuth();
-  const { snapshot, unlock, working: identityWorking, signingIdentity } = useSsiIdentity();
-  const [audience, setAudience] = useState("sijil-recruiter-verify");
+  const [managedShares, setManagedShares] = useState<ManagedShare[]>([]);
 
-  const activeDid = signingIdentity?.did
-    ?? (typeof snapshot.local?.did === "string" ? snapshot.local.did : null)
-    ?? snapshot.server.did
-    ?? null;
-
-  const eligible = useMemo(
-    () => eligiblePresentationCredentials(credentials, activeDid),
-    [credentials, activeDid],
-  );
-  const historical = useMemo(
-    () => credentials.filter((credential) => !isDidKeyEd25519(credential.holderDid)).length,
-    [credentials],
-  );
-  const canSign = Boolean(signingIdentity);
-  const identityNote = !canSign && snapshot.status === "key_unavailable"
-    ? "This browser does not have the key for your identity. A new identity will not be created."
-    : !canSign && snapshot.status !== "locked"
-      ? "Set up your secure identity, then approve this share."
-      : null;
-
-  const createPresentation = async (input: { credentialIds: string[]; audience: string }) => {
-    const currentIdentity = user?.id ? getUnlockedIdentity(user.id) : null;
-    if (!currentIdentity) {
-      const message = snapshot.status === "locked"
-        ? "Enter your recovery password to continue."
-        : "Set up your secure identity, then approve this share.";
-      toast({ title: "Unlock your secure identity first", description: message, variant: "destructive" });
-      throw new Error(message);
-    }
-    if (eligible.length === 0) {
-      const message = "Older records can still be shared with a private link.";
-      toast({ title: "No achievements can be signed yet", description: message, variant: "destructive" });
-      throw new Error(message);
-    }
-    const chosen = eligible.filter((credential) => input.credentialIds.includes(credential.id));
-    if (chosen.length === 0) {
-      const message = "Nothing is shared until you choose which credentials to include.";
-      toast({ title: "Select at least one credential", description: message, variant: "destructive" });
-      throw new Error(message);
-    }
+  const loadShares = async () => {
     try {
-      const credentialIds: string[] = [];
-      for (const credential of chosen) {
-        const dbId = await getCredentialDbId(credential.id);
-        credentialIds.push(dbId ?? credential.id);
-      }
-      const challenge = await createPresentationChallengeApi({
-        credentialIds,
-        audience: input.audience.trim() || "sijil-recruiter-verify",
-      });
-      if (challenge.holderDid !== currentIdentity.did) {
-        throw new Error("Bound DID does not match this browser key");
-      }
-      if (challenge.credentials.length !== credentialIds.length) {
-        throw new Error("Server challenge credential set does not match your selection");
-      }
-      const signature = await signUtf8(currentIdentity.privateKey, challenge.canonicalPayload);
-      const submitted = await submitLearnerPresentationApi({
-        challengeId: challenge.challengeId,
-        did: currentIdentity.did,
-        signature,
-      });
-      toast({ title: "Signed share created" });
-      return { verifyUrl: submitted.verifyUrl, presentationId: submitted.presentationId };
-    } catch (createError) {
-      const message = createError instanceof Error ? createError.message : "Signing failed.";
-      toast({ title: "Could not sign presentation", description: message, variant: "destructive" });
-      throw createError instanceof Error ? createError : new Error(message);
+      const rows = await listOwnerSharesApi();
+      setManagedShares(rows.map(toManagedShare));
+    } catch {
+      setManagedShares([]);
     }
   };
 
-  const revokePresentation = async (presentationId: string) => {
-    const confirmed = window.confirm(
-      "Stop access to this signed share? Anyone with the verify link will no longer see it. Your achievements and identity stay unchanged.",
-    );
-    if (!confirmed) return false;
-    try {
-      await revokeLearnerPresentationApi(presentationId);
-      toast({ title: "Share access stopped" });
-      return true;
-    } catch (revokeError) {
-      const message = revokeError instanceof Error ? revokeError.message : "Revoke failed.";
-      toast({ title: "Could not revoke presentation", description: message, variant: "destructive" });
-      throw revokeError instanceof Error ? revokeError : new Error(message);
+  useEffect(() => {
+    void loadShares();
+  }, []);
+
+  const shareSelected = async (
+    chosenIds: string[],
+    selectedFields: string[],
+    extra: { recipientUserId?: string; shareAudience?: "all-recruiters"; consentToAllRecruiters?: boolean },
+  ) => {
+    const rows = await getWalletCompetenciesApi();
+    if (!rows) {
+      throw new Error("The wallet service is unavailable. Start the SIJIL API and try again.");
     }
+    const versionResult = await apiRequest<{ versions: Array<{ id: string; credentialId: string | null; status: string }> }>("/wallet/competency-versions").catch(() => null);
+    const versionIds = (versionResult?.versions ?? [])
+      .filter((version) => version.status === "issued" && version.credentialId && chosenIds.includes(version.credentialId))
+      .map((version) => version.id);
+    const chosen = credentials.filter((credential) => chosenIds.includes(credential.id));
+    if (chosen.length === 0) throw new Error("Select at least one achievement.");
+    let recipientName: string | null = null;
+    let recipientOrganization: string | null = null;
+    for (const credential of chosen) {
+      const skill = credential.skill !== "—" ? credential.skill : credential.name;
+      const wanted = skill.trim().toLowerCase();
+      const matches = rows.filter((row) => row.competencyName.trim().toLowerCase() === wanted);
+      if (matches.length !== 1) {
+        throw new Error(`${skill} is not available to share from the wallet yet.`);
+      }
+      const request = walletShareRequest({
+        competencyId: matches[0].competencyId,
+        selectedFields,
+        expiresInDays: 30,
+      });
+      const created = await shareWalletCompetencyApi({
+        ...request,
+        selectedFields: request.selectedFields as WalletShareFieldId[],
+        ...extra,
+        ...(versionIds.length > 0 ? { competencyVersionIds: versionIds } : {}),
+      });
+      recipientName = created.recipientName ?? recipientName;
+      recipientOrganization = created.recipientOrganization ?? recipientOrganization;
+    }
+    await loadShares();
+    return { recipientName, recipientOrganization };
+  };
+
+  const shareWithAllRecruiters = async (input: { credentialIds: string[]; selectedFields: string[] }) => {
+    await shareSelected(input.credentialIds, input.selectedFields, {
+      shareAudience: "all-recruiters",
+      consentToAllRecruiters: true,
+    });
+    toast({ title: "Visible to all SIJIL recruiters" });
+  };
+
+  const revokeManagedShare = async (shareId: string) => {
+    const confirmed = window.confirm(
+      "Stop this share? Recruiters will lose access the next time they open SIJIL. A copy they already saved is not deleted.",
+    );
+    if (!confirmed) return;
+    const stopped = await revokeWalletShareApi(shareId);
+    if (!stopped) throw new Error("The share could not be stopped.");
+    toast({ title: "Sharing stopped" });
+    await loadShares();
   };
 
   return (
     <GuidedShareFlow
-      credentials={eligible.map((credential) => ({
+      credentials={credentials.map((credential) => ({
         id: credential.id,
         title: credential.skill !== "—" ? credential.skill : credential.name,
         issuer: credential.issuer || credential.issuerDid,
         status: statusLabel(credential),
       }))}
-      historicalCount={historical}
-      canSign={canSign}
-      identityLocked={snapshot.status === "locked"}
-      identityNote={identityNote}
-      audience={audience}
-      onAudienceChange={setAudience}
-      onUnlock={unlock}
-      unlockWorking={identityWorking}
-      onApprove={createPresentation}
-      onRevoke={revokePresentation}
       onBack={onBack}
+      onShareAll={shareWithAllRecruiters}
+      managedShares={managedShares}
+      onRevokeManagedShare={revokeManagedShare}
     />
   );
 }

@@ -87,7 +87,7 @@ export type PublicInspectorView = {
   reviews: Array<{ reviewer: string; text: string }>;
   github: {
     repos: number;
-    commits: number;
+    commits: number | null;
     activities: number;
     pullRequests: number;
     languages: string[];
@@ -671,7 +671,10 @@ export function inspectorViewFromLedger(items: EvidenceLedgerItem[]): PublicInsp
   }));
 
   const languages = [...new Set(githubRepos.map((repo) => repo.language).filter((value): value is string => Boolean(value)))];
-  const commits = githubRepos.reduce((total, repo) => total + (repo.commits ?? 0), 0);
+  const disclosedCommits = githubRepos.filter((repo) => repo.commits != null);
+  const commits = disclosedCommits.length > 0
+    ? disclosedCommits.reduce((total, repo) => total + (repo.commits ?? 0), 0)
+    : null;
 
   const lmsByCourse = new Map<string, { name: string; assignments: number; scores: number[] }>();
   for (const row of lmsAssignments) {

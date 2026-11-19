@@ -1,8 +1,7 @@
 /**
  * Peer review API — projects, contributors, invites, stats.
  */
-import { tryApiRequest, apiRequest, isApiEnabled, ApiUnavailableError } from "./client";
-import { createPeerReviewInviteLocal, resendPeerReviewInviteLocal } from "@/lib/db/peer-review-page";
+import { tryApiRequest, apiRequest, isApiEnabled } from "./client";
 import type { PeerReview, ProjectContributor } from "@/lib/sijil-data";
 import type { PeerReviewProject } from "@/lib/db/peer-review-page";
 import { resolvePeerReviewDate } from "@/lib/peer-review-date";
@@ -71,27 +70,34 @@ export async function createPeerReviewInviteApi(
   token: string;
   reviewLink: string;
   status: string;
+  emailDeliveryStatus?: "pending" | "sent" | "failed" | "not_sent" | "unknown";
   importedReviewId?: string;
   alreadyReviewed?: boolean;
 } | null> {
   if (isApiEnabled()) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 30_000);
     try {
       return await apiRequest("/peer-review/invite", {
         method: "POST",
         body: JSON.stringify(input),
+        signal: controller.signal,
       });
     } catch (err) {
-      const local = await createPeerReviewInviteLocal(input);
-      if (local) return local;
-      if (onError && err instanceof Error) onError(err.message);
+      const message = err instanceof Error ? err.message : "Could not create review invitation";
+      const timedOut = err instanceof Error && (err.name === "AbortError" || /aborted|timeout/i.test(message));
+      if (onError) {
+        onError(timedOut
+          ? "The request timed out. Refresh this page before trying again so an existing invitation is not emailed twice."
+          : message);
+      }
       return null;
+    } finally {
+      clearTimeout(timer);
     }
   }
 
-  const local = await createPeerReviewInviteLocal(input);
-  if (local) return local;
-
-  if (onError) onError("Could not create review invitation");
+  if (onError) onError("Contributor invitations require the backend so the public GitHub profile email can be confirmed.");
   return null;
 }
 
@@ -104,27 +110,22 @@ export async function resendPeerReviewInvitationApi(
   token: string;
   reviewLink: string;
   status: string;
+  emailDeliveryStatus?: "pending" | "sent" | "failed" | "not_sent" | "unknown";
   viaFallback?: boolean;
 } | null> {
-  if (isApiEnabled()) {
-    try {
-      return await apiRequest(`/peer-review/invitations/${encodeURIComponent(invitationId)}/resend`, {
-        method: "POST",
-        body: JSON.stringify({ source }),
-      });
-    } catch (err) {
-      const local = await resendPeerReviewInviteLocal(invitationId, source);
-      if (local) return local;
-      if (onError && err instanceof Error) onError(err.message);
-      return null;
-    }
+  if (!isApiEnabled()) {
+    if (onError) onError("Resend requires the backend so the public GitHub profile email can be confirmed.");
+    return null;
   }
-
-  const local = await resendPeerReviewInviteLocal(invitationId, source);
-  if (local) return local;
-
-  if (onError) onError("Could not resend the review invitation");
-  return null;
+  try {
+    return await apiRequest(`/peer-review/invitations/${encodeURIComponent(invitationId)}/resend`, {
+      method: "POST",
+      body: JSON.stringify({ source }),
+    });
+  } catch (err) {
+    if (onError && err instanceof Error) onError(err.message);
+    return null;
+  }
 }
 
 export async function submitPeerReviewApi(input: {

@@ -10,9 +10,13 @@ import type { CircuitVariant } from "./zkp-policy";
 
 export const GITHUB_ZKP_ARTIFACT_HASHES = Object.freeze({
   wasm: "0332ae8aaac6c1699ce9fc627b8c95fb9104aed31621ac85556e721f1f7b9f97",
-  zkey: "3103de335ab2695adc3df2b6b5a7965ad7d3080cd71be7207577b57473517d7a",
-  verificationKey: "7f1f7d5ea7ddeb79743ebf85c1b98c9afcfdddbf9d70ee38cf57443f8035cf06",
+  zkey: "3b8eb0b5f60c4a98003152da0af5cd6044fac993c99a710ffe8ffcc5fde4e4d5",
+  verificationKey: "5180dbd1fa2315044393bb1f3b63d2e2e21f3c8be12500af63e0d1b32e287154",
 });
+
+/** Previous development verification key. It still checks proofs made before this setup. */
+export const GITHUB_LEGACY_VERIFICATION_KEY_SHA256 =
+  "7f1f7d5ea7ddeb79743ebf85c1b98c9afcfdddbf9d70ee38cf57443f8035cf06";
 
 /** Source-pinned digests for github-contributions-v1 below artifacts. */
 export const GITHUB_BELOW_ZKP_ARTIFACT_HASHES = Object.freeze({

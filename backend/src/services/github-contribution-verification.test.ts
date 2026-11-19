@@ -277,11 +277,11 @@ describe("GitHub commit authorship verification", () => {
     assert.equal(countUniqueGitHubCommits(commits), 2);
   });
 
-  it("rejects commits linked to a different GitHub account", async () => {
+  it("excludes commits authored by a different GitHub account", async () => {
     const mockFetch: typeof fetch = async () =>
       new Response(
         JSON.stringify([
-          { sha: "abc123", author: { id: 99999, login: "anotheruser" } },
+          { sha: "abc123", author: { id: 99999, login: "anotheruser" }, committer: { id: 12345 } },
         ]),
         { status: 200 },
       );
@@ -290,15 +290,61 @@ describe("GitHub commit authorship verification", () => {
       "./github-contribution-verification.service"
     );
 
-    await assert.rejects(
-      fetchPaginatedGitHubCommits({
-        accessToken: "test-token",
-        repositoryFullName: "testlearner/demo",
-        githubUsername: "testlearner",
-        expectedGitHubUserId: 12345,
-        fetchImpl: mockFetch,
-      }),
-      /GitHub commit author does not match/,
-    );
+    const commits = await fetchPaginatedGitHubCommits({
+      accessToken: "test-token",
+      repositoryFullName: "testlearner/demo",
+      githubUsername: "testlearner",
+      expectedGitHubUserId: 12345,
+      fetchImpl: mockFetch,
+    });
+    assert.equal(countUniqueGitHubCommits(commits), 0);
+  });
+
+  it("does not pass an at-least-100 request when the learner authored 80 of 300 commits", async () => {
+    const rows = [
+      ...Array.from({ length: 80 }, (_, index) => ({
+        sha: `a${index.toString(16).padStart(6, "0")}`,
+        author: { id: 12345, login: "learner-b" },
+        committer: { id: 12345 },
+      })),
+      ...Array.from({ length: 220 }, (_, index) => ({
+        sha: `b${index.toString(16).padStart(6, "0")}`,
+        author: { id: 777, login: "learner-a" },
+        committer: { id: 777 },
+      })),
+    ];
+    const mockFetch: typeof fetch = async () => new Response(JSON.stringify(rows), { status: 200 });
+    const { fetchPaginatedGitHubCommits } = await import("./github-contribution-verification.service");
+    const commits = await fetchPaginatedGitHubCommits({
+      accessToken: "test-token",
+      repositoryFullName: "org/shared",
+      githubUsername: "learner-b",
+      expectedGitHubUserId: 12345,
+      fetchImpl: mockFetch,
+    });
+    const count = countUniqueGitHubCommits(commits);
+    assert.equal(rows.length, 300);
+    assert.equal(count, 80);
+    assert.equal(count >= 100, false);
+  });
+
+  it("counts 120 commits authored by the connected account and ignores the committer", async () => {
+    const rows = Array.from({ length: 120 }, (_, index) => ({
+      sha: `c${index.toString(16).padStart(6, "0")}`,
+      author: { id: 12345, login: "learner-a" },
+      committer: { id: index % 2 === 0 ? 12345 : 888 },
+    }));
+    rows.push({ sha: "deadbeef", author: null as unknown as { id: number; login: string }, committer: { id: 12345 } });
+    const mockFetch: typeof fetch = async () => new Response(JSON.stringify(rows), { status: 200 });
+    const { fetchPaginatedGitHubCommits } = await import("./github-contribution-verification.service");
+    const commits = await fetchPaginatedGitHubCommits({
+      accessToken: "test-token",
+      repositoryFullName: "org/shared",
+      githubUsername: "learner-a",
+      expectedGitHubUserId: 12345,
+      fetchImpl: mockFetch,
+    });
+    assert.equal(countUniqueGitHubCommits(commits), 120);
+    assert.equal(countUniqueGitHubCommits(commits) >= 100, true);
   });
 });

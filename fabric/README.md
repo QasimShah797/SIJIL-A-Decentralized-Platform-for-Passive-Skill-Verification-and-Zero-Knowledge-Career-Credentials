@@ -1,6 +1,6 @@
 # SIJIL Fabric test network (step 3)
 
-Local Hyperledger Fabric **2.5.12** test network plus TypeScript chaincode that stores opaque credential hashes. **Nothing in the SIJIL app calls this yet.**
+Local Hyperledger Fabric **2.5.12** test network plus TypeScript chaincode that stores opaque credential hashes. The SIJIL backend submits and evaluates this chaincode when Fabric is enabled. The sample network is for development. See [OPERATIONS.md](OPERATIONS.md) before any upgrade, enrollment, or queue activation. `FABRIC_ENABLED` stays false until that approval.
 
 Anchors contain only `credentialId`, `hash`, `issuerDid`, `holderDid`, `issuedAt`, `status`, `revokedAt`, and `revocationReason`. No names, emails, or evidence payloads.
 

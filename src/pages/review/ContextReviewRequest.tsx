@@ -55,28 +55,25 @@ function verifyInviteIdentity(
   const emailMatch = Boolean(invitedEmail && email && email === invitedEmail);
   const githubMatch = Boolean(invitedGithub && github && github === invitedGithub);
 
-  if (invitedEmail && invitedGithub) {
-    if (!emailMatch && !githubMatch) {
-      toast({
-        title: "Not authorized",
-        description: "This review link is only for the invited contributor. Enter your invited email or GitHub username.",
-        variant: "destructive",
-      });
-      return false;
-    }
-    return true;
-  }
-
   if (invitedEmail && !emailMatch) {
     toast({
       title: "Not authorized",
-      description: "This review link is only for the invited contributor email.",
+      description: "Enter the invited email address. A GitHub username does not replace it.",
       variant: "destructive",
     });
     return false;
   }
 
-  if (invitedGithub && !githubMatch) {
+  if (github && invitedGithub && !githubMatch) {
+    toast({
+      title: "Not authorized",
+      description: "The GitHub username does not match the invited contributor.",
+      variant: "destructive",
+    });
+    return false;
+  }
+
+  if (!invitedEmail && invitedGithub && !githubMatch) {
     toast({
       title: "Not authorized",
       description: "This review link is only for the invited GitHub contributor.",
@@ -163,7 +160,7 @@ export default function ContextReviewRequest() {
             </CardTitle>
           </CardHeader>
           <CardContent className="text-sm text-muted-foreground">
-            Thank you. Your feedback has been stored as a Context Verified Review on {form.learnerName}'s SIJIL evidence trail.
+            Thank you. Your feedback is stored against this invitation for {form.learnerName}. Receiving the email link does not prove GitHub account ownership.
           </CardContent>
         </Card>
       </Shell>
@@ -195,7 +192,7 @@ export default function ContextReviewRequest() {
         reviewerGithubUsername: enteredGithub.trim() || undefined,
       });
       setPageState("submitted");
-      toast({ title: "Review submitted", description: "Stored as Context Verified Review." });
+      toast({ title: "Review submitted", description: "Stored as pending verification. The invitation link does not mark this review verified." });
     } catch (e) {
       toast({
         title: "Submission failed",

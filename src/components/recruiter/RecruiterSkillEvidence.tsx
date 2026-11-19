@@ -9,6 +9,8 @@ import {
   inspectorViewFromLedger,
 } from "@/lib/public-credential";
 import type { SharedCredentialView } from "@/lib/shared-presentation";
+import { AssessmentProofRequestCard } from "@/components/recruiter/AssessmentProofRequestCard";
+import { GitHubActivityRequestCard } from "@/components/recruiter/GitHubActivityRequestCard";
 
 export type RecruiterSkillCard = {
   id: string;
@@ -19,6 +21,7 @@ export type RecruiterSkillCard = {
   competencyId: string;
   selectedFields: string[];
   payload: Record<string, unknown>;
+  presentationId: string;
 };
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -63,6 +66,7 @@ export function recruiterSkillCards(credentials: SharedCredentialView[]): Recrui
         competencyId: asText(row.competencyId) || asText(competency.competencyId) || name,
         selectedFields: credential.selectedFields,
         payload,
+        presentationId: credential.presentationId,
       });
     }
   }
@@ -76,7 +80,15 @@ export function displayRecruiterSkillName(name: string) {
   return trimmed.replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
-export function RecruiterCompetencyDetail({ card }: { card: RecruiterSkillCard }) {
+export function RecruiterCompetencyDetail({
+  card,
+  learnerUserId,
+  section = "all",
+}: {
+  card: RecruiterSkillCard;
+  learnerUserId?: string;
+  section?: "all" | "evidence" | "requests";
+}) {
   const [source, setSource] = useState<InspectorSource>("github");
   const inspector = useMemo(() => {
     const ledger = buildEvidenceLedger(card.payload, card.competencyId, card.selectedFields);
@@ -89,24 +101,44 @@ export function RecruiterCompetencyDetail({ card }: { card: RecruiterSkillCard }
     }
   }, [inspector.availableSources, source]);
 
+  const showEvidence = section !== "requests";
+  const showRequests = section !== "evidence";
+
   return (
     <div className="grid gap-4 xl:grid-cols-2">
-      <CompetencyPackageCard
-        competencyName={displayRecruiterSkillName(card.name)}
-        github={inspector.github}
-        lmsRows={inspector.lmsRows}
-        taskLabel={inspector.taskDetail}
-      />
-      <EvidenceInspectorCard
-        source={source}
-        onSourceChange={setSource}
-        availableSources={inspector.availableSources}
-        githubRepos={inspector.githubRepos}
-        lmsAssignments={inspector.lmsAssignments}
-        taskDetail={inspector.taskDetail}
-        reviews={inspector.reviews}
-        verifyUrl={inspector.verifyUrl}
-      />
+      {showEvidence ? (
+        <>
+          <CompetencyPackageCard
+            competencyName={displayRecruiterSkillName(card.name)}
+            github={inspector.github}
+            lmsRows={inspector.lmsRows}
+            taskLabel={inspector.taskDetail}
+          />
+          <EvidenceInspectorCard
+            source={source}
+            onSourceChange={setSource}
+            availableSources={inspector.availableSources}
+            githubRepos={inspector.githubRepos}
+            lmsAssignments={inspector.lmsAssignments}
+            taskDetail={inspector.taskDetail}
+            reviews={inspector.reviews}
+            verifyUrl={inspector.verifyUrl}
+          />
+        </>
+      ) : null}
+      {showRequests && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(card.presentationId) ? (
+        <div className="xl:col-span-2">
+          <div className="space-y-3">
+            <div>
+              <h2 className="text-base font-semibold text-[#0f172a]">Request Private Verification</h2>
+              <p className="mt-1 text-sm text-[#64748b]">Practical task score and GitHub activity can be requested. Moodle performance and skill progression are not ready. A request never shows the exact score or commit count.</p>
+            </div>
+            <AssessmentProofRequestCard presentationId={card.presentationId} />
+            {learnerUserId ? <GitHubActivityRequestCard learnerUserId={learnerUserId} /> : null}
+          </div>
+          <p className="mt-2 text-xs text-[#64748b]">Shared means the learner permitted this achievement. A proof is verified only after the server accepts the cryptographic check. A signature check, a revocation check, and a ledger check are separate.</p>
+        </div>
+      ) : null}
     </div>
   );
 }

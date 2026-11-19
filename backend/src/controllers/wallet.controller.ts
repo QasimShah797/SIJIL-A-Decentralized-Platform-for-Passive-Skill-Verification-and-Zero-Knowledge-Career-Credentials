@@ -50,6 +50,12 @@ export async function syncWalletCompetency(req: Request, res: Response): Promise
   return sendSuccess(res, record, "Competency wallet record synced");
 }
 
+export async function listRegisteredRecruiters(req: Request, res: Response): Promise<Response> {
+  const query = typeof req.query.q === "string" ? req.query.q.slice(0, 80) : "";
+  const recruiters = await walletService.listRegisteredRecruiters(query);
+  return sendSuccess(res, recruiters);
+}
+
 export async function shareWalletCompetency(req: Request, res: Response): Promise<Response> {
   const { competencyId } = competencyIdParamSchema.parse(req.params);
   const input = shareWalletCompetencySchema.parse(req.body);
@@ -60,6 +66,11 @@ export async function shareWalletCompetency(req: Request, res: Response): Promis
     walletService.shareCompetency(req.user!.id, competencyId, input),
   );
   return sendSuccess(res, result, "Selective disclosure presentation created", 201);
+}
+
+export async function listOwnerShares(req: Request, res: Response): Promise<Response> {
+  const shares = await runWithUserDb(req.accessToken, () => walletService.listOwnerShares(req.user!.id));
+  return sendSuccess(res, shares);
 }
 
 export async function revokeWalletShare(req: Request, res: Response): Promise<Response> {

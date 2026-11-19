@@ -23,10 +23,18 @@ import {
   sendInterviewCancellationEmail,
   sendInterviewInvitationEmail,
 } from "../utils/interviewEmail";
+import { storedInterviewTimeZone } from "../utils/interviewEmailContent";
 import { isSmtpConfigured } from "../utils/mailer";
 import type { AuthCaller } from "./learner-access";
+import {
+  finishInvitationDelivery,
+  interviewSaveFailure,
+  safeMailFailure,
+} from "./interview-delivery";
 
 type InterviewRow = Record<string, unknown>;
+
+const scheduleInFlight = new Set<string>();
 
 function rowToInterview(row: InterviewRow): ScheduledInterviewView {
   return {
@@ -42,11 +50,16 @@ function rowToInterview(row: InterviewRow): ScheduledInterviewView {
     mode: row.mode as InterviewMode,
     locationOrLink: row.location_or_link as string,
     notes: (row.notes as string | null) ?? null,
+    timeZone: (row.time_zone as string | null) ?? null,
     status: row.status as InterviewStatus,
     cancelledAt: (row.cancelled_at as string | null) ?? null,
     emailStatus: (row.email_status as string) ?? INTERVIEW_EMAIL_STATUS.NOT_SENT,
     createdAt: row.created_at as string,
   };
+}
+
+function learnerInterviewUrl(): string {
+  return `${env.FRONTEND_URL.replace(/\/$/, "")}/learner/interviews`;
 }
 
 function toEmailDetails(
@@ -64,6 +77,8 @@ function toEmailDetails(
     mode: interview.mode,
     locationOrLink: interview.locationOrLink,
     notes: interview.notes,
+    timeZone: storedInterviewTimeZone(interview.timeZone),
+    portalUrl: learnerInterviewUrl(),
   };
 }
 
@@ -181,6 +196,27 @@ export class InterviewService {
 
     const notes = input.notes?.trim() || null;
     const db = interviewDb(accessToken);
+    const flightKey = `${recruiterId}:${input.candidateId}:${scheduledAt.toISOString()}`;
+    if (scheduleInFlight.has(flightKey)) {
+      throw new AppError("An interview with this learner is already being scheduled at that time", 409);
+    }
+    scheduleInFlight.add(flightKey);
+    try {
+    const windowStart = new Date(scheduledAt.getTime() - 60_000).toISOString();
+    const windowEnd = new Date(scheduledAt.getTime() + 60_000).toISOString();
+    const { data: duplicate, error: duplicateError } = await db
+      .from("scheduled_interviews")
+      .select("id")
+      .eq("recruiter_user_id", recruiterId)
+      .eq("candidate_user_id", input.candidateId)
+      .eq("status", INTERVIEW_STATUS.SCHEDULED)
+      .gte("scheduled_at", windowStart)
+      .lte("scheduled_at", windowEnd)
+      .limit(1);
+    if (duplicateError) throw new AppError(duplicateError.message, 500);
+    if (duplicate && duplicate.length > 0) {
+      throw new AppError("An interview with this learner is already scheduled at that time", 409);
+    }
 
     const { data, error } = await db
       .from("scheduled_interviews")
@@ -198,29 +234,43 @@ export class InterviewService {
         notes,
         status: INTERVIEW_STATUS.SCHEDULED,
         email_status: INTERVIEW_EMAIL_STATUS.NOT_SENT,
+        time_zone: storedInterviewTimeZone(input.timeZone),
       })
       .select("*")
       .single();
 
     if (error || !data) {
-      throw new AppError(error?.message ?? "Could not save the interview", 500);
+      const code = error && "code" in error ? error.code ?? null : null;
+      const missingZone = code === "42703" || /time_zone/i.test(error?.message ?? "");
+      console.error("interview save failed", { code });
+      if (missingZone) {
+        throw new AppError(
+          "Interview scheduling needs the scheduled_interviews time_zone column. Apply supabase/migrations/20261118120000_scheduled_interviews_time_zone.sql first.",
+          503,
+        );
+      }
+      throw interviewSaveFailure();
     }
 
     const interview = rowToInterview(data as InterviewRow);
-
-    try {
-      const mail = await sendInterviewInvitationEmail(toEmailDetails(interview, recruiter.title));
-      const emailStatus = mail.delivered ? INTERVIEW_EMAIL_STATUS.SENT : INTERVIEW_EMAIL_STATUS.NOT_SENT;
-      await markEmailStatus(interview.id, emailStatus, accessToken);
-      return { ...interview, emailStatus };
-    } catch (err) {
-      await markEmailStatus(interview.id, INTERVIEW_EMAIL_STATUS.FAILED, accessToken);
-      const message = err instanceof Error ? err.message : "Could not send the interview invitation email";
-      throw new AppError(
-        `Interview was saved, but the invitation email could not be sent: ${message}`,
-        502,
-      );
+    const emailStatus = await finishInvitationDelivery({
+      send: () => sendInterviewInvitationEmail(toEmailDetails(interview, recruiter.title)),
+      mark: (status) => markEmailStatus(interview.id, status, accessToken),
+    });
+    return { ...interview, emailStatus };
+    } finally {
+      scheduleInFlight.delete(flightKey);
     }
+  }
+
+  async listForLearner(learnerId: string, accessToken?: string): Promise<ScheduledInterviewView[]> {
+    const { data, error } = await interviewDb(accessToken)
+      .from("scheduled_interviews")
+      .select("*")
+      .eq("candidate_user_id", learnerId)
+      .order("scheduled_at", { ascending: false });
+    if (error) throw new AppError(error.message, 500);
+    return (data ?? []).map((row) => rowToInterview(row as InterviewRow));
   }
 
   async listForRecruiter(
@@ -284,19 +334,11 @@ export class InterviewService {
     const interview = rowToInterview(data as InterviewRow);
     const { title } = await resolveRecruiterProfile(recruiterId);
 
-    try {
-      const mail = await sendInterviewCancellationEmail(toEmailDetails(interview, title));
-      const emailStatus = mail.delivered ? INTERVIEW_EMAIL_STATUS.SENT : INTERVIEW_EMAIL_STATUS.NOT_SENT;
-      await markEmailStatus(interview.id, emailStatus, accessToken);
-      return { ...interview, emailStatus };
-    } catch (err) {
-      await markEmailStatus(interview.id, INTERVIEW_EMAIL_STATUS.FAILED, accessToken);
-      const message = err instanceof Error ? err.message : "Could not send the cancellation email";
-      throw new AppError(
-        `Interview was cancelled, but the candidate email could not be sent: ${message}`,
-        502,
-      );
-    }
+    const emailStatus = await finishInvitationDelivery({
+      send: () => sendInterviewCancellationEmail(toEmailDetails(interview, title)),
+      mark: (status) => markEmailStatus(interview.id, status, accessToken),
+    });
+    return { ...interview, emailStatus };
   }
 
   async resendEmail(
@@ -337,8 +379,8 @@ export class InterviewService {
       return { ...interview, emailStatus: INTERVIEW_EMAIL_STATUS.SENT };
     } catch (err) {
       await markEmailStatus(interview.id, INTERVIEW_EMAIL_STATUS.FAILED, accessToken);
-      const message = err instanceof Error ? err.message : "Could not send the email";
-      throw new AppError(`Could not send the interview email: ${message}`, 502);
+      console.error("[SIJIL Backend Error] Interview email was not accepted.", safeMailFailure(err));
+      throw new AppError("The email provider did not accept the invitation.", 502);
     }
   }
 }

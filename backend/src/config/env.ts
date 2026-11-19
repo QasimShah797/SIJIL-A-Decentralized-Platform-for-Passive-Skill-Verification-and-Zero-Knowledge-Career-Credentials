@@ -85,6 +85,15 @@ const envSchema = z.object({
   FABRIC_ANCHOR_BATCH_SIZE: z.coerce.number().int().positive().default(10),
   FABRIC_ANCHOR_MAX_ATTEMPTS: z.coerce.number().int().positive().default(8),
   FABRIC_ANCHOR_BACKOFF_MS: z.coerce.number().int().nonnegative().default(5_000),
+  FABRIC_ANCHOR_LEASE_MS: z.coerce.number().int().positive().default(60_000),
+  /** ISO time. Unset holds the anchor worker so existing pending/failed rows are not submitted. */
+  FABRIC_ANCHOR_NOT_BEFORE: optionalNonEmptyString,
+  /** Must be explicitly true before the worker submits RevokeCredential. */
+  FABRIC_REVOCATION_SUBMIT: booleanFromEnv,
+  /** Must be explicitly true before admin repair submits a new anchor. */
+  FABRIC_RECONCILE_SUBMIT: booleanFromEnv,
+  /** Break-glass only. Normal operation uses the sijil-app identity, not Org1 Admin. */
+  FABRIC_ALLOW_ADMIN_IDENTITY: booleanFromEnv,
   TRUST_PROXY: booleanFromEnv,
 });
 
@@ -118,6 +127,14 @@ if (parsed.data.FABRIC_ENABLED) {
   const missing = requiredWhenEnabled.filter((key) => !parsed.data[key]);
   if (missing.length > 0) {
     console.error("FABRIC_ENABLED=true requires:", missing.join(", "));
+    process.exit(1);
+  }
+  const certPath = parsed.data.FABRIC_CERT_PATH ?? "";
+  const usesAdmin = /\/users\/Admin@/i.test(certPath) || /Admin@org1\.example\.com/i.test(certPath);
+  if (usesAdmin && !parsed.data.FABRIC_ALLOW_ADMIN_IDENTITY) {
+    console.error(
+      "FABRIC_ENABLED refuses the Org1 Admin certificate. Enroll the sijil-app identity (fabric/scripts/enroll-app-identity.sh) and point FABRIC_CERT_PATH and FABRIC_KEY_PATH at that user. FABRIC_ALLOW_ADMIN_IDENTITY=true is break-glass only.",
+    );
     process.exit(1);
   }
 }

@@ -14,6 +14,18 @@ import type {
 /** Test-network issuer organisation. Org2MSP and others cannot mutate anchors. */
 export const ISSUER_MSP_ID = 'Org1MSP';
 
+/**
+ * Application writer. Org1 admin is not a writer after this chaincode version.
+ * Reads stay open to any channel member. Upgrade is required before this rule
+ * is enforced on a running network; see fabric/OPERATIONS.md.
+ */
+export const APP_WRITER_CN = 'sijil-app';
+export const CHAINCODE_VERSION = '1.1.0';
+
+const SHA256_HEX = /^[0-9a-f]{64}$/;
+const UUID_TEXT = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const HISTORY_LIMIT = 100;
+
 const EVENT_ANCHORED = 'CredentialAnchored';
 const EVENT_REVOKED = 'CredentialRevoked';
 
@@ -41,12 +53,12 @@ export class CredentialAnchor extends Contract {
     holderDid: string,
     issuedAt: string,
   ): Promise<CredentialAnchorRecord> {
-    this.assertIssuerMsp(ctx);
-    const id = requireNonEmpty(credentialId, 'credentialId');
-    const digest = requireNonEmpty(hash, 'hash');
-    const issuer = requireNonEmpty(issuerDid, 'issuerDid');
-    const holder = requireNonEmpty(holderDid, 'holderDid');
-    const issued = requireNonEmpty(issuedAt, 'issuedAt');
+    this.assertWriter(ctx);
+    const id = requireCredentialId(credentialId);
+    const digest = requireSha256(hash);
+    const issuer = requireDid(issuerDid, 'issuerDid');
+    const holder = requireDid(holderDid, 'holderDid');
+    const issued = requireIssuedAt(issuedAt);
 
     const existing = await ctx.stub.getState(id);
     if (existing && existing.length > 0) {
@@ -83,9 +95,9 @@ export class CredentialAnchor extends Contract {
     credentialId: string,
     reason: string,
   ): Promise<CredentialAnchorRecord> {
-    this.assertIssuerMsp(ctx);
-    const id = requireNonEmpty(credentialId, 'credentialId');
-    const revocationReason = requireNonEmpty(reason, 'reason');
+    this.assertWriter(ctx);
+    const id = requireCredentialId(credentialId);
+    const revocationReason = requireReason(reason);
 
     const record = await this.readRecord(ctx, id);
     if (record.status === 'revoked') {
@@ -117,7 +129,7 @@ export class CredentialAnchor extends Contract {
     ctx: Context,
     credentialId: string,
   ): Promise<CredentialAnchorRecord> {
-    const id = requireNonEmpty(credentialId, 'credentialId');
+    const id = requireCredentialId(credentialId);
     return this.readRecord(ctx, id);
   }
 
@@ -128,8 +140,8 @@ export class CredentialAnchor extends Contract {
     credentialId: string,
     hash: string,
   ): Promise<VerifyCredentialResult> {
-    const id = requireNonEmpty(credentialId, 'credentialId');
-    const digest = requireNonEmpty(hash, 'hash');
+    const id = requireCredentialId(credentialId);
+    const digest = requireSha256(hash);
     const bytes = await ctx.stub.getState(id);
     if (!bytes || bytes.length === 0) {
       return { exists: false, hashMatches: false, status: '' };
@@ -148,7 +160,7 @@ export class CredentialAnchor extends Contract {
     ctx: Context,
     credentialId: string,
   ): Promise<HistoryEntry[]> {
-    const id = requireNonEmpty(credentialId, 'credentialId');
+    const id = requireCredentialId(credentialId);
     const iterator = await ctx.stub.getHistoryForKey(id);
     const history: HistoryEntry[] = [];
 
@@ -160,10 +172,19 @@ export class CredentialAnchor extends Contract {
           break;
         }
         const valueBytes = modification.value;
-        const record =
-          valueBytes && valueBytes.length > 0 ? parseRecord(valueBytes) : null;
+        let record: CredentialAnchorRecord | null = null;
+        if (valueBytes && valueBytes.length > 0) {
+          try {
+            record = parseRecord(valueBytes);
+          } catch {
+            record = null;
+          }
+        }
+        if (history.length >= HISTORY_LIMIT) {
+          break;
+        }
         history.push({
-          txId: modification.txId,
+          txId: typeof modification.txId === 'string' ? modification.txId : '',
           timestamp: timestampToIso(modification.timestamp as TxTimestampLike),
           isDelete: Boolean(modification.isDelete),
           record,
@@ -177,11 +198,18 @@ export class CredentialAnchor extends Contract {
     return history;
   }
 
-  private assertIssuerMsp(ctx: Context): void {
+  private assertWriter(ctx: Context): void {
     const mspId = ctx.clientIdentity.getMSPID();
     if (mspId !== ISSUER_MSP_ID) {
       throw new Error(
         `MSP ${mspId} is not authorised; issuer MSP is ${ISSUER_MSP_ID}`,
+      );
+    }
+    const cn = enrollmentCn(ctx.clientIdentity.getID());
+    const role = ctx.clientIdentity.getAttributeValue('sijil.role');
+    if (cn !== APP_WRITER_CN && role !== 'anchor') {
+      throw new Error(
+        `enrollment ${cn || 'unknown'} is not authorised to write; writer CN is ${APP_WRITER_CN}`,
       );
     }
   }
@@ -198,12 +226,50 @@ export class CredentialAnchor extends Contract {
   }
 }
 
-function requireNonEmpty(value: string, field: string): string {
-  const trimmed = value.trim();
-  if (!trimmed) {
-    throw new Error(`${field} is required`);
+function requireCredentialId(value: string): string {
+  const trimmed = value.trim().toLowerCase();
+  if (!UUID_TEXT.test(trimmed)) {
+    throw new Error('credentialId must be a UUID');
   }
   return trimmed;
+}
+
+function requireSha256(value: string): string {
+  const trimmed = value.trim().toLowerCase();
+  if (!SHA256_HEX.test(trimmed)) {
+    throw new Error('hash must be a SHA-256 hex digest');
+  }
+  return trimmed;
+}
+
+function requireDid(value: string, field: string): string {
+  const trimmed = value.trim();
+  if (!trimmed.startsWith('did:') || trimmed.length < 8 || trimmed.length > 512 || /\s/.test(trimmed)) {
+    throw new Error(`${field} must be a DID`);
+  }
+  return trimmed;
+}
+
+function requireIssuedAt(value: string): string {
+  const trimmed = value.trim();
+  const parsed = Date.parse(trimmed);
+  if (!Number.isFinite(parsed)) {
+    throw new Error('issuedAt must be an ISO-8601 timestamp');
+  }
+  return new Date(parsed).toISOString();
+}
+
+function requireReason(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.length > 280 || /[\u0000-\u001f]/.test(trimmed)) {
+    throw new Error('reason is required and must be at most 280 characters');
+  }
+  return trimmed;
+}
+
+function enrollmentCn(clientId: string): string {
+  const match = /CN=([^,:/]+)/.exec(clientId);
+  return match?.[1]?.trim() ?? '';
 }
 
 function parseRecord(bytes: Uint8Array): CredentialAnchorRecord {

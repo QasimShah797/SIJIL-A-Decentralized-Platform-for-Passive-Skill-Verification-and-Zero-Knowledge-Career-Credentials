@@ -1,0 +1,14 @@
+{
+  "wasm": "0332ae8aaac6c1699ce9fc627b8c95fb9104aed31621ac85556e721f1f7b9f97",
+  "zkey": "3b8eb0b5f60c4a98003152da0af5cd6044fac993c99a710ffe8ffcc5fde4e4d5",
+  "verificationKey": "5180dbd1fa2315044393bb1f3b63d2e2e21f3c8be12500af63e0d1b32e287154",
+  "setup": "development-only",
+  "circuit": "github_contributions",
+  "circomVersion": "2.1.9",
+  "snarkjs": "0.7.5",
+  "publicSignals": [
+    "threshold",
+    "commitment"
+  ],
+  "note": "Single-contributor development setup. Not production-secure."
+}
