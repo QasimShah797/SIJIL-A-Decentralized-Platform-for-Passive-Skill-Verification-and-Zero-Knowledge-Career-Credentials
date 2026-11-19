@@ -47,6 +47,8 @@ import {
   CompetencyPackageCard,
   ConnectedSourcesCard,
   EvidenceInspectorCard,
+  PracticalTaskProgress,
+  scoredPracticalAttempts,
   WalletEmptyState,
   WalletRefreshBar,
   WalletStepper,
@@ -382,14 +384,12 @@ function WalletEvidenceDialog(props: {
               ))}
             </TabsContent>
             {(attemptHistory.length > 0 || attempt) && (
-              <TabsContent value="task" className="mt-4 space-y-3">
-                {attemptHistory.map((item) => (
-                  <ItemCard
-                    key={item.attemptId}
-                    title={item.title}
-                    meta={[item.status, item.scorePercent != null ? `${item.scorePercent}%` : null].filter(Boolean).join(" · ")}
-                  />
-                ))}
+              <TabsContent value="task" className="mt-4">
+                {scoredPracticalAttempts(attemptHistory).length > 0 ? (
+                  <PracticalTaskProgress attempts={attemptHistory} />
+                ) : (
+                  <p className="text-sm text-muted-foreground">No graded practical task result is stored yet.</p>
+                )}
               </TabsContent>
             )}
             {peerReviews.length > 0 && (
@@ -802,6 +802,7 @@ export default function WalletPage() {
               github={githubStats}
               lmsRows={lmsRows}
               taskLabel={taskLabel}
+              attempts={summary.practicalTask.attemptHistory}
             />
 
             <div className="space-y-4">
@@ -824,6 +825,7 @@ export default function WalletPage() {
                   grade: row.grade != null ? String(row.grade) : "—",
                 }))}
                 taskDetail={taskLabel}
+                attempts={summary.practicalTask.attemptHistory}
                 reviews={peerReviews.map((review) => ({
                   reviewer: textValue(review.reviewer_name) || "Reviewer",
                   text: textValue(review.review_text) || textValue(review.comment) || "Review submitted",

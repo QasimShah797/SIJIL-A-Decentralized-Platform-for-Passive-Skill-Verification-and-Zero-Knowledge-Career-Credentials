@@ -15,9 +15,6 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  CheckCircle2,
-  PanelLeftClose,
-  PanelLeft,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
@@ -135,6 +132,14 @@ function profileNav(): NavGroup[] {
   ];
 }
 
+const TOP_LINKS: NavItem[] = [
+  { to: "/learner/my-profile", icon: UserCircle, label: "Profile", match: (p) => p.startsWith("/learner/my-profile") },
+  { to: "/learner/task", icon: ClipboardCheck, label: "Tasks" },
+  { to: "/learner/wallet", icon: Wallet, label: "Wallet" },
+  { to: "/learner/validation", icon: ShieldCheck, label: "Validation" },
+  { to: "/learner/peer-reviews", icon: MessageSquare, label: "Reviews" },
+];
+
 function isActive(pathname: string, item: NavItem) {
   if (item.match) return item.match(pathname);
   return pathname === item.to || pathname.startsWith(`${item.to}/`);
@@ -192,6 +197,9 @@ function SidebarContent({
   pathname,
   isDark,
   collapsed,
+  profileName,
+  profileAvatar,
+  profileAvatarUrl,
   onNavigate,
   onSignOut,
   onToggleCollapse,
@@ -200,6 +208,9 @@ function SidebarContent({
   pathname: string;
   isDark: boolean;
   collapsed: boolean;
+  profileName: string;
+  profileAvatar: string;
+  profileAvatarUrl: string | null;
   onNavigate?: () => void;
   onSignOut: () => void;
   onToggleCollapse: () => void;
@@ -224,29 +235,49 @@ function SidebarContent({
     <>
       <div
         className={cn(
-          "shrink-0 border-b py-4",
-          collapsed ? "px-2" : "px-5 py-5",
+          "shrink-0 border-b",
+          collapsed ? "px-2 py-4" : "px-4 py-5",
           isDark ? "border-white/10" : "border-[#e2e8f0]",
         )}
       >
-        <div className={cn("flex items-center", collapsed ? "justify-center" : "gap-3")}>
-          <div
+        <NavLink
+          to="/learner/my-profile"
+          onClick={onNavigate}
+          title={collapsed ? profileName : undefined}
+          className={cn(
+            "flex items-center rounded-2xl transition-colors",
+            collapsed ? "justify-center" : "gap-3",
+            isDark ? "hover:bg-white/10" : "hover:bg-[#f8fafc]",
+          )}
+        >
+          <span
             className={cn(
-              "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl p-1",
-              isDark ? "bg-white/10" : "border border-[#e2e8f0] bg-white shadow-sm",
+              "inline-flex shrink-0 overflow-hidden rounded-full ring-2 ring-offset-2",
+              collapsed ? "h-10 w-10" : "h-[4.25rem] w-[4.25rem]",
+              isDark
+                ? "ring-white/80 ring-offset-[#023E8A] shadow-[0_8px_20px_rgba(0,0,0,0.18)]"
+                : "ring-[#023E8A] ring-offset-white shadow-[0_8px_18px_rgba(2,62,138,0.18)]",
             )}
           >
-            <img src={sijilLogo} alt="" className="h-full w-full object-contain" />
-          </div>
+            {profileAvatarUrl ? (
+              <img src={profileAvatarUrl} alt="" className="h-full w-full object-cover" />
+            ) : (
+              <span className="flex h-full w-full items-center justify-center bg-[#012A5C] text-sm font-semibold text-white">
+                {profileAvatar}
+              </span>
+            )}
+          </span>
           {!collapsed && (
-            <div className="min-w-0">
-              <div className={cn("text-base font-bold tracking-tight", isDark ? "text-white" : "text-[#023E8A]")}>
-                SIJIL
-              </div>
-              {isDark && <p className="text-[10px] text-white/50">Build. Prove. Verify.</p>}
-            </div>
+            <span className="min-w-0">
+              <span className={cn("block truncate text-sm font-semibold", isDark ? "text-white" : "text-[#0f172a]")}>
+                {profileName}
+              </span>
+              <span className={cn("mt-0.5 block text-[11px]", isDark ? "text-white/65" : "text-[#64748b]")}>
+                Learner profile
+              </span>
+            </span>
           )}
-        </div>
+        </NavLink>
       </div>
 
       <div
@@ -257,7 +288,7 @@ function SidebarContent({
       >
         {groups.map((group) => (
           <div key={group.label} className={cn("mb-4", collapsed && "mb-3")}>
-            {!collapsed && (
+            {!collapsed && group.label !== "Overview" && (
               <p
                 className={cn(
                   "mb-2 px-3 text-[10px] font-semibold uppercase tracking-widest",
@@ -388,6 +419,9 @@ export function LearnerWorkspaceShell({
     pathname,
     isDark,
     collapsed: sidebarCollapsed,
+    profileName: profile?.name || user?.email?.split("@")[0] || "Learner",
+    profileAvatar: profile?.avatar || user?.email?.slice(0, 2).toUpperCase() || "?",
+    profileAvatarUrl: profile?.avatarUrl ?? null,
     onNavigate: () => setDrawerOpen(false),
     onSignOut: handleSignOut,
     onToggleCollapse: toggleSidebar,
@@ -396,21 +430,10 @@ export function LearnerWorkspaceShell({
   const sidebar = <SidebarContent {...sidebarProps} />;
 
   return (
-    <div className={cn("flex min-h-screen w-full", isDark ? "learner-shell-dashboard" : "learner-shell-profile")}>
-      <aside
-        className={cn(
-          "learner-sidebar-panel sticky top-0 z-30 hidden h-screen shrink-0 md:flex md:flex-col",
-          sidebarCollapsed ? "w-[4.5rem]" : "w-[260px]",
-          isDark ? "learner-sidebar-dark" : "learner-sidebar-light",
-        )}
-      >
-        <div className="flex h-full flex-col overflow-hidden">{sidebar}</div>
-      </aside>
-
-      <div className="flex min-w-0 flex-1 flex-col">
+    <div className={cn("flex min-h-screen w-full flex-col", isDark ? "learner-shell-dashboard" : "learner-shell-profile")}>
         <header
           className={cn(
-            "sticky top-0 z-20 flex h-16 shrink-0 items-center gap-3 px-4 sm:px-6",
+            "sticky top-0 z-40 flex h-16 w-full shrink-0 items-center",
             isDark ? "learner-dash-header" : "border-b border-[#e9e5e0] bg-white/90 backdrop-blur-md",
           )}
         >
@@ -436,20 +459,50 @@ export function LearnerWorkspaceShell({
             </SheetContent>
           </Sheet>
 
-          <Button
-            variant="ghost"
-            size="icon"
-            className="hidden rounded-xl md:inline-flex"
-            onClick={toggleSidebar}
-            aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+          <div
+            className={cn(
+              "flex h-full shrink-0 items-center gap-3 px-4",
+              sidebarCollapsed ? "md:w-[4.5rem] md:justify-center md:px-2" : "md:w-[260px] md:px-5",
+            )}
           >
-            {sidebarCollapsed ? <PanelLeft className="h-5 w-5" /> : <PanelLeftClose className="h-5 w-5" />}
-          </Button>
-
-          <div className="text-sm">
-            <span className="font-semibold text-[#023E8A]">Learner</span>
-            <span className="text-[#64748b]"> · Verification workspace</span>
+            <NavLink to="/learner/profile" className="flex min-w-0 items-center gap-3" aria-label="SIJIL home">
+              <img src={sijilLogo} alt="" className="h-11 w-11 shrink-0 object-contain" />
+              <span className={cn(
+                "truncate text-xl font-bold tracking-tight",
+                sidebarCollapsed && "md:hidden",
+                isDark ? "text-[#023E8A]" : "text-[#0f172a]",
+              )}>
+                SIJIL
+              </span>
+            </NavLink>
           </div>
+
+          <div className="flex min-w-0 flex-1 items-center gap-3 pl-3 pr-4 sm:pl-6 sm:pr-6">
+          <nav className="hidden min-w-0 items-center gap-2 lg:flex" aria-label="Learner">
+            {TOP_LINKS.map((item) => {
+              const active = isActive(pathname, item);
+              return (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  className={cn(
+                    "inline-flex items-center gap-2 rounded-full border py-1 pl-1 pr-3 text-sm font-semibold shadow-sm transition",
+                    active
+                      ? "border-[#023E8A] bg-[#023E8A] text-white shadow-[0_8px_18px_rgba(2,62,138,0.22)]"
+                      : "border-[#e2e8f0] bg-white text-[#334155] hover:-translate-y-px hover:border-[#bfdbfe] hover:shadow-md",
+                  )}
+                >
+                  <span className={cn(
+                    "flex h-7 w-7 items-center justify-center rounded-full",
+                    active ? "bg-white/15 text-white" : "bg-[#eff6ff] text-[#023E8A]",
+                  )}>
+                    <item.icon className="h-3.5 w-3.5" />
+                  </span>
+                  <span>{item.label}</span>
+                </NavLink>
+              );
+            })}
+          </nav>
 
           <div className="ml-auto flex items-center gap-2">
             <ThemeToggle />
@@ -487,10 +540,7 @@ export function LearnerWorkspaceShell({
                       <p className="truncate text-xs font-semibold text-[#023E8A]">{profile.name}</p>
                       <p className="text-[10px] text-[#64748b]">Learner</p>
                     </div>
-                    <span className="inline-flex items-center gap-0.5 rounded-full bg-[#ccfbf1] px-2 py-0.5 text-[10px] font-medium text-[#0f766e]">
-                      <CheckCircle2 className="h-3 w-3" />
-                      Verified
-                    </span>
+                    <ChevronDown className="h-4 w-4 shrink-0 text-[#64748b]" />
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-48">
@@ -549,9 +599,19 @@ export function LearnerWorkspaceShell({
               </DropdownMenu>
             )}
           </div>
+          </div>
         </header>
 
         <div className="flex min-h-0 flex-1">
+          <aside
+            className={cn(
+              "learner-sidebar-panel sticky top-16 z-30 hidden h-[calc(100vh-4rem)] shrink-0 md:flex md:flex-col",
+              sidebarCollapsed ? "w-[4.5rem]" : "w-[260px]",
+              isDark ? "learner-sidebar-dark" : "learner-sidebar-light",
+            )}
+          >
+            <div className="flex h-full flex-col overflow-hidden">{sidebar}</div>
+          </aside>
           <div className="learner-main-scroll min-w-0 flex-1 overflow-auto p-4 sm:p-6 lg:p-8">{children}</div>
           {rightRail ? (
             <aside className="learner-main-scroll hidden w-[320px] shrink-0 space-y-4 overflow-auto border-l border-[#e2e8f0] bg-[#f8fafc] p-6 lg:block">
@@ -559,7 +619,6 @@ export function LearnerWorkspaceShell({
             </aside>
           ) : null}
         </div>
-      </div>
     </div>
   );
 }

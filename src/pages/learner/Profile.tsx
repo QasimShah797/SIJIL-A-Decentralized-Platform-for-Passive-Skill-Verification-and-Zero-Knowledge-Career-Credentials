@@ -38,7 +38,7 @@ import {
   usePeerReviews,
 } from "@/hooks/useLearnerData";
 import { toast } from "@/hooks/use-toast";
-import { cn } from "@/lib/utils";
+import { cn, formatSupabaseError } from "@/lib/utils";
 
 export default function LearnerProfile() {
   const navigate = useNavigate();
@@ -190,7 +190,7 @@ export default function LearnerProfile() {
     } catch (e) {
       toast({
         title: "Could not remove competency",
-        description: e instanceof Error ? e.message : String(e),
+        description: formatSupabaseError(e),
         variant: "destructive",
       });
     } finally {

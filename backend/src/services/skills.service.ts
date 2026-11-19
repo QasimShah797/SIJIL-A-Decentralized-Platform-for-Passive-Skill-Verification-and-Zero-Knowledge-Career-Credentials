@@ -16,7 +16,7 @@ import { PIPELINE_STAGE, SKILL_STATUS } from "../constants/status";
 import { githubSyncService } from "./github-sync.service";
 import { evidenceRecordsService } from "./evidence-records.service";
 import { evaluateSkillProjectMatch } from "../utils/evidence-matching";
-import { cleanupCompetencyRelatedData } from "./competency-cleanup.service";
+import { cleanupCompetencyRelatedData, removeDeclaredSkillRow } from "./competency-cleanup.service";
 import { upsertLinkedGitHubReposForUser } from "./github-supporting-record.service";
 import { isMissingRelationError } from "../utils/supabase-errors";
 
@@ -231,14 +231,7 @@ export class SkillsService {
     if (!skill) throw new AppError("Skill not found", 404);
 
     await cleanupCompetencyRelatedData(userId, skillId, skill.name as string);
-
-    const { error } = await supabaseService.client
-      .from("declared_skills")
-      .delete()
-      .eq("user_id", userId)
-      .eq("id", skillId);
-
-    if (error) throw new AppError(error.message, 500);
+    await removeDeclaredSkillRow(userId, skillId);
   }
 
   async getSkillWithRelatedEvidence(

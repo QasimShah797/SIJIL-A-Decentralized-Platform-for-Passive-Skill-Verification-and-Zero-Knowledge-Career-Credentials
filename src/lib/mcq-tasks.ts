@@ -2,6 +2,21 @@ import type { DeclaredSkill } from "@/lib/sijil-data";
 
 export type McqOptionId = "A" | "B" | "C" | "D";
 export type McqDifficulty = "easy" | "medium" | "hard";
+export type McqQuestionKind = "concept" | "code";
+export type ClosedQuestionType =
+  | "single"
+  | "scenario"
+  | "case"
+  | "multi"
+  | "boolean"
+  | "code-output"
+  | "debug"
+  | "order"
+  | "match"
+  | "hotspot";
+
+export type ExamItem = { id: string; text: string };
+export type AssessmentAnswerValue = string | string[] | Record<string, string>;
 
 export type McqOption = {
   id: McqOptionId;
@@ -14,6 +29,18 @@ export type McqQuestion = {
   question: string;
   options: McqOption[];
   difficulty: McqDifficulty;
+  kind: McqQuestionKind;
+  seconds: number;
+  type: ClosedQuestionType;
+  code?: string;
+  language?: string;
+  scenario?: string;
+  caseId?: string;
+  caseTitle?: string;
+  orderItems?: ExamItem[];
+  matchLeft?: ExamItem[];
+  matchRight?: ExamItem[];
+  selectionNote?: string;
 };
 
 export type McqTask = {
@@ -22,9 +49,28 @@ export type McqTask = {
   type: "MCQ";
   durationMinutes: number;
   questions: McqQuestion[];
+  deadlineAt?: string;
 };
 
-export type McqAnswerMap = Record<string, McqOptionId>;
+export type McqAnswerMap = Record<string, AssessmentAnswerValue>;
+
+export function isResponsePresent(value: unknown): boolean {
+  if (typeof value === "string") return value.trim().length > 0;
+  if (Array.isArray(value)) return value.length > 0;
+  if (value && typeof value === "object") return Object.keys(value).length > 0;
+  return false;
+}
+
+export function questionTypeOf(question: { type?: string; kind?: string; code?: string }): ClosedQuestionType {
+  const allowed: ClosedQuestionType[] = [
+    "single", "scenario", "case", "multi", "boolean", "code-output", "debug", "order", "match", "hotspot",
+  ];
+  if (question.type && allowed.includes(question.type as ClosedQuestionType)) {
+    return question.type as ClosedQuestionType;
+  }
+  if (question.kind === "code" || question.code) return "debug";
+  return "single";
+}
 
 export type McqProgress = {
   answers: McqAnswerMap;
@@ -34,7 +80,23 @@ export type McqProgress = {
 
 export type TaskMode = "MCQ" | "Coding";
 
-export const MCQ_SECONDS_PER_QUESTION = 60;
+export const MCQ_SITTING_SECONDS = 30;
+export const MCQ_SECONDS_PER_QUESTION = 30;
+export const MCQ_CODE_SECONDS = 60;
+export const MCQ_CONCEPT_COUNT = 10;
+export const MCQ_CODE_COUNT = 4;
+
+export function secondsForQuestion(question?: { kind?: string; seconds?: number } | null): number {
+  if (question?.kind === "code") return MCQ_CODE_SECONDS;
+  if (typeof question?.seconds === "number" && question.seconds > 0 && question.kind !== "code") {
+    return Math.min(question.seconds, MCQ_SECONDS_PER_QUESTION);
+  }
+  return MCQ_SECONDS_PER_QUESTION;
+}
+
+export function totalMcqSeconds(questions: Array<{ kind?: string; seconds?: number }>): number {
+  return questions.reduce((total, question) => total + secondsForQuestion(question), 0);
+}
 
 export type McqSessionEnvelope = {
   _mcqSession: true;
@@ -49,11 +111,11 @@ export type McqSessionEnvelope = {
   passed?: boolean;
 };
 
-export function createInitialMcqProgress(): McqProgress {
+export function createInitialMcqProgress(seconds = MCQ_SECONDS_PER_QUESTION): McqProgress {
   return {
     answers: {},
     currentIndex: 0,
-    questionEndsAt: new Date(Date.now() + MCQ_SECONDS_PER_QUESTION * 1000).toISOString(),
+    questionEndsAt: new Date(Date.now() + seconds * 1000).toISOString(),
   };
 }
 
@@ -125,14 +187,44 @@ export function parseGenerateMcqResponse(data: Record<string, unknown>): McqTask
         .filter((o): o is McqOption => o !== null);
 
       const question = String(row.question ?? "").trim();
-      if (!question || options.length < 2) return null;
+      if (!question) return null;
 
       const difficulty = String(row.difficulty ?? "medium").toLowerCase();
+      const code = String(row.code ?? "").trim();
+      const kind: McqQuestionKind = String(row.kind ?? "").toLowerCase() === "code" || code ? "code" : "concept";
+      const language = String(row.language ?? "").trim();
+      const type = questionTypeOf({ type: String(row.type ?? ""), kind, code });
+      const readItems = (value: unknown) => Array.isArray(value)
+        ? value.flatMap((item) => {
+          const rowItem = item as Record<string, unknown>;
+          const id = String(rowItem.id ?? "").trim();
+          const text = String(rowItem.text ?? "").trim();
+          return id && text ? [{ id, text }] : [];
+        })
+        : [];
+      const orderItems = readItems(row.orderItems);
+      const matchLeft = readItems(row.matchLeft);
+      const matchRight = readItems(row.matchRight);
+      if (type === "order" && orderItems.length < 2) return null;
+      if (type === "match" && (matchLeft.length < 2 || matchRight.length < 2)) return null;
+      if (type !== "order" && type !== "match" && options.length < 2) return null;
       return {
         id: String(row.id ?? `q${i + 1}`),
         question,
         options,
-        difficulty: (difficulty === "easy" || difficulty === "hard" ? difficulty : "medium") as McqDifficulty,
+        difficulty: (kind === "code" ? "hard" : difficulty === "easy" || difficulty === "hard" ? difficulty : "medium") as McqDifficulty,
+        kind,
+        type,
+        seconds: secondsForQuestion({ kind, seconds: Number(row.seconds) }),
+        ...(code ? { code } : {}),
+        ...(language ? { language } : {}),
+        ...(String(row.scenario ?? "").trim() ? { scenario: String(row.scenario) } : {}),
+        ...(String(row.caseId ?? "").trim() ? { caseId: String(row.caseId) } : {}),
+        ...(String(row.caseTitle ?? "").trim() ? { caseTitle: String(row.caseTitle) } : {}),
+        ...(String(row.selectionNote ?? "").trim() ? { selectionNote: String(row.selectionNote) } : {}),
+        ...(orderItems.length ? { orderItems } : {}),
+        ...(matchLeft.length ? { matchLeft } : {}),
+        ...(matchRight.length ? { matchRight } : {}),
       };
     })
     .filter((q): q is McqQuestion => q !== null);
@@ -146,8 +238,9 @@ export function parseGenerateMcqResponse(data: Record<string, unknown>): McqTask
     attemptId,
     title: String(data.title ?? "MCQ Assessment"),
     type: "MCQ",
-    durationMinutes: Number(data.durationMinutes ?? 15),
+    durationMinutes: Number(data.durationMinutes ?? 18),
     questions,
+    ...(typeof data.deadlineAt === "string" ? { deadlineAt: data.deadlineAt } : {}),
   };
 }
 

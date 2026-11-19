@@ -107,12 +107,14 @@ export function derivePracticalTaskState(
   attempt: AttemptRecord | null,
   mcqResult: McqAttemptResultRow | null,
 ): PracticalTaskState {
+  if (attempt?.status === "in_progress") return "IN_PROGRESS";
   if (mcqResult && isMcqRowCompleted(mcqResult)) return "COMPLETED";
   if (attempt && (attempt.status === "submitted" || attempt.status === "auto_submitted" || attempt.status === "passed")) {
     return "COMPLETED";
   }
+  // Quit / abandoned sittings must not stay resumable via a leftover server draft.
+  if (attempt?.status === "expired_no_submission") return "NOT_STARTED";
   if (mcqResult && isMcqRowInProgress(mcqResult)) return "IN_PROGRESS";
-  if (attempt?.status === "in_progress") return "IN_PROGRESS";
   return "NOT_STARTED";
 }
 
@@ -201,8 +203,20 @@ export async function loadAttemptsWithMcqResults(
 
   for (const skillId of skillIds) {
     const mcqResult = mcqResults[skillId] ?? null;
-    if (mcqResult && isMcqRowCompleted(mcqResult)) {
-      map[skillId] = mcqResultToAttemptRecord(skillId, mcqResult, map[skillId] ?? null);
+    const existing = map[skillId] ?? null;
+    const completed = mcqResult && isMcqRowCompleted(mcqResult) ? mcqResult : null;
+
+    if (existing?.status === "in_progress") {
+      const started = new Date(existing.startedAt).getTime();
+      const completedAt = completed?.submitted_at ?? completed?.created_at ?? null;
+      const completedTime = completedAt ? new Date(completedAt).getTime() : 0;
+      if (!completed || (Number.isFinite(started) && started >= completedTime)) {
+        continue;
+      }
+    }
+
+    if (completed) {
+      map[skillId] = mcqResultToAttemptRecord(skillId, completed, existing);
       continue;
     }
 
@@ -264,6 +278,54 @@ export async function fetchMcqAttemptHistory(
       console.warn("mcq_task_attempts basic history query failed:", error);
     }
     return [];
+  }
+}
+
+export async function fetchMcqAttemptHistories(
+  userId: string,
+  skillIds: string[],
+): Promise<Record<string, McqAttemptResultRow[]>> {
+  const grouped: Record<string, McqAttemptResultRow[]> = {};
+  for (const skillId of skillIds) grouped[skillId] = [];
+  if (skillIds.length === 0) return grouped;
+
+  const assign = (rows: McqAttemptResultRow[]) => {
+    for (const row of rows) {
+      if (!row.skill_id || !(row.skill_id in grouped)) continue;
+      grouped[row.skill_id].push(row);
+    }
+    return grouped;
+  };
+
+  try {
+    const { data, error } = await rawTable("mcq_task_attempts")
+      .select("id, skill_id, competency_name, competency_domain, title, status, percentage, correct_count, total_questions, passed, submitted_at, created_at")
+      .eq("learner_user_id", userId)
+      .in("skill_id", skillIds)
+      .order("created_at", { ascending: true });
+
+    if (error) throw error;
+    return assign((data ?? []) as McqAttemptResultRow[]);
+  } catch (error) {
+    if (!isMissingColumnError(error) && !isMissingRelationError(error)) {
+      console.warn("mcq_task_attempts history batch query failed:", error);
+    }
+  }
+
+  try {
+    const { data, error } = await rawTable("mcq_task_attempts")
+      .select("id, skill_id, competency_name, competency_domain, title, status, passed, submitted_at, created_at")
+      .eq("learner_user_id", userId)
+      .in("skill_id", skillIds)
+      .order("created_at", { ascending: true });
+
+    if (error) throw error;
+    return assign((data ?? []) as McqAttemptResultRow[]);
+  } catch (error) {
+    if (!isMissingRelationError(error)) {
+      console.warn("mcq_task_attempts basic history batch query failed:", error);
+    }
+    return grouped;
   }
 }
 

@@ -1,7 +1,7 @@
 /**
  * Skills API — backend layer for skill declaration with Supabase fallback in db/skills.ts.
  */
-import { tryApiRequest } from "./client";
+import { apiRequest, isApiEnabled, tryApiRequest } from "./client";
 import type { DeclaredSkill } from "@/lib/sijil-data";
 
 export interface SkillApiView {
@@ -86,8 +86,14 @@ export async function listSkillsApi(): Promise<DeclaredSkill[] | null> {
 }
 
 export async function deleteSkillApi(skillId: string): Promise<boolean> {
-  const result = await tryApiRequest<null>(`/skills/${skillId}`, { method: "DELETE" });
-  return result !== null;
+  if (!isApiEnabled()) return false;
+  try {
+    // A successful delete responds with data: null. That is success, not a miss.
+    await apiRequest<unknown>(`/skills/${encodeURIComponent(skillId)}`, { method: "DELETE" });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export async function getRelatedEvidenceApi(

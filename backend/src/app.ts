@@ -14,7 +14,12 @@ const app = express();
 
 app.set("trust proxy", env.TRUST_PROXY);
 
-app.use(helmet());
+app.use(helmet({
+  // The learner app runs on another origin (localhost:8080). same-origin
+  // makes the browser reject API responses as "Failed to fetch".
+  crossOriginResourcePolicy: { policy: "cross-origin" },
+  contentSecurityPolicy: env.NODE_ENV === "production" ? undefined : false,
+}));
 app.use(cors({
   origin: env.CORS_ORIGIN.split(",").map((origin) => origin.trim()).filter(Boolean),
   credentials: true,

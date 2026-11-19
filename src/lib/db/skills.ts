@@ -1,7 +1,8 @@
 import { supabase } from "@/integrations/supabase/client";
 import type { RelatedEvidenceApiView } from "@/services/api/skills.api";
 import { syncGitHubAfterSkillDeclare } from "@/lib/github-integration";
-import { cleanupCompetencyRelatedData } from "@/lib/db/competency-cleanup";
+import { cleanupCompetencyRelatedData, removeDeclaredSkillRow } from "@/lib/db/competency-cleanup";
+import { formatSupabaseError } from "@/lib/utils";
 import {
   applySkillEventApi,
   createSkillApi,
@@ -166,17 +167,12 @@ export async function deleteDeclaredSkill(userId: string, skillId: string): Prom
     .eq("user_id", userId)
     .eq("id", skillId)
     .maybeSingle();
-  if (fetchError) throw fetchError;
-  if (!skill) throw new Error("Competency not found");
+  if (fetchError) throw new Error(formatSupabaseError(fetchError));
+  // The API delete can succeed and still look like a miss when its body is empty.
+  if (!skill) return;
 
   await cleanupCompetencyRelatedData(userId, skillId, skill.name as string);
-
-  const { error } = await supabase
-    .from("declared_skills")
-    .delete()
-    .eq("user_id", userId)
-    .eq("id", skillId);
-  if (error) throw error;
+  await removeDeclaredSkillRow(userId, skillId);
 }
 
 /** Update competency name. Domain/description stay stored for compatibility. */

@@ -49,8 +49,9 @@ export async function updateSkill(req: Request, res: Response): Promise<Response
 }
 
 export async function deleteSkill(req: Request, res: Response): Promise<Response> {
-  await skillsService.delete(req.user!.id, paramString(req.params.id, "id"));
-  return sendSuccess(res, null, "Skill deleted");
+  const id = paramString(req.params.id, "id");
+  await skillsService.delete(req.user!.id, id);
+  return sendSuccess(res, { id, deleted: true }, "Skill deleted");
 }
 
 export async function syncAllSkillEvidence(req: Request, res: Response): Promise<Response> {
