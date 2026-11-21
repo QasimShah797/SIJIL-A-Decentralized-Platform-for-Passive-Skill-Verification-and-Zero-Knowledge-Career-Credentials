@@ -17,10 +17,12 @@ import {
 import { Button } from "@/components/ui/button";
 import { SHARE_EXPIRY_DAYS } from "@/lib/sharing/guide";
 import {
+  DEFAULT_EVIDENCE_MODES,
   DEFAULT_PUBLIC_FIELDS,
   DEFAULT_RECRUITER_FIELDS,
   PublicLinkDisclosure,
   RecruiterShareDisclosure,
+  type EvidenceModes,
 } from "./ShareDisclosureScreens";
 import "./share-achievement-choice.css";
 
@@ -70,10 +72,15 @@ export function GuidedShareFlow({
   credentials: GuidedShareCredential[];
   learnerName?: string;
   onBack: () => void;
-  onShareAll?: (input: { credentialIds: string[]; selectedFields: string[] }) => Promise<void>;
+  onShareAll?: (input: {
+    credentialIds: string[];
+    selectedFields: string[];
+    evidenceModes: EvidenceModes;
+  }) => Promise<void>;
   onCreatePublicLink?: (input: {
     credentialId: string;
     selectedFields: string[];
+    evidenceModes: EvidenceModes;
     expiresInDays: number;
   }) => Promise<{ shareUrl: string; shareId: string; token: string; skillName: string }>;
   onEmailPublicLink?: (input: {
@@ -87,6 +94,7 @@ export function GuidedShareFlow({
   const [step, setStep] = useState<Step>("method");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [selectedFields, setSelectedFields] = useState<string[]>([...DEFAULT_RECRUITER_FIELDS]);
+  const [evidenceModes, setEvidenceModes] = useState<EvidenceModes>({ ...DEFAULT_EVIDENCE_MODES });
   const [expiresInDays, setExpiresInDays] = useState<(typeof SHARE_EXPIRY_DAYS)[number]>(7);
   const [accessCodeOn, setAccessCodeOn] = useState(false);
   const [working, setWorking] = useState(false);
@@ -106,6 +114,7 @@ export function GuidedShareFlow({
   const resetSelection = () => {
     setSelectedIds(new Set());
     setSelectedFields([...DEFAULT_RECRUITER_FIELDS]);
+    setEvidenceModes({ ...DEFAULT_EVIDENCE_MODES });
     setExpiresInDays(7);
     setAccessCodeOn(false);
     setError(null);
@@ -151,6 +160,7 @@ export function GuidedShareFlow({
       await onShareAll({
         credentialIds: selected.map((credential) => credential.id),
         selectedFields,
+        evidenceModes,
       });
       setStep("done");
     } catch (shareError) {
@@ -172,6 +182,7 @@ export function GuidedShareFlow({
       const created = await onCreatePublicLink({
         credentialId: selected[0].id,
         selectedFields,
+        evidenceModes,
         expiresInDays,
       });
       setPublicUrl(created.shareUrl);
@@ -358,6 +369,8 @@ export function GuidedShareFlow({
           issuedAt={primary.issuedAt}
           selectedFields={selectedFields}
           onChangeFields={setSelectedFields}
+          evidenceModes={evidenceModes}
+          onChangeEvidenceModes={setEvidenceModes}
           onCancel={() => setStep("choose")}
           onConfirm={() => void shareAll()}
           confirming={working}
@@ -371,6 +384,8 @@ export function GuidedShareFlow({
           issuedAt={primary.issuedAt}
           selectedFields={selectedFields}
           onChangeFields={setSelectedFields}
+          evidenceModes={evidenceModes}
+          onChangeEvidenceModes={setEvidenceModes}
           expiresInDays={expiresInDays}
           onExpiresChange={setExpiresInDays}
           accessCodeOn={accessCodeOn}

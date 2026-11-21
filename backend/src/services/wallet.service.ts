@@ -54,6 +54,26 @@ import { redactExactValues } from "../utils/exact-value-redaction";
 import { disclosurePreferencesStore } from "./disclosure-preferences.service";
 import { walletExportAvailability } from "./wallet-pass.service";
 import {
+  DEFAULT_EVIDENCE_MODES,
+  summarizeGithubDetails,
+  summarizeLmsDetails,
+  summarizePeerDetails,
+  summarizePracticalDetails,
+  type EvidenceModes,
+} from "./share-evidence-summary";
+import { assertNoPrivateWitnessLeak, buildShareZkpAttachment } from "./share-zkp.service";
+import {
+  SD_SCHEME_LEGACY,
+  cryptoSdBundle,
+  legacySdBundle,
+  readSelectiveDisclosureManifest,
+  verifyDisclosuresAgainstManifest,
+  type SdDisclosure,
+} from "./sd-claim-disclosure";
+import { evaluateCredentialVerification } from "./credential-verify";
+import { verifyCredentialHash } from "./signing.service";
+import { getEvaluateLedgerService } from "./ledger.factory";
+import {
   findCredentialForLearnerCompetency,
   isIssuedCredentialRevoked,
   verifyPublicCredential,
@@ -613,33 +633,21 @@ function buildDisclosedPayload(
   if (Object.keys(status).length > 0) payload.status = status;
 
   const evidence: Record<string, unknown> = {};
+  // "Share details" uses safe summaries only — never full scores, grades, commits, or review text.
   if (hasField("github_evidence")) {
-    const githubEvidence = sanitizeForDisclosure({
-      repos: record.evidencePackage.github.repos,
-      activities: record.evidencePackage.github.activities,
-      evidenceRecords: record.evidencePackage.github.evidenceRecords,
-      reviews: record.evidencePackage.github.reviews,
-    });
+    const githubEvidence = summarizeGithubDetails(record);
     if (githubEvidence) evidence.github = githubEvidence;
   }
   if (hasField("lms_evidence")) {
-    const lmsEvidence = sanitizeForDisclosure({
-      evidence: record.evidencePackage.lms.evidence,
-      courses: record.evidencePackage.lms.courses,
-      assignments: record.evidencePackage.lms.assignments,
-      grades: record.evidencePackage.lms.grades,
-      importedEvidence: record.evidencePackage.lms.importedEvidence,
-    });
+    const lmsEvidence = summarizeLmsDetails(record);
     if (lmsEvidence) evidence.lms = lmsEvidence;
   }
   if (hasField("practical_task_result")) {
-    const practicalTask = sanitizeForDisclosure({
-      latestAttempt: record.evidencePackage.practicalTask.latestAttempt,
-    });
+    const practicalTask = summarizePracticalDetails(record);
     if (practicalTask) evidence.practicalTask = practicalTask;
   }
   if (hasField("peer_reviews")) {
-    const peerReviews = sanitizeForDisclosure(record.evidencePackage.peerReviews);
+    const peerReviews = summarizePeerDetails(record);
     if (peerReviews) evidence.peerReviews = peerReviews;
   }
   if (hasField("teacher_feedback")) {
@@ -717,89 +725,12 @@ function buildDisclosedPayload(
   return payload;
 }
 
+/**
+ * @deprecated Live hydration expands private evidence beyond the signed share snapshot.
+ * Recipient-facing APIs must use the frozen disclosed_payload only.
+ */
 async function hydrateSharedWalletPayload(row: PresentationRow): Promise<Record<string, unknown>> {
-  const payload: Record<string, unknown> = { ...row.disclosed_payload };
-  let records: WalletCompetencyRecordView[] = [];
-  try {
-    records = await runWithServiceDb(() => loadAggregatedWallet(row.learner_id));
-  } catch {
-    return payload;
-  }
-  if (records.length === 0) return payload;
-
-  const fields: WalletShareFieldId[] = row.selected_fields.length > 0
-    ? [...row.selected_fields]
-    : ["competency_name"];
-  const shareScope: WalletShareScope = payload.shareScope === "selected"
-    ? "selected"
-    : payload.shareScope === "issued"
-      ? "issued"
-      : "all";
-  const issuedIds = await issuedCompetencyIds(row.learner_id, records);
-  const primaryRecord = records.find((record) => record.competencyId === row.competency_id);
-  const scopedRecords = shareScope === "selected"
-    ? records.filter((record) => record.competencyId === row.competency_id)
-    : shareScope === "issued"
-      ? [
-          ...(primaryRecord ? [primaryRecord] : []),
-          ...recordsForShareScope(shareScope, primaryRecord ?? records[0], records, issuedIds),
-        ].filter((record, index, list) => list.findIndex((item) => item.competencyId === record.competencyId) === index)
-      : records;
-  const includeNames = fields.includes("competency_name")
-    || fields.includes("learner_skills_summary")
-    || fields.includes("complete_evidence_package");
-  const primaryId = row.competency_id;
-  if (includeNames) {
-    payload.skills = scopedRecords
-      .filter((record) => record.competencyName.trim())
-      .map((record) => ({
-        competencyId: record.competencyId,
-        name: record.competencyName,
-        domain: fields.includes("competency_domain") ? record.domain : undefined,
-        description: fields.includes("competency_description") ? record.description : undefined,
-        primary: record.competencyId === primaryId,
-        evidenceBacked: record.evidenceCount > 0,
-        evidence: buildSkillEvidenceSlice(record, fields),
-      }));
-  }
-  await annotatePayloadSkillTrust(row.learner_id, payload);
-
-  const includeGithub = fields.includes("github_evidence") || fields.includes("complete_evidence_package");
-  const includeLms = fields.includes("lms_evidence") || fields.includes("complete_evidence_package");
-  if (includeGithub || includeLms) {
-    const existingEvidence = asRecord(payload.evidence) ?? {};
-    const nextEvidence: Record<string, unknown> = { ...existingEvidence };
-    if (includeGithub) {
-      nextEvidence.github = {
-        ...(asRecord(existingEvidence.github) ?? {}),
-        repos: scopedRecords.flatMap((record) => record.evidencePackage.github.repos),
-      };
-    }
-    if (includeLms) {
-      nextEvidence.lms = {
-        ...(asRecord(existingEvidence.lms) ?? {}),
-        courses: scopedRecords.flatMap((record) => record.evidencePackage.lms.courses),
-        assignments: scopedRecords.flatMap((record) => record.evidencePackage.lms.assignments),
-      };
-    }
-    payload.evidence = nextEvidence;
-  }
-
-  if (fields.includes("credential_metadata")) {
-    const credentials = scopedRecords.flatMap((record) => record.evidencePackage.credentialMetadata);
-    if (credentials.length > 0) payload.credentialMetadata = credentials;
-  }
-
-  const primary = records.find((record) => record.competencyId === primaryId);
-  if (primary && fields.includes("competency_name")) {
-    const competency = asRecord(payload.competency) ?? {};
-    competency.competencyId = primary.competencyId;
-    competency.name = primary.competencyName;
-    if (fields.includes("competency_domain") && primary.domain) competency.domain = primary.domain;
-    payload.competency = competency;
-  }
-
-  return payload;
+  return { ...row.disclosed_payload };
 }
 
 async function loadLearnerDisclosureContext(userId: string): Promise<LearnerDisclosureContext> {
@@ -1838,13 +1769,31 @@ export class WalletService {
     if (shareScope === "issued" && !canCreateIssuedOnlyShare(competencyId, issuedIds)) {
       throw new AppError("Selected competency has no issued credential", 409);
     }
+    const evidenceModes: EvidenceModes = {
+      ...DEFAULT_EVIDENCE_MODES,
+      ...(input.evidenceModes ?? {}),
+    };
+    const evidenceFieldIds = [
+      "practical_task_result",
+      "github_evidence",
+      "lms_evidence",
+      "peer_reviews",
+    ] as const;
+    const fieldsForPayload = input.selectedFields.filter((field) => {
+      if (!(evidenceFieldIds as readonly string[]).includes(field)) return true;
+      const mode = evidenceModes[field as keyof EvidenceModes];
+      // Private results are attached separately; details mode keeps the field for summaries.
+      return mode === "details";
+    });
     const disclosedPayload = buildDisclosedPayload(
       record,
-      input.selectedFields,
+      fieldsForPayload,
       learnerContext,
       recordsForShareScope(shareScope, record, records, issuedIds),
     );
     disclosedPayload.shareScope = shareScope;
+    disclosedPayload.evidenceModes = evidenceModes;
+    disclosedPayload.anchorStatus = "Not anchored";
     if (input.competencyVersionIds && input.competencyVersionIds.length > 0) {
       const { listLearnerVersions } = await import("./competency-version.store");
       const owned = await listLearnerVersions(userId);
@@ -1855,6 +1804,102 @@ export class WalletService {
       disclosedPayload.competencyVersionIds = allowed;
     }
     await annotatePayloadSkillTrust(userId, disclosedPayload);
+
+    const zkpAttachment = await buildShareZkpAttachment({
+      userId,
+      record,
+      modes: evidenceModes,
+    });
+    if (zkpAttachment.privateResults.length > 0) {
+      disclosedPayload.privateResults = zkpAttachment.privateResults;
+    }
+    if (zkpAttachment.proofs.length > 0) {
+      disclosedPayload.zkProofs = zkpAttachment.proofs.map((proof) => ({
+        claimType: proof.claimType,
+        policyId: proof.policyId,
+        circuitId: proof.circuitId,
+        threshold: proof.threshold,
+        commitment: proof.commitment,
+        publicSignals: proof.publicSignals,
+        proof: proof.proof,
+        credentialId: proof.credentialId,
+        verified: true,
+        verifiedBy: "sijil",
+      }));
+    }
+
+    // Issuer-bound SD metadata (crypto when credential has selectiveDisclosure; else legacy label).
+    const issuedCred = await findCredentialForLearnerCompetency(userId, competencyId);
+    if (issuedCred) {
+      const proofValue = issuedCred.proof && typeof issuedCred.proof === "object"
+        ? String((issuedCred.proof as Record<string, unknown>).proofValue ?? "") || null
+        : null;
+      const verify = await evaluateCredentialVerification(
+        {
+          found: true,
+          credentialId: issuedCred.id,
+          storedHash: issuedCred.credential_hash ?? null,
+          storedDocument: issuedCred.credential_document ?? null,
+          proofValue,
+          revokedAt: issuedCred.revoked_at ?? null,
+          anchorStatus: issuedCred.anchor_status ?? "pending",
+          anchorTxId: issuedCred.anchor_tx_id ?? null,
+          anchoredAt: issuedCred.anchored_at ?? null,
+          holderDid: issuedCred.holder_did,
+          issuerDid: issuedCred.issuer_did,
+        },
+        { verifySignature: verifyCredentialHash, ledger: getEvaluateLedgerService() },
+      );
+      const manifest = readSelectiveDisclosureManifest(issuedCred.credential_document);
+      const issuerCheck = verify.checks.signature === "valid"
+        ? "valid" as const
+        : verify.checks.signature === "missing"
+          ? "missing" as const
+          : "invalid" as const;
+      if (manifest) {
+        const disclosures: SdDisclosure[] = [];
+        const checked = verifyDisclosuresAgainstManifest(manifest, disclosures);
+        disclosedPayload.selectiveDisclosure = checked.ok
+          ? cryptoSdBundle({
+              credentialId: issuedCred.id,
+              credentialHash: issuedCred.credential_hash ?? null,
+              issuerDid: issuedCred.issuer_did,
+              holderDid: issuedCred.holder_did,
+              disclosures,
+              withheldDigests: checked.withheldDigests,
+              issuerSignatureCheck: issuerCheck,
+            })
+          : legacySdBundle({
+              credentialId: issuedCred.id,
+              credentialHash: issuedCred.credential_hash ?? null,
+              issuerDid: issuedCred.issuer_did,
+              holderDid: issuedCred.holder_did,
+            });
+      } else {
+        disclosedPayload.selectiveDisclosure = {
+          ...legacySdBundle({
+            credentialId: issuedCred.id,
+            credentialHash: issuedCred.credential_hash ?? null,
+            issuerDid: issuedCred.issuer_did,
+            holderDid: issuedCred.holder_did,
+          }),
+          issuerSignatureCheck: issuerCheck,
+          note: issuerCheck === "valid"
+            ? "Issuer signature verified on the credential. Claim filtering is legacy application-level (not cryptographic SD)."
+            : "Legacy application-level field filtering. Issuer signature check: " + issuerCheck,
+        };
+      }
+      disclosedPayload.issuerSignatureStatus = issuerCheck;
+    } else {
+      disclosedPayload.selectiveDisclosure = {
+        disclosureScheme: SD_SCHEME_LEGACY,
+        note: "No issued credential linked; share uses application-level filtering only.",
+        issuerSignatureCheck: "missing",
+      };
+      disclosedPayload.issuerSignatureStatus = "missing";
+    }
+
+    assertNoPrivateWitnessLeak(disclosedPayload);
 
     if (Object.keys(disclosedPayload).length === 0) {
       throw new AppError("Selected fields did not produce a shareable payload", 400);
@@ -2269,7 +2314,8 @@ export class WalletService {
         ledgerDetail: ledgerInfo.ledgerDetail,
       };
     }
-    const payload = await recruiterPayload(row, await hydrateSharedWalletPayload(row), verifiedAt);
+    // Frozen share only — never re-hydrate live wallet evidence into a presentation.
+    const payload = await recruiterPayload(row, row.disclosed_payload, verifiedAt);
     const competency = competencyFromSharePayload(
       payload,
       competencyId,
@@ -2417,7 +2463,8 @@ export class WalletService {
     }
 
     const resumeToken = token === "owner" ? row.id : token;
-    const payload = await recruiterPayload(row, await hydrateSharedWalletPayload(row), verifiedAt);
+    // Frozen share only — never re-hydrate live wallet evidence into a presentation.
+    const payload = await recruiterPayload(row, row.disclosed_payload, verifiedAt);
     const resume = buildAtsResume(payload, resumeToken, row.competency_id, row.selected_fields);
     if (resume) {
       if (learnerPhotoHidden(payload)) {

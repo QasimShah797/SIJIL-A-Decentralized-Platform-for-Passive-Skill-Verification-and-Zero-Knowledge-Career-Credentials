@@ -48,9 +48,14 @@ describe("wallet share flow", () => {
     fireEvent.click(screen.getByRole("button", { name: "Continue" }));
     expect(screen.getByRole("heading", { name: "Share with Recruiter" })).toBeTruthy();
     expect(screen.getByText("Choose What to Share")).toBeTruthy();
+    expect(screen.getByText("Practical Assessment")).toBeTruthy();
+    expect(screen.getAllByText("Show result privately").length).toBeGreaterThan(0);
     expect(screen.queryByText(/Selective Disclosure/i)).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: /Confirm Share/ }));
+    expect(screen.queryByText(/Blockchain Anchored/i)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Continue to Preview/ }));
     expect(onShareAll).toHaveBeenCalled();
+    const shareArg = onShareAll.mock.calls[0]?.[0] as { evidenceModes?: { practical_task_result?: string } } | undefined;
+    expect(shareArg?.evidenceModes?.practical_task_result).toBe("private");
     expect(await screen.findByText("Your achievements are now visible to all SIJIL recruiters.")).toBeTruthy();
   });
 

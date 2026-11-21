@@ -40,7 +40,11 @@ export interface ScoreProofInput {
   attemptId: string;
   commitment: string;
   variant: CircuitVariant;
-  /** Ignored when set; policy threshold is always used. */
+  /**
+   * Public threshold for the proof. Defaults to ASSESSMENT_POLICY_THRESHOLD (60).
+   * Share private-result proofs may pass SHARE_ASSESSMENT_THRESHOLD (50).
+   * Circuit public signal [0] is this value; never the private score.
+   */
   threshold?: number;
 }
 
@@ -51,7 +55,7 @@ function inScoreRange(value: number): boolean {
 export async function generateScoreThresholdProof(
   input: ScoreProofInput,
 ): Promise<Groth16Result> {
-  const threshold = ASSESSMENT_POLICY_THRESHOLD;
+  const threshold = input.threshold ?? ASSESSMENT_POLICY_THRESHOLD;
   if (!inScoreRange(input.score) || !inScoreRange(threshold)) {
     throw new Error("Score and threshold must be integers from 0 through 100");
   }

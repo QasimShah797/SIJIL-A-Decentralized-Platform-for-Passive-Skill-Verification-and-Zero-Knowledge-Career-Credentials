@@ -659,3 +659,142 @@
   font-size: 0.92rem;
   font-weight: 600;
 }
+
+.sd-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 0 0 18px;
+  padding: 0;
+  list-style: none;
+}
+
+.sd-steps li {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #64748b;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.sd-steps li.is-active {
+  background: #023e8a;
+  color: #fff;
+}
+
+.sd-steps li.is-done {
+  background: #dbeafe;
+  color: #023e8a;
+}
+
+.sd-evidence-cards {
+  display: grid;
+  gap: 10px;
+}
+
+.sd-evidence-card {
+  padding: 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  background: #fff;
+}
+
+.sd-evidence-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.sd-evidence-head span:last-child {
+  color: #64748b;
+  font-size: 0.8rem;
+}
+
+.sd-evidence-title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sd-evidence-title-row strong {
+  color: #0f172a;
+  font-size: 0.95rem;
+}
+
+.sd-info-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #023e8a;
+  cursor: help;
+}
+
+.sd-radio-group {
+  display: grid;
+  gap: 6px;
+}
+
+.sd-radio {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  color: #334155;
+  font-size: 0.86rem;
+  cursor: pointer;
+}
+
+.sd-radio.is-on {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+  color: #0f172a;
+  font-weight: 600;
+}
+
+.sd-radio input {
+  accent-color: #023e8a;
+}
+
+.sd-private-list {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sd-private-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: #0f172a;
+  font-size: 0.84rem;
+}
+
+.sd-dot {
+  width: 8px;
+  height: 8px;
+  margin-top: 5px;
+  border-radius: 999px;
+  background: #94a3b8;
+  flex-shrink: 0;
+}
+
+.sd-anchor-muted {
+  margin-left: auto;
+  color: #64748b;
+  font-size: 0.72rem;
+  font-weight: 600;
+}

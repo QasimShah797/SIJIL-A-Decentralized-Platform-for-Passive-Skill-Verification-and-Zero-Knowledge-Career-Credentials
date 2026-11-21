@@ -338,7 +338,7 @@ export class CredentialsService {
     );
 
     const validFrom = new Date().toISOString();
-    const { document, sha256Hash } = buildCredentialDocument({
+    const built = buildCredentialDocument({
       credentialUri,
       issuerDid,
       holderDid,
@@ -348,7 +348,32 @@ export class CredentialsService {
       validFrom,
       assessmentCommitment,
     });
-    assertIssuedDocumentMatchesHolderDid(document, holderDid);
+    // Issuer-bound SD digests for hideable claims (salts stored after insert when table exists).
+    let document: Record<string, unknown> = built.document as unknown as Record<string, unknown>;
+    let sha256Hash = built.sha256Hash;
+    let pendingSdClaims: Array<{ claimId: string; value: string; salt: string }> = [];
+    try {
+      const {
+        attachSelectiveDisclosureToDocument,
+        buildSelectiveDisclosureManifest,
+        createClaimSalt,
+      } = await import("./sd-claim-disclosure");
+      const { generateSha256Hash } = await import("../utils/generateHash");
+      const { canonicalizeJson } = await import("../utils/canonicalize");
+      pendingSdClaims = [
+        { claimId: "competency_name", value: String(skill.name), salt: createClaimSalt() },
+        { claimId: "holder_did", value: holderDid, salt: createClaimSalt() },
+        { claimId: "issue_date", value: validFrom, salt: createClaimSalt() },
+      ];
+      const manifest = buildSelectiveDisclosureManifest(pendingSdClaims);
+      document = attachSelectiveDisclosureToDocument(built.document, manifest) as unknown as Record<string, unknown>;
+      sha256Hash = generateSha256Hash(canonicalizeJson(document));
+    } catch {
+      document = built.document as unknown as Record<string, unknown>;
+      sha256Hash = built.sha256Hash;
+      pendingSdClaims = [];
+    }
+    assertIssuedDocumentMatchesHolderDid(document as unknown as typeof built.document, holderDid);
 
     const proofValue = this.signHash(sha256Hash);
     const proof = {
@@ -392,6 +417,22 @@ export class CredentialsService {
         if (raced) return rowToView(raced);
       }
       throw new AppError(error.message, 500);
+    }
+
+    if (pendingSdClaims.length > 0 && data?.id) {
+      try {
+        const { generateSha256Hash } = await import("../utils/generateHash");
+        for (const claim of pendingSdClaims) {
+          await this.db.from("credential_sd_claims").insert({
+            credential_id: data.id,
+            claim_id: claim.claimId,
+            salt: claim.salt,
+            value_fingerprint: generateSha256Hash(claim.value),
+          });
+        }
+      } catch {
+        // Salt table may be missing until migration; signed SD digests still remain on the credential.
+      }
     }
 
     await this.db

@@ -97,10 +97,20 @@ export async function listRegisteredRecruitersApi(query: string): Promise<Regist
   return apiRequest<RegisteredRecruiter[]>(`/wallet/recruiters${params}`);
 }
 
+export type EvidenceShareMode = "details" | "private" | "omit";
+
+export type ShareEvidenceModes = {
+  practical_task_result: EvidenceShareMode;
+  github_evidence: EvidenceShareMode;
+  lms_evidence: EvidenceShareMode;
+  peer_reviews: EvidenceShareMode;
+};
+
 export async function shareWalletCompetencyApi(input: {
   competencyId: string;
   selectionMode: WalletShareSelectionMode;
   selectedFields: WalletShareFieldId[];
+  evidenceModes?: ShareEvidenceModes;
   shareScope?: "all" | "selected" | "issued";
   expiresInDays?: number;
   recipientUserId?: string;
@@ -115,6 +125,7 @@ export async function shareWalletCompetencyApi(input: {
       body: JSON.stringify({
         selectionMode: input.selectionMode,
         selectedFields: input.selectedFields,
+        evidenceModes: input.evidenceModes,
         shareScope: input.shareScope,
         expiresInDays: input.expiresInDays,
         recipientUserId: input.recipientUserId,

@@ -29,7 +29,12 @@ export function SignedPresentationCard({ onBack }: { onBack: () => void }) {
   const shareSelected = async (
     chosenIds: string[],
     selectedFields: string[],
-    extra: { recipientUserId?: string; shareAudience?: "all-recruiters"; consentToAllRecruiters?: boolean },
+    extra: {
+      recipientUserId?: string;
+      shareAudience?: "all-recruiters";
+      consentToAllRecruiters?: boolean;
+      evidenceModes?: import("@/services/api/wallet.api").ShareEvidenceModes;
+    },
   ) => {
     const rows = await getWalletCompetenciesApi();
     if (!rows) {
@@ -58,7 +63,10 @@ export function SignedPresentationCard({ onBack }: { onBack: () => void }) {
       const created = await shareWalletCompetencyApi({
         ...request,
         selectedFields: request.selectedFields as WalletShareFieldId[],
-        ...extra,
+        evidenceModes: extra.evidenceModes,
+        shareAudience: extra.shareAudience,
+        consentToAllRecruiters: extra.consentToAllRecruiters,
+        recipientUserId: extra.recipientUserId,
         ...(versionIds.length > 0 ? { competencyVersionIds: versionIds } : {}),
       });
       recipientName = created.recipientName ?? recipientName;
@@ -67,10 +75,15 @@ export function SignedPresentationCard({ onBack }: { onBack: () => void }) {
     return { recipientName, recipientOrganization };
   };
 
-  const shareWithAllRecruiters = async (input: { credentialIds: string[]; selectedFields: string[] }) => {
+  const shareWithAllRecruiters = async (input: {
+    credentialIds: string[];
+    selectedFields: string[];
+    evidenceModes: import("@/services/api/wallet.api").ShareEvidenceModes;
+  }) => {
     await shareSelected(input.credentialIds, input.selectedFields, {
       shareAudience: "all-recruiters",
       consentToAllRecruiters: true,
+      evidenceModes: input.evidenceModes,
     });
     toast({ title: "Visible to all SIJIL recruiters" });
   };
@@ -78,6 +91,7 @@ export function SignedPresentationCard({ onBack }: { onBack: () => void }) {
   const createPublicLink = async (input: {
     credentialId: string;
     selectedFields: string[];
+    evidenceModes: import("@/services/api/wallet.api").ShareEvidenceModes;
     expiresInDays: number;
   }) => {
     const rows = await getWalletCompetenciesApi();
@@ -100,6 +114,7 @@ export function SignedPresentationCard({ onBack }: { onBack: () => void }) {
     const created = await shareWalletCompetencyApi({
       ...request,
       selectedFields: request.selectedFields as WalletShareFieldId[],
+      evidenceModes: input.evidenceModes,
     });
     try {
       sessionStorage.setItem(
