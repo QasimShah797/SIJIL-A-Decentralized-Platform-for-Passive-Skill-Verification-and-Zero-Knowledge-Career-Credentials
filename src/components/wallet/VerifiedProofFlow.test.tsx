@@ -16,6 +16,12 @@ function item(overrides: Partial<ProofItem>): ProofItem {
     sources: ["GitHub"],
     result: "In progress",
     pipelineStage: "practical_task",
+    issuedAt: null,
+    credentialId: null,
+    githubCount: 1,
+    lmsCount: 1,
+    taskCount: 1,
+    reviewCount: 0,
     ...overrides,
   };
 }
@@ -44,32 +50,32 @@ describe("verified proof guide", () => {
     const onIssue = vi.fn(async () => created);
     renderGuide([item({ status: "eligible", pipelineStage: "wallet_ready", stageLabel: "Wallet Ready" })], onIssue);
     fireEvent.click(screen.getByRole("button", { name: /Java Programming/ }));
-    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    fireEvent.click(screen.getByRole("button", { name: /Continue/ }));
     expect(screen.getByRole("heading", { name: "Java Programming" })).toBeTruthy();
+    expect(screen.getByText("Review Evidence")).toBeTruthy();
     expect(onIssue).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
-    fireEvent.click(screen.getByRole("button", { name: "Issue verified proof" }));
+    fireEvent.click(screen.getByRole("button", { name: /Confirm Issuance/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Confirm Issuance →/ }));
     expect(onIssue).toHaveBeenCalledWith("skill-1");
     expect(await screen.findByRole("heading", { name: "Signed credential issued" })).toBeTruthy();
-    expect(screen.getByText(/does not independently verify/)).toBeTruthy();
   });
 
   it("offers the wallet for an achievement that already has a credential", () => {
-    const { onIssue, onViewInWallet } = renderGuide([item({ status: "issued", stageLabel: "In Wallet", pipelineStage: "in_wallet" })]);
+    const { onIssue, onViewInWallet } = renderGuide([item({ status: "issued", stageLabel: "In Wallet", pipelineStage: "in_wallet", issuedAt: "2026-11-18" })]);
     fireEvent.click(screen.getByRole("button", { name: /Java Programming/ }));
-    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    fireEvent.click(screen.getByRole("button", { name: /Continue/ }));
     fireEvent.click(screen.getByRole("button", { name: "View in Wallet" }));
     expect(onViewInWallet).toHaveBeenCalled();
-    expect(screen.queryByRole("button", { name: "Issue verified proof" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Confirm Issuance →/ })).toBeNull();
     expect(onIssue).not.toHaveBeenCalled();
   });
 
   it("explains the remaining validation step and links to the existing trail", () => {
     renderGuide([item({ status: "pending" })]);
     fireEvent.click(screen.getByRole("button", { name: /Java Programming/ }));
-    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    fireEvent.click(screen.getByRole("button", { name: /Continue/ }));
     expect(screen.getByText(/Submit your practical task attempt/)).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Open Validation Trail" }).getAttribute("href")).toBe("/learner/validation/skill-1");
-    expect(screen.queryByRole("button", { name: "Issue verified proof" })).toBeNull();
+    expect(screen.getByRole("link", { name: "Open Competency Progress" }).getAttribute("href")).toBe("/learner/validation/skill-1");
+    expect(screen.queryByRole("button", { name: /Confirm Issuance →/ })).toBeNull();
   });
 });

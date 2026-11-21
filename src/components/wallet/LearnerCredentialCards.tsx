@@ -71,6 +71,7 @@ export function LearnerCredentialCards({
   onImport,
   onExportCollection,
   onShare,
+  onOpenSkill,
 }: {
   items: CredentialCardModel[];
   loading: boolean;
@@ -80,6 +81,7 @@ export function LearnerCredentialCards({
   onImport: (raw: string) => void;
   onExportCollection?: () => void;
   onShare?: (id: string) => void;
+  onOpenSkill?: (skill: string, id: string) => void;
 }) {
   const [openId, setOpenId] = useState<string | null>(null);
   const open = items.find((item) => item.id === openId) ?? null;
@@ -106,7 +108,20 @@ export function LearnerCredentialCards({
       ) : null}
       <div className="grid gap-4 md:grid-cols-2">
         {items.map((item) => (
-          <article key={item.id} className="flex flex-col gap-3 rounded-2xl border border-[#dbeafe] bg-white p-4 shadow-sm">
+          <article
+            key={item.id}
+            className="flex flex-col gap-3 rounded-2xl border border-[#dbeafe] bg-white p-4 shadow-sm transition hover:border-[#c4b5fd]"
+            role={onOpenSkill ? "button" : undefined}
+            tabIndex={onOpenSkill ? 0 : undefined}
+            onClick={() => onOpenSkill?.(item.skill, item.id)}
+            onKeyDown={(event) => {
+              if (!onOpenSkill) return;
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                onOpenSkill(item.skill, item.id);
+              }
+            }}
+          >
             <header className="flex items-start gap-3">
               <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#eff6ff] text-[#023E8A]">
                 <Award className="h-5 w-5" />
@@ -135,9 +150,20 @@ export function LearnerCredentialCards({
                 <div><dt className="text-[#64748b]">Blockchain record</dt><dd>{chainLabel(item.blockchain)}</dd></div>
               </dl>
             </details>
-            <div className="mt-auto flex flex-wrap gap-2">
+            <div className="mt-auto flex flex-wrap gap-2" onClick={(event) => event.stopPropagation()}>
               <Button type="button" size="sm" variant="outline" className="rounded-xl" onClick={() => onDownload(item.id)}>Download</Button>
-              <Button type="button" size="sm" variant="outline" className="rounded-xl" onClick={() => setOpenId(item.id)}>View details</Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="rounded-xl"
+                onClick={() => {
+                  if (onOpenSkill) onOpenSkill(item.skill, item.id);
+                  else setOpenId(item.id);
+                }}
+              >
+                View details
+              </Button>
               {item.canShare ? (
                 <Button type="button" size="sm" className="rounded-xl" asChild>
                   <Link to={`/learner/credential/${encodeURIComponent(item.id)}/share`} onClick={() => onShare?.(item.id)}>Share</Link>

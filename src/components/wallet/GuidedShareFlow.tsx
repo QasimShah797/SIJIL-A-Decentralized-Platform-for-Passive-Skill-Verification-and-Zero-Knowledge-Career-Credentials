@@ -1,12 +1,37 @@
 import { useState } from "react";
-import { Award, Share2 } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  Award,
+  Ban,
+  Briefcase,
+  Check,
+  Copy,
+  Info,
+  Link2,
+  Mail,
+  Send,
+  Share2,
+  UserRound,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { SHARE_EXPIRY_DAYS } from "@/lib/sharing/guide";
+import {
+  DEFAULT_PUBLIC_FIELDS,
+  DEFAULT_RECRUITER_FIELDS,
+  PublicLinkDisclosure,
+  RecruiterShareDisclosure,
+} from "./ShareDisclosureScreens";
+import "./share-achievement-choice.css";
 
 export type GuidedShareCredential = {
   id: string;
   title: string;
   issuer: string;
   status: string;
+  issuedAt?: string | null;
+  sharedWithRecruiters?: boolean;
+  sharedPublicly?: boolean;
 };
 
 export type GuidedShareResult = {
@@ -30,53 +55,92 @@ export type ManagedShare = {
   sharedAt: string | null;
 };
 
-const SHARE_FIELDS = [
-  { id: "competency_name", label: "Achievement name" },
-  { id: "competency_domain", label: "Subject area" },
-  { id: "verification_status", label: "Verification summary" },
-  { id: "learner_name", label: "Your name" },
-  { id: "learner_institution", label: "Institution" },
-  { id: "github_evidence", label: "Project evidence" },
-  { id: "lms_evidence", label: "Course evidence" },
-] as const;
-
-type Step = "choose" | "review" | "done";
+type Method = "all-recruiters" | "public";
+type Step = "method" | "choose" | "review" | "done";
 
 export function GuidedShareFlow({
   credentials,
+  learnerName = "Learner",
   onBack,
   onShareAll,
-  managedShares = [],
-  onRevokeManagedShare,
+  onCreatePublicLink,
+  onEmailPublicLink,
+  onStopPublicLink,
 }: {
   credentials: GuidedShareCredential[];
+  learnerName?: string;
   onBack: () => void;
   onShareAll?: (input: { credentialIds: string[]; selectedFields: string[] }) => Promise<void>;
-  managedShares?: ManagedShare[];
-  onRevokeManagedShare?: (shareId: string) => Promise<void>;
+  onCreatePublicLink?: (input: {
+    credentialId: string;
+    selectedFields: string[];
+    expiresInDays: number;
+  }) => Promise<{ shareUrl: string; shareId: string; token: string; skillName: string }>;
+  onEmailPublicLink?: (input: {
+    shareId: string;
+    token: string;
+    recipientEmail: string;
+  }) => Promise<void>;
+  onStopPublicLink?: (shareId: string) => Promise<void>;
 }) {
-  const [step, setStep] = useState<Step>("choose");
+  const [method, setMethod] = useState<Method | null>(null);
+  const [step, setStep] = useState<Step>("method");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
-  const [selectedFields, setSelectedFields] = useState<string[]>(SHARE_FIELDS.map((field) => field.id));
-  const [consent, setConsent] = useState(false);
+  const [selectedFields, setSelectedFields] = useState<string[]>([...DEFAULT_RECRUITER_FIELDS]);
+  const [expiresInDays, setExpiresInDays] = useState<(typeof SHARE_EXPIRY_DAYS)[number]>(7);
+  const [accessCodeOn, setAccessCodeOn] = useState(false);
   const [working, setWorking] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [publicUrl, setPublicUrl] = useState<string | null>(null);
+  const [publicShareId, setPublicShareId] = useState<string | null>(null);
+  const [publicToken, setPublicToken] = useState<string | null>(null);
+  const [publicSkillName, setPublicSkillName] = useState<string | null>(null);
+  const [recipientEmail, setRecipientEmail] = useState("");
+  const [emailStatus, setEmailStatus] = useState<"idle" | "sending" | "sent" | "failed">("idle");
+  const [emailMessage, setEmailMessage] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
   const selected = credentials.filter((credential) => selectedIds.has(credential.id));
-  const included = SHARE_FIELDS.filter((field) => selectedFields.includes(field.id));
+  const primary = selected[0] ?? null;
+
+  const resetSelection = () => {
+    setSelectedIds(new Set());
+    setSelectedFields([...DEFAULT_RECRUITER_FIELDS]);
+    setExpiresInDays(7);
+    setAccessCodeOn(false);
+    setError(null);
+    setPublicUrl(null);
+    setPublicShareId(null);
+    setPublicToken(null);
+    setPublicSkillName(null);
+    setRecipientEmail("");
+    setEmailStatus("idle");
+    setEmailMessage(null);
+    setCopied(false);
+  };
+
+  const startMethod = (next: Method) => {
+    resetSelection();
+    setSelectedFields(next === "public" ? [...DEFAULT_PUBLIC_FIELDS] : [...DEFAULT_RECRUITER_FIELDS]);
+    setMethod(next);
+    setStep("choose");
+  };
 
   const toggle = (id: string) => {
     setSelectedIds((current) => {
+      if (method === "public") {
+        return new Set([id]);
+      }
       const next = new Set(current);
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
     });
-    setConsent(false);
     setError(null);
   };
 
-  const share = async () => {
-    if (!consent || selected.length === 0 || included.length === 0 || working) return;
+  const shareAll = async () => {
+    if (selected.length === 0 || selectedFields.length === 0 || working) return;
     if (!onShareAll) {
       setError("Sharing is not available right now.");
       return;
@@ -86,7 +150,7 @@ export function GuidedShareFlow({
     try {
       await onShareAll({
         credentialIds: selected.map((credential) => credential.id),
-        selectedFields: included.map((field) => field.id),
+        selectedFields,
       });
       setStep("done");
     } catch (shareError) {
@@ -96,165 +160,380 @@ export function GuidedShareFlow({
     }
   };
 
+  const createPublicLink = async () => {
+    if (selected.length !== 1 || selectedFields.length === 0 || working) return;
+    if (!onCreatePublicLink) {
+      setError("Public verification links are not available right now.");
+      return;
+    }
+    setWorking(true);
+    setError(null);
+    try {
+      const created = await onCreatePublicLink({
+        credentialId: selected[0].id,
+        selectedFields,
+        expiresInDays,
+      });
+      setPublicUrl(created.shareUrl);
+      setPublicShareId(created.shareId);
+      setPublicToken(created.token);
+      setPublicSkillName(created.skillName);
+      setEmailStatus("idle");
+      setEmailMessage(null);
+      setStep("done");
+    } catch (shareError) {
+      setError(shareError instanceof Error ? shareError.message.replace(/^API \d+:\s*/, "") : "The public link could not be created.");
+    } finally {
+      setWorking(false);
+    }
+  };
+
+  const copyLink = async () => {
+    if (!publicUrl) return;
+    try {
+      await navigator.clipboard.writeText(publicUrl);
+      setCopied(true);
+    } catch {
+      setError("Could not copy the link. Select and copy it manually.");
+    }
+  };
+
+  const sendEmail = async () => {
+    if (!publicShareId || !publicToken || emailStatus === "sending") return;
+    const email = recipientEmail.trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setEmailStatus("failed");
+      setEmailMessage("Enter a valid recipient email address.");
+      return;
+    }
+    if (!onEmailPublicLink) {
+      setEmailStatus("failed");
+      setEmailMessage("Unable to send email. You can still copy the link.");
+      return;
+    }
+    setEmailStatus("sending");
+    setEmailMessage(null);
+    try {
+      await onEmailPublicLink({
+        shareId: publicShareId,
+        token: publicToken,
+        recipientEmail: email,
+      });
+      setEmailStatus("sent");
+      setEmailMessage("Email sent successfully");
+    } catch (sendError) {
+      setEmailStatus("failed");
+      setEmailMessage(
+        sendError instanceof Error && sendError.message
+          ? sendError.message.replace(/^API \d+:\s*/, "")
+          : "Unable to send email. You can still copy the link.",
+      );
+    }
+  };
+
   return (
-    <section id="share-achievements" className="mx-auto w-full max-w-3xl space-y-4" aria-label="Share my achievements">
+    <section
+      id="share-achievements"
+      className={`mx-auto w-full space-y-4 ${step === "review" ? "max-w-6xl" : "max-w-3xl"}`}
+      aria-label="Share my achievements"
+    >
       {error ? <p role="alert" className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</p> : null}
 
-      {step === "choose" ? (
-        <div className="space-y-5 rounded-[28px] border border-[#e0e7ff] bg-white p-5 shadow-sm sm:p-8">
-          <div className="flex items-start gap-4">
-            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-[#eef2ff] text-[#4f46e5]">
+      {step === "method" ? (
+        <div className="sac-page">
+          <button type="button" className="sac-back" onClick={onBack}>
+            <ArrowLeft className="h-4 w-4" />
+            Back to Wallet
+          </button>
+
+          <header className="sac-header">
+            <div className="sac-header-icon" aria-hidden="true">
               <Share2 className="h-7 w-7" />
             </div>
             <div>
-              <h1 className="text-2xl font-semibold text-[#0f172a]">Share My Achievements</h1>
-              <p className="mt-1 text-sm leading-relaxed text-[#475569]">
-                Registered SIJIL recruiters will be able to see what you select, including recruiters who join later. People without an account will not.
-              </p>
+              <h1 className="sac-title">Share My Achievement</h1>
+              <p className="sac-subtitle">Choose how you want to share your verified credentials.</p>
             </div>
-          </div>
+          </header>
 
-          <div className="space-y-3">
-            <h2 className="text-sm font-semibold text-[#312e81]">Choose achievements</h2>
-            {credentials.length === 0 ? (
-              <p className="rounded-2xl border border-dashed border-[#dbeafe] bg-[#f8fafc] p-4 text-sm text-[#475569]">
-                No achievements are ready to share yet.
+          <div className="sac-grid">
+            <article className="sac-card sac-card-recruiter">
+              <div className="sac-art sac-art-recruiter" aria-hidden="true">
+                <UserRound className="h-10 w-10" />
+                <Briefcase className="h-6 w-6 sac-art-badge" />
+              </div>
+              <h2 className="sac-card-title">Share with a Recruiter</h2>
+              <p className="sac-card-copy">
+                Send your verified credentials directly to a recruiter or organization (e.g., for a job or internship).
               </p>
-            ) : (
-              <ul className="grid gap-3 sm:grid-cols-2">
-                {credentials.map((credential) => {
-                  const checked = selectedIds.has(credential.id);
-                  return (
-                    <li key={credential.id}>
-                      <button
-                        type="button"
-                        aria-pressed={checked}
-                        onClick={() => toggle(credential.id)}
-                        className={`flex h-full w-full items-start gap-3 rounded-2xl border p-4 text-left ${checked ? "border-[#4f46e5] bg-[#eef2ff] ring-2 ring-[#c7d2fe]" : "border-[#e2e8f0] bg-white"}`}
-                      >
-                        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#fff7ed] text-[#c2410c]">
-                          <Award className="h-5 w-5" />
-                        </span>
-                        <span className="min-w-0">
-                          <span className="block font-semibold text-[#0f172a]">{credential.title}</span>
-                          <span className="block text-xs text-[#475569]">Issued by {credential.issuer}</span>
-                          <span className="block text-xs text-[#64748b]">Status: {credential.status}</span>
-                        </span>
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </div>
+              <button
+                type="button"
+                className="sac-btn sac-btn-blue"
+                onClick={() => startMethod("all-recruiters")}
+              >
+                Share with Recruiter <ArrowRight className="h-4 w-4" />
+              </button>
+            </article>
 
-          <div className="space-y-3">
-            <h2 className="text-sm font-semibold text-[#312e81]">Choose what recruiters can see</h2>
-            <ul className="grid gap-2 sm:grid-cols-2">
-              {SHARE_FIELDS.map((field) => (
-                <li key={field.id}>
-                  <label className="flex items-center gap-2 text-sm text-[#334155]" htmlFor={`share-field-${field.id}`}>
-                    <input
-                      id={`share-field-${field.id}`}
-                      type="checkbox"
-                      checked={selectedFields.includes(field.id)}
-                      onChange={(event) => {
-                        setSelectedFields((current) => event.target.checked
-                          ? [...current, field.id]
-                          : current.filter((id) => id !== field.id));
-                        setConsent(false);
-                      }}
-                    />
-                    {field.label}
-                  </label>
-                </li>
-              ))}
+            <article className="sac-card sac-card-public">
+              <div className="sac-art sac-art-public" aria-hidden="true">
+                <Link2 className="h-10 w-10" />
+              </div>
+              <h2 className="sac-card-title">Create a Public Verification Link</h2>
+              <p className="sac-card-copy">
+                Generate a link that anyone can open to verify your achievements (e.g., for your CV or portfolio).
+              </p>
+              <button
+                type="button"
+                className="sac-btn sac-btn-purple"
+                onClick={() => startMethod("public")}
+              >
+                Create Verification Link <ArrowRight className="h-4 w-4" />
+              </button>
+            </article>
+          </div>
+        </div>
+      ) : null}
+
+      {step === "choose" && method ? (
+        <div className="space-y-5 rounded-[28px] border border-[#e0e7ff] bg-white p-5 shadow-sm sm:p-8">
+          <div>
+            <h1 className="text-2xl font-semibold text-[#0f172a]">
+              {method === "public" ? "Choose Credential" : "Choose Achievements"}
+            </h1>
+            <p className="mt-1 text-sm text-[#475569]">
+              {method === "public"
+                ? "Select one issued credential to continue to Create Public Link."
+                : "Select the achievements you want to share with SIJIL recruiters."}
+            </p>
+          </div>
+          {credentials.length === 0 ? (
+            <p className="rounded-2xl border border-dashed border-[#dbeafe] bg-[#f8fafc] p-4 text-sm text-[#475569]">
+              No achievements are ready to share yet.
+            </p>
+          ) : (
+            <ul className="grid gap-3 sm:grid-cols-2">
+              {credentials.map((credential) => {
+                const checked = selectedIds.has(credential.id);
+                return (
+                  <li key={credential.id}>
+                    <button
+                      type="button"
+                      aria-pressed={checked}
+                      onClick={() => toggle(credential.id)}
+                      className={`flex h-full w-full items-start gap-3 rounded-2xl border p-4 text-left ${checked ? "border-[#023E8A] bg-[#eff6ff] ring-2 ring-[#bfdbfe]" : "border-[#e2e8f0] bg-white"}`}
+                    >
+                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#eff6ff] text-[#023E8A]">
+                        <Award className="h-5 w-5" />
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block font-semibold text-[#0f172a]">{credential.title}</span>
+                        <span className="block text-xs text-[#475569]">Issued by {credential.issuer || "SIJIL"}</span>
+                        <span className="block text-xs text-[#64748b]">Status: {credential.status}</span>
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
             </ul>
-            <p className="text-sm text-[#475569]">Project evidence and course evidence are examples of your work. Your exact assessment score stays private.</p>
-          </div>
-
+          )}
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-between">
-            <Button type="button" variant="ghost" onClick={onBack}>Back</Button>
+            <Button type="button" variant="ghost" onClick={() => { setMethod(null); setStep("method"); resetSelection(); }}>Back</Button>
             <Button
               type="button"
-              className="rounded-xl bg-[#4f46e5] hover:bg-[#4338ca]"
-              disabled={selected.length === 0 || included.length === 0}
+              className="rounded-xl bg-[#023E8A] hover:bg-[#012A5C]"
+              disabled={method === "public" ? selected.length !== 1 : selected.length === 0}
               onClick={() => setStep("review")}
             >
-              Review sharing
+              Continue
             </Button>
           </div>
         </div>
       ) : null}
 
-      {step === "review" ? (
-        <div className="space-y-4 rounded-[28px] border border-[#e0e7ff] bg-white p-5 shadow-sm sm:p-8">
-          <h1 className="text-2xl font-semibold text-[#0f172a]">Review sharing</h1>
-          <p className="text-sm leading-relaxed text-[#334155]">
-            Your selected achievements will be visible to all registered SIJIL recruiters, including recruiters who join later. Private assessment scores stay hidden.
-          </p>
-          <ul className="space-y-2">
-            {selected.map((credential) => (
-              <li key={credential.id} className="rounded-2xl border border-[#e2e8f0] px-4 py-3 text-sm">
-                <p className="font-semibold text-[#0f172a]">{credential.title}</p>
-                <p className="text-[#475569]">Issued by {credential.issuer}</p>
-              </li>
-            ))}
-          </ul>
-          <p className="text-sm text-[#475569]">Recruiters can see: {included.map((field) => field.label).join(", ")}.</p>
-          <label className="flex items-start gap-2 text-sm text-[#334155]" htmlFor="all-recruiter-consent">
-            <input id="all-recruiter-consent" type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} />
-            I agree that every registered SIJIL recruiter may see this information.
-          </label>
-          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-between">
-            <Button type="button" variant="ghost" onClick={() => setStep("choose")}>Back</Button>
-            <Button type="button" className="rounded-xl bg-[#4f46e5] hover:bg-[#4338ca]" disabled={!consent || working} onClick={() => void share()}>
-              {working ? "Sharing…" : "Share with All Recruiters"}
-            </Button>
-          </div>
-        </div>
+      {step === "review" && method === "all-recruiters" && primary ? (
+        <RecruiterShareDisclosure
+          skillName={primary.title}
+          learnerName={learnerName}
+          issuedAt={primary.issuedAt}
+          selectedFields={selectedFields}
+          onChangeFields={setSelectedFields}
+          onCancel={() => setStep("choose")}
+          onConfirm={() => void shareAll()}
+          confirming={working}
+        />
       ) : null}
 
-      {step === "done" ? (
+      {step === "review" && method === "public" && primary ? (
+        <PublicLinkDisclosure
+          skillName={primary.title}
+          learnerName={learnerName}
+          issuedAt={primary.issuedAt}
+          selectedFields={selectedFields}
+          onChangeFields={setSelectedFields}
+          expiresInDays={expiresInDays}
+          onExpiresChange={setExpiresInDays}
+          accessCodeOn={accessCodeOn}
+          onAccessCodeChange={setAccessCodeOn}
+          onCancel={() => setStep("choose")}
+          onCreate={() => void createPublicLink()}
+          creating={working}
+        />
+      ) : null}
+
+      {step === "done" && method === "all-recruiters" ? (
         <div className="space-y-4 rounded-[28px] border border-emerald-200 bg-white p-5 shadow-sm sm:p-8">
           <h1 className="text-2xl font-semibold text-[#0f172a]">Visible to all SIJIL recruiters</h1>
           <p className="text-sm text-[#14532d]">Your achievements are now visible to all SIJIL recruiters.</p>
           <p className="text-sm text-[#475569]">Status: Visible to all SIJIL recruiters. This is not a public link. You can stop it below. A copy someone already saved is not deleted.</p>
-          <Button type="button" variant="ghost" onClick={onBack}>Back to wallet</Button>
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" variant="outline" onClick={() => { setMethod(null); setStep("method"); resetSelection(); }}>
+              Create another share
+            </Button>
+            <Button type="button" variant="ghost" onClick={onBack}>Back to wallet</Button>
+          </div>
         </div>
       ) : null}
 
-      <div className="space-y-2 rounded-[28px] border border-[#e2e8f0] bg-white p-5">
-        <h2 className="text-sm font-semibold text-[#0f172a]">Manage shared access</h2>
-        <p className="text-sm text-[#475569]">Stopping a share hides it from recruiters the next time they open SIJIL.</p>
-        {managedShares.length === 0 ? <p className="text-sm text-[#475569]">Nothing is shared yet.</p> : (
-          <ul className="space-y-2">
-            {managedShares.map((share) => (
-              <li key={share.id} className="flex flex-col gap-2 rounded-xl border border-[#e2e8f0] px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <p className="text-sm font-medium text-[#0f172a]">{share.label}</p>
-                  <p className="text-xs text-[#64748b]">
-                    {share.status === "revoked"
-                      ? "Sharing stopped"
-                      : share.status === "expired"
-                        ? "Expired"
-                        : share.kind === "direct"
-                          ? "Shared with a specific recruiter"
-                          : share.kind === "public"
-                            ? "Public verification link active"
-                            : "Visible to all SIJIL recruiters"}
-                    {share.detail ? ` · ${share.detail}` : ""}
-                    {share.sharedAt ? ` · ${new Date(share.sharedAt).toLocaleDateString()}` : ""}
-                  </p>
+      {step === "done" && method === "public" ? (
+        <div className="pvc-page">
+          <button type="button" className="sac-back" onClick={onBack}>
+            <ArrowLeft className="h-4 w-4" />
+            Back to Wallet
+          </button>
+
+          <article className="pvc-card">
+            <div className="pvc-success" aria-hidden="true">
+              <span className="pvc-success-ring" />
+              <span className="pvc-success-badge"><Check className="h-7 w-7" /></span>
+            </div>
+            <h1 className="pvc-title">Public Verification Link Created</h1>
+            <p className="pvc-subtitle">
+              Anyone with this link can verify the selected credential details without signing in.
+            </p>
+
+            <div className="pvc-credential">
+              <span className="pvc-code" aria-hidden="true">{"</>"}</span>
+              <div className="min-w-0 flex-1">
+                <p className="pvc-label">Credential</p>
+                <p className="pvc-skill">{publicSkillName ?? selected[0]?.title ?? "Verified credential"}</p>
+              </div>
+              <span className="pvc-active"><span className="pvc-dot" /> Active</span>
+            </div>
+
+            {publicUrl ? (
+              <>
+                <div className="pvc-link-box">
+                  <p className="pvc-section-title"><Link2 className="h-4 w-4" /> Verification Link</p>
+                  <div className="pvc-link-row">
+                    <input className="pvc-link-input" readOnly value={publicUrl} aria-label="Verification link" />
+                    <button
+                      type="button"
+                      className="pvc-copy"
+                      onClick={() => void copyLink()}
+                      aria-label={copied ? "Copied" : "Copy Link"}
+                    >
+                      <Copy className="h-4 w-4" />
+                    </button>
+                  </div>
                 </div>
-                {share.status === "active" ? (
-                  <Button type="button" variant="outline" size="sm" onClick={() => void onRevokeManagedShare?.(share.id)}>Stop sharing</Button>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
+
+                <div className="pvc-email-box">
+                  <div className="pvc-email-head">
+                    <Mail className="h-4 w-4" />
+                    <div>
+                      <p className="pvc-section-title" style={{ margin: 0 }}>Send via Email</p>
+                      <p className="pvc-email-note">Uses the same verification link. No new share is created.</p>
+                    </div>
+                  </div>
+                  <div className="pvc-email-row">
+                    <label className="pvc-email-field" htmlFor="public-share-email">
+                      <UserRound className="h-4 w-4" />
+                      <input
+                        id="public-share-email"
+                        type="email"
+                        autoComplete="email"
+                        placeholder="name@example.com"
+                        value={recipientEmail}
+                        onChange={(event) => {
+                          setRecipientEmail(event.target.value);
+                          if (emailStatus !== "idle") {
+                            setEmailStatus("idle");
+                            setEmailMessage(null);
+                          }
+                        }}
+                        disabled={emailStatus === "sending"}
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      className="pvc-send"
+                      disabled={emailStatus === "sending" || !recipientEmail.trim()}
+                      onClick={() => void sendEmail()}
+                    >
+                      <Send className="h-4 w-4" />
+                      {emailStatus === "sending" ? "Sending…" : "Send Email"}
+                    </button>
+                  </div>
+                  {emailMessage ? (
+                    <p
+                      role="status"
+                      className={`text-sm ${emailStatus === "sent" ? "text-emerald-700" : "text-red-700"}`}
+                    >
+                      {emailMessage}
+                    </p>
+                  ) : null}
+                </div>
+              </>
+            ) : null}
+
+            <p className="pvc-info">
+              <Info className="h-4 w-4" />
+              You can stop this link below. Stopping it does not revoke the credential itself.
+            </p>
+
+            <div className="pvc-footer">
+              <button
+                type="button"
+                className="pvc-footer-btn"
+                onClick={() => { setMethod(null); setStep("method"); resetSelection(); }}
+              >
+                <Link2 className="h-4 w-4" />
+                Create Another Share
+              </button>
+              <button type="button" className="pvc-footer-link" onClick={onBack}>
+                Back to Wallet
+              </button>
+              <button
+                type="button"
+                className="pvc-footer-stop"
+                disabled={!publicShareId || !onStopPublicLink || working}
+                onClick={() => {
+                  if (!publicShareId || !onStopPublicLink) return;
+                  void (async () => {
+                    setWorking(true);
+                    setError(null);
+                    try {
+                      await onStopPublicLink(publicShareId);
+                      setMethod(null);
+                      setStep("method");
+                      resetSelection();
+                    } catch (stopError) {
+                      setError(stopError instanceof Error ? stopError.message.replace(/^API \d+:\s*/, "") : "Could not stop the link.");
+                    } finally {
+                      setWorking(false);
+                    }
+                  })();
+                }}
+              >
+                <Ban className="h-4 w-4" />
+                Stop Link
+              </button>
+            </div>
+          </article>
+        </div>
+      ) : null}
+
     </section>
   );
 }

@@ -115,7 +115,7 @@ export function SecureIdentityFlow({
           </div>
           <div className="grid grid-cols-3 gap-2 text-center text-[11px] font-semibold text-[#312e81]">
             <span className="rounded-2xl bg-[#eef2ff] px-2 py-3">Own your data</span>
-            <span className="rounded-2xl bg-[#eef2ff] px-2 py-3">Get verified proof</span>
+            <span className="rounded-2xl bg-[#eef2ff] px-2 py-3">Issue credential on Validation Trail</span>
             <span className="rounded-2xl bg-[#eef2ff] px-2 py-3">Share safely</span>
           </div>
           <Button type="button" className="h-12 rounded-2xl bg-[#4f46e5] hover:bg-[#4338ca]" onClick={() => setStep("choose")} disabled={busy}>
@@ -426,10 +426,10 @@ function ReadyPanel({
         <Button type="button" variant="outline" className="rounded-xl" onClick={onDownloadAgain}>Download recovery file</Button>
       ) : null}
       <Button asChild className="h-11 rounded-xl bg-[#4f46e5] hover:bg-[#4338ca]">
-        <Link to="/learner/wallet">Go to My Secure Wallet</Link>
+        <Link to="/learner/profile">Continue to dashboard</Link>
       </Button>
       <nav className="flex flex-col gap-2 text-center" aria-label="Continue">
-        <Link className="text-sm font-medium text-[#023E8A] underline" to="/learner/profile">My Learning Journey</Link>
+        <Link className="text-sm font-medium text-[#023E8A] underline" to="/learner/wallet">Open Wallet</Link>
         <Link className="text-sm font-medium text-[#023E8A] underline" to="/learner/secure-identity">Privacy & Security</Link>
       </nav>
       <IdentifierDetails did={did} />

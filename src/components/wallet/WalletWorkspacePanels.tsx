@@ -31,7 +31,7 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import type { WalletCompetencyRecordView } from "@/lib/db/wallet-competency-records";
-import type { WalletShareFieldId } from "@/lib/wallet-competency-shared";
+import type { WalletAttemptHistoryItem, WalletShareFieldId } from "@/lib/wallet-competency-shared";
 import type { WalletShareRecordView } from "@/services/api/wallet.api";
 import type { WalletAnchorBadge } from "@/lib/ledger-status";
 
@@ -144,28 +144,29 @@ export function WalletWorkspaceHeader({
       <div className="flex min-w-0 flex-wrap items-center gap-3">
         <p className="text-sm font-semibold text-[#023E8A]">My Secure Wallet</p>
         <span className="hidden h-4 w-px bg-[#e2e8f0] sm:block" />
-        {records.length > 1 ? (
-          <Select value={selectedId} onValueChange={onSelect}>
-            <SelectTrigger className="h-9 w-[240px] rounded-xl border-[#e2e8f0]">
-              <SelectValue placeholder={competencyName} />
-            </SelectTrigger>
-            <SelectContent>
-              {records.map((record) => {
-                const badge = anchorByCompetencyId?.[record.competencyId];
-                return (
-                  <SelectItem key={record.competencyId} value={record.competencyId}>
-                    {record.competencyName}
-                    {badge ? (
-                      <StatusBadge variant={badge.variant}>{badge.label}</StatusBadge>
-                    ) : null}
-                  </SelectItem>
-                );
-              })}
-            </SelectContent>
-          </Select>
-        ) : (
-          <p className="text-sm font-medium text-[#0f172a]">{competencyName}</p>
-        )}
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          {records.map((record) => {
+            const active = record.competencyId === selectedId;
+            const badge = anchorByCompetencyId?.[record.competencyId];
+            return (
+              <button
+                key={record.competencyId}
+                type="button"
+                className={cn(
+                  "inline-flex max-w-[220px] items-center gap-2 rounded-xl border px-3 py-1.5 text-sm font-semibold transition",
+                  active
+                    ? "border-[#c4b5fd] bg-[#f5f3ff] text-[#5b21b6]"
+                    : "border-[#e2e8f0] bg-white text-[#0f172a] hover:border-[#c4b5fd] hover:text-[#5b21b6]",
+                )}
+                onClick={() => onSelect(record.competencyId)}
+                title={`Open ${record.competencyName} competency`}
+              >
+                <span className="truncate">{record.competencyName}</span>
+                {badge ? <StatusBadge variant={badge.variant}>{badge.label}</StatusBadge> : null}
+              </button>
+            );
+          })}
+        </div>
         <span
           className={cn(
             "inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
@@ -326,20 +327,126 @@ function CommitActivityChart({ points }: { points: CommitChartPoint[] }) {
   );
 }
 
+function attemptOrdinal(n: number): string {
+  const mod100 = n % 100;
+  if (mod100 >= 11 && mod100 <= 13) return `${n}th`;
+  switch (n % 10) {
+    case 1: return `${n}st`;
+    case 2: return `${n}nd`;
+    case 3: return `${n}rd`;
+    default: return `${n}th`;
+  }
+}
+
+function formatSittingTime(iso: string | null): string {
+  if (!iso) return "Time not recorded";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "Time not recorded";
+  return date.toLocaleString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+export function scoredPracticalAttempts(attempts: WalletAttemptHistoryItem[]): WalletAttemptHistoryItem[] {
+  return attempts
+    .filter((item) => item.scorePercent != null || item.passed)
+    .slice()
+    .sort((a, b) => new Date(a.submittedAt ?? 0).getTime() - new Date(b.submittedAt ?? 0).getTime());
+}
+
+export function PracticalTaskProgress({ attempts }: { attempts: WalletAttemptHistoryItem[] }) {
+  const sittings = scoredPracticalAttempts(attempts);
+  if (sittings.length === 0) return null;
+
+  const first = sittings[0]?.scorePercent ?? null;
+  const latest = sittings[sittings.length - 1]?.scorePercent ?? null;
+  const best = sittings.reduce<number | null>((highest, item) => {
+    if (item.scorePercent == null) return highest;
+    return highest == null ? item.scorePercent : Math.max(highest, item.scorePercent);
+  }, null);
+  const retakes = Math.max(0, sittings.length - 1);
+  const delta = first != null && latest != null ? latest - first : null;
+
+  return (
+    <div>
+      <div className="grid grid-cols-3 gap-2">
+        <div className="rounded-lg bg-[#f8fafc] px-2 py-2 ring-1 ring-[#e2e8f0]">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-[#94a3b8]">Sittings</p>
+          <p className="text-lg font-bold text-[#023E8A]">{sittings.length}</p>
+        </div>
+        <div className="rounded-lg bg-[#f8fafc] px-2 py-2 ring-1 ring-[#e2e8f0]">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-[#94a3b8]">Retakes</p>
+          <p className="text-lg font-bold text-[#023E8A]">{retakes}</p>
+        </div>
+        <div className="rounded-lg bg-[#f8fafc] px-2 py-2 ring-1 ring-[#e2e8f0]">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-[#94a3b8]">Progress</p>
+          <p className={cn("text-lg font-bold", delta != null && delta >= 0 ? "text-[#059669]" : "text-[#CA8A04]")}>
+            {delta == null ? "—" : `${delta > 0 ? "+" : ""}${delta}`}
+          </p>
+        </div>
+      </div>
+      <p className="mt-2 text-[11px] text-[#64748b]">
+        {first != null && latest != null
+          ? `First attempt ${first}% · latest ${latest}%${best != null ? ` · best ${best}%` : ""}`
+          : "Each sitting stays on the record."}
+        {retakes > 0 ? ` · ${retakes} retake${retakes === 1 ? "" : "s"}` : " · no retakes yet"}
+      </p>
+      <ol className="pt-attempt-timeline mt-3">
+        {sittings.map((item, index) => {
+          const previous = index > 0 ? sittings[index - 1]?.scorePercent ?? null : null;
+          const change = item.scorePercent != null && previous != null ? item.scorePercent - previous : null;
+          const passed = item.passed || (item.scorePercent != null && Number.isFinite(item.scorePercent));
+          return (
+            <li key={item.attemptId} className="pt-attempt-timeline-item">
+              <span className={cn("pt-attempt-dot", passed ? "pt-attempt-dot--pass" : "pt-attempt-dot--retry")} />
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                  <p className="text-xs font-semibold text-[#0f172a]">
+                    {attemptOrdinal(index + 1)} attempt
+                    {index > 0 ? <span className="font-medium text-[#64748b]"> · retake</span> : null}
+                  </p>
+                  <p className={cn("text-xs font-bold tabular-nums", passed ? "text-[#059669]" : "text-[#CA8A04]")}>
+                    {item.scorePercent != null ? `${item.scorePercent}%` : "—"}
+                    <span className="ml-1 font-semibold">{item.status}</span>
+                  </p>
+                </div>
+                <p className="mt-0.5 text-[11px] text-[#64748b]">{formatSittingTime(item.submittedAt)}</p>
+                {change != null && change !== 0 ? (
+                  <p className={cn("mt-0.5 text-[11px] font-medium", change > 0 ? "text-[#059669]" : "text-[#CA8A04]")}>
+                    {change > 0 ? "+" : ""}
+                    {change} pts vs {attemptOrdinal(index)} attempt
+                  </p>
+                ) : null}
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+    </div>
+  );
+}
+
 export function CompetencyPackageCard({
   competencyName,
   github,
   lmsRows,
   taskLabel,
+  attempts = [],
 }: {
   competencyName: string;
   github: GithubPackageStats;
   lmsRows: LmsCourseRow[];
   taskLabel: string | null;
+  attempts?: WalletAttemptHistoryItem[];
 }) {
   const githubOpen = github.repos > 0 || github.activities > 0;
   const lmsOpen = lmsRows.length > 0;
-  const hasVerifiedEvidence = githubOpen || lmsOpen || Boolean(taskLabel);
+  const scoredAttempts = scoredPracticalAttempts(attempts);
+  const hasVerifiedEvidence = githubOpen || lmsOpen || Boolean(taskLabel) || scoredAttempts.length > 0;
 
   return (
     <div className="learner-stat-card p-4">
@@ -433,7 +540,21 @@ export function CompetencyPackageCard({
           </details>
         ) : null}
 
-        {taskLabel ? (
+        {scoredAttempts.length > 0 ? (
+          <details className="rounded-xl border border-[#e2e8f0] p-3" open>
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <ClipboardList className="h-4 w-4 text-[#023E8A]" />
+                <span className="text-sm font-semibold text-[#0f172a]">Practical task</span>
+                <span className="learner-tag-linked">Saved</span>
+              </div>
+              <ChevronDown className="h-4 w-4 text-[#94a3b8]" />
+            </summary>
+            <div className="mt-3">
+              <PracticalTaskProgress attempts={attempts} />
+            </div>
+          </details>
+        ) : taskLabel ? (
           <div className="flex items-center justify-between rounded-xl border border-[#e2e8f0] px-3 py-2.5">
             <div className="flex items-center gap-2">
               <ClipboardList className="h-4 w-4 text-[#023E8A]" />
@@ -454,6 +575,7 @@ export function EvidenceInspectorCard({
   githubRepos,
   lmsAssignments,
   taskDetail,
+  attempts = [],
   reviews,
   onViewPackage,
   verifyUrl,
@@ -464,6 +586,7 @@ export function EvidenceInspectorCard({
   githubRepos: Array<{ name: string; language: string | null; commits: number | null; url: string | null }>;
   lmsAssignments: Array<{ name: string; course: string; grade: string }>;
   taskDetail: string | null;
+  attempts?: WalletAttemptHistoryItem[];
   reviews: Array<{ reviewer: string; text: string }>;
   onViewPackage?: () => void;
   verifyUrl?: string | null;
@@ -493,7 +616,7 @@ export function EvidenceInspectorCard({
         ) : null}
       </div>
 
-      <div className="mt-3 max-h-56 space-y-2 overflow-y-auto">
+      <div className="mt-3 max-h-80 space-y-2 overflow-y-auto">
         {source === "github" && (githubRepos.length === 0 ? (
           <p className="text-xs text-[#94a3b8]">No GitHub repositories are linked to this competency.</p>
         ) : githubRepos.map((repo) => (
@@ -531,7 +654,11 @@ export function EvidenceInspectorCard({
             <div className="mb-2">
               <TrustTierBadge trustTier="corroborating" trustTierLabel="Corroborating" />
             </div>
-            <p className="text-sm text-[#334155]">{taskDetail ?? "No practical task result is stored yet."}</p>
+            {scoredPracticalAttempts(attempts).length > 0 ? (
+              <PracticalTaskProgress attempts={attempts} />
+            ) : (
+              <p className="text-sm text-[#334155]">{taskDetail ?? "No practical task result is stored yet."}</p>
+            )}
           </div>
         )}
 

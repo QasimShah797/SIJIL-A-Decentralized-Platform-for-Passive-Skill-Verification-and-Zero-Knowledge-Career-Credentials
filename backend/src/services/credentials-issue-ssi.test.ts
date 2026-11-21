@@ -47,9 +47,14 @@ class MemoryIssueDb {
 
   from(table: string) {
     const filters: Record<string, string> = {};
+    const nullFilters = new Set<string>();
     const self = this;
     let pendingInsert: Record<string, unknown> | null = null;
     let pendingUpdate: Record<string, unknown> | null = null;
+    let rowLimit: number | null = null;
+    const matches = (row: Record<string, unknown>) =>
+      Object.entries(filters).every(([column, value]) => String(row[column]) === value)
+      && [...nullFilters].every((column) => row[column] == null);
     const builder = {
       select() {
         return builder;
@@ -58,7 +63,15 @@ class MemoryIssueDb {
         filters[column] = value;
         return builder;
       },
+      is(column: string, value: null) {
+        if (value === null) nullFilters.add(column);
+        return builder;
+      },
       order() {
+        return builder;
+      },
+      limit(count: number) {
+        rowLimit = count;
         return builder;
       },
       insert(row: Record<string, unknown>) {
@@ -70,9 +83,8 @@ class MemoryIssueDb {
         return builder;
       },
       async maybeSingle() {
-        const rows = self.rowsFor(table).filter((row) =>
-          Object.entries(filters).every(([column, value]) => String((row as Record<string, unknown>)[column]) === value),
-        );
+        let rows = self.rowsFor(table).filter((row) => matches(row as Record<string, unknown>));
+        if (rowLimit != null) rows = rows.slice(0, rowLimit);
         return { data: rows[0] ?? null, error: null };
       },
       async single() {
@@ -94,9 +106,8 @@ class MemoryIssueDb {
           self.skillUpdates.push({ ...pendingUpdate, ...filters });
           return Promise.resolve({ data: null, error: null }).then(onFulfilled, onRejected);
         }
-        const rows = self.rowsFor(table).filter((row) =>
-          Object.entries(filters).every(([column, value]) => String((row as Record<string, unknown>)[column]) === value),
-        );
+        let rows = self.rowsFor(table).filter((row) => matches(row as Record<string, unknown>));
+        if (rowLimit != null) rows = rows.slice(0, rowLimit);
         return Promise.resolve({ data: rows, error: null }).then(onFulfilled, onRejected);
       },
     };

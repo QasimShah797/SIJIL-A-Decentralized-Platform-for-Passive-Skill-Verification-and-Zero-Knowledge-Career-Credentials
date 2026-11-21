@@ -4,6 +4,7 @@ import { walletService } from "../services/wallet.service";
 import { runWithServiceDb, runWithUserDb } from "../config/supabase";
 import {
   competencyIdParamSchema,
+  emailPublicShareSchema,
   presentationTokenParamSchema,
   publicCompetencyParamSchema,
   shareIdParamSchema,
@@ -77,6 +78,13 @@ export async function revokeWalletShare(req: Request, res: Response): Promise<Re
   const { shareId } = shareIdParamSchema.parse(req.params);
   await runWithUserDb(req.accessToken, () => walletService.revokeShare(req.user!.id, shareId));
   return sendSuccess(res, null, "Presentation revoked");
+}
+
+export async function emailPublicShare(req: Request, res: Response): Promise<Response> {
+  const { shareId } = shareIdParamSchema.parse(req.params);
+  const input = emailPublicShareSchema.parse(req.body ?? {});
+  const result = await walletService.emailPublicShare(req.user!.id, shareId, input);
+  return sendSuccess(res, result, "Email sent successfully");
 }
 
 export async function getPublicPresentation(req: Request, res: Response): Promise<Response> {

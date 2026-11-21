@@ -195,7 +195,7 @@ export function StatCard({
 export function CompetencyStatusBadges({ status }: { status: string }) {
   const bucket = skillBucket(status);
   if (bucket === "verified") {
-    return <span className="learner-tag-linked">Verified</span>;
+    return null;
   }
   if (bucket === "progress") {
     return (
@@ -251,14 +251,16 @@ export function CompetencySkillRow({
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
-        <div className="mt-2">
-          <CompetencyStatusBadges status={skill.status} />
-        </div>
+        {skillBucket(skill.status) !== "verified" ? (
+          <div className="mt-2">
+            <CompetencyStatusBadges status={skill.status} />
+          </div>
+        ) : null}
         <div className="mt-3 flex items-center gap-2">
           <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-[#e2e8f0]">
             <div className="h-full rounded-full bg-[#14b8a6]" style={{ width: `${progress}%` }} />
           </div>
-          <span className="shrink-0 text-[10px] font-medium text-[#64748b]">{progress}% Verification</span>
+          <span className="shrink-0 text-[10px] font-medium text-[#64748b]">{progress}% complete</span>
         </div>
       </div>
     </li>
@@ -338,10 +340,6 @@ export function OverviewRightRail({
           )}
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-semibold">{profile.name}</p>
-            <span className="inline-flex items-center gap-0.5 rounded-full bg-[#ccfbf1] px-2 py-0.5 text-[10px] font-medium text-[#0f766e]">
-              <BadgeCheck className="h-3 w-3" />
-              Verified
-            </span>
           </div>
         </div>
         <p className="mt-2 truncate text-xs text-[#64748b]">{profile.email}</p>

@@ -179,8 +179,17 @@ export default function CredentialDetails() {
             <FieldRow label="issuer" value={c.issuer} />
             <FieldRow label="issuer DID" value={c.issuerDid} mono hint="Used to resolve and verify the issuer's signing key." />
             <FieldRow label="validFrom" value={c.validFrom} mono />
-            <FieldRow label="credentialSubject" value={`{ id: "${c.holderDid}", achievement: "${c.skill}" }`} mono />
+            <FieldRow
+              label="learner DID"
+              value={c.holderDid.length > 28 ? `${c.holderDid.slice(0, 18)}…${c.holderDid.slice(-8)}` : c.holderDid}
+              mono
+              hint="Privacy-safe display of the holder DID bound at issuance."
+            />
             <FieldRow label="related skill" value={c.skill} />
+            <FieldRow
+              label="credential status"
+              value={c.verification === "Revoked" || /revok/i.test(String(c.attestation)) ? "Revoked" : "Issued"}
+            />
           </Section>
 
           <Section title="Supporting records">

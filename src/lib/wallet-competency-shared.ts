@@ -143,7 +143,8 @@ export function deriveWalletPracticalTaskStatus(params: {
   scorePercent?: number | null;
 }): WalletPracticalTaskStatus {
   if (params.passed) return "Passed";
-  if (params.scorePercent != null) return "Needs Improvement";
+  // Any numeric score advances — no fail / needs-improvement threshold.
+  if (params.scorePercent != null && Number.isFinite(params.scorePercent)) return "Passed";
   return "Task Submitted";
 }
 

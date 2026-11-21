@@ -32,6 +32,7 @@ export function WalletDashboardHub({
   onShare,
   onManage,
   onGetProof,
+  onCredentialClick,
 }: {
   credentials: WalletHubCredential[];
   credentialsLoading: boolean;
@@ -39,6 +40,7 @@ export function WalletDashboardHub({
   onShare: () => void;
   onManage: () => void;
   onGetProof: () => void;
+  onCredentialClick?: (name: string, id: string) => void;
 }) {
   const { snapshot, loading, working, unlock } = useSsiIdentity();
   const [showUnlock, setShowUnlock] = useState(false);
@@ -185,11 +187,17 @@ export function WalletDashboardHub({
         {!credentialsLoading && credentials.length > 0 ? (
           <ul className="grid gap-2">
             {credentials.slice(0, 3).map((credential) => (
-              <li key={credential.id} className="flex items-center gap-3 rounded-2xl border border-[#e2e8f0] bg-white px-4 py-3">
-                <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#fff7ed] text-[#c2410c]">
-                  <Award className="h-4 w-4" />
-                </span>
-                <span className="min-w-0 truncate text-sm font-medium text-[#0f172a]">{credential.name}</span>
+              <li key={credential.id}>
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-3 rounded-2xl border border-[#e2e8f0] bg-white px-4 py-3 text-left transition hover:border-[#c4b5fd] hover:bg-[#faf8ff]"
+                  onClick={() => onCredentialClick?.(credential.name, credential.id)}
+                >
+                  <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#fff7ed] text-[#c2410c]">
+                    <Award className="h-4 w-4" />
+                  </span>
+                  <span className="min-w-0 truncate text-sm font-medium text-[#0f172a]">{credential.name}</span>
+                </button>
               </li>
             ))}
             {credentials.length > 3 ? (

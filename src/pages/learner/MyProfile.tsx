@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { z } from "zod";
 import {
   User,
@@ -29,6 +30,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/hooks/useAuth";
+import { useSsiIdentity } from "@/hooks/useSsiIdentity";
 import {
   useCredentials,
   useDeclaredSkills,
@@ -40,6 +42,7 @@ import {
   uploadLearnerAvatar,
   type LearnerEditableProfile,
 } from "@/lib/db/learner-profile";
+import { displayLearnerDid } from "@/lib/did";
 import { VerifiedGitHubCard } from "@/components/profile/VerifiedGitHubCard";
 import { LinkedInProfileUrlField } from "@/components/profile/LinkedInProfileUrlField";
 import {
@@ -135,6 +138,7 @@ function SectionEditButton({ onClick }: { onClick: () => void }) {
 export default function MyProfile() {
   const { user } = useAuth();
   const { profile, loading, refresh } = useLearnerProfile();
+  const { snapshot: ssiSnapshot } = useSsiIdentity();
   const { skills } = useDeclaredSkills();
   const { credentials } = useCredentials();
   const { reviews } = usePeerReviews();
@@ -146,6 +150,15 @@ export default function MyProfile() {
     () => (avatarFile ? URL.createObjectURL(avatarFile) : null),
     [avatarFile],
   );
+
+  const resolvedDid = useMemo(() => {
+    return (
+      displayLearnerDid(profile?.did) ??
+      displayLearnerDid(ssiSnapshot.local?.did) ??
+      displayLearnerDid(ssiSnapshot.server.did) ??
+      ""
+    );
+  }, [profile?.did, ssiSnapshot.local?.did, ssiSnapshot.server.did]);
 
   useEffect(() => {
     return () => {
@@ -200,9 +213,23 @@ export default function MyProfile() {
   }, [skills, profile?.skillsSummary]);
 
   const copyDid = () => {
-    if (!profile?.did) return;
-    void navigator.clipboard.writeText(profile.did);
-    toast({ title: "DID copied to clipboard" });
+    if (!resolvedDid) {
+      toast({
+        title: "No DID to copy",
+        description: "Set up your identity under Privacy & Security first.",
+        variant: "destructive",
+      });
+      return;
+    }
+    void navigator.clipboard.writeText(resolvedDid).then(
+      () => toast({ title: "DID copied to clipboard" }),
+      () =>
+        toast({
+          title: "Could not copy DID",
+          description: "Your browser blocked clipboard access.",
+          variant: "destructive",
+        }),
+    );
   };
 
   const set = (key: keyof EditForm) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
@@ -323,14 +350,24 @@ export default function MyProfile() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-            <button
-              type="button"
-              onClick={copyDid}
-              className="mono flex items-center gap-1.5 rounded-lg border border-[#e2e8f0] bg-white px-3 py-1.5 text-xs text-[#64748b] hover:text-[#023E8A]"
-            >
-              DID: {shortDid(profile.did)}
-              <Copy className="h-3 w-3 shrink-0" />
-            </button>
+            {resolvedDid ? (
+              <button
+                type="button"
+                onClick={copyDid}
+                className="mono flex items-center gap-1.5 rounded-lg border border-[#e2e8f0] bg-white px-3 py-1.5 text-xs text-[#64748b] hover:text-[#023E8A]"
+                title={resolvedDid}
+              >
+                DID: {shortDid(resolvedDid)}
+                <Copy className="h-3 w-3 shrink-0" />
+              </button>
+            ) : (
+              <Link
+                to="/learner/secure-identity"
+                className="flex items-center gap-1.5 rounded-lg border border-[#e2e8f0] bg-white px-3 py-1.5 text-xs text-[#64748b] hover:text-[#023E8A]"
+              >
+                DID: not set up
+              </Link>
+            )}
             {editing ? (
               <>
                 <Button variant="outline" className="rounded-xl" onClick={cancelEdit} disabled={busy}>
@@ -404,14 +441,24 @@ export default function MyProfile() {
                   <Mail className="h-3.5 w-3.5 shrink-0" />
                   {profile.email}
                 </p>
-                <button
-                  type="button"
-                  onClick={copyDid}
-                  className="mono mt-2 flex max-w-full items-center justify-center gap-1.5 truncate text-left text-xs text-[#64748b] hover:text-[#023E8A] sm:justify-start"
-                >
-                  {profile.did}
-                  <Copy className="h-3 w-3 shrink-0" />
-                </button>
+                {resolvedDid ? (
+                  <button
+                    type="button"
+                    onClick={copyDid}
+                    className="mono mt-2 flex max-w-full items-center justify-center gap-1.5 truncate text-left text-xs text-[#64748b] hover:text-[#023E8A] sm:justify-start"
+                    title={resolvedDid}
+                  >
+                    <span className="truncate">{resolvedDid}</span>
+                    <Copy className="h-3 w-3 shrink-0" />
+                  </button>
+                ) : (
+                  <Link
+                    to="/learner/secure-identity"
+                    className="mt-2 inline-flex text-xs font-medium text-[#023E8A] hover:underline"
+                  >
+                    Set up DID in Privacy &amp; Security
+                  </Link>
+                )}
               </div>
             </div>
             <div className="grid grid-cols-2 gap-4 border-t border-[#e2e8f0] pt-4 sm:grid-cols-4 lg:border-t-0 lg:pt-0">

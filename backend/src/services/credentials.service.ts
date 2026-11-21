@@ -30,7 +30,7 @@ import {
   type AssessmentAttemptRecord,
   type AssessmentCommitmentClaim,
 } from "./assessment-binding";
-import { isMissingColumnError, isMissingRelationError } from "../utils/supabase-errors";
+import { isMissingColumnError, isMissingRelationError, isUniqueViolation } from "../utils/supabase-errors";
 import { canReadLearnerData, type AuthCaller } from "./learner-access";
 import { shareListedForRecruiters } from "./share-directory";
 import { hashEvidenceMetadata, sortedEvidenceHashes } from "../utils/evidence-hash";
@@ -308,14 +308,8 @@ export class CredentialsService {
     });
     if (!gate.ok) throw new AppError(gate.message, gate.status);
 
-    const { data: existing } = await this.db
-      .from("credentials")
-      .select("*")
-      .eq("user_id", userId)
-      .eq("skill_name", skill.name)
-      .maybeSingle();
-
-    if (existing) return rowToView(existing as CredentialRow);
+    const activeExisting = await this.findActiveCredentialForSkill(userId, String(skill.name));
+    if (activeExisting) return rowToView(activeExisting);
 
     const holderDid = await this.requireProvenHolderDid(userId);
     const assessmentCommitment = await resolveAssessmentCommitment(this.db, userId, input.skillId);
@@ -391,7 +385,14 @@ export class CredentialsService {
       .select("*")
       .single();
 
-    if (error) throw new AppError(error.message, 500);
+    if (error) {
+      // Concurrent issuance: return the winner instead of re-signing.
+      if (isUniqueViolation(error)) {
+        const raced = await this.findActiveCredentialForSkill(userId, String(skill.name));
+        if (raced) return rowToView(raced);
+      }
+      throw new AppError(error.message, 500);
+    }
 
     await this.db
       .from("declared_skills")
@@ -404,6 +405,24 @@ export class CredentialsService {
       .eq("id", input.skillId);
 
     return rowToView(data as CredentialRow);
+  }
+
+  private async findActiveCredentialForSkill(
+    userId: string,
+    skillName: string,
+  ): Promise<CredentialRow | null> {
+    const { data, error } = await this.db
+      .from("credentials")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("skill_name", skillName)
+      .is("revoked_at", null)
+      .order("valid_from", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) throw new AppError(error.message, 500);
+    return (data as CredentialRow | null) ?? null;
   }
 
   async getByUri(credentialUri: string, caller: AuthCaller): Promise<CredentialView | Partial<CredentialView>> {

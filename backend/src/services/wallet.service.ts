@@ -372,7 +372,8 @@ export function buildAttemptHistoryItem(row: DbRow): WalletAttemptHistoryItem | 
   const scorePercent = asNumber(row.score ?? row.resultPercentage) ?? evaluation.scorePercent;
   const correctCount = asNumber(row.resultCorrectCount) ?? evaluation.correctCount;
   const totalQuestions = asNumber(row.resultTotalQuestions) ?? evaluation.totalQuestions;
-  const passed = row.passed === true || (scorePercent != null && scorePercent >= 60);
+  // Any numeric score counts as a completed practical sitting (no fail threshold).
+  const passed = row.passed === true || (scorePercent != null && Number.isFinite(scorePercent));
   const submittedAt = asNullableText(row.submitted_at ?? row.updated_at ?? row.created_at);
 
   if (!title && !submittedAt && scorePercent == null && !attemptId) {
@@ -2037,6 +2038,85 @@ export class WalletService {
     );
 
     if (error) throwDbError(error, "Could not revoke share link");
+  }
+
+  /**
+   * Email an existing public verification link. Does not create a new share.
+   * Token must match the stored hash; URL is always built from FRONTEND_URL.
+   */
+  async emailPublicShare(
+    userId: string,
+    shareId: string,
+    input: { recipientEmail: string; token: string },
+  ): Promise<{ sent: true; recipientEmail: string }> {
+    const { sendPublicShareEmail } = await import("../utils/publicShareEmail");
+    const { isSmtpConfigured } = await import("../utils/mailer");
+
+    const { data, error } = await getServiceSupabase()
+      .from("selective_disclosure_presentations")
+      .select("*")
+      .eq("id", shareId)
+      .maybeSingle();
+
+    if (error) throw new AppError("Share could not be checked", 503);
+    if (!data) throw new AppError("Share not found", 404);
+
+    const presentation = mapPresentationRow(data as DbRow);
+    if (presentation.learner_id !== userId) {
+      throw new AppError("Not authorized to send this share", 403);
+    }
+    if (presentation.revoked_at) {
+      throw new AppError("This share has been revoked and cannot be emailed", 409);
+    }
+    if (!isShareActive(presentation)) {
+      throw new AppError("This share has expired and cannot be emailed", 409);
+    }
+    if (isAllRecruiterShare(presentation.disclosed_payload) || directRecipientId(presentation.disclosed_payload)) {
+      throw new AppError("Only public verification links can be emailed", 400);
+    }
+
+    const tokenHash = generateSha256Hash(input.token);
+    if (tokenHash !== presentation.share_token_hash) {
+      throw new AppError("Share token does not match this link", 403);
+    }
+
+    const competency = asRecord(presentation.disclosed_payload.competency);
+    const skillName = typeof competency?.name === "string" && competency.name.trim()
+      ? competency.name.trim()
+      : "Verified credential";
+
+    const verifyUrl = `${env.FRONTEND_URL.replace(/\/$/, "")}/credential/${encodeURIComponent(input.token)}`;
+
+    if (!isSmtpConfigured()) {
+      throw new AppError(
+        "Email is not configured. Set SMTP_USER and a Gmail App Password as SMTP_PASS in backend/.env, then restart the backend. You can still copy the link.",
+        503,
+      );
+    }
+
+    try {
+      const result = await sendPublicShareEmail({
+        recipientEmail: input.recipientEmail,
+        skillName,
+        verifyUrl,
+      });
+      if (!result.delivered) {
+        throw new AppError("Unable to send email. You can still copy the link.", 503);
+      }
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      const detail = err instanceof Error ? err.message : "";
+      // Do not echo provider payloads that might include sensitive material.
+      if (/Invalid login|535|BadCredentials|Username and Password not accepted/i.test(detail)) {
+        throw new AppError(
+          "Email login was rejected by Gmail. Use SMTP_USER and a Google App Password (not your normal Gmail password) in backend/.env, then restart the backend. You can still copy the link.",
+          503,
+        );
+      }
+      throw new AppError("Unable to send email. You can still copy the link.", 503);
+    }
+
+    return { sent: true, recipientEmail: input.recipientEmail };
   }
 
   async getPublicPresentation(token: string): Promise<PublicPresentationView> {

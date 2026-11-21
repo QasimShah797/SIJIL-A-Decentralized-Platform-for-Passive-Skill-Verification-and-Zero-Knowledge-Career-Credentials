@@ -2,9 +2,11 @@ import { Router } from "express";
 import { asyncHandler } from "../utils/asyncHandler";
 import { authMiddleware } from "../middleware/auth.middleware";
 import { requireLearner } from "../middleware/role.middleware";
+import { rateLimit } from "../middleware/rateLimit.middleware";
 import {
   downloadOwnerResumePdf,
   downloadOwnerWalletResumePdf,
+  emailPublicShare,
   getDisclosurePreferences,
   getOwnerShareResume,
   updateDisclosurePreferences,
@@ -38,6 +40,11 @@ router.post("/competency-versions/:versionId/request-issuance", asyncHandler(req
 router.get("/recruiters", asyncHandler(listRegisteredRecruiters));
 router.post("/competencies/:competencyId/share", asyncHandler(shareWalletCompetency));
 router.get("/shares", asyncHandler(listOwnerShares));
+router.post(
+  "/shares/:shareId/email",
+  rateLimit({ windowMs: 60_000, max: 5 }),
+  asyncHandler(emailPublicShare),
+);
 router.post("/shares/:shareId/revoke", asyncHandler(revokeWalletShare));
 router.get("/resume", asyncHandler(getOwnerWalletResume));
 router.get("/resume.pdf", asyncHandler(downloadOwnerWalletResumePdf));

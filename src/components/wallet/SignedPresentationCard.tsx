@@ -1,35 +1,16 @@
-import { useEffect, useState } from "react";
 import { toast } from "@/hooks/use-toast";
-import { useCredentials } from "@/hooks/useLearnerData";
+import { useCredentials, useLearnerProfile } from "@/hooks/useLearnerData";
 import type { CredentialView } from "@/lib/db/credentials";
 import type { WalletShareFieldId } from "@/lib/wallet-competency-shared";
 import {
+  emailPublicShareApi,
   getWalletCompetenciesApi,
-  listOwnerSharesApi,
   revokeWalletShareApi,
   shareWalletCompetencyApi,
-  type OwnerShareSummary,
 } from "@/services/api/wallet.api";
 import { walletShareRequest } from "@/lib/sharing/guide";
 import { apiRequest } from "@/services/api/client";
-import { GuidedShareFlow, type ManagedShare } from "./GuidedShareFlow";
-
-function toManagedShare(row: OwnerShareSummary): ManagedShare {
-  const status = row.shareStatus === "Revoked" ? "revoked" : row.shareStatus === "Expired" ? "expired" : "active";
-  const detail = row.shareKind === "direct-recruiter"
-    ? [row.recipientName, row.recipientOrganization].filter(Boolean).join(" at ")
-    : row.expiresAt
-      ? `Until ${new Date(row.expiresAt).toLocaleDateString()}`
-      : "";
-  return {
-    id: row.id,
-    label: row.label,
-    kind: row.shareKind === "all-recruiters" ? "all-recruiters" : row.shareKind === "direct-recruiter" ? "direct" : "public",
-    detail,
-    status,
-    sharedAt: row.createdAt,
-  };
-}
+import { GuidedShareFlow } from "./GuidedShareFlow";
 
 function statusLabel(credential: CredentialView): string {
   if (credential.ledgerAnchorStatus === "anchored" || credential.anchorStatus === "anchored") {
@@ -43,20 +24,7 @@ function statusLabel(credential: CredentialView): string {
 
 export function SignedPresentationCard({ onBack }: { onBack: () => void }) {
   const { credentials } = useCredentials();
-  const [managedShares, setManagedShares] = useState<ManagedShare[]>([]);
-
-  const loadShares = async () => {
-    try {
-      const rows = await listOwnerSharesApi();
-      setManagedShares(rows.map(toManagedShare));
-    } catch {
-      setManagedShares([]);
-    }
-  };
-
-  useEffect(() => {
-    void loadShares();
-  }, []);
+  const { profile } = useLearnerProfile();
 
   const shareSelected = async (
     chosenIds: string[],
@@ -96,7 +64,6 @@ export function SignedPresentationCard({ onBack }: { onBack: () => void }) {
       recipientName = created.recipientName ?? recipientName;
       recipientOrganization = created.recipientOrganization ?? recipientOrganization;
     }
-    await loadShares();
     return { recipientName, recipientOrganization };
   };
 
@@ -108,15 +75,47 @@ export function SignedPresentationCard({ onBack }: { onBack: () => void }) {
     toast({ title: "Visible to all SIJIL recruiters" });
   };
 
-  const revokeManagedShare = async (shareId: string) => {
-    const confirmed = window.confirm(
-      "Stop this share? Recruiters will lose access the next time they open SIJIL. A copy they already saved is not deleted.",
-    );
-    if (!confirmed) return;
-    const stopped = await revokeWalletShareApi(shareId);
-    if (!stopped) throw new Error("The share could not be stopped.");
-    toast({ title: "Sharing stopped" });
-    await loadShares();
+  const createPublicLink = async (input: {
+    credentialId: string;
+    selectedFields: string[];
+    expiresInDays: number;
+  }) => {
+    const rows = await getWalletCompetenciesApi();
+    if (!rows) {
+      throw new Error("The wallet service is unavailable. Start the SIJIL API and try again.");
+    }
+    const credential = credentials.find((item) => item.id === input.credentialId);
+    if (!credential) throw new Error("Select an issued credential.");
+    const skill = credential.skill !== "—" ? credential.skill : credential.name;
+    const wanted = skill.trim().toLowerCase();
+    const matches = rows.filter((row) => row.competencyName.trim().toLowerCase() === wanted);
+    if (matches.length !== 1) {
+      throw new Error(`${skill} is not available to share from the wallet yet.`);
+    }
+    const request = walletShareRequest({
+      competencyId: matches[0].competencyId,
+      selectedFields: input.selectedFields,
+      expiresInDays: input.expiresInDays,
+    });
+    const created = await shareWalletCompetencyApi({
+      ...request,
+      selectedFields: request.selectedFields as WalletShareFieldId[],
+    });
+    try {
+      sessionStorage.setItem(
+        `sijil.share.${created.shareId}`,
+        JSON.stringify({ token: created.token, url: created.shareUrl }),
+      );
+    } catch {
+      // ignore quota / private-mode failures
+    }
+    toast({ title: "Public verification link created" });
+    return {
+      shareUrl: created.shareUrl,
+      shareId: created.shareId,
+      token: created.token,
+      skillName: skill,
+    };
   };
 
   return (
@@ -124,13 +123,26 @@ export function SignedPresentationCard({ onBack }: { onBack: () => void }) {
       credentials={credentials.map((credential) => ({
         id: credential.id,
         title: credential.skill !== "—" ? credential.skill : credential.name,
-        issuer: credential.issuer || credential.issuerDid,
+        issuer: credential.issuer || "SIJIL",
         status: statusLabel(credential),
+        issuedAt: credential.validFrom,
       }))}
+      learnerName={profile?.name || "Learner"}
       onBack={onBack}
       onShareAll={shareWithAllRecruiters}
-      managedShares={managedShares}
-      onRevokeManagedShare={revokeManagedShare}
+      onCreatePublicLink={createPublicLink}
+      onEmailPublicLink={async (input) => {
+        await emailPublicShareApi(input);
+      }}
+      onStopPublicLink={async (shareId) => {
+        const confirmed = window.confirm(
+          "Stop this link? Access ends the next time someone opens it. A copy they already saved is not deleted.",
+        );
+        if (!confirmed) throw new Error("Stop cancelled.");
+        const stopped = await revokeWalletShareApi(shareId);
+        if (!stopped) throw new Error("The share could not be stopped.");
+        toast({ title: "Verification link stopped" });
+      }}
     />
   );
 }

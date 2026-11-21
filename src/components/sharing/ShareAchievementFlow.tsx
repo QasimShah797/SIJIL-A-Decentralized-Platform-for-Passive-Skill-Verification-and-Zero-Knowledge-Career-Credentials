@@ -90,37 +90,31 @@ export function ShareAchievementFlow({
       </ol>
       {error ? <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{error}</p> : null}
 
-      {step === "method" && onCreateAll ? (
-        <article className="learner-stat-card space-y-2 p-4">
-          <h2 className="text-sm font-semibold text-[#023E8A]">Share with all SIJIL recruiters</h2>
-          <p className="text-sm text-[#475569]">Registered recruiters can see the details you select, including recruiters who join later. Your exact assessment score stays private.</p>
-          <Button type="button" onClick={() => { setMethod("all-recruiters"); setConfirmed(false); setStep("choose"); }}>Choose information</Button>
-        </article>
-      ) : null}
-
-      {step === "method" && !onCreateAll ? (
+      {step === "method" ? (
         <div className="grid gap-3">
-          {onCreateDirect ? (
+          {onCreateAll ? (
             <article className="learner-stat-card space-y-2 p-4">
-              <h2 className="text-sm font-semibold text-[#023E8A]">Share with a SIJIL recruiter</h2>
-              <p className="text-sm text-[#475569]">Choose a registered recruiter. The achievement appears in that recruiter's dashboard. It is not sent to every recruiter, and you do not paste a link.</p>
-              <p className="text-sm text-[#475569]">A credential is the signed achievement. Learning evidence is the coursework or project detail you tick. Your exact assessment score stays private unless you later approve a separate proof.</p>
-              <Button type="button" onClick={() => { setMethod("direct-recruiter"); setConfirmed(false); setStep("choose"); }}>Choose a recruiter</Button>
+              <h2 className="text-sm font-semibold text-[#023E8A]">Share with All SIJIL Recruiters</h2>
+              <p className="text-sm text-[#475569]">
+                Registered SIJIL recruiters can see the details you select, including recruiters who join later. Your exact assessment score stays private.
+              </p>
+              <Button type="button" onClick={() => { setMethod("all-recruiters"); setConfirmed(false); setStep("choose"); }}>
+                Share with All SIJIL Recruiters
+              </Button>
             </article>
           ) : null}
           <article className="learner-stat-card space-y-2 p-4">
-            <h2 className="text-sm font-semibold text-[#023E8A]">Public verification link</h2>
-            <p className="text-sm text-[#475569]">Anyone with the link can open the details you select. This does not add them to a recruiter dashboard, and it is not a zero-knowledge proof.</p>
+            <h2 className="text-sm font-semibold text-[#023E8A]">Create Public Verification Link</h2>
+            <p className="text-sm text-[#475569]">
+              Generate a unique link for selected fields with an expiration time. Recipients do not need a SIJIL account and are not added to recruiter dashboards.
+            </p>
             {linkAvailable ? (
-              <Button type="button" onClick={() => { setMethod("private-link"); setConfirmed(false); setStep("choose"); }}>Choose Information</Button>
+              <Button type="button" onClick={() => { setMethod("private-link"); setConfirmed(false); setStep("choose"); }}>
+                Create Public Verification Link
+              </Button>
             ) : (
               <p className="text-sm text-[#475569]">This achievement is not available for a field-limited link yet.</p>
             )}
-          </article>
-          <article className="learner-stat-card space-y-2 p-4">
-            <h2 className="text-sm font-semibold text-[#023E8A]">Signed share</h2>
-            <p className="text-sm text-[#475569]">You approve this share with the key on this device. The recipient receives the whole achievement, not a hidden-field version. This is separate from a zero-knowledge proof.</p>
-            <Button type="button" variant="outline" onClick={() => { setMethod("signed-presentation"); setConfirmed(false); setStep("review"); }}>Review Sharing</Button>
           </article>
         </div>
       ) : null}

@@ -5,6 +5,7 @@ import {
   isDidKeyEd25519,
 } from "../utils/did-key";
 import { verifyEd25519Utf8 } from "../utils/ed25519";
+import { getServiceSupabase } from "../config/supabase";
 import { supabaseService } from "./supabase.service";
 import {
   type SsiChallengePort,
@@ -46,6 +47,26 @@ export type SsiResolveView = {
 
 function ownershipMessage(payload: string, did: string): Buffer {
   return Buffer.from(`${payload}\ndid=${did}`, "utf8");
+}
+
+/** Keep learner_profiles.holder_did aligned with the proven SSI did:key for profile display. */
+async function syncLearnerProfileHolderDid(userId: string, did: string): Promise<void> {
+  try {
+    // Always use the service-role client so profile display sync is not blocked by RLS
+    // or by the narrower SSI table client used in unit tests.
+    const { error } = await getServiceSupabase()
+      .from("learner_profiles")
+      .update({ holder_did: did, updated_at: new Date().toISOString() })
+      .eq("user_id", userId);
+    if (error && !isMissingRelationError(error)) {
+      console.warn("[ssi] Could not sync learner_profiles.holder_did:", error.message);
+    }
+  } catch (err) {
+    console.warn(
+      "[ssi] Could not sync learner_profiles.holder_did:",
+      err instanceof Error ? err.message : err,
+    );
+  }
 }
 
 type SsiDbClient = {
@@ -157,6 +178,10 @@ export class SsiService {
     }
     const did = typeof data?.did === "string" ? data.did : null;
     const real = isDidKeyEd25519(did);
+    if (real && did) {
+      // Heal older bindings that never wrote holder_did onto the profile row.
+      await syncLearnerProfileHolderDid(userId, did);
+    }
     return {
       did: real ? did : null,
       fingerprint: typeof data?.fingerprint === "string" ? data.fingerprint : null,
@@ -209,6 +234,7 @@ export class SsiService {
       throw new AppError("This DID is already bound to another account", 409);
     }
     if (existing.alreadyBound) {
+      await syncLearnerProfileHolderDid(userId, binding.did);
       return {
         did: binding.did,
         fingerprint: binding.fingerprint,
@@ -234,6 +260,7 @@ export class SsiService {
       if (isUniqueViolation(writeError)) {
         const raced = await this.readBinding(userId, binding.did);
         if (raced.alreadyBound) {
+          await syncLearnerProfileHolderDid(userId, binding.did);
           return {
             did: binding.did,
             fingerprint: binding.fingerprint,
@@ -250,6 +277,8 @@ export class SsiService {
       }
       throw new AppError(writeError.message ?? "SSI identity write failed", 500);
     }
+
+    await syncLearnerProfileHolderDid(userId, binding.did);
 
     return {
       did: binding.did,
