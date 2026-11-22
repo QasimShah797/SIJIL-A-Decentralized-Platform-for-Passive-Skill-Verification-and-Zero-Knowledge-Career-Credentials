@@ -1,8 +1,11 @@
 /**
  * Safe evidence summaries for "Share details" mode.
  * Never includes exact scores, full commit lists, grades, or individual review text.
+ *
+ * Evidence cards / modes are gated by per-competency linked evidence only.
  */
 import type { WalletCompetencyRecordView } from "../types/wallet.types";
+import { AppError } from "../utils/AppError";
 
 export type EvidenceShareMode = "details" | "private" | "omit";
 
@@ -14,11 +17,176 @@ export type EvidenceModes = {
 };
 
 export const DEFAULT_EVIDENCE_MODES: EvidenceModes = {
-  practical_task_result: "private",
-  github_evidence: "private",
-  lms_evidence: "private",
-  peer_reviews: "private",
+  practical_task_result: "omit",
+  github_evidence: "omit",
+  lms_evidence: "omit",
+  peer_reviews: "omit",
 };
+
+export const EVIDENCE_MODE_FIELDS = [
+  "practical_task_result",
+  "github_evidence",
+  "lms_evidence",
+  "peer_reviews",
+] as const satisfies ReadonlyArray<keyof EvidenceModes>;
+
+export type EvidenceFieldAvailability = {
+  present: boolean;
+  privateAllowed: boolean;
+  /** Learner-facing reason when private ZKP cannot be offered. */
+  privateBlockedReason: string | null;
+};
+
+export type EvidenceShareAvailability = Record<keyof EvidenceModes, EvidenceFieldAvailability>;
+
+function asList(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function peerReviewCandidates(record: WalletCompetencyRecordView): unknown[] {
+  const peers = asList(record.evidencePackage.peerReviews);
+  const githubReviews = asList(record.evidencePackage.github?.reviews);
+  const out: unknown[] = [...peers];
+  for (const item of githubReviews) {
+    if (!item || typeof item !== "object") continue;
+    const row = item as Record<string, unknown>;
+    const origin = String(row.origin ?? "").toLowerCase();
+    const role = String(row.reviewer_role ?? "").toLowerCase();
+    const hasHumanFeedback = Boolean(row.review_text || row.comment || row.recommendation || row.decision);
+    if (origin.includes("form review") || origin.includes("sijil") || role.includes("collaborator") || hasHumanFeedback) {
+      out.push(item);
+    }
+  }
+  return out;
+}
+
+/** Linked evidence for the selected competency only (never another skill). */
+export function assessEvidenceShareAvailability(
+  record: WalletCompetencyRecordView,
+): EvidenceShareAvailability {
+  const latest = record.evidencePackage.practicalTask?.latestAttempt
+    ?? record.evidencePackage.practicalTask?.attemptHistory?.[0]
+    ?? null;
+  const practicalPresent = Boolean(latest);
+  const practicalPrivate = practicalPresent && (
+    latest?.passed === true
+    || (typeof latest?.scorePercent === "number" && Number.isFinite(latest.scorePercent))
+    || String(latest?.status ?? "").toLowerCase().includes("pass")
+  );
+
+  const repos = asList(record.evidencePackage.github?.repos);
+  const activities = asList(record.evidencePackage.github?.activities);
+  const githubEvidenceRecords = asList(record.evidencePackage.github?.evidenceRecords);
+  const githubPresent = repos.length > 0 || activities.length > 0 || githubEvidenceRecords.length > 0;
+  const githubPrivate = repos.length > 0;
+
+  const courses = asList(record.evidencePackage.lms?.courses);
+  const assignments = asList(record.evidencePackage.lms?.assignments);
+  const lmsEvidence = asList(record.evidencePackage.lms?.evidence);
+  const lmsPresent = courses.length > 0 || assignments.length > 0 || lmsEvidence.length > 0;
+  const lmsPrivate = assignments.length > 0;
+
+  const peers = peerReviewCandidates(record);
+  const peerPresent = peers.length > 0;
+
+  return {
+    practical_task_result: {
+      present: practicalPresent,
+      privateAllowed: practicalPrivate,
+      privateBlockedReason: practicalPresent && !practicalPrivate
+        ? "Private verification needs a completed practical result for this credential."
+        : null,
+    },
+    github_evidence: {
+      present: githubPresent,
+      privateAllowed: githubPrivate,
+      privateBlockedReason: githubPresent && !githubPrivate
+        ? "Private verification needs a repository linked to this credential."
+        : null,
+    },
+    lms_evidence: {
+      present: lmsPresent,
+      privateAllowed: lmsPrivate,
+      privateBlockedReason: lmsPresent && !lmsPrivate
+        ? "Private verification needs Moodle assignments linked to this credential."
+        : null,
+    },
+    peer_reviews: {
+      present: peerPresent,
+      privateAllowed: peerPresent,
+      privateBlockedReason: null,
+    },
+  };
+}
+
+/**
+ * Force omit for evidence not linked to this credential.
+ * Coerce private → details when evidence exists but private ZKP cannot be offered.
+ */
+export function sanitizeEvidenceModesForRecord(
+  input: Partial<EvidenceModes> | null | undefined,
+  record: WalletCompetencyRecordView,
+): EvidenceModes {
+  const availability = assessEvidenceShareAvailability(record);
+  const merged: EvidenceModes = {
+    ...DEFAULT_EVIDENCE_MODES,
+    ...(input ?? {}),
+  };
+  const next = { ...merged };
+  for (const field of EVIDENCE_MODE_FIELDS) {
+    const avail = availability[field];
+    if (!avail.present) {
+      next[field] = "omit";
+      continue;
+    }
+    if (next[field] === "private" && !avail.privateAllowed) {
+      next[field] = "details";
+    }
+  }
+  return next;
+}
+
+/** Reject client attempts to share evidence not linked to the selected credential. */
+export function assertEvidenceModesAllowed(
+  requested: Partial<EvidenceModes> | null | undefined,
+  record: WalletCompetencyRecordView,
+): void {
+  if (!requested) return;
+  const availability = assessEvidenceShareAvailability(record);
+  for (const field of EVIDENCE_MODE_FIELDS) {
+    const mode = requested[field];
+    if (!mode || mode === "omit") continue;
+    const avail = availability[field];
+    if (!avail.present) {
+      throw new AppError(
+        `Cannot share ${field.replace(/_/g, " ")}: no evidence is linked to this credential.`,
+        400,
+      );
+    }
+    if (mode === "private" && !avail.privateAllowed) {
+      throw new AppError(
+        avail.privateBlockedReason
+          ?? `Private verification is not available for ${field.replace(/_/g, " ")}.`,
+        400,
+      );
+    }
+  }
+}
+
+/**
+ * Build the field list that may enter the frozen disclosed payload.
+ * Identity/timestamp fields pass through; evidence fields are included only for
+ * "details" mode. Private/omit never contribute exact evidence fields.
+ */
+export function resolveShareFieldsForModes(
+  selectedFields: string[],
+  evidenceModes: EvidenceModes,
+): string[] {
+  const evidenceSet = new Set<string>(EVIDENCE_MODE_FIELDS);
+  const nonEvidence = selectedFields.filter((field) => !evidenceSet.has(field));
+  const detailEvidence = EVIDENCE_MODE_FIELDS.filter((field) => evidenceModes[field] === "details");
+  return [...nonEvidence, ...detailEvidence];
+}
 
 export function summarizePracticalDetails(record: WalletCompetencyRecordView): Record<string, unknown> | undefined {
   const latest = record.evidencePackage.practicalTask.latestAttempt;
@@ -37,12 +205,33 @@ export function summarizeGithubDetails(record: WalletCompetencyRecordView): Reco
   if (!Array.isArray(repos) || repos.length === 0) {
     const activities = record.evidencePackage.github.activities ?? [];
     if (!Array.isArray(activities) || activities.length === 0) return undefined;
-    return { repositoryCount: 0, activityRecordsShared: false, summary: "GitHub activity on file" };
+    return {
+      repositoryCount: 0,
+      activityCount: activities.length,
+      activityRecordsShared: false,
+      repos: [],
+      summary: "GitHub activity on file",
+    };
   }
+  // Safe details for "Share details" / activity-count mode: repo identity only.
+  // Exact commit counts stay under disclosure-preference redaction if ever present.
+  const safeRepos = repos.map((repo) => {
+    const row = repo && typeof repo === "object" ? repo as Record<string, unknown> : {};
+    return {
+      full_name: typeof row.full_name === "string" ? row.full_name : null,
+      repo_name: typeof row.repo_name === "string" ? row.repo_name : null,
+      primary_language: typeof row.primary_language === "string"
+        ? row.primary_language
+        : (typeof row.language === "string" ? row.language : null),
+      github_url: typeof row.github_url === "string" ? row.github_url : null,
+    };
+  }).filter((row) => row.full_name || row.repo_name);
   return {
-    repositoryCount: repos.length,
+    repositoryCount: safeRepos.length,
+    activityCount: safeRepos.length,
     activityRecordsShared: false,
-    summary: `${repos.length} linked ${repos.length === 1 ? "repository" : "repositories"}`,
+    repos: safeRepos,
+    summary: `${safeRepos.length} linked ${safeRepos.length === 1 ? "repository" : "repositories"}`,
   };
 }
 

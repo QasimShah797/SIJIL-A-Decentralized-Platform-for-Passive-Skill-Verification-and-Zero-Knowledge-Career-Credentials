@@ -9,8 +9,10 @@ import {
   inspectorViewFromLedger,
 } from "@/lib/public-credential";
 import type { SharedCredentialView } from "@/lib/shared-presentation";
-import { AssessmentProofRequestCard } from "@/components/recruiter/AssessmentProofRequestCard";
-import { GitHubActivityRequestCard } from "@/components/recruiter/GitHubActivityRequestCard";
+import {
+  SharedPrivateVerificationPanel,
+  countConfirmedPrivateResults,
+} from "@/components/recruiter/SharedPrivateVerificationPanel";
 
 export type RecruiterSkillCard = {
   id: string;
@@ -22,6 +24,8 @@ export type RecruiterSkillCard = {
   selectedFields: string[];
   payload: Record<string, unknown>;
   presentationId: string;
+  token: string | null;
+  proofType: string | null;
 };
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -67,6 +71,8 @@ export function recruiterSkillCards(credentials: SharedCredentialView[]): Recrui
         selectedFields: credential.selectedFields,
         payload,
         presentationId: credential.presentationId,
+        token: credential.token,
+        proofType: credential.proofType,
       });
     }
   }
@@ -80,9 +86,14 @@ export function displayRecruiterSkillName(name: string) {
   return trimmed.replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
+export function countSharedZkpConfirmations(credentials: SharedCredentialView[]): number {
+  return credentials.reduce((total, credential) => (
+    total + countConfirmedPrivateResults(credential.disclosedPayload ?? {})
+  ), 0);
+}
+
 export function RecruiterCompetencyDetail({
   card,
-  learnerUserId,
   section = "all",
 }: {
   card: RecruiterSkillCard;
@@ -102,7 +113,11 @@ export function RecruiterCompetencyDetail({
   }, [inspector.availableSources, source]);
 
   const showEvidence = section !== "requests";
-  const showRequests = section !== "evidence";
+  const showPrivate = section !== "evidence";
+  // Public share tokens are hashed server-side; recruiter-only shares verify in-panel.
+  const verifyHref = card.token
+    ? `/recruiter/verify/${encodeURIComponent(card.token)}`
+    : "#credential-verification";
 
   return (
     <div className="grid gap-4 xl:grid-cols-2">
@@ -126,17 +141,20 @@ export function RecruiterCompetencyDetail({
           />
         </>
       ) : null}
-      {showRequests && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(card.presentationId) ? (
+      {showPrivate ? (
         <div className="xl:col-span-2">
-          <div className="space-y-3">
-            <div>
-              <h2 className="text-base font-semibold text-[#0f172a]">Request Private Verification</h2>
-              <p className="mt-1 text-sm text-[#64748b]">Practical task score and GitHub activity can be requested. Moodle performance and skill progression are not ready. A request never shows the exact score or commit count.</p>
-            </div>
-            <AssessmentProofRequestCard presentationId={card.presentationId} />
-            {learnerUserId ? <GitHubActivityRequestCard learnerUserId={learnerUserId} /> : null}
-          </div>
-          <p className="mt-2 text-xs text-[#64748b]">Shared means the learner permitted this achievement. A proof is verified only after the server accepts the cryptographic check. A signature check, a revocation check, and a ledger check are separate.</p>
+          <SharedPrivateVerificationPanel
+            payload={card.payload}
+            competencyName={displayRecruiterSkillName(card.name)}
+            selectedFields={card.selectedFields}
+            createdAt={card.createdAt}
+            expiresAt={card.expiresAt}
+            proofType={card.proofType}
+            verifyHref={verifyHref}
+          />
+          <p className="mt-2 text-xs text-[#64748b]">
+            Shared means the learner permitted this achievement. A private result is verified only after SIJIL accepts the cryptographic check for evidence linked to this credential.
+          </p>
         </div>
       ) : null}
     </div>

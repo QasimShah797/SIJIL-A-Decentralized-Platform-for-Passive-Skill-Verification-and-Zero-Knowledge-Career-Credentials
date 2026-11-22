@@ -89,11 +89,33 @@ export const DEFAULT_PUBLIC_FIELDS: DisclosureFieldId[] = [
 ];
 
 export const DEFAULT_EVIDENCE_MODES: EvidenceModes = {
-  practical_task_result: "private",
-  github_evidence: "private",
-  lms_evidence: "private",
-  peer_reviews: "private",
+  practical_task_result: "omit",
+  github_evidence: "omit",
+  lms_evidence: "omit",
+  peer_reviews: "omit",
 };
+
+export type EvidenceFieldAvailability = {
+  present: boolean;
+  privateAllowed: boolean;
+  privateBlockedReason: string | null;
+};
+
+export type EvidenceShareAvailability = Record<keyof EvidenceModes, EvidenceFieldAvailability>;
+
+const ALL_PRESENT_AVAILABILITY: EvidenceShareAvailability = {
+  practical_task_result: { present: true, privateAllowed: true, privateBlockedReason: null },
+  github_evidence: { present: true, privateAllowed: true, privateBlockedReason: null },
+  lms_evidence: { present: true, privateAllowed: true, privateBlockedReason: null },
+  peer_reviews: { present: true, privateAllowed: true, privateBlockedReason: null },
+};
+
+function privatePreviewLabel(result: PrivateResultPreview | undefined): string {
+  if (!result) return "Private check on share · exact values hidden";
+  if (result.status === "preparing") return "Private check on share · exact values hidden";
+  if (result.status === "confirmed") return `${result.label} · ${result.detailHidden}`;
+  return result.label;
+}
 
 const EVIDENCE_CARDS: Array<{
   id: keyof EvidenceModes;
@@ -176,6 +198,7 @@ export function RecruiterShareDisclosure({
   onChangeFields,
   evidenceModes,
   onChangeEvidenceModes,
+  evidenceAvailability = ALL_PRESENT_AVAILABILITY,
   privateResults = [],
   issuerSignatureStatus = "unknown",
   onCancel,
@@ -190,6 +213,7 @@ export function RecruiterShareDisclosure({
   onChangeFields: (next: string[]) => void;
   evidenceModes: EvidenceModes;
   onChangeEvidenceModes: (next: EvidenceModes) => void;
+  evidenceAvailability?: EvidenceShareAvailability;
   privateResults?: PrivateResultPreview[];
   issuerSignatureStatus?: "valid" | "invalid" | "missing" | "unknown";
   onCancel: () => void;
@@ -199,6 +223,7 @@ export function RecruiterShareDisclosure({
 }) {
   const selected = new Set(selectedFields);
   const resultByType = new Map(privateResults.map((item) => [item.claimType, item]));
+  const visibleCards = EVIDENCE_CARDS.filter((card) => evidenceAvailability[card.id]?.present);
 
   return (
     <TooltipProvider delayDuration={200}>
@@ -276,8 +301,13 @@ export function RecruiterShareDisclosure({
             </div>
 
             <div className="sd-evidence-cards">
-              {EVIDENCE_CARDS.map((card) => {
+              {visibleCards.length === 0 ? (
+                <p className="sd-card-sub">No linked evidence is available to share for this credential.</p>
+              ) : null}
+              {visibleCards.map((card) => {
                 const mode = evidenceModes[card.id];
+                const avail = evidenceAvailability[card.id];
+                const privateDisabled = !avail.privateAllowed;
                 return (
                   <article key={card.id} className="sd-evidence-card">
                     <div className="sd-evidence-head">
@@ -288,6 +318,9 @@ export function RecruiterShareDisclosure({
                           <InfoTip text={card.tooltip} />
                         </div>
                         <span>{card.description}</span>
+                        {privateDisabled && avail.privateBlockedReason ? (
+                          <span className="mt-1 block text-xs text-[#64748b]">{avail.privateBlockedReason}</span>
+                        ) : null}
                       </div>
                     </div>
                     <div className="sd-radio-group" role="radiogroup" aria-label={card.title}>
@@ -297,20 +330,30 @@ export function RecruiterShareDisclosure({
                           ["private", "Show result privately"],
                           ["omit", "Don't share"],
                         ] as const
-                      ).map(([value, label]) => (
-                        <label key={value} className={`sd-radio ${mode === value ? "is-on" : ""}`}>
-                          <input
-                            type="radio"
-                            name={`evidence-${card.id}`}
-                            checked={mode === value}
-                            onChange={() => onChangeEvidenceModes({ ...evidenceModes, [card.id]: value })}
-                          />
-                          <span>
-                            {label}
-                            {value === "private" ? <Lock className="ml-1 inline h-3.5 w-3.5 text-[#023e8a]" /> : null}
-                          </span>
-                        </label>
-                      ))}
+                      ).map(([value, label]) => {
+                        const disabled = value === "private" && privateDisabled;
+                        return (
+                          <label
+                            key={value}
+                            className={`sd-radio ${mode === value ? "is-on" : ""} ${disabled ? "is-disabled opacity-60" : ""}`}
+                          >
+                            <input
+                              type="radio"
+                              name={`evidence-${card.id}`}
+                              checked={mode === value}
+                              disabled={disabled}
+                              onChange={() => {
+                                if (disabled) return;
+                                onChangeEvidenceModes({ ...evidenceModes, [card.id]: value });
+                              }}
+                            />
+                            <span>
+                              {label}
+                              {value === "private" ? <Lock className="ml-1 inline h-3.5 w-3.5" /> : null}
+                            </span>
+                          </label>
+                        );
+                      })}
                     </div>
                   </article>
                 );
@@ -344,7 +387,7 @@ export function RecruiterShareDisclosure({
                   <div className="sd-preview-row"><dt>Blockchain</dt><dd>Not anchored</dd></div>
                 </dl>
                 <ul className="sd-private-list">
-                  {EVIDENCE_CARDS.map((card) => {
+                  {visibleCards.map((card) => {
                     const mode = evidenceModes[card.id];
                     if (mode === "omit") return null;
                     if (mode === "details") {
@@ -361,8 +404,7 @@ export function RecruiterShareDisclosure({
                       <li key={card.id}>
                         {confirmed ? <Check className="h-3.5 w-3.5 text-[#16a34a]" /> : <span className="sd-dot" />}
                         <span>
-                          {card.title}: {result?.label ?? "Preparing result…"}
-                          {confirmed ? ` · ${result?.detailHidden}` : ""}
+                          {card.title}: {privatePreviewLabel(result)}
                         </span>
                       </li>
                     );
@@ -400,6 +442,7 @@ export function PublicLinkDisclosure({
   onChangeFields,
   evidenceModes,
   onChangeEvidenceModes,
+  evidenceAvailability = ALL_PRESENT_AVAILABILITY,
   privateResults = [],
   issuerSignatureStatus = "unknown",
   onCancel,
@@ -413,6 +456,7 @@ export function PublicLinkDisclosure({
   onChangeFields: (next: string[]) => void;
   evidenceModes: EvidenceModes;
   onChangeEvidenceModes: (next: EvidenceModes) => void;
+  evidenceAvailability?: EvidenceShareAvailability;
   privateResults?: PrivateResultPreview[];
   issuerSignatureStatus?: "valid" | "invalid" | "missing" | "unknown";
   expiresInDays?: number;
@@ -425,6 +469,7 @@ export function PublicLinkDisclosure({
 }) {
   const selected = new Set(selectedFields);
   const resultByType = new Map(privateResults.map((item) => [item.claimType, item]));
+  const visibleCards = EVIDENCE_CARDS.filter((card) => evidenceAvailability[card.id]?.present);
   return (
     <TooltipProvider delayDuration={200}>
       <div className="sd-page">
@@ -467,8 +512,13 @@ export function PublicLinkDisclosure({
             </div>
 
             <div className="sd-evidence-cards">
-              {EVIDENCE_CARDS.map((card) => {
+              {visibleCards.length === 0 ? (
+                <p className="sd-card-sub">No linked evidence is available to share for this credential.</p>
+              ) : null}
+              {visibleCards.map((card) => {
                 const mode = evidenceModes[card.id];
+                const avail = evidenceAvailability[card.id];
+                const privateDisabled = !avail.privateAllowed;
                 return (
                   <article key={card.id} className="sd-evidence-card">
                     <div className="sd-evidence-head">
@@ -478,6 +528,9 @@ export function PublicLinkDisclosure({
                           <strong>{card.title}</strong>
                           <InfoTip text={card.tooltip} />
                         </div>
+                        {privateDisabled && avail.privateBlockedReason ? (
+                          <span className="mt-1 block text-xs text-[#64748b]">{avail.privateBlockedReason}</span>
+                        ) : null}
                       </div>
                     </div>
                     <div className="sd-radio-group" role="radiogroup" aria-label={card.title}>
@@ -487,20 +540,30 @@ export function PublicLinkDisclosure({
                           ["private", "Show result privately"],
                           ["omit", "Don't share"],
                         ] as const
-                      ).map(([value, label]) => (
-                        <label key={value} className={`sd-radio ${mode === value ? "is-on" : ""}`}>
-                          <input
-                            type="radio"
-                            name={`public-evidence-${card.id}`}
-                            checked={mode === value}
-                            onChange={() => onChangeEvidenceModes({ ...evidenceModes, [card.id]: value })}
-                          />
-                          <span>
-                            {label}
-                            {value === "private" ? <Lock className="ml-1 inline h-3.5 w-3.5 text-[#023e8a]" /> : null}
-                          </span>
-                        </label>
-                      ))}
+                      ).map(([value, label]) => {
+                        const disabled = value === "private" && privateDisabled;
+                        return (
+                          <label
+                            key={value}
+                            className={`sd-radio ${mode === value ? "is-on" : ""} ${disabled ? "is-disabled opacity-60" : ""}`}
+                          >
+                            <input
+                              type="radio"
+                              name={`public-evidence-${card.id}`}
+                              checked={mode === value}
+                              disabled={disabled}
+                              onChange={() => {
+                                if (disabled) return;
+                                onChangeEvidenceModes({ ...evidenceModes, [card.id]: value });
+                              }}
+                            />
+                            <span>
+                              {label}
+                              {value === "private" ? <Lock className="ml-1 inline h-3.5 w-3.5" /> : null}
+                            </span>
+                          </label>
+                        );
+                      })}
                     </div>
                   </article>
                 );
@@ -559,7 +622,7 @@ export function PublicLinkDisclosure({
 
               <div className="sd-evidence-block">
                 <p className="sd-evidence-title">Evidence Overview</p>
-                {EVIDENCE_CARDS.map((card) => {
+                {visibleCards.map((card) => {
                   const mode = evidenceModes[card.id];
                   if (mode === "omit") return null;
                   if (mode === "details") {
@@ -579,11 +642,7 @@ export function PublicLinkDisclosure({
                       {card.icon}
                       <div>
                         <p className="sd-public-label">{card.title}</p>
-                        <p className="sd-public-value">
-                          {result?.status === "confirmed"
-                            ? `${result.label} · ${result.detailHidden}`
-                            : result?.label ?? "Preparing result…"}
-                        </p>
+                        <p className="sd-public-value">{privatePreviewLabel(result)}</p>
                       </div>
                     </div>
                   );

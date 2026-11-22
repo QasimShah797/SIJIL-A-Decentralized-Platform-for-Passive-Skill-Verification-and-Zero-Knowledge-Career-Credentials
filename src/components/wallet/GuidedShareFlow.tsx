@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ArrowLeft,
   ArrowRight,
@@ -17,12 +17,18 @@ import {
 import { Button } from "@/components/ui/button";
 import { SHARE_EXPIRY_DAYS } from "@/lib/sharing/guide";
 import {
+  defaultEvidenceModesForAvailability,
+  OMIT_EVIDENCE_MODES,
+  type EvidenceShareAvailability,
+} from "@/lib/evidence-share-availability";
+import {
   DEFAULT_EVIDENCE_MODES,
   DEFAULT_PUBLIC_FIELDS,
   DEFAULT_RECRUITER_FIELDS,
   PublicLinkDisclosure,
   RecruiterShareDisclosure,
   type EvidenceModes,
+  type EvidenceShareAvailability as UiEvidenceAvailability,
 } from "./ShareDisclosureScreens";
 import "./share-achievement-choice.css";
 
@@ -34,6 +40,7 @@ export type GuidedShareCredential = {
   issuedAt?: string | null;
   sharedWithRecruiters?: boolean;
   sharedPublicly?: boolean;
+  evidenceAvailability?: EvidenceShareAvailability;
 };
 
 export type GuidedShareResult = {
@@ -111,10 +118,29 @@ export function GuidedShareFlow({
   const selected = credentials.filter((credential) => selectedIds.has(credential.id));
   const primary = selected[0] ?? null;
 
+  const activeAvailability = useMemo<UiEvidenceAvailability>(() => {
+    const avail = primary?.evidenceAvailability;
+    if (avail) return avail as UiEvidenceAvailability;
+    return {
+      practical_task_result: { present: false, privateAllowed: false, privateBlockedReason: null },
+      github_evidence: { present: false, privateAllowed: false, privateBlockedReason: null },
+      lms_evidence: { present: false, privateAllowed: false, privateBlockedReason: null },
+      peer_reviews: { present: false, privateAllowed: false, privateBlockedReason: null },
+    };
+  }, [primary]);
+
+  useEffect(() => {
+    if (!primary) {
+      setEvidenceModes({ ...OMIT_EVIDENCE_MODES });
+      return;
+    }
+    setEvidenceModes(defaultEvidenceModesForAvailability(activeAvailability));
+  }, [primary?.id, activeAvailability]);
+
   const resetSelection = () => {
     setSelectedIds(new Set());
     setSelectedFields([...DEFAULT_RECRUITER_FIELDS]);
-    setEvidenceModes({ ...DEFAULT_EVIDENCE_MODES });
+    setEvidenceModes({ ...OMIT_EVIDENCE_MODES });
     setExpiresInDays(7);
     setAccessCodeOn(false);
     setError(null);
@@ -371,6 +397,7 @@ export function GuidedShareFlow({
           onChangeFields={setSelectedFields}
           evidenceModes={evidenceModes}
           onChangeEvidenceModes={setEvidenceModes}
+          evidenceAvailability={activeAvailability}
           onCancel={() => setStep("choose")}
           onConfirm={() => void shareAll()}
           confirming={working}
@@ -386,6 +413,7 @@ export function GuidedShareFlow({
           onChangeFields={setSelectedFields}
           evidenceModes={evidenceModes}
           onChangeEvidenceModes={setEvidenceModes}
+          evidenceAvailability={activeAvailability}
           expiresInDays={expiresInDays}
           onExpiresChange={setExpiresInDays}
           accessCodeOn={accessCodeOn}

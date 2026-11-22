@@ -141,6 +141,16 @@ export type PublicCredentialResponse = {
   ledger?: PublicCredentialLedger | null;
 };
 
+export type PublicPrivateResultView = {
+  claimType: string;
+  status: string;
+  label: string;
+  detailHidden: string;
+  policyId?: string | null;
+  circuitId?: string | null;
+  verifiedBy?: string | null;
+};
+
 export type PublicCompetencyResponse = {
   status: PublicShareStatus;
   verified: boolean;
@@ -154,6 +164,8 @@ export type PublicCompetencyResponse = {
   ledger: EvidenceLedgerItem[] | null;
   ledgerStatus?: string | null;
   ledgerDetail?: string | null;
+  /** SIJIL-verified private ZKP outcomes (exact values remain hidden). */
+  privateResults?: PublicPrivateResultView[];
 };
 
 const ATS_HEADINGS = [

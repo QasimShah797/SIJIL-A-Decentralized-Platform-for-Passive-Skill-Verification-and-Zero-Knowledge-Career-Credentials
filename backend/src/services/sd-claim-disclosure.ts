@@ -164,6 +164,35 @@ export function cryptoSdBundle(params: {
   };
 }
 
+/**
+ * Map wallet share field ids to issuer claim ids and values that can be disclosed.
+ * Only claims present in `storedClaims` (from credential_sd_claims) can be released.
+ */
+export function buildDisclosuresForSelection(input: {
+  selectedFields: string[];
+  storedClaims: Array<{ claimId: string; salt: string; value: string }>;
+}): SdDisclosure[] {
+  const byId = new Map(input.storedClaims.map((row) => [row.claimId, row]));
+  const fieldToClaim: Record<string, string> = {
+    learner_name: "learner_name",
+    competency_name: "competency_name",
+    timestamps: "issue_date",
+    issue_date: "issue_date",
+    holder_did: "holder_did",
+  };
+  const released: SdDisclosure[] = [];
+  const seen = new Set<string>();
+  for (const field of input.selectedFields) {
+    const claimId = fieldToClaim[field] ?? field;
+    if (seen.has(claimId)) continue;
+    const row = byId.get(claimId);
+    if (!row) continue;
+    seen.add(claimId);
+    released.push({ claimId: row.claimId, value: row.value, salt: row.salt });
+  }
+  return released;
+}
+
 /** Stable JSON for hashing presentation SD metadata (excludes salts of withheld claims). */
 export function hashSdBundlePublic(bundle: SdPresentationBundle): string {
   const publicView = {

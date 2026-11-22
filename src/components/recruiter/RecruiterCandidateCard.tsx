@@ -99,10 +99,10 @@ export function RecruiterCandidateCard({
             ) : null}
           </div>
         </div>
-        {candidate.attestation === "Approved" ? (
+        {candidate.attestation === "Approved" || (candidate.confirmedPrivateResults ?? 0) > 0 ? (
           <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-success-soft px-2.5 py-1 text-[11px] font-semibold text-success">
             <ShieldCheck className="h-3 w-3" />
-            {candidate.attestation}
+            {(candidate.confirmedPrivateResults ?? 0) > 0 ? "ZKP shared" : candidate.attestation}
           </span>
         ) : (
           <StatusBadge
@@ -148,6 +148,21 @@ export function RecruiterCandidateCard({
             <dt className="sr-only">Evidence</dt>
             <dd className="whitespace-nowrap"><span className="font-semibold text-foreground">{getEvidenceStats(candidate).evidenceTotal}</span> evidence</dd>
           </div>
+          {(candidate.confirmedPrivateResults ?? 0) > 0 ? (
+            <div className="flex items-center gap-1.5">
+              <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-success" aria-hidden />
+              <dt className="sr-only">Private ZKPs</dt>
+              <dd className="whitespace-nowrap">
+                <span className="font-semibold text-foreground">{candidate.confirmedPrivateResults}</span>
+                {" "}private ZKP{candidate.confirmedPrivateResults === 1 ? "" : "s"}
+              </dd>
+            </div>
+          ) : null}
+          {candidate.sharedAt ? (
+            <div className="w-full text-[11px] text-muted-foreground">
+              Shared {new Date(candidate.sharedAt).toLocaleDateString()}
+            </div>
+          ) : null}
         </dl>
         <Button size="sm" className="h-9 w-full shrink-0 rounded-xl focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2" onClick={(event) => { event.stopPropagation(); onOpenSummary(); }}>
           Review <ArrowRight className="ml-1 h-3.5 w-3.5 transition-transform duration-200 group-hover:translate-x-0.5" />

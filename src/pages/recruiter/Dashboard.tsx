@@ -2,8 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   ArrowRight,
-  BadgeCheck,
-  Bell,
+  Briefcase,
   CalendarClock,
   GitCompare,
   Search,
@@ -13,10 +12,10 @@ import {
 import { AppShell } from "@/components/sijil/AppShell";
 import { PageSkeleton } from "@/components/sijil/SkeletonLoader";
 import { formatTimestamp } from "@/components/zkp/policy-outcome";
+import { useAuth } from "@/hooks/useAuth";
 import { useCandidates } from "@/hooks/useCandidates";
 import { useRecruiterProfile } from "@/hooks/useRecruiterProfile";
 import { listInterviewsApi } from "@/services/api/interview.api";
-import { listVerificationRequests, type VerificationRequestView } from "@/services/api/zkp.api";
 import {
   deleteShortlist,
   listSharedCompetencyVersions,
@@ -25,11 +24,10 @@ import {
   type SharedCompetencyVersion,
 } from "@/services/api/recruiter-workspace.api";
 import { readRecruiterShortlist, writeRecruiterShortlist } from "@/components/recruiter/RecruiterDashboardPanels";
+import { listRecruiterJobs } from "@/lib/recruiter-jobs";
 import type { CandidateView } from "@/lib/db/candidates";
 import type { ScheduledInterviewView } from "@/lib/interview";
 import { cn } from "@/lib/utils";
-
-const OPEN_PROOF = new Set(["pending", "approved", "generating"]);
 
 function initials(name: string) {
   const parts = name.split(/\s+/).filter(Boolean);
@@ -92,10 +90,11 @@ function WelcomeArt() {
 }
 
 export default function RecruiterDashboard() {
+  const { user } = useAuth();
   const { candidates, loading, error } = useCandidates();
   const { profile } = useRecruiterProfile(true);
   const [interviews, setInterviews] = useState<ScheduledInterviewView[]>([]);
-  const [requests, setRequests] = useState<VerificationRequestView[] | null>(null);
+  const [openJobs, setOpenJobs] = useState(0);
   const [shortlistMode, setShortlistMode] = useState<"account" | "browser" | "unknown">("unknown");
   const [selected, setSelected] = useState<string[]>(() => readRecruiterShortlist());
   const [versions, setVersions] = useState<Array<SharedCompetencyVersion & { candidateName: string; candidateId: string }>>([]);
@@ -104,9 +103,11 @@ export default function RecruiterDashboard() {
   useEffect(() => {
     let active = true;
     listInterviewsApi().then((rows) => { if (active) setInterviews(rows); }).catch(() => { if (active) setInterviews([]); });
-    listVerificationRequests("recruiter")
-      .then((result) => { if (active) setRequests(result.available ? result.requests : null); })
-      .catch(() => { if (active) setRequests(null); });
+    if (user?.id) {
+      listRecruiterJobs(user.id)
+        .then((rows) => { if (active) setOpenJobs(rows.filter((job) => job.status === "open").length); })
+        .catch(() => { if (active) setOpenJobs(0); });
+    }
     listShortlist()
       .then((result) => {
         if (!active) return;
@@ -119,7 +120,7 @@ export default function RecruiterDashboard() {
       })
       .catch(() => { if (active) setShortlistMode("browser"); });
     return () => { active = false; };
-  }, []);
+  }, [user?.id]);
 
   useEffect(() => {
     let active = true;
@@ -154,20 +155,47 @@ export default function RecruiterDashboard() {
   const recruiterName = profile?.fullName?.trim() || "Recruiter";
   const credentialTotal = candidates.reduce((total, candidate) => total + (candidate.credentialCount ?? 0), 0);
   const withCredentials = candidates.filter((candidate) => (candidate.credentialCount ?? 0) > 0).length;
+  const verifiedZkpTotal = candidates.reduce((total, candidate) => total + (candidate.confirmedPrivateResults ?? 0), 0);
+  const verifiedCredentialCandidates = candidates.filter((candidate) => candidate.attestation === "Approved").length;
   const upcoming = interviews.filter((row) => Date.parse(row.scheduledAt) >= Date.now());
-  const openRequests = requests?.filter((row) => OPEN_PROOF.has(row.status)) ?? null;
-  const practicalCount = openRequests?.filter((row) => row.category === "practical-score").length ?? null;
-  const githubCount = openRequests?.filter((row) => row.category === "github-activity").length ?? null;
   const recent = [...candidates].sort((a, b) => Date.parse(b.sharedAt ?? "") - Date.parse(a.sharedAt ?? "")).slice(0, 4);
   const skills = skillCounts(candidates);
   const skillMax = Math.max(1, ...skills.map(([, count]) => count));
   const highlights = versions.slice(0, 3);
 
   const kpis = [
-    { label: "Discoverable Candidates", value: candidates.length, hint: "Shared profiles you can open", to: "/recruiter/search", icon: Users, accent: "bg-[#eff6ff] text-[#1d4ed8]" },
-    { label: "Shared Credentials", value: credentialTotal, hint: `${withCredentials} ${withCredentials === 1 ? "candidate has" : "candidates have"} at least one credential`, to: "/recruiter/search", icon: ShieldCheck, accent: "bg-[#f0fdfa] text-[#0f766e]" },
-    { label: "Pending Proof Requests", value: openRequests ? openRequests.length : "—", hint: "Practical score and GitHub activity", to: "/recruiter/verification-requests", icon: BadgeCheck, accent: "bg-[#fffbeb] text-[#b45309]" },
-    { label: "Upcoming Interviews", value: upcoming.length, hint: `Scheduled interviews (${interviews.length} total)`, to: "/recruiter/interviews", icon: CalendarClock, accent: "bg-[#f5f3ff] text-[#6d28d9]" },
+    {
+      label: "Shared Candidates",
+      value: candidates.length,
+      hint: "Profiles shared with your recruiter account",
+      to: "/recruiter/search",
+      icon: Users,
+      accent: "bg-[#eff6ff] text-[#1d4ed8]",
+    },
+    {
+      label: "Shared Credentials",
+      value: credentialTotal,
+      hint: `${withCredentials} ${withCredentials === 1 ? "candidate has" : "candidates have"} at least one credential`,
+      to: "/recruiter/search",
+      icon: ShieldCheck,
+      accent: "bg-[#f0fdfa] text-[#0f766e]",
+    },
+    {
+      label: "Verified Credentials / ZKP",
+      value: verifiedZkpTotal,
+      hint: `${verifiedCredentialCandidates} ${verifiedCredentialCandidates === 1 ? "candidate" : "candidates"} disclosed as verified`,
+      to: "/recruiter/search",
+      icon: ShieldCheck,
+      accent: "bg-[#ecfdf5] text-[#047857]",
+    },
+    {
+      label: "Active Job Postings",
+      value: openJobs,
+      hint: `Upcoming interviews: ${upcoming.length}`,
+      to: "/recruiter/jobs",
+      icon: Briefcase,
+      accent: "bg-[#eff6ff] text-[#1d4ed8]",
+    },
   ];
 
   return (
@@ -251,24 +279,27 @@ export default function RecruiterDashboard() {
           </div>
 
           <div className="rounded-3xl bg-white p-5 shadow-[0_10px_30px_-22px_rgba(11,31,70,0.45)] sm:p-6">
-            <h2 className="text-[19px] font-semibold text-[#0B1F46]">Recruiter Action Center</h2>
+            <h2 className="text-[19px] font-semibold text-[#0B1F46]">Hiring activity</h2>
             <ul className="mt-4 space-y-2">
               {[
-                { label: "Practical Score Requests", count: practicalCount, to: "/recruiter/verification-requests", icon: BadgeCheck, accent: "bg-[#fff7ed] text-[#c2410c]" },
-                { label: "GitHub Activity Requests", count: githubCount, to: "/recruiter/verification-requests", icon: Bell, accent: "bg-[#eff6ff] text-[#1d4ed8]" },
+                { label: "Shared Candidates", count: candidates.length, to: "/recruiter/search", icon: Users, accent: "bg-[#eff6ff] text-[#1d4ed8]" },
+                { label: "Confirmed private ZKP results", count: verifiedZkpTotal, to: "/recruiter/search", icon: ShieldCheck, accent: "bg-[#ecfdf5] text-[#047857]" },
+                { label: "Active Job Postings", count: openJobs, to: "/recruiter/jobs", icon: Briefcase, accent: "bg-[#eff6ff] text-[#1d4ed8]" },
                 { label: "Upcoming Interviews", count: upcoming.length, to: "/recruiter/interviews", icon: CalendarClock, accent: "bg-[#f5f3ff] text-[#6d28d9]" },
               ].map((row) => (
                 <li key={row.label}>
                   <Link to={row.to} className="flex min-h-[68px] items-center gap-3 rounded-2xl px-2 py-2 transition hover:bg-[#F4F7FC] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]">
                     <span className={cn("flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl", row.accent)}><row.icon className="h-5 w-5" /></span>
                     <span className="flex-1 text-[15px] font-medium text-[#16324f]">{row.label}</span>
-                    <span className="rounded-full bg-[#F4F7FC] px-3 py-1 text-[15px] font-semibold text-[#0B1F46]">{row.count ?? "—"}</span>
+                    <span className="rounded-full bg-[#F4F7FC] px-3 py-1 text-[15px] font-semibold text-[#0B1F46]">{row.count}</span>
                     <ArrowRight className="h-4 w-4 text-[#94a3b8]" />
                   </Link>
                 </li>
               ))}
             </ul>
-            {requests == null ? <p className="mt-3 text-[14px] leading-5 text-[#64748b]">Separate request totals are unavailable until verification requests can be loaded.</p> : null}
+            <p className="mt-3 text-[14px] leading-5 text-[#64748b]">
+              Recruiters review proofs learners already shared. New proof requests are not started from this workspace.
+            </p>
           </div>
         </section>
 

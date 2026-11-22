@@ -13,6 +13,9 @@ _pptx_temp.zip
 # Supabase CLI local cache
 supabase/.temp/
 
+# Local pre-migration credential checksum snapshots (no salts, still keep out of git)
+.migration-backups/
+
 # Hyperledger Fabric local downloads (binaries, samples, images helpers)
 fabric/fabric-samples/
 fabric/bin/
@@ -32,6 +35,12 @@ zkp-artifacts/github-contributions-v1-below/build/
 zkp-artifacts/score-threshold-v1-below/build/
 zkp-artifacts/github-contributions-v1-below/*.zkey
 zkp-artifacts/score-threshold-v1-below/*.zkey
+
+# Circom toolchain + local circuit builds (toxic waste / ptau intermediates)
+circuits/.tools/
+circuits/**/build/
+circuits/**/node_modules/
+circuits/**/.tools/
 
 node_modules_linux_backup/
 node_modules/

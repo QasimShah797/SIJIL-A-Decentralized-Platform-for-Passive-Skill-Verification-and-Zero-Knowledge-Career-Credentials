@@ -81,16 +81,24 @@ function walk(value: unknown, prefs: DisclosurePreferences): unknown {
 export function redactExactValues(
   payload: Record<string, unknown>,
   prefs: DisclosurePreferences,
-  asOf: string,
+  _asOf: string,
 ): Record<string, unknown> {
+  // Strip any client- or legacy-supplied marker. Recipient payloads do not need
+  // exactValueDisclosure metadata for verification or rendering — redaction is
+  // enforced by removing the values themselves.
   const { exactValueDisclosure: _ignored, ...rest } = payload;
-  const redacted = walk(rest, prefs) as Record<string, unknown>;
-  const meta: ExactValueDisclosureMeta = {
+  return walk(rest, prefs) as Record<string, unknown>;
+}
+
+/** Test/helper: describe current preference state without attaching it to payloads. */
+export function exactValueDisclosureMeta(
+  prefs: DisclosurePreferences,
+  asOf: string,
+): ExactValueDisclosureMeta {
+  return {
     assessmentMarks: prefs.shareExactAssessmentMarks ? "disclosed" : "withheld",
     githubCommitCount: prefs.shareExactGithubCommitCount ? "disclosed" : "withheld",
     source: "sijil_backend_records",
     asOf,
   };
-  redacted.exactValueDisclosure = meta;
-  return redacted;
 }

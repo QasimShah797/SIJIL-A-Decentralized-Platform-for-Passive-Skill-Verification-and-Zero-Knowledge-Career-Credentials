@@ -39,6 +39,7 @@ export type CandidateDetailView = {
   attestation: "Approved" | "Partial" | "Pending";
   institution: string;
   credentialCount: number;
+  confirmedPrivateResults?: number;
   sharedCredentials: SharedCredentialView[];
 };
 
@@ -286,6 +287,16 @@ export function buildCandidateDetail(params: {
     : (disclosedInstitution ?? (params.institution || "—"));
   const topSkill = sharedCredentials.find((item) => item.skill)?.skill ?? "—";
 
+  const confirmedPrivateResults = sharedCredentials.reduce((total, credential) => {
+    const raw = Array.isArray(credential.disclosedPayload.privateResults)
+      ? credential.disclosedPayload.privateResults
+      : [];
+    return total + raw.filter((item) => {
+      const record = asRecord(item);
+      return record && asText(record.status) === "confirmed";
+    }).length;
+  }, 0);
+
   return {
     id: params.id,
     name: resolvedName,
@@ -295,6 +306,7 @@ export function buildCandidateDetail(params: {
     attestation: attestationFromShared(sharedCredentials),
     institution: resolvedInstitution,
     credentialCount: sharedCredentials.length,
+    confirmedPrivateResults,
     sharedCredentials,
   };
 }

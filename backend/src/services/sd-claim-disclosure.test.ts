@@ -1,6 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
+  buildDisclosuresForSelection,
   buildSelectiveDisclosureManifest,
   createClaimSalt,
   verifyDisclosuresAgainstManifest,
@@ -36,5 +37,55 @@ describe("sd-claim-digest-v1", () => {
       { claimId: "learner_name", value: "attacker", salt },
     ]);
     assert.equal(checked.ok, false);
+  });
+
+  it("rejects a disclosure that uses the wrong salt", () => {
+    const salt = createClaimSalt();
+    const manifest = buildSelectiveDisclosureManifest([
+      { claimId: "issue_date", value: "2026-11-18", salt },
+    ]);
+    const checked = verifyDisclosuresAgainstManifest(manifest, [
+      { claimId: "issue_date", value: "2026-11-18", salt: createClaimSalt() },
+    ]);
+    assert.equal(checked.ok, false);
+  });
+
+  it("keeps withheld digests confidential when only one claim is released", () => {
+    const claims = [
+      { claimId: "learner_name", value: "eesha", salt: createClaimSalt() },
+      { claimId: "competency_name", value: "Typescript", salt: createClaimSalt() },
+      { claimId: "issue_date", value: "2026-11-18", salt: createClaimSalt() },
+    ];
+    const manifest = buildSelectiveDisclosureManifest(claims);
+    const checked = verifyDisclosuresAgainstManifest(manifest, [claims[0]]);
+    assert.equal(checked.ok, true);
+    if (checked.ok) {
+      assert.equal(checked.releasedDigests.length, 1);
+      assert.equal(checked.withheldDigests.length, 2);
+      assert.equal(checked.withheldDigests.includes(checked.releasedDigests[0]), false);
+      // Hidden claim values/salts are not part of the verifier output.
+      assert.equal(JSON.stringify(checked).includes("Typescript"), false);
+      assert.equal(JSON.stringify(checked).includes(claims[1].salt), false);
+    }
+  });
+
+  it("maps selected share fields to issuer disclosures and leaves others withheld", () => {
+    const claims = [
+      { claimId: "competency_name", value: "Typescript", salt: createClaimSalt() },
+      { claimId: "issue_date", value: "2026-11-18", salt: createClaimSalt() },
+      { claimId: "holder_did", value: "did:example:holder", salt: createClaimSalt() },
+    ];
+    const manifest = buildSelectiveDisclosureManifest(claims);
+    const disclosures = buildDisclosuresForSelection({
+      selectedFields: ["competency_name", "timestamps"],
+      storedClaims: claims,
+    });
+    assert.equal(disclosures.length, 2);
+    assert.equal(disclosures.some((d) => d.claimId === "holder_did"), false);
+    const checked = verifyDisclosuresAgainstManifest(manifest, disclosures);
+    assert.equal(checked.ok, true);
+    if (checked.ok) {
+      assert.equal(checked.withheldDigests.length, 1);
+    }
   });
 });

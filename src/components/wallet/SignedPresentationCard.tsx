@@ -1,13 +1,19 @@
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "@/hooks/use-toast";
 import { useCredentials, useLearnerProfile } from "@/hooks/useLearnerData";
 import type { CredentialView } from "@/lib/db/credentials";
 import type { WalletShareFieldId } from "@/lib/wallet-competency-shared";
+import {
+  assessEvidenceShareAvailability,
+  type EvidenceShareAvailability,
+} from "@/lib/evidence-share-availability";
 import {
   emailPublicShareApi,
   getWalletCompetenciesApi,
   revokeWalletShareApi,
   shareWalletCompetencyApi,
 } from "@/services/api/wallet.api";
+import type { WalletCompetencyRecordView } from "@/lib/db/wallet-competency-records";
 import { walletShareRequest } from "@/lib/sharing/guide";
 import { apiRequest } from "@/services/api/client";
 import { GuidedShareFlow } from "./GuidedShareFlow";
@@ -25,6 +31,26 @@ function statusLabel(credential: CredentialView): string {
 export function SignedPresentationCard({ onBack }: { onBack: () => void }) {
   const { credentials } = useCredentials();
   const { profile } = useLearnerProfile();
+  const [walletRows, setWalletRows] = useState<WalletCompetencyRecordView[] | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void getWalletCompetenciesApi().then((rows) => {
+      if (!cancelled) setWalletRows(rows);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const availabilityBySkill = useMemo(() => {
+    const map = new Map<string, EvidenceShareAvailability>();
+    for (const row of walletRows ?? []) {
+      const key = row.competencyName.trim().toLowerCase();
+      map.set(key, assessEvidenceShareAvailability(row.evidencePackage));
+    }
+    return map;
+  }, [walletRows]);
 
   const shareSelected = async (
     chosenIds: string[],
@@ -135,13 +161,17 @@ export function SignedPresentationCard({ onBack }: { onBack: () => void }) {
 
   return (
     <GuidedShareFlow
-      credentials={credentials.map((credential) => ({
-        id: credential.id,
-        title: credential.skill !== "—" ? credential.skill : credential.name,
-        issuer: credential.issuer || "SIJIL",
-        status: statusLabel(credential),
-        issuedAt: credential.validFrom,
-      }))}
+      credentials={credentials.map((credential) => {
+        const title = credential.skill !== "—" ? credential.skill : credential.name;
+        return {
+          id: credential.id,
+          title,
+          issuer: credential.issuer || "SIJIL",
+          status: statusLabel(credential),
+          issuedAt: credential.validFrom,
+          evidenceAvailability: availabilityBySkill.get(title.trim().toLowerCase()),
+        };
+      })}
       learnerName={profile?.name || "Learner"}
       onBack={onBack}
       onShareAll={shareWithAllRecruiters}

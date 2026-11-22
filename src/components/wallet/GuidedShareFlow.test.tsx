@@ -1,6 +1,21 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { GuidedShareFlow, type GuidedShareCredential } from "./GuidedShareFlow";
+import type { EvidenceShareAvailability } from "@/lib/evidence-share-availability";
+
+const fullAvailability: EvidenceShareAvailability = {
+  practical_task_result: { present: true, privateAllowed: true, privateBlockedReason: null },
+  github_evidence: { present: true, privateAllowed: true, privateBlockedReason: null },
+  lms_evidence: { present: true, privateAllowed: true, privateBlockedReason: null },
+  peer_reviews: { present: true, privateAllowed: true, privateBlockedReason: null },
+};
+
+const typescriptAvailability: EvidenceShareAvailability = {
+  practical_task_result: { present: true, privateAllowed: true, privateBlockedReason: null },
+  github_evidence: { present: true, privateAllowed: true, privateBlockedReason: null },
+  lms_evidence: { present: false, privateAllowed: false, privateBlockedReason: null },
+  peer_reviews: { present: false, privateAllowed: false, privateBlockedReason: null },
+};
 
 const credential: GuidedShareCredential = {
   id: "cred-1",
@@ -8,6 +23,7 @@ const credential: GuidedShareCredential = {
   issuer: "SIJIL",
   status: "Issued",
   issuedAt: "2026-11-18T00:00:00.000Z",
+  evidenceAvailability: fullAvailability,
 };
 
 function renderFlow(overrides: Partial<Parameters<typeof GuidedShareFlow>[0]> = {}) {
@@ -59,6 +75,20 @@ describe("wallet share flow", () => {
     expect(await screen.findByText("Your achievements are now visible to all SIJIL recruiters.")).toBeTruthy();
   });
 
+  it("hides Moodle and Peer cards when TypeScript has no linked evidence", () => {
+    renderFlow({
+      credentials: [{ ...credential, evidenceAvailability: typescriptAvailability }],
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Share with Recruiter/ }));
+    fireEvent.click(screen.getByRole("button", { name: /TypeScript/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    expect(screen.getByText("Practical Assessment")).toBeTruthy();
+    expect(screen.getByText("GitHub Activity")).toBeTruthy();
+    expect(screen.queryByText("Moodle Learning")).toBeNull();
+    expect(screen.queryByText("Peer Review")).toBeNull();
+    expect(screen.queryByText("Preparing result…")).toBeNull();
+  });
+
   it("opens Create Public Link disclosure before success screen", async () => {
     const { onCreatePublicLink, onShareAll, onEmailPublicLink } = renderFlow();
     fireEvent.click(screen.getByRole("button", { name: /Create Verification Link/ }));
@@ -79,5 +109,4 @@ describe("wallet share flow", () => {
       recipientEmail: "recruiter@example.com",
     });
   });
-
 });

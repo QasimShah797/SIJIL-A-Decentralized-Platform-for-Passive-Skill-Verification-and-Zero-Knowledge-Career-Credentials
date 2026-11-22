@@ -55,6 +55,9 @@ import { disclosurePreferencesStore } from "./disclosure-preferences.service";
 import { walletExportAvailability } from "./wallet-pass.service";
 import {
   DEFAULT_EVIDENCE_MODES,
+  assertEvidenceModesAllowed,
+  resolveShareFieldsForModes,
+  sanitizeEvidenceModesForRecord,
   summarizeGithubDetails,
   summarizeLmsDetails,
   summarizePeerDetails,
@@ -64,6 +67,7 @@ import {
 import { assertNoPrivateWitnessLeak, buildShareZkpAttachment } from "./share-zkp.service";
 import {
   SD_SCHEME_LEGACY,
+  buildDisclosuresForSelection,
   cryptoSdBundle,
   legacySdBundle,
   readSelectiveDisclosureManifest,
@@ -192,7 +196,9 @@ function asRows(value: unknown): DbRow[] {
 }
 
 function asText(value: unknown): string {
-  return typeof value === "string" ? value : "";
+  if (typeof value === "string") return value;
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  return "";
 }
 
 function asNullableText(value: unknown): string | null {
@@ -549,7 +555,29 @@ function buildSkillEvidenceSlice(
 ): Record<string, unknown> | undefined {
   const hasField = (field: WalletShareFieldId) => selectedFields.includes(field);
   const evidence: Record<string, unknown> = {};
-  if (hasField("github_evidence") || hasField("complete_evidence_package")) {
+  // Per-field "details" mode uses the same safe summaries as the top-level evidence
+  // block. Raw repos/scores/grades only enter via complete_evidence_package.
+  if (hasField("github_evidence")) {
+    const githubEvidence = summarizeGithubDetails(record);
+    if (githubEvidence) evidence.github = githubEvidence;
+  }
+  if (hasField("lms_evidence")) {
+    const lmsEvidence = summarizeLmsDetails(record);
+    if (lmsEvidence) evidence.lms = lmsEvidence;
+  }
+  if (hasField("practical_task_result")) {
+    const practicalTask = summarizePracticalDetails(record);
+    if (practicalTask) evidence.practicalTask = practicalTask;
+  }
+  if (hasField("peer_reviews")) {
+    const peerReviews = summarizePeerDetails(record);
+    if (peerReviews) evidence.peerReviews = peerReviews;
+  }
+  if (hasField("teacher_feedback")) {
+    const teacherFeedback = sanitizeForDisclosure(record.evidencePackage.teacherFeedback);
+    if (teacherFeedback) evidence.teacherFeedback = teacherFeedback;
+  }
+  if (hasField("complete_evidence_package")) {
     const githubEvidence = sanitizeForDisclosure({
       repos: record.evidencePackage.github.repos,
       activities: record.evidencePackage.github.activities,
@@ -557,8 +585,6 @@ function buildSkillEvidenceSlice(
       reviews: record.evidencePackage.github.reviews,
     });
     if (githubEvidence) evidence.github = githubEvidence;
-  }
-  if (hasField("lms_evidence") || hasField("complete_evidence_package")) {
     const lmsEvidence = sanitizeForDisclosure({
       evidence: record.evidencePackage.lms.evidence,
       courses: record.evidencePackage.lms.courses,
@@ -567,19 +593,13 @@ function buildSkillEvidenceSlice(
       importedEvidence: record.evidencePackage.lms.importedEvidence,
     });
     if (lmsEvidence) evidence.lms = lmsEvidence;
-  }
-  if (hasField("practical_task_result") || hasField("complete_evidence_package")) {
     const practicalTask = sanitizeForDisclosure({
       latestAttempt: record.evidencePackage.practicalTask.latestAttempt,
       attemptHistory: record.evidencePackage.practicalTask.attemptHistory,
     });
     if (practicalTask) evidence.practicalTask = practicalTask;
-  }
-  if (hasField("peer_reviews") || hasField("complete_evidence_package")) {
     const peerReviews = sanitizeForDisclosure(record.evidencePackage.peerReviews);
     if (peerReviews) evidence.peerReviews = peerReviews;
-  }
-  if (hasField("teacher_feedback") || hasField("complete_evidence_package")) {
     const teacherFeedback = sanitizeForDisclosure(record.evidencePackage.teacherFeedback);
     if (teacherFeedback) evidence.teacherFeedback = teacherFeedback;
   }
@@ -985,8 +1005,10 @@ function mergeLmsBuckets(
       [...fromRecords.courses, ...primary.courses],
       (row) => asText(row.moodle_course_id) || asText(row.fullname),
     ),
+    // Prefer moodle_assignments rows (carry submission_status / graded_at) over
+    // evidence_records stubs that omit completion fields used by Moodle ZKP.
     assignments: dedupeRowsByKey(
-      [...fromRecords.assignments, ...primary.assignments],
+      [...primary.assignments, ...fromRecords.assignments],
       (row) => asText(row.moodle_assignment_id) || asText(row.name),
     ),
     grades: primary.grades,
@@ -1102,7 +1124,7 @@ async function loadAggregatedWallet(userId: string): Promise<WalletCompetencyRec
     safeFetchRows("peer_reviews", () =>
       db()
         .from("peer_reviews")
-        .select("id, skill_id, skill, competency_name, reviewer_name, reviewer_role, source, review_text, comment, recommendation, reviewed_at, review_date, created_at, external_reference")
+        .select("id, skill_id, skill, competency_name, reviewer_name, reviewer_role, reviewer_user_id, learner_user_id, user_id, source, origin, status, decision, review_text, comment, recommendation, reviewed_at, review_date, created_at, external_reference")
         .eq("learner_user_id", userId),
     ),
     safeFetchRows("supporting_records", () =>
@@ -1769,22 +1791,19 @@ export class WalletService {
     if (shareScope === "issued" && !canCreateIssuedOnlyShare(competencyId, issuedIds)) {
       throw new AppError("Selected competency has no issued credential", 409);
     }
-    const evidenceModes: EvidenceModes = {
-      ...DEFAULT_EVIDENCE_MODES,
-      ...(input.evidenceModes ?? {}),
-    };
-    const evidenceFieldIds = [
-      "practical_task_result",
-      "github_evidence",
-      "lms_evidence",
-      "peer_reviews",
-    ] as const;
-    const fieldsForPayload = input.selectedFields.filter((field) => {
-      if (!(evidenceFieldIds as readonly string[]).includes(field)) return true;
-      const mode = evidenceModes[field as keyof EvidenceModes];
-      // Private results are attached separately; details mode keeps the field for summaries.
-      return mode === "details";
-    });
+    // Reject unlinked evidence share attempts; then sanitize (force omit / disable private).
+    assertEvidenceModesAllowed(input.evidenceModes, record);
+    const evidenceModes: EvidenceModes = sanitizeEvidenceModesForRecord(
+      input.evidenceModes ?? DEFAULT_EVIDENCE_MODES,
+      record,
+    );
+    // Details mode must include the evidence field even when the UI only sent
+    // evidenceModes (radios) and left selectedFields as identity/timestamps.
+    // Private/omit never put exact evidence into the frozen payload.
+    const fieldsForPayload = resolveShareFieldsForModes(
+      input.selectedFields,
+      evidenceModes,
+    ) as WalletShareFieldId[];
     const disclosedPayload = buildDisclosedPayload(
       record,
       fieldsForPayload,
@@ -1857,8 +1876,45 @@ export class WalletService {
           ? "missing" as const
           : "invalid" as const;
       if (manifest) {
-        const disclosures: SdDisclosure[] = [];
-        const checked = verifyDisclosuresAgainstManifest(manifest, disclosures);
+        // Load issuer salts only when the migration table is available.
+        const storedClaims: Array<{ claimId: string; salt: string; value: string }> = [];
+        const { data: saltRows, error: saltErr } = await getServiceSupabase()
+          .from("credential_sd_claims")
+          .select("claim_id, salt, value_fingerprint")
+          .eq("credential_id", issuedCred.id);
+        if (!saltErr && Array.isArray(saltRows)) {
+          const doc = issuedCred.credential_document && typeof issuedCred.credential_document === "object"
+            ? issuedCred.credential_document as Record<string, unknown>
+            : {};
+          const credentialSubject = doc.credentialSubject && typeof doc.credentialSubject === "object"
+            ? doc.credentialSubject as Record<string, unknown>
+            : {};
+          const valueByClaim: Record<string, string> = {
+            competency_name: String(credentialSubject.skillName ?? credentialSubject.name ?? issuedCred.skill_name ?? ""),
+            holder_did: String(issuedCred.holder_did ?? ""),
+            issue_date: String(doc.validFrom ?? issuedCred.valid_from ?? ""),
+            learner_name: String(learnerContext.displayName ?? ""),
+          };
+          for (const row of saltRows) {
+            const claimId = asText(row.claim_id);
+            const salt = asText(row.salt);
+            const value = valueByClaim[claimId];
+            if (!claimId || !salt || !value) continue;
+            storedClaims.push({ claimId, salt, value });
+          }
+        }
+
+        const disclosures: SdDisclosure[] = storedClaims.length > 0
+          ? buildDisclosuresForSelection({
+              selectedFields: input.selectedFields,
+              storedClaims,
+            })
+          : [];
+        const checked = storedClaims.length > 0
+          ? verifyDisclosuresAgainstManifest(manifest, disclosures)
+          : { ok: false as const, reason: "sd_salts_unavailable" };
+
+        // Without persisted salts, do not advertise cryptographic SD.
         disclosedPayload.selectiveDisclosure = checked.ok
           ? cryptoSdBundle({
               credentialId: issuedCred.id,
@@ -1869,12 +1925,18 @@ export class WalletService {
               withheldDigests: checked.withheldDigests,
               issuerSignatureCheck: issuerCheck,
             })
-          : legacySdBundle({
-              credentialId: issuedCred.id,
-              credentialHash: issuedCred.credential_hash ?? null,
-              issuerDid: issuedCred.issuer_did,
-              holderDid: issuedCred.holder_did,
-            });
+          : {
+              ...legacySdBundle({
+                credentialId: issuedCred.id,
+                credentialHash: issuedCred.credential_hash ?? null,
+                issuerDid: issuedCred.issuer_did,
+                holderDid: issuedCred.holder_did,
+              }),
+              issuerSignatureCheck: issuerCheck,
+              note: saltErr || storedClaims.length === 0
+                ? "Credential has signed SD digests, but claim salts are unavailable (apply credential_sd_claims migration / re-issue). Using legacy field filtering."
+                : "Selective disclosure digests failed verification; falling back to legacy field filtering.",
+            };
       } else {
         disclosedPayload.selectiveDisclosure = {
           ...legacySdBundle({
@@ -1955,7 +2017,9 @@ export class WalletService {
     const shareRow = {
       learner_id: userId,
       competency_id: competencyId,
-      selected_fields: input.selectedFields,
+      // Persist the fields that actually entered the frozen payload so recipient
+      // ledgers (which key off selected_fields) show authorized details.
+      selected_fields: fieldsForPayload,
       selection_mode: input.selectionMode,
       disclosed_payload: disclosedPayload,
       payload_hash: payloadHash,
@@ -2325,6 +2389,21 @@ export class WalletService {
       throw new AppError("This competency was not included in the share", 404);
     }
 
+    const privateResults = Array.isArray((payload as Record<string, unknown>).privateResults)
+      ? ((payload as Record<string, unknown>).privateResults as Array<Record<string, unknown>>)
+        .filter((item) => item && typeof item === "object")
+        .map((item) => ({
+          claimType: asText(item.claimType),
+          status: asText(item.status),
+          label: asText(item.label),
+          detailHidden: asText(item.detailHidden),
+          policyId: asNullableText(item.policyId),
+          circuitId: asNullableText(item.circuitId),
+          verifiedBy: asNullableText(item.verifiedBy),
+        }))
+        .filter((item) => item.claimType && item.label)
+      : [];
+
     return {
       status: "valid",
       verified: verification.result === "Valid Proof" && ledgerVerified,
@@ -2333,6 +2412,7 @@ export class WalletService {
       ledger: buildEvidenceLedger(payload, competencyId, row.selected_fields),
       ledgerStatus: ledgerInfo.ledgerStatus,
       ledgerDetail: ledgerInfo.ledgerDetail,
+      privateResults,
     };
   }
 

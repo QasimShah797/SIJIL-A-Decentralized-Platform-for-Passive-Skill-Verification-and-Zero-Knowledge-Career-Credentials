@@ -23,8 +23,7 @@ import {
   verifyPublicPresentationApi,
   type PublicPresentationView,
 } from "@/services/api/wallet.api";
-import { ReusableScoreProofCard } from "@/components/recruiter/ReusableScoreProofCard";
-import { AssessmentProofRequestCard } from "@/components/recruiter/AssessmentProofRequestCard";
+import { SharedPrivateVerificationPanel } from "@/components/recruiter/SharedPrivateVerificationPanel";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -197,8 +196,17 @@ export default function CompetencyPresentationView() {
 
   const sections = useMemo(() => {
     if (!presentation) return [];
+    const hideKeys = new Set([
+      "privateResults",
+      "evidenceModes",
+      "selectiveDisclosure",
+      "audience",
+      "shareKind",
+      "recipientUserId",
+      "consentedAt",
+    ]);
     return Object.entries(presentation.disclosedPayload)
-      .filter(([, value]) => value != null)
+      .filter(([key, value]) => value != null && !hideKeys.has(key))
       .map(([key, value]) => ({
         key,
         title: titleCase(key),
@@ -401,10 +409,22 @@ export default function CompetencyPresentationView() {
                 </Card>
 
                 <p className="text-sm text-muted-foreground">
-                  The badge above is the credential record. A minimum-score proof is a separate check, and it is not accepted until the result below says so.
+                  The badge above is the credential record. Private ZKP results below are accepted only after SIJIL verifies learner-shared proofs.
                 </p>
-                {token ? <AssessmentProofRequestCard shareToken={decodeURIComponent(token)} /> : null}
-                {token ? <ReusableScoreProofCard shareToken={decodeURIComponent(token)} /> : null}
+                <SharedPrivateVerificationPanel
+                  payload={presentation.disclosedPayload ?? {}}
+                  competencyName={(() => {
+                    const competency = presentation.disclosedPayload?.competency;
+                    if (isRecord(competency) && typeof competency.name === "string" && competency.name.trim()) {
+                      return competency.name.trim();
+                    }
+                    return "Shared credential";
+                  })()}
+                  selectedFields={presentation.selectedFields ?? []}
+                  createdAt={presentation.createdAt}
+                  expiresAt={presentation.expiresAt}
+                  proofType={presentation.proofType ?? presentation.verificationMethod}
+                />
 
                 <Card>
                   <CardHeader className="pb-3">

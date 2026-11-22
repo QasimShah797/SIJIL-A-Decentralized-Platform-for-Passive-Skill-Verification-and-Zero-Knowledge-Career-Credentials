@@ -1,4 +1,4 @@
-import { ShieldCheck, Users, Wallet } from "lucide-react";
+import { BadgeCheck, ShieldCheck, Users, Wallet } from "lucide-react";
 import type { CandidateView } from "@/lib/db/candidates";
 import { cn } from "@/lib/utils";
 
@@ -46,7 +46,7 @@ function StatCard({
   );
 }
 
-export type RecruiterStatFilter = "all" | "verified" | "credentials";
+export type RecruiterStatFilter = "all" | "verified" | "credentials" | "zkp";
 
 export function RecruiterDashboardStats({
   candidates,
@@ -57,8 +57,11 @@ export function RecruiterDashboardStats({
   active: RecruiterStatFilter;
   onSelect: (filter: RecruiterStatFilter) => void;
 }) {
-  const verified = candidates.filter((candidate) => candidate.attestation === "Approved").length;
+  const verified = candidates.filter((candidate) => (
+    candidate.attestation === "Approved" || (candidate.confirmedPrivateResults ?? 0) > 0
+  )).length;
   const credentials = candidates.reduce((total, candidate) => total + (candidate.credentialCount ?? 0), 0);
+  const confirmedZkp = candidates.reduce((total, candidate) => total + (candidate.confirmedPrivateResults ?? 0), 0);
 
   const items: {
     id: RecruiterStatFilter;
@@ -69,19 +72,20 @@ export function RecruiterDashboardStats({
     tint: number;
   }[] = [
     { id: "all", label: "Directory", value: candidates.length, hint: "Learners with shared profiles", icon: Users, tint: 0 },
-    { id: "verified", label: "Verified", value: verified, hint: "Learners with approved credentials", icon: ShieldCheck, tint: 1 },
+    { id: "verified", label: "Verified", value: verified, hint: "Approved disclosure or confirmed ZKP", icon: ShieldCheck, tint: 1 },
+    { id: "zkp", label: "Confirmed ZKP", value: confirmedZkp, hint: "Private results verified cryptographically", icon: BadgeCheck, tint: 3 },
     { id: "credentials", label: "Credentials", value: credentials, hint: "Active shared competency packs", icon: Wallet, tint: 2 },
   ];
 
   return (
-    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
       {items.map((item) => (
         <StatCard
           key={item.id}
-          icon={item.icon}
           label={item.label}
           value={item.value}
           hint={item.hint}
+          icon={item.icon}
           tint={item.tint}
           active={active === item.id}
           onClick={() => onSelect(item.id)}

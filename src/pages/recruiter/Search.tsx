@@ -45,7 +45,8 @@ export default function RecruiterSearch() {
     const needle = query.trim().toLowerCase();
     return candidates.filter((candidate) => {
       if (focusIds && !focusIds.includes(candidate.id)) return false;
-      if (statFilter === "verified" && candidate.attestation !== "Approved") return false;
+      if (statFilter === "verified" && candidate.attestation !== "Approved" && !(candidate.confirmedPrivateResults ?? 0)) return false;
+      if (statFilter === "zkp" && !(candidate.confirmedPrivateResults ?? 0)) return false;
       if (statFilter === "credentials" && (candidate.credentialCount ?? 0) <= 0) return false;
       if (skill !== "all") {
         const skills = [...(candidate.verifiedSkills ?? []), ...(candidate.searchableSkills ?? []), candidate.topSkill];
@@ -217,17 +218,24 @@ export default function RecruiterSearch() {
                 type="button"
                 className="inline-flex h-9 items-center gap-2 rounded-lg border border-border/70 bg-background px-3 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
-                {statFilter === "verified" ? "Verified" : statFilter === "credentials" ? "With credentials" : "All"}
+                {statFilter === "verified"
+                  ? "Verified"
+                  : statFilter === "zkp"
+                    ? "Confirmed ZKP"
+                    : statFilter === "credentials"
+                      ? "With credentials"
+                      : "All"}
                 <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-44">
+            <DropdownMenuContent align="start" className="w-48">
               <DropdownMenuRadioGroup
-                value={statFilter === "verified" || statFilter === "credentials" ? statFilter : "all"}
+                value={["verified", "credentials", "zkp"].includes(statFilter) ? statFilter : "all"}
                 onValueChange={(value) => setStatFilter(value as RecruiterStatFilter)}
               >
                 <DropdownMenuRadioItem value="all">All</DropdownMenuRadioItem>
                 <DropdownMenuRadioItem value="verified">Verified</DropdownMenuRadioItem>
+                <DropdownMenuRadioItem value="zkp">Confirmed ZKP</DropdownMenuRadioItem>
                 <DropdownMenuRadioItem value="credentials">With credentials</DropdownMenuRadioItem>
               </DropdownMenuRadioGroup>
             </DropdownMenuContent>

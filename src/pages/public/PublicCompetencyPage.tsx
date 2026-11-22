@@ -66,6 +66,21 @@ async function loadPublicCompetency(shareToken: string, competencyId: string): P
       : undefined;
     const skillTrust = skillTrustFromRow(skillRow ?? { issued: false });
     const skillLedgerStatus = skillTrust.ledgerStatus;
+    const rawPrivate = Array.isArray(credential.webView.disclosedPayload.privateResults)
+      ? credential.webView.disclosedPayload.privateResults
+      : [];
+    const privateResults = rawPrivate
+      .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object")
+      .map((item) => ({
+        claimType: String(item.claimType ?? ""),
+        status: String(item.status ?? ""),
+        label: String(item.label ?? ""),
+        detailHidden: String(item.detailHidden ?? ""),
+        policyId: typeof item.policyId === "string" ? item.policyId : null,
+        circuitId: typeof item.circuitId === "string" ? item.circuitId : null,
+        verifiedBy: typeof item.verifiedBy === "string" ? item.verifiedBy : null,
+      }))
+      .filter((item) => item.claimType && item.label);
     return {
       status: "valid",
       verified: isBlockchainVerified(skillLedgerStatus, skillTrust.ledgerDetail),
@@ -78,6 +93,7 @@ async function loadPublicCompetency(shareToken: string, competencyId: string): P
       ),
       ledgerStatus: skillLedgerStatus,
       ledgerDetail: skillTrust.ledgerDetail,
+      privateResults,
     };
   }
 }
@@ -162,6 +178,40 @@ export default function PublicCompetencyPage() {
             </div>
             {payload.competency?.description ? (
               <p className="text-sm text-muted-foreground">{payload.competency.description}</p>
+            ) : null}
+            {payload.privateResults && payload.privateResults.length > 0 ? (
+              <div className="rounded-xl border border-[#e2e8f0] bg-white p-4 shadow-sm">
+                <p className="text-sm font-semibold text-[#023E8A]">Private verification results</p>
+                <p className="mt-0.5 text-xs text-[#64748b]">
+                  Exact scores, activity counts, and review details stay hidden. Labels reflect SIJIL cryptographic checks only.
+                </p>
+                <ul className="mt-3 space-y-2">
+                  {payload.privateResults.map((result) => {
+                    const title =
+                      result.claimType === "moodle_learning" ? "Moodle Learning"
+                        : result.claimType === "peer_review" ? "Peer Review"
+                          : result.claimType === "github_activity" ? "GitHub Activity"
+                            : result.claimType === "practical_assessment" ? "Practical Assessment"
+                              : result.claimType;
+                    const confirmed = result.status === "confirmed";
+                    const label = result.status === "preparing"
+                      ? "Could not confirm"
+                      : result.label;
+                    return (
+                      <li
+                        key={`${result.claimType}-${result.policyId ?? ""}`}
+                        className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[#f1f5f9] px-3 py-2 text-sm"
+                      >
+                        <span className="font-medium text-[#0f172a]">{title}</span>
+                        <span className={confirmed ? "font-semibold text-[#15803d]" : "font-medium text-[#64748b]"}>
+                          {label}
+                          {confirmed && result.detailHidden ? ` · ${result.detailHidden}` : ""}
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
             ) : null}
             <div className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.95fr)]">
               <CompetencyPackageCard

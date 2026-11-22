@@ -5,6 +5,7 @@ import { EmptyState } from "@/components/sijil/EmptyState";
 import { PageSkeleton } from "@/components/sijil/SkeletonLoader";
 import {
   RecruiterCompetencyDetail,
+  countSharedZkpConfirmations,
   displayRecruiterSkillName,
   recruiterSkillCards,
 } from "@/components/recruiter/RecruiterSkillEvidence";
@@ -236,8 +237,14 @@ export default function CandidateSummary() {
 
             {profileTab === "competencies" || profileTab === "verification" ? (
             <section className="learner-stat-card p-5">
-              <h2 className="text-base font-semibold text-[#023E8A]">Shared competencies</h2>
-              <p className="mt-1 text-xs text-[#64748b]">Select a competency to inspect the shared evidence.</p>
+              <h2 className="text-base font-semibold text-[#023E8A]">
+                {profileTab === "verification" ? "Private verification" : "Shared competencies"}
+              </h2>
+              <p className="mt-1 text-xs text-[#64748b]">
+                {profileTab === "verification"
+                  ? "Inspect cryptographic private results the learner already shared. Recruiters cannot request new proofs here."
+                  : "Select a competency to inspect the shared evidence."}
+              </p>
 
               {skillCards.length === 0 ? (
                 <EmptyState
@@ -305,8 +312,16 @@ export default function CandidateSummary() {
             <div className="learner-stat-card p-5">
               <h3 className="text-sm font-semibold text-[#023E8A]">Verification summary</h3>
               <dl className="mt-4 space-y-3">
-                <SummaryRow label="Verification" value={candidate.attestation} />
+                <SummaryRow
+                  label="Verification"
+                  value={
+                    countSharedZkpConfirmations(sharedCredentials) > 0
+                      ? "Approved"
+                      : candidate.attestation
+                  }
+                />
                 <SummaryRow label="Shared credentials" value={String(evidence.credentials || candidate.credentialCount)} />
+                <SummaryRow label="Confirmed private results" value={String(countSharedZkpConfirmations(sharedCredentials))} />
                 <SummaryRow label="Disclosed evidence" value={String(evidence.evidenceTotal)} />
                 <SummaryRow label="Active presentations" value={String(sharedCredentials.length)} />
               </dl>

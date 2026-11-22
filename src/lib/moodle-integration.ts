@@ -790,6 +790,21 @@ async function buildCourseActivitiesFromRows(
   });
 }
 
+/** Hide grade-report notes when assignment APIs already supplied grades and feedback. */
+export function userFacingMoodleWarnings(warnings: string[]): string[] {
+  return warnings.filter((warning) => {
+    const text = warning.toLowerCase();
+    if (text.includes("loaded via") && text.includes("assignment")) return false;
+    if (!text.includes("grade report")) return true;
+    return !(
+      text.includes("enrichment") ||
+      text.includes("unavailable") ||
+      text.includes("assignment api") ||
+      text.includes("loaded via")
+    );
+  });
+}
+
 export function hasMoodleAccessControlWarning(warnings: string[]): boolean {
   return warnings.some((w) => {
     const lower = w.toLowerCase();

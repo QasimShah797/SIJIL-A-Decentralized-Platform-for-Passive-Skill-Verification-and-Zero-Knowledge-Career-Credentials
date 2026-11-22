@@ -302,18 +302,40 @@ export function buildEvidenceLedger(
     ? snapshotGithub
     : (isRecord(packageEvidence.github) ? packageEvidence.github : {});
 
+  const modes = isRecord(payload.evidenceModes) ? payload.evidenceModes : {};
+  const modeAllows = (field: string) => modes[field] === "details";
   const includeLms = hasSkillSnapshot
     ? Object.keys(snapshotLms).length > 0
-    : isPrimary && (selectedFields.includes("lms_evidence") || selectedFields.includes("complete_evidence_package"));
+    : isPrimary && (
+      selectedFields.includes("lms_evidence")
+      || selectedFields.includes("complete_evidence_package")
+      || modeAllows("lms_evidence")
+      || Boolean(isRecord(packageEvidence.lms) && Object.keys(packageEvidence.lms).length > 0)
+    );
   const includeGithub = hasSkillSnapshot
     ? Object.keys(snapshotGithub).length > 0
-    : isPrimary && (selectedFields.includes("github_evidence") || selectedFields.includes("complete_evidence_package"));
+    : isPrimary && (
+      selectedFields.includes("github_evidence")
+      || selectedFields.includes("complete_evidence_package")
+      || modeAllows("github_evidence")
+      || Boolean(isRecord(packageEvidence.github) && Object.keys(packageEvidence.github).length > 0)
+    );
   const includeTask = hasSkillSnapshot
     ? Boolean(skillEvidence.practicalTask)
-    : isPrimary && (selectedFields.includes("practical_task_result") || selectedFields.includes("complete_evidence_package"));
+    : isPrimary && (
+      selectedFields.includes("practical_task_result")
+      || selectedFields.includes("complete_evidence_package")
+      || modeAllows("practical_task_result")
+      || Boolean(skillEvidence.practicalTask || packageEvidence.practicalTask)
+    );
   const includeReviews = hasSkillSnapshot
     ? Boolean(skillEvidence.peerReviews)
-    : isPrimary && (selectedFields.includes("peer_reviews") || selectedFields.includes("complete_evidence_package"));
+    : isPrimary && (
+      selectedFields.includes("peer_reviews")
+      || selectedFields.includes("complete_evidence_package")
+      || modeAllows("peer_reviews")
+      || Boolean(skillEvidence.peerReviews || packageEvidence.peerReviews)
+    );
   const includeTeacher = hasSkillSnapshot
     ? Boolean(skillEvidence.teacherFeedback)
     : isPrimary && (selectedFields.includes("teacher_feedback") || selectedFields.includes("complete_evidence_package"));

@@ -78,6 +78,8 @@ export interface CandidateView {
     practicalTask: "Submitted" | "Auto-Submitted" | "—";
   }[];
   sharedAt?: string | null;
+  /** Count of privateResults with status confirmed across active shares. */
+  confirmedPrivateResults?: number;
 }
 
 export interface CandidateDetailView extends CandidateView {
@@ -271,6 +273,18 @@ function attestationFromShared(credentials: SharedCredentialView[]): CandidateVi
   if (approved === statuses.length) return "Approved";
   if (approved > 0) return "Partial";
   return "Pending";
+}
+
+function countConfirmedPrivateResults(credentials: SharedCredentialView[]): number {
+  return credentials.reduce((total, credential) => {
+    const raw = Array.isArray(credential.disclosedPayload.privateResults)
+      ? credential.disclosedPayload.privateResults
+      : [];
+    return total + raw.filter((item) => {
+      const record = asRecord(item);
+      return record && asText(record.status) === "confirmed";
+    }).length;
+  }, 0);
 }
 
 /** Recruiter directory reads bypass learner RLS — route is auth-gated in middleware. */
@@ -710,6 +724,7 @@ function buildCandidateFromShares(
       if (!latest) return item.createdAt;
       return new Date(item.createdAt).getTime() > new Date(latest).getTime() ? item.createdAt : latest;
     }, null),
+    confirmedPrivateResults: countConfirmedPrivateResults(shares),
   };
 }
 
@@ -820,6 +835,7 @@ export class RecruiterService {
       attestation: attestationFromShared(sharedCredentials),
       institution,
       credentialCount: sharedCredentials.length,
+      confirmedPrivateResults: countConfirmedPrivateResults(sharedCredentials),
       sharedCredentials,
     };
   }

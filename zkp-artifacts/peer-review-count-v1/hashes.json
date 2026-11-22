@@ -1,0 +1,16 @@
+{
+  "wasm": "ce87b005b1ade711e3c34e69a4739abc904a32001c24724c77ada08292d81b74",
+  "zkey": "d6964d22409d97c62267989351a4bc8f474857e1bcae68fe80f7ede041570693",
+  "verificationKey": "85cc0c847b02359727f43d3c5d4c038d3516c29324b244618e38317122d3822c",
+  "setup": "development-only",
+  "circuit": "peer_review_count",
+  "circomVersion": "2.1.9",
+  "circomPlatform": "win32",
+  "snarkjs": "0.7.5",
+  "circomlib": "2.0.5",
+  "publicSignals": [
+    "threshold",
+    "commitment"
+  ],
+  "note": "Single-contributor development setup. Not production-secure."
+}

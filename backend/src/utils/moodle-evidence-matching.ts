@@ -96,7 +96,9 @@ function dedupeByKey<T extends Record<string, unknown>>(
 }
 
 function asText(value: unknown): string {
-  return typeof value === "string" ? value : "";
+  if (typeof value === "string") return value;
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  return "";
 }
 
 function asNullableText(value: unknown): string | null {
@@ -232,6 +234,9 @@ export function aggregateLmsEvidenceForCompetency(
       const metadata = asRecord(row.metadata) ?? {};
       const grade = metadata.grade;
       const gradeMax = metadata.grade_max;
+      const recordStatus = asNullableText(row.status);
+      const submissionStatus = asNullableText(metadata.submission_status)
+        ?? (recordStatus === "verified" || recordStatus === "Graded" ? "Graded" : recordStatus);
       return {
         moodle_assignment_id: metadata.moodle_assignment_id,
         moodle_course_id: metadata.moodle_course_id,
@@ -242,6 +247,9 @@ export function aggregateLmsEvidenceForCompetency(
         feedback: metadata.teacher_feedback,
         submitted_at: metadata.submitted_at,
         graded_at: metadata.graded_at,
+        submission_status: submissionStatus,
+        status: submissionStatus,
+        completion_status: submissionStatus,
         synced_at: row.sync_date,
       };
     });

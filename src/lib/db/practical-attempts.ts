@@ -267,6 +267,54 @@ export async function fetchMcqAttemptHistory(
   }
 }
 
+export async function fetchMcqAttemptHistories(
+  userId: string,
+  skillIds: string[],
+): Promise<Record<string, McqAttemptResultRow[]>> {
+  const grouped: Record<string, McqAttemptResultRow[]> = {};
+  for (const skillId of skillIds) grouped[skillId] = [];
+  if (skillIds.length === 0) return grouped;
+
+  const assign = (rows: McqAttemptResultRow[]) => {
+    for (const row of rows) {
+      if (!row.skill_id || !(row.skill_id in grouped)) continue;
+      grouped[row.skill_id].push(row);
+    }
+    return grouped;
+  };
+
+  try {
+    const { data, error } = await rawTable("mcq_task_attempts")
+      .select("id, skill_id, competency_name, competency_domain, title, status, percentage, correct_count, total_questions, passed, submitted_at, created_at")
+      .eq("learner_user_id", userId)
+      .in("skill_id", skillIds)
+      .order("created_at", { ascending: true });
+
+    if (error) throw error;
+    return assign((data ?? []) as McqAttemptResultRow[]);
+  } catch (error) {
+    if (!isMissingColumnError(error) && !isMissingRelationError(error)) {
+      console.warn("mcq_task_attempts history batch query failed:", error);
+    }
+  }
+
+  try {
+    const { data, error } = await rawTable("mcq_task_attempts")
+      .select("id, skill_id, competency_name, competency_domain, title, status, passed, submitted_at, created_at")
+      .eq("learner_user_id", userId)
+      .in("skill_id", skillIds)
+      .order("created_at", { ascending: true });
+
+    if (error) throw error;
+    return assign((data ?? []) as McqAttemptResultRow[]);
+  } catch (error) {
+    if (!isMissingRelationError(error)) {
+      console.warn("mcq_task_attempts basic history batch query failed:", error);
+    }
+    return grouped;
+  }
+}
+
 export async function fetchLatestMcqAttemptResult(
   userId: string,
   skillId: string,

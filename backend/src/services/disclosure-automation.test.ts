@@ -69,12 +69,7 @@ describe("exact value disclosure", () => {
       assert.equal(text.includes(leak), false, `leaked ${leak}`);
     }
     assert.match(text, /Add parser/);
-    assert.deepEqual(out.exactValueDisclosure, {
-      assessmentMarks: "withheld",
-      githubCommitCount: "withheld",
-      source: "sijil_backend_records",
-      asOf: "2026-10-31T00:00:00.000Z",
-    });
+    assert.equal("exactValueDisclosure" in out, false);
     const ledger = JSON.stringify(buildEvidenceLedger(out, SKILL, FIELDS));
     assert.equal(/\d+%|commits|Grade \d/.test(ledger), false);
     const resume = JSON.stringify(buildAtsResume(out, "tok", SKILL, FIELDS));
@@ -87,6 +82,7 @@ describe("exact value disclosure", () => {
     assert.match(marksText, /"scorePercent":91/);
     assert.match(marksText, /"grade":47/);
     assert.equal(marksText.includes("commit_count"), false);
+    assert.equal("exactValueDisclosure" in marksOnly, false);
 
     const both = redactExactValues(payload(), {
       shareExactAssessmentMarks: true,
@@ -95,13 +91,14 @@ describe("exact value disclosure", () => {
     }, "t");
     assert.match(JSON.stringify(both), /"commit_count":83/);
     assert.match(JSON.stringify(buildAtsResume(both, "tok", SKILL, FIELDS)), /83 commits/);
-    assert.equal((both.exactValueDisclosure as { githubCommitCount: string }).githubCommitCount, "disclosed");
+    assert.equal("exactValueDisclosure" in both, false);
   });
 
   it("ignores a client-forged disclosure marker", () => {
     const forged = { ...payload(), exactValueDisclosure: { assessmentMarks: "disclosed" } };
     const out = redactExactValues(forged, DEFAULT_DISCLOSURE_PREFERENCES, "t");
-    assert.equal((out.exactValueDisclosure as { assessmentMarks: string }).assessmentMarks, "withheld");
+    assert.equal("exactValueDisclosure" in out, false);
+    assert.equal(JSON.stringify(out).includes("83"), false);
   });
 
   it("accepts only the two boolean permissions from learners", () => {
