@@ -17,6 +17,7 @@ type VerifiedGitHubCardProps = {
   onBeforeConnect?: () => void;
   onConnectionChange?: (connected: boolean) => void;
   required?: boolean;
+  compact?: boolean;
 };
 
 export function VerifiedGitHubCard({
@@ -25,6 +26,7 @@ export function VerifiedGitHubCard({
   onBeforeConnect,
   onConnectionChange,
   required = true,
+  compact = false,
 }: VerifiedGitHubCardProps) {
   const [connection, setConnection] = useState<GitHubConnection | null>(null);
   const [loading, setLoading] = useState(true);
@@ -90,14 +92,15 @@ export function VerifiedGitHubCard({
   const profileUrl = connection ? `https://github.com/${connection.github_username}` : null;
 
   return (
-    <div className="rounded-lg border border-border/60 bg-muted/20 p-4 space-y-3">
-      <div className="flex items-start justify-between gap-3">
+    <div className={compact ? "scp-github" : "rounded-lg border border-border/60 bg-muted/20 p-4 space-y-3"}>
+      <div className={compact ? "scp-github-info" : "flex items-start justify-between gap-3"}>
         <div className="flex items-center gap-2">
           <Github className="h-5 w-5" />
           <div>
             <div className="text-sm font-medium">GitHub</div>
             <div className="text-xs text-muted-foreground">
-              {required ? "Required — connect and verify" : "Connect and verify"}
+              {compact ? "Connect your GitHub account through OAuth to verify your work."
+                : required ? "Required — connect and verify" : "Connect and verify"}
             </div>
           </div>
         </div>
@@ -135,7 +138,7 @@ export function VerifiedGitHubCard({
             ) : null}
           </div>
         </div>
-      ) : (
+      ) : compact ? null : (
         <p className="text-xs text-muted-foreground">
           Connect your GitHub account through OAuth. Your profile URL is set automatically — you cannot
           type or edit it manually.

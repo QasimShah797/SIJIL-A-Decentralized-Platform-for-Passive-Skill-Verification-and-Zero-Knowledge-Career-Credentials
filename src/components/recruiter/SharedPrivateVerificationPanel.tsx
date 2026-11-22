@@ -92,7 +92,7 @@ export function SharedPrivateVerificationPanel({
       <div className="rounded-xl border border-[#e2e8f0] bg-white p-4 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p className="text-sm font-semibold text-[#023E8A]">Credential verification</p>
+            <p className="text-sm font-semibold text-sijil-blue">Credential verification</p>
             <p className="mt-0.5 text-xs text-[#64748b]">
               Only learner-shared proofs and fields for {competencyName}. Exact private values stay hidden.
             </p>
@@ -100,7 +100,7 @@ export function SharedPrivateVerificationPanel({
           {verifyHref ? (
             <Link
               to={verifyHref}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-[#023E8A]/20 bg-[#e8eef7] px-3 py-1.5 text-xs font-semibold text-[#023E8A] hover:bg-[#dbe7f7]"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-sijil-blue/20 bg-[hsl(var(--sijil-blue)/0.08)] px-3 py-1.5 text-xs font-semibold text-sijil-blue hover:bg-[hsl(var(--sijil-blue)/0.12)]"
             >
               View Verification <ExternalLink className="h-3.5 w-3.5" />
             </Link>
@@ -142,7 +142,7 @@ export function SharedPrivateVerificationPanel({
             <p className="text-[11px] font-medium uppercase tracking-wide text-[#94a3b8]">Selective disclosure</p>
             <div className="mt-2 flex flex-wrap gap-1.5">
               {selectedFields.map((field) => (
-                <span key={field} className="rounded-full bg-[#F4F7FC] px-2.5 py-1 text-[11px] font-medium text-[#334155]">
+                <span key={field} className="rounded-full bg-[hsl(var(--sijil-blue)/0.04)] px-2.5 py-1 text-[11px] font-medium text-[#334155]">
                   {field.replace(/_/g, " ")}
                 </span>
               ))}
@@ -163,8 +163,8 @@ export function SharedPrivateVerificationPanel({
 
       <div className="rounded-xl border border-[#e2e8f0] bg-white p-4 shadow-sm">
         <div className="flex items-center gap-2">
-          <ShieldCheck className="h-4 w-4 text-[#023E8A]" />
-          <p className="text-sm font-semibold text-[#023E8A]">Private verification results</p>
+          <ShieldCheck className="h-4 w-4 text-sijil-blue" />
+          <p className="text-sm font-semibold text-sijil-blue">Private verification results</p>
         </div>
         <p className="mt-0.5 text-xs text-[#64748b]">
           Labels reflect SIJIL cryptographic checks on learner-shared proofs only.

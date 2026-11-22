@@ -207,7 +207,7 @@ export function ZkpProofCard({
   return (
     <section className="learner-stat-card space-y-3 p-4" aria-labelledby="zkp-proof-heading" aria-busy={phase === "generating" || phase === "verifying"}>
       <div>
-        <h2 id="zkp-proof-heading" className="text-sm font-semibold text-[#023E8A]">Private score proof</h2>
+        <h2 id="zkp-proof-heading" className="text-sm font-semibold text-sijil-blue">Private score proof</h2>
         <p className="mt-1 text-xs text-[#64748b]">
           A zero-knowledge proof lets a recruiter check a minimum score without seeing the score itself.
           It does not, by itself, prove who graded the assessment or that a blockchain record exists.
@@ -234,7 +234,7 @@ export function ZkpProofCard({
       {policyLine ? <p className="text-xs text-[#64748b]">{policyLine}. This is separate from a recruiter's own minimum.</p> : null}
 
       {openRequest ? (
-        <div id="zkp-open-request" className={`rounded-lg border bg-[#f8fbff] p-3 text-xs text-[#334155] ${highlighted ? "border-[#4f46e5] ring-2 ring-[#4f46e5]" : "border-[#c7d7f5]"}`} role="status">
+        <div id="zkp-open-request" className={`rounded-lg border bg-[hsl(var(--sijil-blue)/0.025)] p-3 text-xs text-[#334155] ${highlighted ? "border-[#4f46e5] ring-2 ring-[#4f46e5]" : "border-[hsl(var(--sijil-blue)/0.17)]"}`} role="status">
           <p>
             {mirror ? `${mirror.recruiterLabel} requested verification of ${mirror.skillLabel}. ` : "A recruiter asked you to prove a minimum. "}
             The public threshold is a minimum of {openRequest.threshold}%. The request expires {formatTimestamp(openRequest.expiresAt)}.
@@ -307,7 +307,7 @@ export function ZkpProofCard({
         </div>
       ) : null}
 
-      {phaseLabel ? <p className="text-xs font-medium text-[#023E8A]" role="status" aria-live="polite">{phaseLabel}</p> : null}
+      {phaseLabel ? <p className="text-xs font-medium text-sijil-blue" role="status" aria-live="polite">{phaseLabel}</p> : null}
       {decision ? <p className="text-xs text-[#334155]" role="status">{decision}</p> : null}
       {error ? <p className="text-xs text-red-700" role="alert">{error}</p> : null}
       {history.length > 0 ? (

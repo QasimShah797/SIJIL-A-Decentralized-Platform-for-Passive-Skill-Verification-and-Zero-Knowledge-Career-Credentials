@@ -71,8 +71,8 @@ const LR = ({ children }: { children: React.ReactNode }) => (
   <RequireLearnerRoute>{children}</RequireLearnerRoute>
 );
 
-const LRIncomplete = ({ children }: { children: React.ReactNode }) => (
-  <RequireLearnerRoute requireCompleteProfile={false}>{children}</RequireLearnerRoute>
+const LROnboarding = ({ children }: { children: React.ReactNode }) => (
+  <RequireLearnerRoute requireCompleteProfile={false} requireSsiIdentity={false}>{children}</RequireLearnerRoute>
 );
 
 const App = () => (
@@ -95,11 +95,11 @@ const App = () => (
           <Route path="/review/request/:token" element={<ContextReviewRequest />} />
 
           <Route path="/auth/callback" element={<AuthCallback />} />
-          <Route path="/auth/github/prepare" element={<LRIncomplete><GitHubPrepare /></LRIncomplete>} />
+          <Route path="/auth/github/prepare" element={<LROnboarding><GitHubPrepare /></LROnboarding>} />
           <Route path="/auth/github/callback" element={<GitHubCallback />} />
 
           <Route path="/learner/dashboard" element={<LR><LearnerDashboard /></LR>} />
-          <Route path="/learner/complete-profile" element={<LRIncomplete><CompleteProfile /></LRIncomplete>} />
+          <Route path="/learner/complete-profile" element={<LROnboarding><CompleteProfile /></LROnboarding>} />
           <Route path="/learner/profile" element={<LR><LearnerProfile /></LR>} />
           <Route path="/learner/my-profile" element={<LR><MyProfile /></LR>} />
           <Route path="/learner/integrations" element={<LR><LearnerIntegrations /></LR>} />

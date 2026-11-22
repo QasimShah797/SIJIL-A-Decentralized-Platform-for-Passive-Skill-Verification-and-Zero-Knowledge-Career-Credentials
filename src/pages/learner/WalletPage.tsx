@@ -108,12 +108,11 @@ export default function WalletPage() {
 
   return (
     <LearnerWorkspaceShell variant="dashboard">
-      <WalletRefreshBar onRefresh={() => void loadRecords()} loading={loading} />
+      {walletPanel !== "manage" ? <WalletRefreshBar onRefresh={() => void loadRecords()} loading={loading} /> : null}
       {walletPanel === "hub" ? (
         <WalletDashboardHub
           credentials={credentials.map((credential) => ({ id: credential.id, name: credential.skill || credential.name }))}
           credentialsLoading={credentialsLoading}
-          onViewAchievements={() => setWalletPanel("achievements")}
           onShare={() => setWalletPanel("share")}
           onManage={() => setWalletPanel("manage")}
           onGetProof={() => setWalletPanel("proof")}
@@ -121,8 +120,8 @@ export default function WalletPage() {
         />
       ) : (
         <section className="space-y-4" aria-label="Secure wallet">
-          {walletPanel !== "proof" && walletPanel !== "share" ? (
-            <button type="button" className="text-sm font-semibold text-[#023E8A]" onClick={openWalletHub}>
+          {walletPanel === "achievements" ? (
+            <button type="button" className="text-sm font-semibold text-sijil-blue" onClick={openWalletHub}>
               Back to My Secure Wallet
             </button>
           ) : null}
@@ -134,7 +133,7 @@ export default function WalletPage() {
             />
           ) : null}
           {walletPanel === "share" ? <SignedPresentationCard onBack={openWalletHub} /> : null}
-          {walletPanel === "manage" ? <SsiIdentityCard /> : null}
+          {walletPanel === "manage" ? <SsiIdentityCard onBack={openWalletHub} /> : null}
           {walletPanel === "proof" && user ? (
             <VerifiedProofFlow
               userId={user.id}

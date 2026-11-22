@@ -28,7 +28,7 @@ export function CompetencyJourney({
 
   return (
     <section className="learner-stat-card p-5" aria-labelledby="competency-journey-heading">
-      <h2 id="competency-journey-heading" className="text-base font-semibold text-[#023E8A]">Skill growth journey</h2>
+      <h2 id="competency-journey-heading" className="text-base font-semibold text-sijil-blue">Skill growth journey</h2>
       <p className="mt-1 text-xs text-[#64748b]">
         A new version is recorded only after validation and a separate issued credential. Extra GitHub activity is not treated as a higher skill level.
       </p>
@@ -36,7 +36,7 @@ export function CompetencyJourney({
         <ol className="mt-4 space-y-3">
           {recordedVersions.map((version) => (
             <li key={version.id} className="rounded-lg border border-[#e2e8f0] bg-white p-3 text-sm text-[#334155]">
-              <p className="font-medium text-[#023E8A]">Version {version.versionNumber} · {version.status === "issued" ? "Signed credential" : "Evidence recorded, not a credential"}</p>
+              <p className="font-medium text-sijil-blue">Version {version.versionNumber} · {version.status === "issued" ? "Signed credential" : "Evidence recorded, not a credential"}</p>
               <p className="mt-1">Recorded {formatTimestamp(version.createdAt)}. Signature status and the blockchain anchor are separate. {anchorLabel(version.anchorStatus)}.</p>
               {version.credentialId ? <p className="mt-1">Credential {version.credentialId}</p> : null}
             </li>
@@ -51,7 +51,7 @@ export function CompetencyJourney({
               ? "This competency has one verified credential. Future validated updates will appear here when shared."
               : `${disclosed.length} disclosed credentials are available for this skill.`}
           </p>
-          <ol className="mt-4 space-y-3 border-l border-[#c7d7f5] pl-4">
+          <ol className="mt-4 space-y-3 border-l border-[hsl(var(--sijil-blue)/0.17)] pl-4">
             {disclosed.map((version, index) => (
               <li key={version.id}>
                 <JourneyMilestone version={version} index={index} />
@@ -67,7 +67,7 @@ export function CompetencyJourney({
 function JourneyMilestone({ version, index }: { version: DisclosedCompetencyVersion; index: number }) {
   return (
     <article className="rounded-lg border border-[#e2e8f0] bg-white p-3 text-sm text-[#334155]">
-      <p className="font-medium text-[#023E8A]">Disclosed credential {index + 1}</p>
+      <p className="font-medium text-sijil-blue">Disclosed credential {index + 1}</p>
       <p className="mt-1">Issued {formatTimestamp(version.issuedAt)}{version.issuer ? ` by ${version.issuer}` : ""}.</p>
       <p className="mt-1 text-xs text-[#64748b]">Status: {version.status}. This is the shared credential, not an estimated skill increase.</p>
     </article>

@@ -149,7 +149,9 @@ async function ensureLearnerRole(userId: string): Promise<void> {
 }
 
 /** Create a learner-owned SIJIL account via Supabase Auth + profile bootstrap. */
-export async function signupLearner(input: LearnerSignupInput): Promise<{ userId: string }> {
+export async function signupLearner(input: LearnerSignupInput): Promise<
+  { status: "ready"; userId: string } | { status: "confirmation_required"; email: string }
+> {
   const email = input.email.trim().toLowerCase();
   const { firstName, lastName } = splitFullName(input.fullName);
 
@@ -179,22 +181,26 @@ export async function signupLearner(input: LearnerSignupInput): Promise<{ userId
   }
 
   if (!authData.session) {
-    const { error: signInError } = await supabase.auth.signInWithPassword({
-      email,
-      password: input.password,
-    });
-    if (signInError) {
-      throw new LearnerSignupError(
-        "Account created. Please check your email to confirm your address, then sign in.",
-        "email",
-      );
-    }
+    return { status: "confirmation_required", email };
   }
 
   await ensureLearnerRole(userId);
   await insertLearnerProfileRow(userId, firstName, lastName, email, input.institutionName, input.program);
 
-  return { userId };
+  return { status: "ready", userId };
+}
+
+export async function confirmLearnerSignup(email: string, token: string, fullName: string): Promise<void> {
+  const { data, error } = await supabase.auth.verifyOtp({ email, token, type: "email" });
+  if (error || !data.session || !data.user) {
+    throw new LearnerSignupError("Could not verify that code. Check the latest email or request a new code.");
+  }
+  await provisionOAuthLearner(data.user.id, fullName, email);
+}
+
+export async function resendLearnerSignupConfirmation(email: string): Promise<void> {
+  const { error } = await supabase.auth.resend({ type: "signup", email });
+  if (error) throw new LearnerSignupError("Could not resend the email. Wait a moment and try again.");
 }
 
 /** Bootstrap learner role + profile for a Google/GitHub OAuth user. */

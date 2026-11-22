@@ -1081,85 +1081,80 @@ export default function PracticalTask() {
 
   return (
     <LearnerWorkspaceShell variant="dashboard">
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_300px]">
-        <div className="min-w-0">
-          <PracticalTasksHero
-            hasNextTask={hasNextTask}
-            onStartNext={startNextTask}
-          />
+      <div className="pt-page">
+        <PracticalTasksHero hasNextTask={hasNextTask} onStartNext={startNextTask} />
+        <div className="pt-page-grid">
+          <div className="min-w-0">
+            <div className="mb-4 flex flex-col gap-3">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <h2 className="text-base font-semibold text-[#0f172a]">Your tasks</h2>
+                <TaskFilterTabs value={taskFilter} onChange={setTaskFilter} counts={filterCounts} />
+              </div>
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#94a3b8]" />
+                <Input
+                  value={skillQuery}
+                  onChange={(event) => setSkillQuery(event.target.value)}
+                  placeholder="Search tasks"
+                  className="h-10 rounded-xl bg-[#f8fafc] pl-9"
+                  aria-label="Search practical tasks"
+                />
+              </div>
+            </div>
 
-          <div className="mb-4 flex flex-col gap-3">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <h2 className="text-base font-semibold text-[#0f172a]">Practical Tasks</h2>
-              <TaskFilterTabs value={taskFilter} onChange={setTaskFilter} counts={filterCounts} />
-            </div>
-            <div className="relative max-w-xl">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#94a3b8]" />
-              <Input
-                value={skillQuery}
-                onChange={(event) => setSkillQuery(event.target.value)}
-                placeholder="Search by competency, domain, or title..."
-                className="h-10 rounded-xl bg-[#f8fafc] pl-9"
-                aria-label="Search practical tasks"
-              />
-            </div>
+            {skills.length === 0 ? (
+              <EmptyTasksPanel onGoProfile={() => navigate("/learner/profile")} />
+            ) : filteredSkills.length === 0 ? (
+              <div className="learner-stat-card px-6 py-10 text-center">
+                <p className="font-semibold text-[#0f172a]">No tasks match this view</p>
+                <p className="mt-1 text-sm text-[#64748b]">
+                  Try another filter or clear the search.
+                </p>
+                <Button
+                  variant="outline"
+                  className="mt-4 rounded-xl"
+                  onClick={() => {
+                    setSkillQuery("");
+                    setTaskFilter("all");
+                  }}
+                >
+                  Show all tasks
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {filteredSkills.map((s, index) => {
+                  const a = getAttempt(s.id);
+                  const taskState = getTaskState(s.id);
+                  const locked = isAttemptLocked(s, a);
+                  const display = getSkillMcqDisplay(s.id, attemptsMap, mcqResultsMap);
+                  return (
+                    <PracticalTaskCard
+                      key={s.id}
+                      skill={s}
+                      index={index}
+                      taskState={taskState}
+                      display={display}
+                      history={historyMap[s.id] ?? []}
+                      locked={locked}
+                      lastDays={daysSince(s.lastRelatedActivityAt)}
+                      onStart={() => void openSkill(s, "start")}
+                      onResume={() => void openSkill(s, "start")}
+                      onView={() => void openSkill(s, "view")}
+                      onRetake={() => void openSkill(s, "start")}
+                    />
+                  );
+                })}
+              </div>
+            )}
           </div>
 
-          {skills.length === 0 ? (
-            <EmptyTasksPanel onGoProfile={() => navigate("/learner/profile")} />
-          ) : filteredSkills.length === 0 ? (
-            <div className="learner-stat-card px-6 py-10 text-center">
-              <p className="font-semibold text-[#0f172a]">No tasks match this view</p>
-              <p className="mt-1 text-sm text-[#64748b]">
-                Try another filter or clear the search.
-              </p>
-              <Button
-                variant="outline"
-                className="mt-4 rounded-xl"
-                onClick={() => {
-                  setSkillQuery("");
-                  setTaskFilter("all");
-                }}
-              >
-                Show all tasks
-              </Button>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {filteredSkills.map((s, index) => {
-                const a = getAttempt(s.id);
-                const taskState = getTaskState(s.id);
-                const locked = isAttemptLocked(s, a);
-                const display = getSkillMcqDisplay(s.id, attemptsMap, mcqResultsMap);
-                return (
-                  <PracticalTaskCard
-                    key={s.id}
-                    skill={s}
-                    index={index}
-                    taskState={taskState}
-                    display={display}
-                    history={historyMap[s.id] ?? []}
-                    locked={locked}
-                    lastDays={daysSince(s.lastRelatedActivityAt)}
-                    onStart={() => void openSkill(s, "start")}
-                    onResume={() => void openSkill(s, "start")}
-                    onView={() => void openSkill(s, "view")}
-                    onRetake={() => void openSkill(s, "start")}
-                  />
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        <aside className="space-y-4 xl:sticky xl:top-6 xl:self-start">
-          <div id="pt-attempt-timeline">
+          <aside id="pt-attempt-timeline" className="min-w-0 self-start" aria-label="Attempt timeline">
             <AttemptTimelinePanel entries={timelineEntries} />
-          </div>
-        </aside>
+          </aside>
+        </div>
+        <PracticalTasksFooter />
       </div>
-
-      <PracticalTasksFooter />
 
       {examActive && activeSkill && task && attempt ? (
         <AssessmentWorkspace
@@ -1197,7 +1192,7 @@ export default function PracticalTask() {
               <>
                 <DialogHeader className="shrink-0 pr-8">
                   <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#eff6ff] text-sm font-bold text-[#023E8A]">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[hsl(var(--sijil-blue)/0.04)] text-sm font-bold text-sijil-blue">
                       {activeSkill.name.slice(0, 2).toUpperCase()}
                     </div>
                     <div>
@@ -1220,7 +1215,7 @@ export default function PracticalTask() {
                   />
                   <div className="rounded-xl border border-[#e2e8f0] bg-white p-4">
                     <p className="mb-3 flex items-center gap-2 text-sm font-semibold text-[#0f172a]">
-                      <ListOrdered className="h-4 w-4 text-[#023E8A]" aria-hidden />
+                      <ListOrdered className="h-4 w-4 text-sijil-blue" aria-hidden />
                       Attempt History
                     </p>
                     <AttemptMarksTimeline rows={historyMap[activeSkill.id] ?? attemptHistory} compact />
@@ -1229,7 +1224,7 @@ export default function PracticalTask() {
                 <DialogFooter className="shrink-0 gap-2">
                   <Button variant="outline" className="rounded-xl" onClick={closePanel}>Close</Button>
                   <Button
-                    className="rounded-xl bg-[#023E8A] hover:bg-[#012A5C]"
+                    className="rounded-xl bg-sijil-blue hover:bg-sijil-blue"
                     onClick={() => {
                       setGenerateError(null);
                       setShowResultModal(false);
@@ -1245,7 +1240,7 @@ export default function PracticalTask() {
               <>
                 <DialogHeader className="shrink-0 pr-8">
                   <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#eff6ff] text-sm font-bold text-[#023E8A]">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[hsl(var(--sijil-blue)/0.04)] text-sm font-bold text-sijil-blue">
                       {activeSkill.name.slice(0, 2).toUpperCase()}
                     </div>
                     <div>
@@ -1293,7 +1288,7 @@ export default function PracticalTask() {
                     Cancel
                   </Button>
                   <Button
-                    className="rounded-xl bg-[#023E8A] hover:bg-[#012A5C]"
+                    className="rounded-xl bg-sijil-blue hover:bg-sijil-blue"
                     onClick={() => void startMcqAttempt()}
                     disabled={generatingMcqs}
                   >
@@ -1371,14 +1366,14 @@ export default function PracticalTask() {
                     </div>
                   ) : isSubmitted ? (
                     <div className="space-y-3 text-sm">
-                      <p className="font-medium text-[#023E8A]">Attempt timeline</p>
+                      <p className="font-medium text-sijil-blue">Attempt timeline</p>
                       <AttemptMarksTimeline rows={historyMap[activeSkill.id] ?? attemptHistory} />
                     </div>
                   ) : currentQuestion ? (
                     <div className="space-y-4">
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className="rounded-full bg-[#eff6ff] px-2.5 py-1 text-[10px] font-semibold text-[#023E8A]">
+                          <span className="rounded-full bg-[hsl(var(--sijil-blue)/0.04)] px-2.5 py-1 text-[10px] font-semibold text-sijil-blue">
                             Question {currentQuestionIndex + 1} of {task.questions.length}
                           </span>
                           <span className="rounded-full bg-[#f1f5f9] px-2.5 py-1 text-[10px] font-medium capitalize text-[#64748b]">
@@ -1443,7 +1438,7 @@ export default function PracticalTask() {
                           Back to question
                         </Button>
                         <Button
-                          className="rounded-xl bg-[#023E8A] hover:bg-[#012A5C]"
+                          className="rounded-xl bg-sijil-blue hover:bg-sijil-blue"
                           onClick={() => void submitMcqAttempt(answers)}
                           disabled={evaluating}
                         >
@@ -1469,7 +1464,7 @@ export default function PracticalTask() {
                         </Button>
                         {isLastQuestion ? (
                           <Button
-                            className="rounded-xl bg-[#023E8A] hover:bg-[#012A5C]"
+                            className="rounded-xl bg-sijil-blue hover:bg-sijil-blue"
                             onClick={openReview}
                             disabled={evaluating}
                           >
@@ -1478,7 +1473,7 @@ export default function PracticalTask() {
                           </Button>
                         ) : (
                           <Button
-                            className="rounded-xl bg-[#023E8A] hover:bg-[#012A5C]"
+                            className="rounded-xl bg-sijil-blue hover:bg-sijil-blue"
                             onClick={goToNextQuestion}
                             disabled={evaluating || !currentAnswerSelected}
                           >
@@ -1498,7 +1493,7 @@ export default function PracticalTask() {
             ) : (
               <div className="flex flex-1 flex-col items-center justify-center py-16 gap-3 min-h-0">
                 <p className="text-sm text-center px-4 text-[#64748b]">Attempt data could not be loaded.</p>
-                <Button className="rounded-xl bg-[#023E8A] hover:bg-[#012A5C]" onClick={() => void openSkill(activeSkill)}>
+                <Button className="rounded-xl bg-sijil-blue hover:bg-sijil-blue" onClick={() => void openSkill(activeSkill)}>
                   <RefreshCcw className="h-4 w-4 mr-1.5" />
                   Reload
                 </Button>
@@ -1528,7 +1523,7 @@ export default function PracticalTask() {
             <AttemptMarksTimeline rows={historyMap[activeSkill.id] ?? attemptHistory} />
           ) : null}
           <DialogFooter>
-            <Button className="rounded-xl bg-[#023E8A] hover:bg-[#012A5C]" onClick={() => setShowResultModal(false)}>
+            <Button className="rounded-xl bg-sijil-blue hover:bg-sijil-blue" onClick={() => setShowResultModal(false)}>
               Close
             </Button>
           </DialogFooter>

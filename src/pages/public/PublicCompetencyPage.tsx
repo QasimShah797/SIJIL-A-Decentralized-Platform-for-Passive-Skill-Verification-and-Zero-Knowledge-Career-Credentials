@@ -171,7 +171,7 @@ export default function PublicCompetencyPage() {
             ) : null}
             {ZKP_UI_ENABLED && payload.privateResults && payload.privateResults.length > 0 ? (
               <div className="rounded-xl border border-[#e2e8f0] bg-white p-4 shadow-sm">
-                <p className="text-sm font-semibold text-[#023E8A]">Private verification results</p>
+                <p className="text-sm font-semibold text-sijil-blue">Private verification results</p>
                 <p className="mt-0.5 text-xs text-[#64748b]">
                   Exact scores, activity counts, and review details stay hidden. Labels reflect SIJIL cryptographic checks only.
                 </p>

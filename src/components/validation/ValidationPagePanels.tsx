@@ -20,7 +20,7 @@ import { cn } from "@/lib/utils";
 import { PIPELINE_STAGES, pipelineStageIndex, VERIFICATION_STAGE_TOOLTIP } from "@/lib/competency-pipeline";
 import type { ValidationSummary } from "@/lib/db/validation";
 
-const SKILL_COLORS = ["#2563eb", "#f59e0b", "#10b981", "#ef4444", "#06b6d4", "#8b5cf6"];
+const SKILL_COLORS = ["hsl(var(--sijil-blue))", "#f59e0b", "#10b981", "#ef4444", "#06b6d4", "#8b5cf6"];
 
 function skillInitials(name: string): string {
   const parts = name.trim().split(/\s+/);
@@ -47,7 +47,7 @@ function stageTone(stage: string): "verified" | "progress" | "attention" | "neut
 
 const STAGE_BADGE: Record<ReturnType<typeof stageTone>, string> = {
   verified: "bg-[#ecfdf5] text-[#059669] border-[#bbf7d0]",
-  progress: "bg-[#eff6ff] text-[#023E8A] border-[#bfdbfe]",
+  progress: "bg-[hsl(var(--sijil-blue)/0.04)] text-sijil-blue border-[hsl(var(--sijil-blue)/0.17)]",
   attention: "bg-[#fef9c3] text-[#CA8A04] border-[#fde68a]",
   neutral: "bg-[#f1f5f9] text-[#64748b] border-[#e2e8f0]",
 };
@@ -64,7 +64,7 @@ export function ValidationListHero({ competencyCount }: { competencyCount: numbe
   return (
     <section className="cp-hero mb-6 overflow-hidden rounded-2xl px-5 py-6 sm:px-7">
       <div className="relative z-[1] flex items-center gap-3">
-        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[#3b82f6] text-white shadow-lg shadow-blue-900/30">
+        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-sijil-blue text-white shadow-lg shadow-[hsl(var(--sijil-blue)/0.3)]">
           <BarChart3 className="h-6 w-6" aria-hidden />
         </div>
         <h1 className="text-2xl font-bold tracking-tight text-white sm:text-[1.75rem]">
@@ -91,7 +91,7 @@ export function ValidationDetailHero({
   return (
     <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
       <div className="min-w-0">
-        <p className="inline-flex items-center gap-1.5 rounded-full border border-[#bfdbfe] bg-[#eff6ff] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[#023E8A]">
+        <p className="inline-flex items-center gap-1.5 rounded-full border border-[hsl(var(--sijil-blue)/0.17)] bg-[hsl(var(--sijil-blue)/0.04)] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-sijil-blue">
           <ShieldCheck className="h-3 w-3" aria-hidden />
           Competency validation
         </p>
@@ -113,7 +113,7 @@ export function ValidationDetailHero({
               Open wallet record
               <ArrowRight className="ml-1.5 h-4 w-4" />
             </Button>
-            <Button className="rounded-xl bg-[#023E8A] hover:bg-[#012A5C]" onClick={onIssueCredential}>
+            <Button className="rounded-xl bg-sijil-blue hover:bg-sijil-blue" onClick={onIssueCredential}>
               <ShieldCheck className="mr-1.5 h-4 w-4" />
               Get verified proof
             </Button>
@@ -140,8 +140,8 @@ export function ValidationStatsGrid({
       label: "Declared Skills",
       value: String(total),
       icon: Layers,
-      iconClass: "bg-[#dbeafe] text-[#2563eb]",
-      cardClass: "bg-[#eff6ff]",
+      iconClass: "bg-[hsl(var(--sijil-blue)/0.1)] text-sijil-blue",
+      cardClass: "bg-[hsl(var(--sijil-blue)/0.04)]",
     },
     {
       label: "Ready for Credential",
@@ -200,7 +200,7 @@ function progressBadge(stage: string): { label: string; className: string; icon:
   if (stage === "declared") {
     return {
       label: "Declared Skill",
-      className: "bg-[#dbeafe] text-[#1d4ed8]",
+      className: "bg-[hsl(var(--sijil-blue)/0.1)] text-sijil-blue",
       icon: Layers,
     };
   }
@@ -214,13 +214,13 @@ function progressBadge(stage: string): { label: string; className: string; icon:
   if (stage === "evidence_linked") {
     return {
       label: "Evidence",
-      className: "bg-[#e0f2fe] text-[#0369a1]",
+      className: "bg-[hsl(var(--sijil-blue)/0.08)] text-sijil-blue",
       icon: FileText,
     };
   }
   if (stage === "peer_review" || stage === "verification_pending" || stage === "institution_attestation_pending") {
     return {
-      label: "Peer Review",
+      label: "Verification",
       className: "bg-[#ede9fe] text-[#6d28d9]",
       icon: Layers,
     };
@@ -241,15 +241,16 @@ export function ValidationTrailCard({
   onOpen?: () => void;
 }) {
   const stageIdx = pipelineStageIndex(summary.pipelineStage);
-  const progress = Math.round(((stageIdx + 1) / PIPELINE_STAGES.length) * 100);
+  const mainStages = PIPELINE_STAGES.filter(({ key }) => key !== "verification");
+  const completedStages = [true, stageIdx >= 1, summary.assessmentCompleted === true, stageIdx >= 4];
+  // Keep the reference's 60% after Assessment. Wallet accounts for the remaining 40%.
+  const progress = completedStages.reduce((total, complete, index) => total + (complete ? (index === 3 ? 40 : 20) : 0), 0);
   const badge = progressBadge(summary.pipelineStage);
   const BadgeIcon = badge.icon;
-  const lineProgress = stageIdx <= 0
-    ? 0
-    : (stageIdx / (PIPELINE_STAGES.length - 1)) * 100;
+  const peerComplete = summary.hasEligiblePeerReview === true;
 
   return (
-    <div className="rounded-2xl border border-[#eef2f7] bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
+    <div className="rounded-2xl border border-[hsl(var(--sijil-blue)/0.07)] bg-white p-5 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
       <div className="flex items-start gap-3">
         <div
           className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-sm font-bold text-white shadow-sm"
@@ -274,7 +275,7 @@ export function ValidationTrailCard({
             </div>
 
             <div className="flex shrink-0 items-center gap-2">
-              <span className="rounded-full bg-[#eff6ff] px-3 py-1 text-xs font-bold tabular-nums text-[#1d4ed8]">
+              <span className="rounded-full bg-[hsl(var(--sijil-blue)/0.04)] px-3 py-1 text-xs font-bold tabular-nums text-sijil-blue">
                 {progress}%
               </span>
               <span
@@ -287,19 +288,22 @@ export function ValidationTrailCard({
           </div>
 
           <div className="cp-stepper mt-6">
-            <div className="cp-stepper-track" aria-hidden>
-              <div className="cp-stepper-track-fill" style={{ width: `${lineProgress}%` }} />
-            </div>
-            <ol className="relative z-[1] grid grid-cols-5">
-              {PIPELINE_STAGES.map((stage, i) => {
-                const reached = i <= stageIdx;
+            <svg className="cp-stepper-lines" viewBox="0 0 100 68" preserveAspectRatio="none" aria-hidden="true">
+              {[[10, 30], [30, 50], [50, 90]].map(([from, to], i) => (
+                <path key={from} className={cn("cp-stepper-line", completedStages[i] && completedStages[i + 1] && "cp-stepper-line--complete")} d={`M ${from} 16 H ${to}`} />
+              ))}
+              <path className={cn("cp-peer-branch", peerComplete && "cp-stepper-line--complete")} d="M 50 16 C 54 55 63 68 70 68 M 70 68 C 77 68 86 55 90 16" />
+            </svg>
+            <ol className="cp-main-stages relative z-[1] grid grid-cols-5">
+              {mainStages.map((stage, i) => {
+                const reached = completedStages[i];
                 return (
-                  <li key={stage.key} className="flex flex-col items-center gap-2.5 text-center">
+                  <li key={stage.key} className={cn("flex flex-col items-center gap-2 text-center", i === 3 && "col-start-5")}>
                     <span
                       className={cn(
                         "flex h-8 w-8 items-center justify-center rounded-full border-[2.5px]",
                         reached
-                          ? "border-[#1d4ed8] bg-[#1d4ed8] text-white"
+                          ? "border-sijil-blue bg-sijil-blue text-white"
                           : "border-[#cbd5e1] bg-white text-transparent",
                       )}
                       aria-label={`${stage.label}${reached ? " complete" : ""}`}
@@ -318,6 +322,12 @@ export function ValidationTrailCard({
                 );
               })}
             </ol>
+            <div className={cn("cp-peer-node", peerComplete && "cp-peer-node--complete")}>
+              <span className="cp-peer-circle" aria-label={peerComplete ? "Peer Review complete" : "Peer Review optional"}>
+                {peerComplete ? <Check className="h-4 w-4" strokeWidth={3} aria-hidden /> : null}
+              </span>
+              <span>Peer Review<br />(Optional)</span>
+            </div>
           </div>
         </div>
       </div>
@@ -343,7 +353,7 @@ export function ValidationSkillOverviewCard({ summary }: { summary: ValidationSu
         </div>
         <div>
           <p className="text-[10px] font-semibold uppercase tracking-wide text-[#64748b]">Supporting records</p>
-          <p className="mt-2 text-sm font-medium text-[#023E8A]">{summary.supportingRecords}</p>
+          <p className="mt-2 text-sm font-medium text-sijil-blue">{summary.supportingRecords}</p>
         </div>
         <div>
           <p className="text-[10px] font-semibold uppercase tracking-wide text-[#64748b]">Next step</p>
@@ -362,7 +372,7 @@ export function ValidationSkillOverviewCard({ summary }: { summary: ValidationSu
 export function ValidationPipelineCard({ stages }: { stages: StepperStage[] }) {
   return (
     <div className="learner-stat-card mb-6 p-5">
-      <p className="text-sm font-semibold text-[#023E8A]">Pipeline progress</p>
+      <p className="text-sm font-semibold text-sijil-blue">Pipeline progress</p>
       <div className="vt-pipeline-stepper mt-4">
         <PipelineStepper stages={stages} />
       </div>
@@ -390,7 +400,7 @@ export function ValidationDetailStats({
 
   return (
     <div className="learner-stat-card mb-6 p-4">
-      <p className="mb-3 text-sm font-semibold text-[#023E8A]">Trail summary</p>
+      <p className="mb-3 text-sm font-semibold text-sijil-blue">Trail summary</p>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {items.map((item) => (
           <div key={item.label}>
@@ -406,7 +416,7 @@ export function ValidationDetailStats({
 export function ValidationSourcesPanel({ sources }: { sources: string[] }) {
   return (
     <div className="learner-stat-card p-4">
-      <p className="text-sm font-semibold text-[#023E8A]">Contributing sources</p>
+      <p className="text-sm font-semibold text-sijil-blue">Contributing sources</p>
       {sources.length === 0 ? (
         <p className="mt-3 text-xs text-[#94a3b8]">No linked sources yet.</p>
       ) : (
@@ -428,7 +438,7 @@ export function ValidationSourcesPanel({ sources }: { sources: string[] }) {
 export function ValidationNextStepPanel({ nextStep }: { nextStep: string }) {
   return (
     <div className="learner-stat-card p-4">
-      <p className="text-sm font-semibold text-[#023E8A]">Recommended action</p>
+      <p className="text-sm font-semibold text-sijil-blue">Recommended action</p>
       <p className="mt-2 text-sm leading-relaxed text-[#334155]">{nextStep}</p>
     </div>
   );
@@ -444,7 +454,7 @@ export function ValidationEvidenceTable({
   return (
     <div className="learner-stat-card mb-6 overflow-hidden">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#e2e8f0] px-5 py-4">
-        <p className="text-sm font-semibold text-[#023E8A]">Evidence records</p>
+        <p className="text-sm font-semibold text-sijil-blue">Evidence records</p>
         <Button variant="outline" size="sm" className="rounded-xl border-[#e2e8f0]" onClick={onSyncEvidence}>
           <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
           Sync evidence
@@ -457,7 +467,7 @@ export function ValidationEvidenceTable({
           <p className="mt-1 max-w-sm text-sm text-[#64748b]">
             Connect GitHub or LMS and sync your portfolio to populate supporting records.
           </p>
-          <Button className="mt-4 rounded-xl bg-[#023E8A] hover:bg-[#012A5C]" onClick={onSyncEvidence}>
+          <Button className="mt-4 rounded-xl bg-sijil-blue hover:bg-sijil-blue" onClick={onSyncEvidence}>
             Open integrations
           </Button>
         </div>
@@ -507,7 +517,7 @@ export function ValidationLinkedReposPanel({ repos }: { repos: LinkedRepo[] }) {
   return (
     <div className="learner-stat-card overflow-hidden">
       <div className="border-b border-[#e2e8f0] px-5 py-4">
-        <p className="flex items-center gap-2 text-sm font-semibold text-[#023E8A]">
+        <p className="flex items-center gap-2 text-sm font-semibold text-sijil-blue">
           <Github className="h-4 w-4" />
           Linked repositories
         </p>
@@ -546,7 +556,7 @@ export function ValidationEmptyState({ onGoProfile }: { onGoProfile: () => void 
       <p className="mt-1 max-w-sm text-sm text-[#64748b]">
         Declare a skill on your profile first to track its verification pipeline.
       </p>
-      <Button className="mt-4 rounded-xl bg-[#023E8A] hover:bg-[#012A5C]" onClick={onGoProfile}>
+      <Button className="mt-4 rounded-xl bg-sijil-blue hover:bg-sijil-blue" onClick={onGoProfile}>
         Go to profile
       </Button>
     </div>

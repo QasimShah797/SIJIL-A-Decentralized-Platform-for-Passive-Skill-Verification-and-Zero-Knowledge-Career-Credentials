@@ -2,8 +2,8 @@
 
 .cp-hero {
   position: relative;
-  background: linear-gradient(105deg, #0b2f6b 0%, #123f8a 42%, #0f766e 100%);
-  box-shadow: 0 14px 30px rgba(11, 47, 107, 0.22);
+  background: linear-gradient(105deg, hsl(var(--sijil-blue)) 0%, hsl(var(--sijil-blue)) 42%, #0f766e 100%);
+  box-shadow: 0 14px 30px hsl(var(--sijil-blue)/0.22);
 }
 
 .cp-hero::after {
@@ -12,31 +12,77 @@
   inset: 0;
   pointer-events: none;
   background:
-    radial-gradient(ellipse 55% 140% at 88% 20%, rgba(56, 189, 248, 0.28), transparent 58%),
-    radial-gradient(ellipse 40% 100% at 100% 100%, rgba(14, 165, 233, 0.18), transparent 55%);
+    radial-gradient(ellipse 55% 140% at 88% 20%, hsl(var(--sijil-blue)/0.28), transparent 58%),
+    radial-gradient(ellipse 40% 100% at 100% 100%, hsl(var(--sijil-blue)/0.18), transparent 55%);
   opacity: 0.95;
 }
 
 .cp-stepper {
   position: relative;
-  padding-top: 0.15rem;
+  min-height: 7.5rem;
 }
 
-.cp-stepper-track {
+.cp-stepper-lines {
   position: absolute;
-  top: 1rem; /* center of 32px node */
-  left: 10%;
-  right: 10%;
-  height: 3px;
-  border-radius: 999px;
-  background: #e2e8f0;
+  inset: 0 0 auto;
+  width: 100%;
+  height: 68px;
+  overflow: visible;
 }
 
-.cp-stepper-track-fill {
-  height: 100%;
-  border-radius: inherit;
-  background: #1d4ed8;
-  transition: width 280ms ease;
+.cp-stepper-line,
+.cp-peer-branch {
+  fill: none;
+  stroke: #cbd5e1;
+  stroke-width: 3px;
+  vector-effect: non-scaling-stroke;
+}
+
+.cp-peer-branch {
+  stroke: #94a3b8;
+  stroke-width: 2px;
+  stroke-dasharray: 7 5;
+}
+
+.cp-stepper-line--complete { stroke: hsl(var(--sijil-blue)); }
+.cp-peer-node {
+  position: absolute;
+  z-index: 1;
+  top: 52px;
+  left: 70%;
+  width: 20%;
+  transform: translateX(-50%);
+  display: grid;
+  justify-items: center;
+  gap: .35rem;
+  color: #52627c;
+  text-align: center;
+  font-size: .7rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.cp-peer-circle {
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border: 2px solid #94a3b8;
+  border-radius: 50%;
+  background: white;
+}
+
+.cp-peer-node--complete .cp-peer-circle {
+  border-color: hsl(var(--sijil-blue));
+  background: hsl(var(--sijil-blue));
+  color: white;
+}
+
+@media (max-width: 480px) {
+  .cp-stepper {
+    margin-left: -3.75rem;
+    min-height: 8rem;
+  }
 }
 
 .vt-trail-card {
@@ -44,27 +90,27 @@
 }
 
 .vt-pipeline-stepper [class*="border-primary"] {
-  border-color: #1d4ed8 !important;
+  border-color: hsl(var(--sijil-blue)) !important;
 }
 
 .vt-pipeline-stepper [class*="bg-primary"] {
-  background-color: #eff6ff !important;
+  background-color: hsl(var(--sijil-blue)/0.04) !important;
 }
 
 .vt-pipeline-stepper [class*="text-primary"] {
-  color: #1d4ed8 !important;
+  color: hsl(var(--sijil-blue)) !important;
 }
 
 .vt-pipeline-stepper [class*="border-success"] {
-  border-color: #1d4ed8 !important;
+  border-color: hsl(var(--sijil-blue)) !important;
 }
 
 .vt-pipeline-stepper [class*="bg-success"] {
-  background-color: #1d4ed8 !important;
+  background-color: hsl(var(--sijil-blue)) !important;
 }
 
 .vt-pipeline-stepper [class*="bg-success/60"] {
-  background-color: rgba(29, 78, 216, 0.55) !important;
+  background-color: hsl(var(--sijil-blue)/0.55) !important;
 }
 
 .vt-evidence-table tbody tr:last-child {

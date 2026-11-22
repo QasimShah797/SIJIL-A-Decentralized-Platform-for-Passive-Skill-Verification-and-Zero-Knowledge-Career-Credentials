@@ -38,7 +38,7 @@ export default function LearnerInterviews() {
   return (
     <LearnerWorkspaceShell variant="dashboard">
       <div className="mb-4">
-        <h1 className="text-xl font-semibold text-[#023E8A]">Interview invitations</h1>
+        <h1 className="text-xl font-semibold text-sijil-blue">Interview invitations</h1>
         <p className="mt-1 text-sm text-[#64748b]">
           Invitations sent to your verified SIJIL account stay here, including ones whose email did not go out.
         </p>
@@ -65,7 +65,7 @@ export default function LearnerInterviews() {
               <article key={interview.id} className="learner-stat-card p-5">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
-                    <p className="text-base font-semibold text-[#023E8A]">
+                    <p className="text-base font-semibold text-sijil-blue">
                       {interview.recruiterName}
                       {interview.recruiterCompany ? ` · ${interview.recruiterCompany}` : ""}
                     </p>
@@ -78,7 +78,7 @@ export default function LearnerInterviews() {
                   </StatusBadge>
                 </div>
                 <p className="mt-3 flex items-center gap-2 text-sm text-[#334155]">
-                  <ModeIcon className="h-4 w-4 text-[#023E8A]" />
+                  <ModeIcon className="h-4 w-4 text-sijil-blue" />
                   {INTERVIEW_MODE_LABELS[interview.mode]} · {interview.locationOrLink}
                 </p>
                 {interview.notes ? (

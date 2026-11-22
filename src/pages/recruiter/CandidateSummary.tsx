@@ -153,13 +153,13 @@ export default function CandidateSummary() {
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
             <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#059669]">Candidate review</p>
-            <h1 className="mt-2 text-2xl font-bold capitalize tracking-tight text-[#023E8A] sm:text-[1.75rem]">{candidate.name}</h1>
+            <h1 className="mt-2 text-2xl font-bold capitalize tracking-tight text-sijil-blue sm:text-[1.75rem]">{candidate.name}</h1>
             <p className="mt-1 inline-flex items-center gap-1.5 text-sm text-[#64748b]">
               <Lock className="h-3.5 w-3.5 shrink-0" aria-hidden />
               Only disclosed fields are shown. The wallet stays private.
             </p>
           </div>
-          <Button className="shrink-0 rounded-xl bg-[#023E8A] hover:bg-[#012A5C]" onClick={() => setScheduleOpen(true)}>
+          <Button className="shrink-0 rounded-xl bg-sijil-blue hover:bg-sijil-blue" onClick={() => setScheduleOpen(true)}>
             <CalendarClock className="mr-1.5 h-4 w-4" />
             Schedule Interview
           </Button>
@@ -171,11 +171,11 @@ export default function CandidateSummary() {
               <dl className={cn("grid gap-4", identityItems.length > 1 ? "sm:grid-cols-2" : "", identityItems.length > 2 ? "xl:grid-cols-3" : "")}>
                 {identityItems.map((item) => (
                   <div key={item.label} className="learner-stat-card p-5">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#e8eef7] text-[#023E8A]">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[hsl(var(--sijil-blue)/0.08)] text-sijil-blue">
                       <item.icon className="h-5 w-5" />
                     </div>
                     <dt className="mt-4 text-xs font-medium text-[#64748b]">{item.label}</dt>
-                    <dd className="mt-0.5 text-sm font-semibold text-[#023E8A]">{item.value}</dd>
+                    <dd className="mt-0.5 text-sm font-semibold text-sijil-blue">{item.value}</dd>
                   </div>
                 ))}
               </dl>
@@ -195,7 +195,7 @@ export default function CandidateSummary() {
                   aria-selected={profileTab === id}
                   className={cn(
                     "rounded-full border px-3 py-1.5 text-xs font-medium",
-                    profileTab === id ? "border-[#023E8A] bg-[#023E8A] text-white" : "border-[#e2e8f0] bg-white text-[#334155]",
+                    profileTab === id ? "border-sijil-blue bg-sijil-blue text-white" : "border-[#e2e8f0] bg-white text-[#334155]",
                   )}
                   onClick={() => setProfileTab(id)}
                 >
@@ -220,14 +220,14 @@ export default function CandidateSummary() {
 
             {profileTab === "overview" ? (
               <section className="learner-stat-card p-5">
-                <h2 className="text-base font-semibold text-[#023E8A]">Shared skill summary</h2>
+                <h2 className="text-base font-semibold text-sijil-blue">Shared skill summary</h2>
                 {skillCards.length === 0 ? (
                   <p className="mt-2 text-sm text-[#64748b]">No competencies are currently shared.</p>
                 ) : (
                   <ul className="mt-3 space-y-2">
                     {skillCards.map((card) => (
                       <li key={card.id} className="text-sm text-[#334155]">
-                        <span className="font-medium text-[#023E8A]">{displayRecruiterSkillName(card.name)}</span>
+                        <span className="font-medium text-sijil-blue">{displayRecruiterSkillName(card.name)}</span>
                         {card.domain ? ` · ${card.domain}` : ""}
                       </li>
                     ))}
@@ -238,7 +238,7 @@ export default function CandidateSummary() {
 
             {profileTab === "competencies" || profileTab === "verification" ? (
             <section className="learner-stat-card p-5">
-              <h2 className="text-base font-semibold text-[#023E8A]">
+              <h2 className="text-base font-semibold text-sijil-blue">
                 {profileTab === "verification" ? "Private verification" : "Shared competencies"}
               </h2>
               <p className="mt-1 text-xs text-[#64748b]">
@@ -268,15 +268,15 @@ export default function CandidateSummary() {
                             className={cn(
                               "flex w-full items-center gap-3 rounded-xl border px-3 py-3 text-left transition-colors",
                               selected
-                                ? "border-[#023E8A] bg-[#e8eef7]"
-                                : "border-[#e2e8f0] bg-white hover:border-[#023E8A]/30",
+                                ? "border-sijil-blue bg-[hsl(var(--sijil-blue)/0.08)]"
+                                : "border-[#e2e8f0] bg-white hover:border-sijil-blue/30",
                             )}
                           >
                             <span className="learner-competency-icon flex h-11 w-11 shrink-0 items-center justify-center">
                               {displayRecruiterSkillName(card.name).slice(0, 2).toUpperCase()}
                             </span>
                             <span className="min-w-0 flex-1">
-                              <span className="block truncate text-sm font-semibold text-[#023E8A]">
+                              <span className="block truncate text-sm font-semibold text-sijil-blue">
                                 {displayRecruiterSkillName(card.name)}
                               </span>
                               <span className="mt-0.5 block truncate text-xs text-[#64748b]">
@@ -311,7 +311,7 @@ export default function CandidateSummary() {
 
           <aside className="space-y-4 xl:sticky xl:top-20 xl:self-start">
             <div className="learner-stat-card p-5">
-              <h3 className="text-sm font-semibold text-[#023E8A]">Verification summary</h3>
+              <h3 className="text-sm font-semibold text-sijil-blue">Verification summary</h3>
               <dl className="mt-4 space-y-3">
                 <SummaryRow
                   label="Verification"
@@ -330,7 +330,7 @@ export default function CandidateSummary() {
 
             {peerReviews.length > 0 ? (
               <div className="learner-stat-card p-5">
-                <h3 className="text-sm font-semibold text-[#023E8A]">Trust signals</h3>
+                <h3 className="text-sm font-semibold text-sijil-blue">Trust signals</h3>
                 <dl className="mt-4 space-y-3">
                   <SummaryRow label="Peer reviews" value={String(trust.total)} />
                   <SummaryRow label="Verified context" value={String(trust.verifiedContext)} />
@@ -341,7 +341,7 @@ export default function CandidateSummary() {
             ) : null}
 
             <div className="learner-stat-card p-5">
-              <h3 className="text-sm font-semibold text-[#023E8A]">Privacy</h3>
+              <h3 className="text-sm font-semibold text-sijil-blue">Privacy</h3>
               <ul className="mt-3 space-y-2 text-xs leading-relaxed text-[#64748b]">
                 <li>Only disclosed fields are shown.</li>
                 <li>Revoked and expired shares are excluded.</li>
@@ -368,7 +368,7 @@ function SummaryRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-center justify-between gap-3 border-b border-[#f1f5f9] pb-2 last:border-0 last:pb-0">
       <dt className="text-xs text-[#64748b]">{label}</dt>
-      <dd className="text-sm font-semibold text-[#023E8A]">{value}</dd>
+      <dd className="text-sm font-semibold text-sijil-blue">{value}</dd>
     </div>
   );
 }

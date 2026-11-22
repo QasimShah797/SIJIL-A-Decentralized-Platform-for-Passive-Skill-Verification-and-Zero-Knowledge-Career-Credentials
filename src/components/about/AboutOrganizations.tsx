@@ -43,7 +43,7 @@ export function AboutOrganizations() {
                 {FLOW.map((item, i) => (
                   <div key={item}>
                     <div className="about-orgs-flow-item">
-                      <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#063B82] text-[10px] font-bold text-white">
+                      <span className="flex h-6 w-6 items-center justify-center rounded-full bg-sijil-blue text-[10px] font-bold text-white">
                         {i + 1}
                       </span>
                       {item}

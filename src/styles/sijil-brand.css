@@ -1,21 +1,21 @@
-/* SIJIL brand — matches learner navigation drawer (#023E8A) */
+/* SIJIL brand — matches learner navigation drawer (hsl(var(--sijil-blue))) */
 
 :root {
-  --sijil-brand: #023e8a;
-  --sijil-brand-dark: #012a5c;
-  --sijil-brand-mid: #035aa0;
-  --sijil-brand-light: #e8eef7;
+  --sijil-brand: hsl(var(--sijil-blue));
+  --sijil-brand-dark: hsl(var(--sijil-blue));
+  --sijil-brand-mid: hsl(var(--sijil-blue));
+  --sijil-brand-light: hsl(var(--sijil-blue)/0.08);
   --sijil-brand-teal: #14b8a6;
-  --sijil-brand-cyan: #0ea5e9;
+  --sijil-brand-cyan: hsl(var(--sijil-blue));
   --sijil-brand-gradient-panel: linear-gradient(
     152deg,
-    #012a5c 0%,
-    #023e8a 38%,
-    #024f8a 62%,
-    #0369a1 82%,
+    hsl(var(--sijil-blue)) 0%,
+    hsl(var(--sijil-blue)) 38%,
+    hsl(var(--sijil-blue)) 62%,
+    hsl(var(--sijil-blue)) 82%,
     #0d9488 100%
   );
-  --sijil-brand-gradient-btn: linear-gradient(90deg, #023e8a 0%, #0077b6 52%, #14b8a6 100%);
-  --sijil-brand-gradient-text: linear-gradient(90deg, #023e8a 0%, #0369a1 50%, #14b8a6 100%);
-  --sijil-brand-shadow: 0 4px 14px rgba(2, 62, 138, 0.35);
+  --sijil-brand-gradient-btn: linear-gradient(90deg, hsl(var(--sijil-blue)) 0%, hsl(var(--sijil-blue)) 52%, #14b8a6 100%);
+  --sijil-brand-gradient-text: linear-gradient(90deg, hsl(var(--sijil-blue)) 0%, hsl(var(--sijil-blue)) 50%, #14b8a6 100%);
+  --sijil-brand-shadow: 0 4px 14px hsl(var(--sijil-blue)/0.35);
 }

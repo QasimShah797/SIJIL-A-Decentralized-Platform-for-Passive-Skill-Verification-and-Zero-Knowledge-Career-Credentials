@@ -160,7 +160,7 @@ export default function RecruiterJobDetail() {
         <button
           type="button"
           onClick={() => navigate("/recruiter/jobs")}
-          className="mb-3 inline-flex items-center gap-1 text-xs font-medium text-[#64748b] hover:text-[#023E8A]"
+          className="mb-3 inline-flex items-center gap-1 text-xs font-medium text-[#64748b] hover:text-sijil-blue"
         >
           <ArrowLeft className="h-3.5 w-3.5" />
           Jobs
@@ -169,7 +169,7 @@ export default function RecruiterJobDetail() {
           <>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div>
-                <h1 className="text-2xl font-bold tracking-tight text-[#023E8A] sm:text-3xl">{job.title}</h1>
+                <h1 className="text-2xl font-bold tracking-tight text-sijil-blue sm:text-3xl">{job.title}</h1>
                 <p className="mt-1 text-sm text-[#64748b]">
                   {job.seats} {job.seats === 1 ? "seat" : "seats"}
                   {" · "}
@@ -178,7 +178,7 @@ export default function RecruiterJobDetail() {
                 </p>
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   {job.skills.map((skill) => (
-                    <span key={skill} className="rounded-full bg-[#e8eef7] px-2.5 py-0.5 text-xs font-medium text-[#023E8A]">
+                    <span key={skill} className="rounded-full bg-[hsl(var(--sijil-blue)/0.08)] px-2.5 py-0.5 text-xs font-medium text-sijil-blue">
                       {skill}
                     </span>
                   ))}
@@ -195,7 +195,7 @@ export default function RecruiterJobDetail() {
             </div>
           </>
         ) : (
-          <h1 className="text-2xl font-bold tracking-tight text-[#023E8A]">Job</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-sijil-blue">Job</h1>
         )}
       </div>
 
@@ -216,7 +216,7 @@ export default function RecruiterJobDetail() {
               { label: "Rejected", value: counts.rejected, hint: "Not moving forward" },
             ].map((item) => (
               <div key={item.label} className="learner-stat-card p-5">
-                <p className="text-2xl font-bold text-[#023E8A]">{item.value}</p>
+                <p className="text-2xl font-bold text-sijil-blue">{item.value}</p>
                 <p className="text-sm font-medium text-[#334155]">{item.label}</p>
                 <p className="mt-0.5 text-xs text-[#64748b]">{item.hint}</p>
               </div>
@@ -226,9 +226,9 @@ export default function RecruiterJobDetail() {
           <section className="learner-stat-card p-5">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
               <div>
-                <h2 className="flex items-center gap-2 text-base font-semibold text-[#023E8A]">
+                <h2 className="flex items-center gap-2 text-base font-semibold text-sijil-blue">
                   Candidates
-                  <span className="rounded-full bg-[#e8eef7] px-2.5 py-0.5 text-xs font-semibold tabular-nums text-[#023E8A]">
+                  <span className="rounded-full bg-[hsl(var(--sijil-blue)/0.08)] px-2.5 py-0.5 text-xs font-semibold tabular-nums text-sijil-blue">
                     {visible.length}
                   </span>
                 </h2>
@@ -245,7 +245,7 @@ export default function RecruiterJobDetail() {
                   />
                 </div>
                 <Button
-                  className="h-10 rounded-xl bg-[#023E8A] text-white hover:bg-[#023E8A]/90"
+                  className="h-10 rounded-xl bg-sijil-blue text-white hover:bg-sijil-blue/90"
                   disabled={selected.length < 2}
                   onClick={() => navigate(`/recruiter/compare?ids=${selected.join(",")}`)}
                 >
@@ -264,7 +264,7 @@ export default function RecruiterJobDetail() {
                   onClick={() => setStage(item.id)}
                   className={cn(
                     "rounded-full px-3 py-1.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                    stage === item.id ? "bg-[#023E8A] text-white" : "bg-[#f1f5f9] text-[#64748b] hover:text-[#023E8A]",
+                    stage === item.id ? "bg-sijil-blue text-white" : "bg-[#f1f5f9] text-[#64748b] hover:text-sijil-blue",
                   )}
                 >
                   {item.label}
@@ -299,13 +299,13 @@ export default function RecruiterJobDetail() {
                               checked={checked}
                               aria-label={`Select ${row.candidate.name}`}
                               onChange={() => toggleSelected(row.candidate.id)}
-                              className="mt-1 h-4 w-4 accent-[#023E8A]"
+                              className="mt-1 h-4 w-4 accent-[hsl(var(--sijil-blue))]"
                             />
                             <div className="min-w-0">
                               <div className="flex flex-wrap items-center gap-2">
                                 <Link
                                   to={`/recruiter/candidate/${row.candidate.id}`}
-                                  className="text-base font-semibold text-[#023E8A] hover:underline"
+                                  className="text-base font-semibold text-sijil-blue hover:underline"
                                 >
                                   {row.candidate.name}
                                 </Link>
@@ -333,7 +333,7 @@ export default function RecruiterJobDetail() {
                             <Button
                               size="sm"
                               variant={decision === "interview" ? "default" : "outline"}
-                              className={cn("rounded-xl", decision === "interview" && "bg-[#023E8A] text-white hover:bg-[#023E8A]/90")}
+                              className={cn("rounded-xl", decision === "interview" && "bg-sijil-blue text-white hover:bg-sijil-blue/90")}
                               disabled={closed || busyId === row.candidate.id}
                               onClick={() => void decide(row.candidate.id, "interview")}
                             >

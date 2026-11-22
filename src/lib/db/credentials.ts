@@ -2,6 +2,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { getCredentialApi, getWalletApi, issueCredentialRequestBody } from "@/services/api/credentials.api";
 import { verifyCredentialApi } from "@/services/api/recruiter.api";
 import { apiRequest } from "@/services/api/client";
+import { createSsiChallengeApi } from "@/services/api/ssi.api";
+import { getUnlockedIdentity } from "@/lib/ssi/session";
+import { signOwnershipProof } from "@/lib/ssi/ownership";
 
 export type CredentialView = {
   id: string;
@@ -151,12 +154,18 @@ export async function getCredentialDbId(uri: string): Promise<string | null> {
 
 /** Issue credential for a wallet-ready skill. Writes go only through the Express backend. */
 export async function issueCredentialForSkill(
-  _userId: string,
+  userId: string,
   skillId: string,
 ): Promise<CredentialView | null> {
+  const identity = getUnlockedIdentity(userId);
+  if (!identity) throw new Error("Unlock your identity to issue this credential.");
+  const challenge = await createSsiChallengeApi();
+  if (getUnlockedIdentity(userId) !== identity) throw new Error("Unlock your identity to issue this credential.");
+  const signature = await signOwnershipProof(identity, `SIJIL-CREDENTIAL-ISSUE-v1\nskillId=${skillId}\n${challenge.payload}`);
+  if (getUnlockedIdentity(userId) !== identity) throw new Error("Unlock your identity to issue this credential.");
   return apiRequest<CredentialView>("/credentials/issue", {
     method: "POST",
-    body: JSON.stringify(issueCredentialRequestBody(skillId)),
+    body: JSON.stringify({ ...issueCredentialRequestBody(skillId), approval: { challengeId: challenge.challengeId, signature } }),
   });
 }
 

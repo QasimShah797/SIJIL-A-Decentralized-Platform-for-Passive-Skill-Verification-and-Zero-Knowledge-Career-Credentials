@@ -89,7 +89,7 @@ export function GitHubEvidencePanel(props: GitHubEvidencePanelProps) {
       <div className="border-b border-[#e2e8f0] px-5 py-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h2 className="flex items-center gap-2 text-base font-semibold text-[#023E8A]">
+            <h2 className="flex items-center gap-2 text-base font-semibold text-sijil-blue">
               <Code2 className="h-4 w-4" aria-hidden />
               GitHub Evidence
             </h2>
@@ -107,7 +107,7 @@ export function GitHubEvidencePanel(props: GitHubEvidencePanelProps) {
               </Button>
               <Button
                 size="sm"
-                className="rounded-xl bg-[#023E8A] hover:bg-[#012A5C]"
+                className="rounded-xl bg-sijil-blue hover:bg-sijil-blue"
                 onClick={onSync}
                 disabled={syncing}
               >
@@ -139,7 +139,7 @@ export function GitHubEvidencePanel(props: GitHubEvidencePanelProps) {
                     "rounded-full px-3 py-1 text-xs font-medium transition-colors",
                     languageFilter === f.id
                       ? "bg-[#0f172a] text-white"
-                      : "border border-[#e2e8f0] bg-white text-[#64748b] hover:border-[#023E8A]/30 hover:text-[#023E8A]",
+                      : "border border-[#e2e8f0] bg-white text-[#64748b] hover:border-sijil-blue/30 hover:text-sijil-blue",
                   )}
                 >
                   {f.label}
@@ -156,7 +156,7 @@ export function GitHubEvidencePanel(props: GitHubEvidencePanelProps) {
             icon={Github}
             title="Connect GitHub to sync your coding projects"
             action={
-              <Button size="sm" className="rounded-xl bg-[#023E8A] hover:bg-[#012A5C]" onClick={onConnect} disabled={connecting}>
+              <Button size="sm" className="rounded-xl bg-sijil-blue hover:bg-sijil-blue" onClick={onConnect} disabled={connecting}>
                 <Github className="mr-1.5 h-4 w-4" />
                 Connect GitHub
               </Button>

@@ -1,7 +1,7 @@
-/** High-fidelity marketing mockups — SIJIL brand #023E8A */
+/** High-fidelity marketing mockups — SIJIL brand hsl(var(--sijil-blue)) */
 
-const BRAND = "#023E8A";
-const BRAND_LIGHT = "#E8EEF7";
+const BRAND = "hsl(var(--sijil-blue))";
+const BRAND_LIGHT = "hsl(var(--sijil-blue)/0.08)";
 
 export function HeroHubIllustration() {
   const tags = [
@@ -34,7 +34,7 @@ export function HeroHubIllustration() {
         style={{ background: BRAND }}
       >
         <div className="flex items-center justify-between">
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-blue-200">Verified Skills</p>
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-white/[.85]">Verified Skills</p>
           <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[9px] font-semibold text-emerald-400">Live</span>
         </div>
         <p className="mt-3 text-xl font-bold text-white">TypeScript</p>
@@ -87,7 +87,7 @@ export function WalletDashboardMock() {
             <div
               key={icon}
               className={`flex h-8 w-8 items-center justify-center rounded-lg text-sm ${
-                i === 1 ? "text-[#023E8A]" : "text-gray-400"
+                i === 1 ? "text-sijil-blue" : "text-gray-400"
               }`}
               style={i === 1 ? { background: BRAND_LIGHT } : undefined}
             >
@@ -175,8 +175,8 @@ export function VerifiedSkillsCardMock() {
           </li>
         ))}
       </ul>
-      <div className="border-t px-5 py-4" style={{ borderColor: "#c5d4eb", background: BRAND_LIGHT }}>
-        <div className="lp-card p-4 shadow-md" style={{ borderColor: "#c5d4eb" }}>
+      <div className="border-t px-5 py-4" style={{ borderColor: "hsl(var(--sijil-blue)/0.21)", background: BRAND_LIGHT }}>
+        <div className="lp-card p-4 shadow-md" style={{ borderColor: "hsl(var(--sijil-blue)/0.21)" }}>
           <p className="text-[10px] font-bold uppercase tracking-wide" style={{ color: BRAND }}>
             New credential
           </p>
@@ -191,9 +191,9 @@ export function VerifiedSkillsCardMock() {
 export function BarChartMock() {
   const bars = [
     { h: 72, color: "#e5e7eb" },
-    { h: 96, color: "#c5d4eb" },
-    { h: 120, color: "#7da3d4" },
-    { h: 148, color: "linear-gradient(180deg,#023E8A,#14b8a6)" },
+    { h: 96, color: "hsl(var(--sijil-blue)/0.21)" },
+    { h: 120, color: "hsl(var(--sijil-blue))" },
+    { h: 148, color: "linear-gradient(180deg,hsl(var(--sijil-blue)),#14b8a6)" },
   ];
 
   return (

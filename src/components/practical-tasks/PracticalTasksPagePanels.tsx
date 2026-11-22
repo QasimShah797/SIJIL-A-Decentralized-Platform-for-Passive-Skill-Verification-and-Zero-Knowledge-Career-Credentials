@@ -31,7 +31,7 @@ import { useState } from "react";
 
 export type TaskFilter = "all" | "in_progress" | "completed" | "locked";
 
-const SKILL_ICON_COLORS = ["#023E8A", "#CA8A04", "#DC2626", "#059669", "#0891B2", "#7C3AED"];
+const SKILL_ICON_COLORS = ["hsl(var(--sijil-blue))", "#CA8A04", "#DC2626", "#059669", "#0891B2", "#7C3AED"];
 
 export function skillInitials(name: string): string {
   const parts = name.trim().split(/\s+/);
@@ -43,33 +43,17 @@ export function skillIconColor(index: number): string {
   return SKILL_ICON_COLORS[index % SKILL_ICON_COLORS.length];
 }
 
-function MiniBarChart({ score }: { score: number | null }) {
-  const base = score ?? 30;
-  const heights = [0.45, 0.65, 0.85, 1].map((m) => Math.round(base * m));
-  return (
-    <div className="pt-task-mini-bars" aria-hidden>
-      {heights.map((h, i) => (
-        <div
-          key={i}
-          className={cn("pt-task-mini-bar", i >= 2 && "pt-task-mini-bar--active")}
-          style={{ height: `${Math.max(8, h * 0.28)}px` }}
-        />
-      ))}
-    </div>
-  );
-}
-
 export function PracticalTasksBreadcrumbBar({ didShort }: { didShort?: string }) {
   return (
     <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
       <nav className="flex flex-wrap items-center gap-1.5 text-xs text-[#64748b]">
-        <Link to="/learner/profile" className="hover:text-[#023E8A]">
+        <Link to="/learner/profile" className="hover:text-sijil-blue">
           Learner
         </Link>
         <ChevronRight className="h-3 w-3" aria-hidden />
         <span>Verification workspace</span>
         <ChevronRight className="h-3 w-3" aria-hidden />
-        <span className="font-semibold text-[#023E8A]">Practical Tasks</span>
+        <span className="font-semibold text-sijil-blue">Practical Tasks</span>
       </nav>
       {didShort ? (
         <span className="mono rounded-lg border border-[#e2e8f0] bg-white px-2.5 py-1 text-[10px] text-[#64748b]">
@@ -90,14 +74,11 @@ export function PracticalTasksHero({
   return (
     <section className="pt-lab-hero mb-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
       <div className="min-w-0">
-        <p className="inline-flex items-center gap-1.5 rounded-full border border-white/20 bg-white/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-cyan-100">
-          <Eye className="h-3 w-3" aria-hidden />
-          Skills Practice Area
-        </p>
-        <h1 className="mt-3 text-2xl font-bold text-white sm:text-[1.75rem]">Practical Tasks</h1>
+        <h1 className="text-2xl font-bold text-white sm:text-[1.75rem]">Practical Tasks</h1>
+        <p className="mt-2 text-sm text-[hsl(var(--sijil-blue)/0.07)]">Practice your skills and review your results.</p>
       </div>
       <Button
-        className="rounded-xl bg-white text-[#023E8A] hover:bg-cyan-50"
+        className="shrink-0 rounded-xl bg-white text-sijil-blue hover:bg-[#ede9fe] disabled:opacity-70"
         onClick={onStartNext}
         disabled={!hasNextTask}
       >
@@ -132,7 +113,7 @@ export function TaskFilterTabs({
           onClick={() => onChange(tab.id)}
           className={cn(
             "rounded-full px-3 py-1.5 text-xs font-semibold transition-colors",
-            value === tab.id ? "bg-[#023E8A] text-white" : "text-[#64748b] hover:text-[#0f172a]",
+            value === tab.id ? "bg-sijil-blue text-white" : "text-[#64748b] hover:text-[#0f172a]",
           )}
         >
           {tab.label}
@@ -239,7 +220,7 @@ export function AttemptMarksTimeline({
                   {isRetake ? `Retake ${item.attemptNumber - 1}` : `Attempt ${item.attemptNumber}`}
                   {skillName ? <span className="font-medium text-[#64748b]"> · {skillName}</span> : null}
                   {isRetake ? (
-                    <span className="ml-2 rounded-full bg-[#eff6ff] px-2 py-0.5 text-[10px] font-semibold text-[#023E8A]">
+                    <span className="ml-2 rounded-full bg-[hsl(var(--sijil-blue)/0.04)] px-2 py-0.5 text-[10px] font-semibold text-sijil-blue">
                       Retake
                     </span>
                   ) : null}
@@ -295,9 +276,9 @@ export function PracticalTaskCard({
     : `${skill.name} Practical Task`;
 
   return (
-    <div className="learner-stat-card pt-task-card p-5">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
-        <div className="flex min-w-0 flex-1 items-start gap-3">
+    <article className="learner-stat-card pt-task-card p-4 sm:p-5">
+      <div className="flex flex-col gap-4">
+        <div className="flex min-w-0 items-start gap-3">
           <div
             className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-sm font-bold text-white"
             style={{ backgroundColor: color }}
@@ -305,26 +286,23 @@ export function PracticalTaskCard({
             {skillInitials(skill.name)}
           </div>
           <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div className="min-w-0">
-                <h3 className="font-semibold text-[#0f172a]">{taskTitle}</h3>
-                <p className="mt-0.5 text-xs text-[#64748b]">
-                  {skill.domain || "General"} | {skill.name}
-                </p>
-                <p className="mt-0.5 text-[11px] text-[#94a3b8]">
-                  Last synced: {lastDays === null ? "never" : lastDays === 0 ? "today" : `${lastDays} day${lastDays === 1 ? "" : "s"} ago`}
-                </p>
-              </div>
-              <MiniBarChart score={score} />
+            <div className="min-w-0">
+              <h3 className="break-words text-base font-semibold text-[#0f172a]">{taskTitle}</h3>
+              <p className="mt-0.5 text-xs text-[#64748b]">
+                {skill.domain || "General"} | {skill.name}
+              </p>
+              <p className="mt-0.5 text-[11px] text-[#94a3b8]">
+                Last synced: {lastDays === null ? "never" : lastDays === 0 ? "today" : `${lastDays} day${lastDays === 1 ? "" : "s"} ago`}
+              </p>
             </div>
 
-            {score != null && taskState === "COMPLETED" && (
-              <div className="mt-4 max-w-xl">
+            {score != null && (taskState === "COMPLETED" || attempts.length > 0) && (
+              <div className="mt-4">
                 <div className="mb-1 flex items-center justify-between text-xs text-[#64748b]">
                   <span>
                     Latest score
                     {latestIsRetake ? (
-                      <span className="ml-2 rounded-full bg-[#eff6ff] px-2 py-0.5 text-[10px] font-semibold text-[#023E8A]">
+                      <span className="ml-2 rounded-full bg-[hsl(var(--sijil-blue)/0.04)] px-2 py-0.5 text-[10px] font-semibold text-sijil-blue">
                         Retake
                       </span>
                     ) : null}
@@ -333,7 +311,7 @@ export function PracticalTaskCard({
                 </div>
                 <div className="h-2.5 overflow-hidden rounded-full bg-[#e2e8f0]">
                   <div
-                    className="h-full rounded-full bg-[#22c55e]"
+                    className="h-full rounded-full bg-[#6d28d9]"
                     style={{ width: `${Math.max(0, Math.min(100, score))}%` }}
                   />
                 </div>
@@ -341,7 +319,7 @@ export function PracticalTaskCard({
             )}
 
             {taskState === "IN_PROGRESS" && (
-              <p className="mt-3 text-xs font-semibold text-[#023E8A]">
+              <p className="mt-3 text-xs font-semibold text-sijil-blue">
                 {attempts.length > 0 ? "Retake in progress" : "In progress"}
               </p>
             )}
@@ -351,26 +329,26 @@ export function PracticalTaskCard({
           </div>
         </div>
 
-        <div className="flex shrink-0 flex-wrap items-center gap-2 lg:pt-1">
+        <div className="pt-task-actions flex flex-wrap items-center gap-2">
           {taskState === "COMPLETED" ? (
             <>
               <Button variant="outline" size="sm" className="rounded-xl border-[#e2e8f0]" onClick={onView}>
-                View Result
+                <Eye className="mr-1 h-4 w-4" aria-hidden /> View Result
               </Button>
-              <Button size="sm" className="rounded-xl bg-[#023E8A] hover:bg-[#012A5C]" onClick={onRetake}>
+              <Button size="sm" className="rounded-xl bg-sijil-blue hover:bg-sijil-blue" onClick={onRetake}>
                 <RotateCcw className="mr-1 h-3.5 w-3.5" />
                 Retake Task
               </Button>
             </>
           ) : taskState === "IN_PROGRESS" ? (
-            <Button size="sm" className="rounded-xl bg-[#023E8A] hover:bg-[#012A5C]" onClick={onResume}>
+            <Button size="sm" className="rounded-xl bg-sijil-blue hover:bg-sijil-blue" onClick={onResume}>
               <Play className="mr-1 h-3.5 w-3.5" />
               Continue Task
             </Button>
           ) : (
             <Button
               size="sm"
-              className="rounded-xl bg-[#023E8A] hover:bg-[#012A5C]"
+              className="rounded-xl bg-sijil-blue hover:bg-sijil-blue"
               onClick={onStart}
               disabled={locked}
             >
@@ -386,9 +364,10 @@ export function PracticalTaskCard({
           <button
             type="button"
             className="flex w-full items-center justify-between text-left text-sm font-semibold text-[#0f172a]"
+            aria-expanded={timelineOpen}
             onClick={() => setTimelineOpen((open) => !open)}
           >
-            <span>Attempt Timeline ({attempts.length} attempt{attempts.length === 1 ? "" : "s"})</span>
+            <span>Attempt history ({attempts.length})</span>
             <ChevronDown className={cn("h-4 w-4 text-[#64748b] transition", timelineOpen && "rotate-180")} />
           </button>
           {timelineOpen ? (
@@ -410,7 +389,7 @@ export function PracticalTaskCard({
           )}
         </div>
       )}
-    </div>
+    </article>
   );
 }
 
@@ -426,8 +405,8 @@ export type AttemptHistoryEntry = {
 export function AttemptTimelinePanel({ entries }: { entries: AttemptHistoryEntry[] }) {
   return (
     <div className="learner-stat-card p-4">
-      <p className="text-sm font-semibold text-[#023E8A]">Attempt timeline</p>
-      <p className="mt-1 text-[11px] text-[#94a3b8]">Marks, date, and time for every sitting.</p>
+      <h2 className="text-base font-semibold text-sijil-blue">Attempt Timeline</h2>
+      <p className="mt-1 text-xs text-[#64748b]">Scores and dates for your completed attempts.</p>
       {entries.length === 0 ? (
         <p className="mt-3 text-xs text-[#94a3b8]">No graded attempts yet. Finish a task and it will appear here.</p>
       ) : (
@@ -435,11 +414,11 @@ export function AttemptTimelinePanel({ entries }: { entries: AttemptHistoryEntry
           {entries.map((entry) => (
             <li key={entry.id} className="rounded-lg border border-[#e2e8f0] bg-[#f8fafc] px-3 py-2">
               <div className="flex items-start justify-between gap-2">
-                <p className="text-xs font-semibold text-[#0f172a]">
+                <p className="min-w-0 break-words text-xs font-semibold text-[#0f172a]">
                   {entry.skillName}
                   <span className="font-medium text-[#64748b]"> · {attemptOrdinal(entry.attemptNumber)} attempt</span>
                 </p>
-                <p className={cn("text-xs font-bold tabular-nums", entry.passed ? "text-[#059669]" : "text-[#CA8A04]")}>
+                <p className="shrink-0 text-xs font-bold tabular-nums text-[#5421ae]">
                   {entry.percentage != null ? `${entry.percentage}%` : "—"}
                 </p>
               </div>
@@ -465,7 +444,7 @@ export function AssessmentRulesPanel() {
 
   return (
     <div className="learner-stat-card p-4">
-      <p className="text-sm font-semibold text-[#023E8A]">Assessment rules</p>
+      <p className="text-sm font-semibold text-sijil-blue">Assessment rules</p>
       <dl className="mt-3 space-y-2">
         {rules.map(([k, v]) => (
           <div key={k} className="flex items-center justify-between gap-3 text-xs">
@@ -639,7 +618,7 @@ export function McqReviewList({
               <button
                 type="button"
                 onClick={() => onJump(index)}
-                className="flex w-full items-start gap-3 rounded-xl border border-[#e2e8f0] bg-white px-3 py-2.5 text-left hover:border-[#93c5fd]"
+                className="flex w-full items-start gap-3 rounded-xl border border-[#e2e8f0] bg-white px-3 py-2.5 text-left hover:border-[hsl(var(--sijil-blue)/0.29)]"
               >
                 <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[#f1f5f9] text-[11px] font-bold text-[#334155]">
                   {index + 1}
@@ -720,7 +699,7 @@ export function McqScoreSummary({
         </div>
         <div className="grid min-w-0 flex-1 gap-3 sm:grid-cols-2">
           <div className="flex items-start gap-2">
-            <Crosshair className="mt-0.5 h-4 w-4 text-[#023E8A]" aria-hidden />
+            <Crosshair className="mt-0.5 h-4 w-4 text-sijil-blue" aria-hidden />
             <div>
               <p className="text-xs text-[#64748b]">Correct Answers</p>
               <p className="text-sm font-semibold text-[#0f172a]">
@@ -731,7 +710,7 @@ export function McqScoreSummary({
             </div>
           </div>
           <div className="flex items-start gap-2">
-            <CalendarDays className="mt-0.5 h-4 w-4 text-[#023E8A]" aria-hidden />
+            <CalendarDays className="mt-0.5 h-4 w-4 text-sijil-blue" aria-hidden />
             <div>
               <p className="text-xs text-[#64748b]">
                 {variant === "previous" ? "Attempted" : "Submitted"}
@@ -746,7 +725,7 @@ export function McqScoreSummary({
       <div className="mt-4 h-2.5 overflow-hidden rounded-full bg-[#e2e8f0]">
         <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: tone }} />
       </div>
-      {label ? <p className="mt-3 text-xs font-semibold text-[#023E8A]">{label}</p> : null}
+      {label ? <p className="mt-3 text-xs font-semibold text-sijil-blue">{label}</p> : null}
       {message ? <p className="mt-2 text-xs text-[#64748b]">{message}</p> : null}
     </div>
   );
@@ -754,8 +733,8 @@ export function McqScoreSummary({
 
 export function RetakeIntroBanner() {
   return (
-    <div className="flex items-start gap-3 rounded-xl border border-[#bfdbfe] bg-[#eff6ff] p-4">
-      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#023E8A] text-white">
+    <div className="flex items-start gap-3 rounded-xl border border-[hsl(var(--sijil-blue)/0.17)] bg-[hsl(var(--sijil-blue)/0.04)] p-4">
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sijil-blue text-white">
         <RotateCcw className="h-5 w-5" aria-hidden />
       </div>
       <div>
@@ -781,7 +760,7 @@ export function TaskDetailsGrid() {
       <div className="grid gap-3 sm:grid-cols-3">
         {items.map(({ icon: Icon, title, detail }) => (
           <div key={title} className="rounded-xl border border-[#e2e8f0] bg-white p-3">
-            <Icon className="mb-2 h-4 w-4 text-[#023E8A]" aria-hidden />
+            <Icon className="mb-2 h-4 w-4 text-sijil-blue" aria-hidden />
             <p className="text-xs font-semibold text-[#0f172a]">{title}</p>
             <p className="mt-1 text-[11px] leading-relaxed text-[#64748b]">{detail}</p>
           </div>
@@ -822,7 +801,7 @@ export function EmptyTasksPanel({ onGoProfile }: { onGoProfile: () => void }) {
       <p className="mt-1 max-w-sm text-sm text-[#64748b]">
         Declare a competency by name on your profile before starting a practical task.
       </p>
-      <Button className="mt-4 rounded-xl bg-[#023E8A] hover:bg-[#012A5C]" onClick={onGoProfile}>
+      <Button className="mt-4 rounded-xl bg-sijil-blue hover:bg-sijil-blue" onClick={onGoProfile}>
         Go to profile
       </Button>
     </div>

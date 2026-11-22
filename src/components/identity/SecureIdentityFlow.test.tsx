@@ -57,17 +57,39 @@ function renderFlow(props: Partial<ComponentProps<typeof SecureIdentityFlow>> = 
 }
 
 describe("secure learning identity flow", () => {
+  it("shows a retryable lookup failure instead of offering creation or linking", () => {
+    const onRetryLookup = vi.fn(async () => undefined);
+    const { onActivate, onFinish } = renderFlow({
+      snapshot: snapshot("active", null),
+      serverLookupFailed: true,
+      onRetryLookup,
+    });
+    expect(screen.getByRole("alert")).toHaveTextContent("could not check the learning identity");
+    expect(screen.queryByRole("button", { name: "Set up my secure identity" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Finish setup" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(onRetryLookup).toHaveBeenCalledOnce();
+    expect(onActivate).not.toHaveBeenCalled();
+    expect(onFinish).not.toHaveBeenCalled();
+  });
+
   it("does not create an identity before the learner confirms a protection choice", () => {
     const { onActivate } = renderFlow();
+    expect(screen.getByRole("heading", { name: "Secure Identity" })).toBeInTheDocument();
+    expect(screen.queryByText("In simple words")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Set up my secure identity" }));
-    expect(screen.getByRole("heading", { name: "Recommended: save a recovery file" })).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "This Browser Only" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Save a recovery file" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "This browser only" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    fireEvent.click(screen.getByRole("button", { name: "Set up my secure identity" }));
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    expect(screen.getByLabelText("Recovery password", { exact: true })).toBeInTheDocument();
     expect(onActivate).not.toHaveBeenCalled();
   });
 
   it("shows an existing identity as ready and does not offer another activation", () => {
     const { onActivate } = renderFlow({ snapshot: snapshot("active", "did:key:zBound"), recoverable: true });
-    expect(screen.getByRole("heading", { name: "Your Secure Identity Is Ready" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Your Secure Identity Is Ready!" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Set up my secure identity" })).toBeNull();
     expect(onActivate).not.toHaveBeenCalled();
   });
@@ -76,6 +98,14 @@ describe("secure learning identity flow", () => {
     const { onActivate } = renderFlow();
     fireEvent.click(screen.getByRole("button", { name: "Set up my secure identity" }));
     fireEvent.click(screen.getByRole("button", { name: "Create recovery file" }));
+    expect(screen.getByRole("heading", { name: "Password tips" })).toBeInTheDocument();
+    const recoveryPassword = screen.getByLabelText("Recovery password");
+    expect(recoveryPassword).toHaveAttribute("type", "password");
+    fireEvent.click(screen.getAllByRole("button", { name: "Show password" })[0]);
+    expect(recoveryPassword).toHaveAttribute("type", "text");
+    expect(screen.getByLabelText("Confirm recovery password")).toHaveAttribute("type", "password");
+    fireEvent.click(screen.getByRole("button", { name: "Hide password" }));
+    expect(recoveryPassword).toHaveAttribute("type", "password");
     fireEvent.change(screen.getByLabelText("Recovery password"), { target: { value: "short" } });
     fireEvent.change(screen.getByLabelText("Confirm recovery password"), { target: { value: "short" } });
     fireEvent.click(screen.getByRole("button", { name: "Create and continue" }));
@@ -105,9 +135,19 @@ describe("secure learning identity flow", () => {
       throw new Error("Incorrect passphrase");
     });
     renderFlow({ snapshot: snapshot("locked", "did:key:zBound"), onUnlock });
-    fireEvent.change(screen.getByLabelText("Recovery password"), { target: { value: "long-enough-phrase" } });
+    const password = screen.getByLabelText("Recovery Password");
+    expect(password).toHaveAttribute("type", "password");
+    expect(screen.getByRole("button", { name: "Unlock Identity" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Show password" }));
+    expect(password).toHaveAttribute("type", "text");
+    fireEvent.click(screen.getByRole("button", { name: "Hide password" }));
+    expect(password).toHaveAttribute("type", "password");
+    fireEvent.click(screen.getByText("More Information"));
+    expect(screen.getByText("did:key:zBound")).toBeVisible();
+    fireEvent.change(password, { target: { value: "long-enough-phrase" } });
     fireEvent.click(screen.getByRole("button", { name: "Unlock Identity" }));
     expect(await screen.findByRole("alert")).toHaveTextContent(/cannot reset/);
+    expect(onUnlock).toHaveBeenCalledWith("long-enough-phrase");
   });
 
   it("explains a missing local key and does not create a replacement", () => {
@@ -148,7 +188,7 @@ describe("secure learning identity flow", () => {
     expect(screen.queryByRole("button", { name: "Set up my secure identity" })).toBeNull();
   });
 
-  it("downloads only wrapped recovery material", () => {
+  it("keeps the same encrypted backup when reviewing the previous step and requires a download before confirmation", async () => {
     const backup = {
       format: "SIJIL-SSI-VAULT-v1",
       userId: "user-1",
@@ -165,11 +205,16 @@ describe("secure learning identity flow", () => {
     fireEvent.change(screen.getByLabelText("Recovery password"), { target: { value: "long-enough-phrase" } });
     fireEvent.change(screen.getByLabelText("Confirm recovery password"), { target: { value: "long-enough-phrase" } });
     fireEvent.click(screen.getByRole("button", { name: "Create and continue" }));
-    return screen.findByRole("button", { name: "Download recovery file" }).then((button) => {
-      fireEvent.click(button);
-      expect(onDownload).toHaveBeenCalledWith(backup);
-      expect(JSON.stringify(onDownload.mock.calls[0][0])).not.toMatch(/BEGIN PRIVATE KEY|privateKey/);
-    });
+    expect(await screen.findByRole("heading", { name: "Keep your identity safe" })).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: /I have saved this file/ })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(screen.getByRole("heading", { name: "Recovery password is set" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    fireEvent.click(screen.getByRole("button", { name: "Download recovery file" }));
+    expect(onActivate).toHaveBeenCalledOnce();
+    expect(onDownload).toHaveBeenCalledWith(backup);
+    expect(JSON.stringify(onDownload.mock.calls[0][0])).not.toMatch(/BEGIN PRIVATE KEY|privateKey/);
+    expect(screen.getByRole("checkbox", { name: /I have saved this file/ })).toBeEnabled();
   });
 
   it("offers the recovery file again after refresh when a vault is already on this device", async () => {
@@ -189,9 +234,23 @@ describe("secure learning identity flow", () => {
       onExport,
       onDownload,
     });
-    fireEvent.click(screen.getByRole("button", { name: "Download recovery file" }));
-    expect(onExport).toHaveBeenCalled();
-    await screen.findByRole("heading", { name: "Your Secure Identity Is Ready" });
-    expect(onDownload).toHaveBeenCalledWith(backup);
+    fireEvent.click(screen.getByText("Advanced details"));
+    const download = screen.getByRole("button", { name: "Download recovery file" });
+    expect(download).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("Recovery password"), { target: { value: "fixture-recovery-password" } });
+    fireEvent.click(download);
+    expect(onExport).toHaveBeenCalledWith("fixture-recovery-password");
+    await waitFor(() => expect(onDownload).toHaveBeenCalledWith(backup));
+  });
+
+  it("hides recovery download controls for an existing locked vault", () => {
+    const { onExport, onDownload } = renderFlow({
+      snapshot: snapshot("locked", "did:key:zBound"),
+      recoverable: true,
+    });
+    expect(screen.getByRole("button", { name: "Unlock Identity" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Download recovery file" })).not.toBeInTheDocument();
+    expect(onExport).not.toHaveBeenCalled();
+    expect(onDownload).not.toHaveBeenCalled();
   });
 });

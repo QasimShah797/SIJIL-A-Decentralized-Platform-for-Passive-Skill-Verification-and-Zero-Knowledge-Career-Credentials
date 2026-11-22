@@ -48,7 +48,7 @@ export type NextAction = {
 
 const TRUST_COLORS = {
   high: "#059669",
-  medium: "#023E8A",
+  medium: "hsl(var(--sijil-blue))",
   blocked: "#dc2626",
   other: "#94a3b8",
 };
@@ -88,7 +88,7 @@ export function sourceMix(reviews: PeerReview[]): SourceSlice[] {
     const current = counts.get(source);
     counts.set(source, { origin, value: (current?.value ?? 0) + 1 });
   }
-  const palette = ["#023E8A", "#14b8a6", "#f97316", "#7c3aed", "#0891b2"];
+  const palette = ["hsl(var(--sijil-blue))", "#14b8a6", "#f97316", "#7c3aed", "#0891b2"];
   return [...counts.entries()]
     .sort((a, b) => b[1].value - a[1].value)
     .map(([name, item], index) => ({

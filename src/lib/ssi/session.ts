@@ -1,6 +1,7 @@
 import { isDidKeyEd25519 } from "./did-key";
 import {
   isUsablePrivateKey,
+  signUtf8,
   type PersistedSsiRecord,
   type SsiKeyStore,
   type StoredSsiIdentity,
@@ -15,6 +16,21 @@ import {
 } from "./vault";
 
 const unlocked = new Map<string, StoredSsiIdentity>();
+const approvedDownloads = new WeakMap<EncryptedSsiBackup, StoredSsiIdentity>();
+
+function approveRecoveryDownload(backup: EncryptedSsiBackup, active: StoredSsiIdentity): void {
+  Object.freeze(backup.wrap.kdf);
+  Object.freeze(backup.wrap);
+  Object.freeze(backup);
+  approvedDownloads.set(backup, active);
+}
+
+export function assertRecoveryDownloadAuthorized(backup: EncryptedSsiBackup): void {
+  const active = getUnlockedIdentity(backup.userId);
+  if (!active || approvedDownloads.get(backup) !== active || active.did !== backup.did) {
+    throw new Error("Unlock your identity and verify your recovery password before downloading.");
+  }
+}
 
 export function getUnlockedIdentity(userId: string): StoredSsiIdentity | null {
   const record = unlocked.get(userId) ?? null;
@@ -83,6 +99,7 @@ export async function createPassphraseVault(
   if (!store.saveVault) throw new Error("This key store cannot persist a passphrase vault");
   await store.saveVault(created.backup);
   rememberUnlocked(created.identity);
+  approveRecoveryDownload(created.backup, created.identity);
   return created;
 }
 
@@ -116,9 +133,11 @@ export async function rotateVaultPassphrase(
   userId: string,
   currentPassphrase: string,
   nextPassphrase: string,
-): Promise<EncryptedSsiBackup> {
+): Promise<void> {
+  const active = getUnlockedIdentity(userId);
+  if (!active) throw new Error("Unlock your identity before changing its recovery password.");
   const persisted = store.loadPersisted ? await store.loadPersisted(userId) : null;
-  if (!isVaultRecord(persisted)) {
+  if (!isVaultRecord(persisted) || persisted.userId !== userId || persisted.did !== active.did) {
     throw new Error("This identity is not passphrase-wrapped, so the passphrase cannot be changed");
   }
   const nextWrap = await rewrapVault(persisted.wrap, currentPassphrase, nextPassphrase);
@@ -131,19 +150,44 @@ export async function rotateVaultPassphrase(
     wrap: nextWrap,
   };
   if (!store.saveVault) throw new Error("This key store cannot persist a passphrase vault");
+  if (getUnlockedIdentity(userId) !== active) throw new Error("Unlock your identity before changing its recovery password.");
   await store.saveVault(backup);
-  const identity = await unlockBackup(backup, nextPassphrase);
-  rememberUnlocked(identity);
-  return backup;
 }
 
-export function exportStoredBackup(row: Extract<PersistedSsiRecord, { kind: "vault" }>): EncryptedSsiBackup {
-  return {
+export async function exportStoredBackup(
+  store: SsiKeyStore,
+  userId: string,
+  recoveryPassword: string,
+): Promise<EncryptedSsiBackup> {
+  const active = getUnlockedIdentity(userId);
+  const lockedError = "Unlock your identity before downloading a recovery file.";
+  if (!active) throw new Error(lockedError);
+  const row = await store.loadPersisted?.(userId);
+  if (!isVaultRecord(row)) {
+    throw new Error("Encrypted recovery files are only available for password-protected identities.");
+  }
+  if (row.userId !== userId || row.did !== active.did || row.fingerprint !== active.fingerprint) {
+    throw new Error("The recovery file does not match your unlocked identity.");
+  }
+  if (getUnlockedIdentity(userId) !== active) throw new Error(lockedError);
+  const { alg, iv, ciphertext, kdf } = row.wrap;
+  const backup: EncryptedSsiBackup = {
     format: SSI_VAULT_FORMAT,
     userId: row.userId,
     did: row.did,
     fingerprint: row.fingerprint,
     createdAt: row.createdAt,
-    wrap: row.wrap,
+    wrap: { alg, iv, ciphertext, kdf: { name: kdf.name, hash: kdf.hash, iterations: kdf.iterations, salt: kdf.salt } },
   };
+  const verified = await unlockBackup(backup, recoveryPassword);
+  // Compare deterministic Ed25519 signatures to detect a mismatched stored key.
+  const purpose = "SIJIL recovery export key check v1";
+  const [storedSignature, activeSignature] = await Promise.all([
+    signUtf8(verified.privateKey, purpose),
+    signUtf8(active.privateKey, purpose),
+  ]);
+  if (getUnlockedIdentity(userId) !== active) throw new Error(lockedError);
+  if (storedSignature !== activeSignature) throw new Error("The recovery file does not match your unlocked identity.");
+  approveRecoveryDownload(backup, active);
+  return backup;
 }

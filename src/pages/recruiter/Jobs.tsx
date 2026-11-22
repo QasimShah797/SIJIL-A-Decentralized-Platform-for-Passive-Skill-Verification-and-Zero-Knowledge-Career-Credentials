@@ -31,7 +31,7 @@ const FILTERS = [
 type FilterId = (typeof FILTERS)[number]["id"];
 
 const iconTints = [
-  "bg-[#e8eef7] text-[#023E8A]",
+  "bg-[hsl(var(--sijil-blue)/0.08)] text-sijil-blue",
   "bg-[#f1f5f9] text-[#475569]",
   "bg-[#fff7ed] text-[#c2410c]",
   "bg-[#ecfdf5] text-[#059669]",
@@ -144,7 +144,7 @@ export default function RecruiterJobs() {
   return (
     <AppShell role="recruiter">
       <div className="mb-5">
-        <h1 className="text-2xl font-bold tracking-tight text-[#023E8A] sm:text-3xl">Jobs</h1>
+        <h1 className="text-2xl font-bold tracking-tight text-sijil-blue sm:text-3xl">Jobs</h1>
         <p className="mt-1 text-sm text-[#64748b]">
           Open a seat, match shared skills, then interview, hire, or reject from that role.
         </p>
@@ -156,7 +156,7 @@ export default function RecruiterJobs() {
       {loading ? <PageSkeleton /> : (
         <>
           <section className="learner-stat-card mb-4 p-5">
-            <h2 className="text-base font-semibold text-[#023E8A]">Open a role</h2>
+            <h2 className="text-base font-semibold text-sijil-blue">Open a role</h2>
             <p className="text-xs text-[#64748b]">Title, seats, and the skills the person needs to already share.</p>
             <form onSubmit={(event) => void create(event)} className="mt-4 space-y-3">
               <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_7rem_auto] sm:items-end">
@@ -185,7 +185,7 @@ export default function RecruiterJobs() {
                 <Button
                   type="submit"
                   disabled={saving}
-                  className="h-10 rounded-xl bg-[#023E8A] px-4 text-white hover:bg-[#023E8A]/90"
+                  className="h-10 rounded-xl bg-sijil-blue px-4 text-white hover:bg-sijil-blue/90"
                 >
                   <Plus className="mr-1.5 h-4 w-4" />
                   {saving ? "Opening…" : "Open job"}
@@ -221,7 +221,7 @@ export default function RecruiterJobs() {
                         key={skill}
                         type="button"
                         onClick={() => setSkills((current) => current.filter((item) => item !== skill))}
-                        className="inline-flex items-center gap-1 rounded-full bg-[#e8eef7] px-2.5 py-1 text-xs font-medium text-[#023E8A]"
+                        className="inline-flex items-center gap-1 rounded-full bg-[hsl(var(--sijil-blue)/0.08)] px-2.5 py-1 text-xs font-medium text-sijil-blue"
                       >
                         {skill}
                         <X className="h-3 w-3" />
@@ -236,7 +236,7 @@ export default function RecruiterJobs() {
                         key={skill}
                         type="button"
                         onClick={() => addSkills(skill)}
-                        className="rounded-full bg-[#f1f5f9] px-2.5 py-1 text-xs text-[#64748b] hover:text-[#023E8A]"
+                        className="rounded-full bg-[#f1f5f9] px-2.5 py-1 text-xs text-[#64748b] hover:text-sijil-blue"
                       >
                         {skill}
                       </button>
@@ -257,14 +257,14 @@ export default function RecruiterJobs() {
                   aria-pressed={filter === item.id}
                   onClick={() => setFilter(item.id)}
                   className={cn(
-                    "learner-stat-card p-5 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#023E8A]",
-                    filter === item.id && "ring-2 ring-[#023E8A]",
+                    "learner-stat-card p-5 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sijil-blue",
+                    filter === item.id && "ring-2 ring-sijil-blue",
                   )}
                 >
                   <div className={cn("flex h-10 w-10 items-center justify-center rounded-xl", iconTints[index])}>
                     <StatIcon className="h-5 w-5" />
                   </div>
-                  <p className="mt-4 text-2xl font-bold text-[#023E8A]">{counts[item.id]}</p>
+                  <p className="mt-4 text-2xl font-bold text-sijil-blue">{counts[item.id]}</p>
                   <p className="text-sm font-medium text-[#334155]">{item.label}</p>
                   <p className="mt-0.5 text-xs text-[#64748b]">{item.hint}</p>
                 </button>
@@ -275,9 +275,9 @@ export default function RecruiterJobs() {
           <section className="learner-stat-card p-5">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
               <div>
-                <h2 className="flex items-center gap-2 text-base font-semibold text-[#023E8A]">
+                <h2 className="flex items-center gap-2 text-base font-semibold text-sijil-blue">
                   Roles
-                  <span className="rounded-full bg-[#e8eef7] px-2.5 py-0.5 text-xs font-semibold tabular-nums text-[#023E8A]">
+                  <span className="rounded-full bg-[hsl(var(--sijil-blue)/0.08)] px-2.5 py-0.5 text-xs font-semibold tabular-nums text-sijil-blue">
                     {visible.length}
                   </span>
                 </h2>
@@ -329,7 +329,7 @@ export default function RecruiterJobs() {
                             className="min-w-0 flex-1 text-left"
                           >
                             <span className="flex flex-wrap items-center gap-2">
-                              <span className="text-base font-semibold text-[#023E8A]">{job.title}</span>
+                              <span className="text-base font-semibold text-sijil-blue">{job.title}</span>
                               <StatusBadge variant={job.status === "open" ? "verified" : "neutral"}>
                                 {job.status === "open" ? "Open" : "Closed"}
                               </StatusBadge>
@@ -351,7 +351,7 @@ export default function RecruiterJobs() {
                           </button>
                           <Button
                             size="sm"
-                            className="rounded-xl bg-[#023E8A] text-white hover:bg-[#023E8A]/90"
+                            className="rounded-xl bg-sijil-blue text-white hover:bg-sijil-blue/90"
                             onClick={() => navigate(`/recruiter/jobs/${job.id}`)}
                           >
                             Open

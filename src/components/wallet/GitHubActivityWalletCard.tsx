@@ -92,13 +92,13 @@ export function GitHubActivityWalletCard({ focusRequestId }: { focusRequestId?: 
 
   return (
     <section className="learner-stat-card space-y-3 p-4" aria-labelledby="github-activity-heading">
-      <h2 id="github-activity-heading" className="text-sm font-semibold text-[#023E8A]">GitHub activity requests</h2>
+      <h2 id="github-activity-heading" className="text-sm font-semibold text-sijil-blue">GitHub activity requests</h2>
       <p className="text-xs text-[#64748b]">Only commits authored by your connected GitHub account are counted. Choose one repository you can access. The recruiter does not see the exact count.</p>
       {requests.map((request) => (
         <article
           key={request.id}
           id={`github-activity-request-${request.id}`}
-          className={`rounded-lg border p-3 text-xs text-[#334155] ${request.id === focusRequestId ? "border-[#023E8A] bg-[#e8eef7]" : "border-[#c7d7f5] bg-[#f8fbff]"}`}
+          className={`rounded-lg border p-3 text-xs text-[#334155] ${request.id === focusRequestId ? "border-sijil-blue bg-[hsl(var(--sijil-blue)/0.08)]" : "border-[hsl(var(--sijil-blue)/0.17)] bg-[hsl(var(--sijil-blue)/0.025)]"}`}
         >
           <p className="font-medium">GitHub activity · at least {request.threshold ?? "the requested"} unique commits</p>
           <p className="mt-1">From {request.recruiterLabel}. Status: {statusLabel(request.status)}.</p>

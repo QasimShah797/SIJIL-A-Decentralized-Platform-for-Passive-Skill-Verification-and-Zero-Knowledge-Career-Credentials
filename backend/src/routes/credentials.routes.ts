@@ -8,6 +8,7 @@ import { authMiddleware } from "../middleware/auth.middleware";
 import { requireAdmin, requireLearner, requireReviewer } from "../middleware/role.middleware";
 import {
   issueCredential,
+  getCredentialReadiness,
   getCredential,
   exportCredentialDocument,
   getWallet,
@@ -24,6 +25,7 @@ import { issueValidatedCompetencyVersionForLearner } from "../controllers/compet
 const router = Router();
 
 router.post("/issue", authMiddleware, requireLearner, rateLimit({ windowMs: 60_000, max: 10 }), asyncHandler(issueCredential));
+router.get("/readiness/:skillId", authMiddleware, requireLearner, asyncHandler(getCredentialReadiness));
 router.post("/versions/:versionId/issue", authMiddleware, requireReviewer, rateLimit({ windowMs: 60_000, max: 10 }), asyncHandler(issueValidatedCompetencyVersionForLearner));
 router.get("/wallet/:learnerId", authMiddleware, asyncHandler(getWallet));
 router.post("/:id/anchor/retry", authMiddleware, requireAdmin, asyncHandler(retryAnchor));

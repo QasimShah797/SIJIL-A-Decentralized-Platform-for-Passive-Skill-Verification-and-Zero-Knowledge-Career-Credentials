@@ -4,7 +4,7 @@ import type { CandidateView } from "@/lib/db/candidates";
 import { cn } from "@/lib/utils";
 
 const iconTints = [
-  "bg-[#e8eef7] text-[#023E8A]",
+  "bg-[hsl(var(--sijil-blue)/0.08)] text-sijil-blue",
   "bg-[#ecfdf5] text-[#059669]",
   "bg-[#ecfeff] text-[#0891b2]",
   "bg-[#fef9c3] text-[#ca8a04]",
@@ -33,14 +33,14 @@ function StatCard({
       onClick={onClick}
       aria-pressed={active}
       className={cn(
-        "learner-stat-card p-5 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#023E8A]",
-        active && "ring-2 ring-[#023E8A]",
+        "learner-stat-card p-5 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sijil-blue",
+        active && "ring-2 ring-sijil-blue",
       )}
     >
       <div className={cn("flex h-10 w-10 items-center justify-center rounded-xl", iconTints[tint % iconTints.length])}>
         <Icon className="h-5 w-5" />
       </div>
-      <p className="mt-4 text-2xl font-bold text-[#023E8A]">{value}</p>
+      <p className="mt-4 text-2xl font-bold text-sijil-blue">{value}</p>
       <p className="text-sm font-medium text-[#334155]">{label}</p>
       <p className="mt-0.5 text-xs text-[#64748b]">{hint}</p>
     </button>

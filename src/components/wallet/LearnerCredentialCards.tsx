@@ -96,7 +96,7 @@ export function LearnerCredentialCards({
           </p>
         </div>
         {!loading ? (
-          <p className="rounded-full bg-[#eff6ff] px-3 py-1 text-sm font-semibold text-[#023E8A]">
+          <p className="rounded-full bg-[hsl(var(--sijil-blue)/0.04)] px-3 py-1 text-sm font-semibold text-sijil-blue">
             {items.length} on this device
           </p>
         ) : null}
@@ -104,13 +104,13 @@ export function LearnerCredentialCards({
       {error ? <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{error}</p> : null}
       {loading ? <p className="text-sm text-[#64748b]">Checking credentials…</p> : null}
       {!loading && items.length === 0 ? (
-        <p className="rounded-2xl border border-dashed border-[#bfdbfe] bg-[#f8fafc] p-6 text-sm text-[#475569]">No verified achievements are saved on this device yet.</p>
+        <p className="rounded-2xl border border-dashed border-[hsl(var(--sijil-blue)/0.17)] bg-[#f8fafc] p-6 text-sm text-[#475569]">No verified achievements are saved on this device yet.</p>
       ) : null}
       <div className="grid gap-4 md:grid-cols-2">
         {items.map((item) => (
           <article
             key={item.id}
-            className="flex flex-col gap-3 rounded-2xl border border-[#dbeafe] bg-white p-4 shadow-sm transition hover:border-[#c4b5fd]"
+            className="flex flex-col gap-3 rounded-2xl border border-[hsl(var(--sijil-blue)/0.1)] bg-white p-4 shadow-sm transition hover:border-[#c4b5fd]"
             role={onOpenSkill ? "button" : undefined}
             tabIndex={onOpenSkill ? 0 : undefined}
             onClick={() => onOpenSkill?.(item.skill, item.id)}
@@ -123,7 +123,7 @@ export function LearnerCredentialCards({
             }}
           >
             <header className="flex items-start gap-3">
-              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#eff6ff] text-[#023E8A]">
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[hsl(var(--sijil-blue)/0.04)] text-sijil-blue">
                 <Award className="h-5 w-5" />
               </span>
               <div className="min-w-0">
@@ -143,7 +143,7 @@ export function LearnerCredentialCards({
             </dl>
             <p className="text-sm text-[#334155]">{credentialStatusCopy(item)}</p>
             <details className="text-xs text-[#334155]">
-              <summary className="cursor-pointer font-medium text-[#023E8A]">Advanced details</summary>
+              <summary className="cursor-pointer font-medium text-sijil-blue">Advanced details</summary>
               <dl className="mt-2 grid gap-1">
                 <div><dt className="text-[#64748b]">Signature</dt><dd>{signatureLabel(item.signature)}</dd></div>
                 <div><dt className="text-[#64748b]">Still valid</dt><dd>{revocationLabel(item.revocation)}</dd></div>
@@ -176,12 +176,12 @@ export function LearnerCredentialCards({
         ))}
       </div>
       <details className="rounded-2xl border border-[#e2e8f0] bg-[#f8fafc] p-4">
-        <summary className="cursor-pointer text-sm font-medium text-[#023E8A]">Saved files</summary>
+        <summary className="cursor-pointer text-sm font-medium text-sijil-blue">Saved files</summary>
         <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-end">
           <label className="text-sm font-medium text-[#334155]">
             Import credential file
             <input
-              className="mt-1 block w-full text-xs text-[#334155] file:mr-2 file:rounded-md file:border-0 file:bg-[#023E8A] file:px-2 file:py-1 file:text-xs file:text-white"
+              className="mt-1 block w-full text-xs text-[#334155] file:mr-2 file:rounded-md file:border-0 file:bg-sijil-blue file:px-2 file:py-1 file:text-xs file:text-white"
               type="file"
               accept="application/json,.json"
               disabled={importing}
@@ -216,7 +216,7 @@ export function LearnerCredentialCards({
           ) : null}
           {open?.hash ? (
             <details className="text-xs">
-              <summary className="cursor-pointer font-medium text-[#023E8A]">Record identifier</summary>
+              <summary className="cursor-pointer font-medium text-sijil-blue">Record identifier</summary>
               <p className="mt-2 break-all font-mono">{open.id}</p>
               <p className="mt-1 break-all font-mono">{open.hash}</p>
             </details>

@@ -12,6 +12,7 @@ type LinkedInProfileUrlFieldProps = {
   onChange: (value: string) => void;
   readOnly?: boolean;
   disabled?: boolean;
+  compact?: boolean;
   /** When read-only and no URL yet — opens edit mode */
   onAddClick?: () => void;
 };
@@ -31,6 +32,7 @@ export function LinkedInProfileUrlField({
   onChange,
   readOnly = false,
   disabled = false,
+  compact = false,
   onAddClick,
 }: LinkedInProfileUrlFieldProps) {
   const trimmed = value.trim();
@@ -50,11 +52,11 @@ export function LinkedInProfileUrlField({
         type="button"
         onClick={onAddClick}
         className={cn(
-          "flex w-full items-center gap-3 rounded-xl border border-[#e2e8f0] bg-white p-4 text-left transition-colors hover:border-[#023E8A]/30 hover:bg-[#f8fafc]",
+          "flex w-full items-center gap-3 rounded-xl border border-[#e2e8f0] bg-white p-4 text-left transition-colors hover:border-sijil-blue/30 hover:bg-[#f8fafc]",
         )}
       >
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#0A66C2]/10">
-          <Linkedin className="h-5 w-5 text-[#0A66C2]" aria-hidden />
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-sijil-blue/10">
+          <Linkedin className="h-5 w-5 text-sijil-blue" aria-hidden />
         </div>
         <span className="flex items-center gap-2 text-sm font-medium text-[#334155]">
           <Plus className="h-4 w-4 text-[#64748b]" />
@@ -69,8 +71,8 @@ export function LinkedInProfileUrlField({
     return (
       <div className="rounded-xl border border-[#e2e8f0] bg-white p-4 space-y-3">
         <div className="flex items-start gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#0A66C2]/10">
-            <Linkedin className="h-5 w-5 text-[#0A66C2]" aria-hidden />
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-sijil-blue/10">
+            <Linkedin className="h-5 w-5 text-sijil-blue" aria-hidden />
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
@@ -84,7 +86,7 @@ export function LinkedInProfileUrlField({
               href={normalizedUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="mt-0.5 inline-flex items-center gap-1 text-xs text-[#64748b] hover:text-[#023E8A] hover:underline break-all"
+              className="mt-0.5 inline-flex items-center gap-1 text-xs text-[#64748b] hover:text-sijil-blue hover:underline break-all"
             >
               {normalizedUrl}
               <ExternalLink className="h-3 w-3 shrink-0" />
@@ -95,7 +97,7 @@ export function LinkedInProfileUrlField({
           <button
             type="button"
             onClick={onAddClick}
-            className="text-xs font-medium text-[#023E8A] hover:underline"
+            className="text-xs font-medium text-sijil-blue hover:underline"
           >
             Edit LinkedIn URL
           </button>
@@ -105,12 +107,13 @@ export function LinkedInProfileUrlField({
   }
 
   return (
-    <div className="rounded-xl border border-[#e2e8f0] bg-white p-4">
-      <Field label="LinkedIn profile URL" hint="Add your public LinkedIn profile URL (optional).">
+    <div className={compact ? undefined : "rounded-xl border border-[#e2e8f0] bg-white p-4"}>
+      <Field label="LinkedIn profile URL" hint={compact ? undefined : "Add your public LinkedIn profile URL (optional)."}>
         <div className="space-y-2">
           <div className="relative">
-            <Linkedin className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#0A66C2]" />
+            <Linkedin className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-sijil-blue" />
             <Input
+              aria-label="LinkedIn profile URL"
               value={value}
               onChange={(e) => onChange(e.target.value)}
               placeholder="https://www.linkedin.com/in/username"
@@ -131,7 +134,7 @@ export function LinkedInProfileUrlField({
               href={normalizedUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-xs text-[#023E8A] hover:underline"
+              className="inline-flex items-center gap-1 text-xs text-sijil-blue hover:underline"
             >
               Open profile
               <ExternalLink className="h-3 w-3" />

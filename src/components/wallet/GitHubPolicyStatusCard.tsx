@@ -49,7 +49,7 @@ export function GitHubPolicyStatusCard({ competencyId }: { competencyId: string 
   return (
     <div className="learner-stat-card space-y-3 p-4">
       <div>
-        <p className="text-sm font-semibold text-[#023E8A]">GitHub commit policy</p>
+        <p className="text-sm font-semibold text-sijil-blue">GitHub commit policy</p>
         <p className="mt-1 text-xs text-[#64748b]">
           SIJIL automatically checks repositories linked to this competency against the fixed policy of {threshold} unique
           authored commits and proves the result without revealing the count.
@@ -64,7 +64,7 @@ export function GitHubPolicyStatusCard({ competencyId }: { competencyId: string 
         <ul className="space-y-2 text-xs text-[#334155]">
           {statuses.map((row) => (
             <li key={row.evidenceRef} className="rounded-lg border p-2">
-              <p className="font-medium text-[#023E8A]">{repositoryOf(row)}</p>
+              <p className="font-medium text-sijil-blue">{repositoryOf(row)}</p>
               <p role="status">Status: {outcomeLabel(row.outcome)} · threshold {row.threshold}</p>
               <p className="text-[#64748b]">Evidence from: {formatTimestamp(row.evidenceFreshAt)}</p>
               {needsGitHubReconnect(row.errorCode) ? (

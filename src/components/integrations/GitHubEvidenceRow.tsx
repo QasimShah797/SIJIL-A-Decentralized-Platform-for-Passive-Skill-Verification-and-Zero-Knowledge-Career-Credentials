@@ -27,10 +27,10 @@ import { cn } from "@/lib/utils";
 
 function languageDot(lang: string) {
   const key = lang.toLowerCase();
-  if (key.includes("typescript")) return "bg-[#3178c6]";
+  if (key.includes("typescript")) return "bg-sijil-blue";
   if (key.includes("javascript")) return "bg-[#f7df1e]";
   if (key.includes("java")) return "bg-[#ea2d2e]";
-  if (key.includes("python")) return "bg-[#3776ab]";
+  if (key.includes("python")) return "bg-sijil-blue";
   return "bg-[#64748b]";
 }
 
@@ -44,7 +44,7 @@ function CommitBars({ count }: { count: number | null | undefined }) {
       {Array.from({ length: total }).map((_, i) => (
         <div
           key={i}
-          className={cn("w-1 rounded-sm", i < filled ? "bg-[#023E8A]" : "bg-[#e2e8f0]")}
+          className={cn("w-1 rounded-sm", i < filled ? "bg-sijil-blue" : "bg-[#e2e8f0]")}
           style={{ height: `${heights[i % heights.length]}px` }}
         />
       ))}
@@ -159,7 +159,7 @@ export function GitHubEvidenceRow({
                     href={project.repositoryUrl}
                     target="_blank"
                     rel="noreferrer"
-                    className="font-semibold text-sm truncate hover:underline text-[#023E8A]"
+                    className="font-semibold text-sm truncate hover:underline text-sijil-blue"
                   >
                     {project.repositoryName}
                   </a>

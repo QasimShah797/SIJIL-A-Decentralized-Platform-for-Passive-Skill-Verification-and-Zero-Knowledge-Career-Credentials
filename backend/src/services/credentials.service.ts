@@ -22,7 +22,8 @@ import { generateCredentialUri } from "../utils/generateHash";
 import { randomUUID } from "node:crypto";
 import { getEvaluateLedgerService } from "./ledger.factory";
 import { resolveWalletLedgerAnchorStatus, type WalletLedgerRow } from "./wallet-ledger-status";
-import { evaluateIssuanceEligibility } from "./issuance-gate";
+import { evaluateIssuanceEligibility, evidenceMeetsTrustTier, type IssuanceGateInput } from "./issuance-gate";
+import { GITHUB_EVIDENCE_SOURCE, normalizeGitHubRepoUrl, qualifyingGitHubTitle } from "../utils/github-supporting-record";
 import {
   assertTrustedOpening,
   readAssessmentCommitment,
@@ -90,6 +91,7 @@ type CredentialsDb = {
 export type CredentialsServiceDeps = {
   db?: CredentialsDb;
   requireProvenHolderDid?: (userId: string) => Promise<string>;
+  approveIssuance?: typeof ssiService.approveCredentialIssuance;
   signHash?: (hashHex: string) => string;
 };
 
@@ -268,34 +270,37 @@ async function resolveAssessmentCommitment(
 export class CredentialsService {
   private readonly db: CredentialsDb;
   private readonly requireProvenHolderDid: (userId: string) => Promise<string>;
+  private readonly approveIssuance: typeof ssiService.approveCredentialIssuance;
   private readonly signHash: (hashHex: string) => string;
 
   constructor(deps: CredentialsServiceDeps = {}) {
     this.db = deps.db ?? (supabaseService.client as unknown as CredentialsDb);
     this.requireProvenHolderDid = deps.requireProvenHolderDid
       ?? ((id) => ssiService.requireProvenHolderDid(id));
+    this.approveIssuance = deps.approveIssuance ?? ssiService.approveCredentialIssuance.bind(ssiService);
     this.signHash = deps.signHash ?? signCredentialHash;
   }
 
-  async issue(userId: string, input: IssueCredentialInput): Promise<CredentialView> {
+  private async readIssuanceScope(userId: string, skillId: string) {
     const { data: skill, error: skillErr } = await this.db
       .from("declared_skills")
       .select("*")
-      .eq("id", input.skillId)
+      .eq("id", skillId)
       .maybeSingle();
 
     if (skillErr) throw new AppError(skillErr.message, 500);
     if (!skill) throw new AppError("Skill not found", 404);
+    if (skill.user_id !== userId) throw new AppError("Skill does not belong to the authenticated learner", 403);
 
     const { data: evidenceRows, error: evidenceErr } = await this.db
       .from("supporting_records")
       .select("source, title, url, content_hash")
       .eq("user_id", userId)
-      .eq("skill_id", input.skillId);
+      .eq("skill_id", skillId);
 
     if (evidenceErr) throw new AppError(evidenceErr.message, 500);
 
-    const gate = evaluateIssuanceEligibility({
+    const eligibility = {
       skillOwnerId: String(skill.user_id),
       requestUserId: userId,
       pipelineStage: String(skill.pipeline_stage ?? ""),
@@ -305,7 +310,62 @@ export class CredentialsService {
         url: typeof row.url === "string" ? row.url : null,
         contentHash: typeof row.content_hash === "string" ? row.content_hash : null,
       })),
-    });
+    };
+    return { skill, evidenceRows, eligibility };
+  }
+
+  async readiness(userId: string, skillId: string): Promise<{ ready: boolean; reason: string | null }> {
+    const { eligibility } = await this.readIssuanceScope(userId, skillId);
+    try {
+      await resolveAssessmentCommitment(this.db, userId, skillId);
+    } catch (error) {
+      if (!(error instanceof AppError) || error.statusCode !== 409) throw error;
+      return { ready: false, reason: error.message };
+    }
+    if (!evidenceMeetsTrustTier(eligibility.evidence)) {
+      return { ready: false, reason: "Link qualifying supporting evidence to this competency." };
+    }
+    const gate = await this.checkIssuanceEvidence(skillId, eligibility);
+    if (!gate.ok) return { ready: false, reason: gate.message };
+    try {
+      await this.requireProvenHolderDid(userId);
+    } catch (error) {
+      if (!(error instanceof AppError) || error.statusCode !== 409) throw error;
+      return { ready: false, reason: error.message };
+    }
+    return { ready: true, reason: null };
+  }
+
+  private async checkIssuanceEvidence(skillId: string, eligibility: IssuanceGateInput) {
+    const gate = evaluateIssuanceEligibility(eligibility);
+    if (gate.ok || eligibility.pipelineStage !== PIPELINE_STAGE.EVIDENCE_LINKED) return gate;
+
+    const supportingUrls = new Set(eligibility.evidence
+      .filter((row) => row.source.trim() === GITHUB_EVIDENCE_SOURCE && qualifyingGitHubTitle(row.title))
+      .map((row) => normalizeGitHubRepoUrl(row.url))
+      .filter(Boolean));
+    if (supportingUrls.size > 0) {
+      const userId = eligibility.requestUserId;
+      const [connection, repos] = await Promise.all([
+        this.db.from("github_connections").select("github_username").eq("user_id", userId).maybeSingle(),
+        this.db.from("github_repos").select("github_username, github_url, repo_name").eq("user_id", userId).eq("linked_skill_id", skillId),
+      ]);
+      if (connection.error || repos.error) throw new AppError("Could not check linked GitHub evidence", 503);
+
+      const username = String(connection.data?.github_username ?? "").trim().toLowerCase();
+      const matches = username && (repos.data ?? []).some((row: Record<string, unknown>) =>
+        String(row.github_username ?? "").trim().toLowerCase() === username
+        && Boolean(qualifyingGitHubTitle(typeof row.repo_name === "string" ? row.repo_name : null))
+        && supportingUrls.has(normalizeGitHubRepoUrl(typeof row.github_url === "string" ? row.github_url : null)),
+      );
+      if (matches) return { ok: true } as const;
+    }
+    return { ok: false, status: 409, message: "Link qualifying GitHub evidence from your connected account to this competency." } as const;
+  }
+
+  async issue(userId: string, input: IssueCredentialInput): Promise<CredentialView> {
+    const { skill, evidenceRows, eligibility } = await this.readIssuanceScope(userId, input.skillId);
+    const gate = await this.checkIssuanceEvidence(input.skillId, eligibility);
     if (!gate.ok) throw new AppError(gate.message, gate.status);
 
     const activeExisting = await this.findActiveCredentialForSkill(userId, String(skill.name));
@@ -313,6 +373,7 @@ export class CredentialsService {
 
     const holderDid = await this.requireProvenHolderDid(userId);
     const assessmentCommitment = await resolveAssessmentCommitment(this.db, userId, input.skillId);
+    await this.approveIssuance(userId, input.skillId, holderDid, input.approval);
 
     const { data: profile } = await this.db
       .from("learner_profiles")

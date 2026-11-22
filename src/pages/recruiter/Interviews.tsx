@@ -39,7 +39,7 @@ type ModeFilter = "all" | ScheduledInterviewView["mode"];
 type InterviewPhase = "upcoming" | "past" | "cancelled";
 
 const iconTints = [
-  "bg-[#e8eef7] text-[#023E8A]",
+  "bg-[hsl(var(--sijil-blue)/0.08)] text-sijil-blue",
   "bg-[#ecfdf5] text-[#059669]",
   "bg-[#fef2f2] text-[#dc2626]",
   "bg-[#fff7ed] text-[#c2410c]",
@@ -212,7 +212,7 @@ export default function RecruiterInterviews() {
       <section className="learner-stat-card mb-6 p-5">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <h2 className="text-base font-semibold text-[#023E8A]">Schedule an interview</h2>
+            <h2 className="text-base font-semibold text-sijil-blue">Schedule an interview</h2>
             <p className="mt-1 text-xs text-[#64748b]">Pick a candidate, then send the date, mode, and meeting details.</p>
           </div>
           <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center lg:w-auto">
@@ -232,7 +232,7 @@ export default function RecruiterInterviews() {
               </SelectContent>
             </Select>
             <Button
-              className="rounded-xl bg-[#023E8A] hover:bg-[#012A5C]"
+              className="rounded-xl bg-sijil-blue hover:bg-sijil-blue"
               disabled={!pickerCandidate}
               onClick={() => setScheduleOpen(true)}
             >
@@ -253,14 +253,14 @@ export default function RecruiterInterviews() {
               aria-pressed={filter === item.id}
               onClick={() => setFilter(item.id)}
               className={cn(
-                "learner-stat-card p-5 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#023E8A]",
-                filter === item.id && "ring-2 ring-[#023E8A]",
+                "learner-stat-card p-5 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sijil-blue",
+                filter === item.id && "ring-2 ring-sijil-blue",
               )}
             >
               <div className={cn("flex h-10 w-10 items-center justify-center rounded-xl", iconTints[index])}>
                 <StatIcon className="h-5 w-5" />
               </div>
-              <p className="mt-4 text-2xl font-bold text-[#023E8A]">{counts[item.id]}</p>
+              <p className="mt-4 text-2xl font-bold text-sijil-blue">{counts[item.id]}</p>
               <p className="text-sm font-medium text-[#334155]">{item.label}</p>
               <p className="mt-0.5 text-xs text-[#64748b]">{item.hint}</p>
             </button>
@@ -271,9 +271,9 @@ export default function RecruiterInterviews() {
       <section className="learner-stat-card p-5">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <h2 className="flex items-center gap-2 text-base font-semibold text-[#023E8A]">
+            <h2 className="flex items-center gap-2 text-base font-semibold text-sijil-blue">
               Schedule
-              <span className="rounded-full bg-[#e8eef7] px-2.5 py-0.5 text-xs font-semibold tabular-nums text-[#023E8A]">
+              <span className="rounded-full bg-[hsl(var(--sijil-blue)/0.08)] px-2.5 py-0.5 text-xs font-semibold tabular-nums text-sijil-blue">
                 {visible.length}
               </span>
             </h2>
@@ -304,7 +304,7 @@ export default function RecruiterInterviews() {
               onClick={() => setMode(item.id)}
               className={cn(
                 "rounded-full px-3 py-1.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                mode === item.id ? "bg-[#023E8A] text-white" : "bg-[#f1f5f9] text-[#64748b] hover:text-[#023E8A]",
+                mode === item.id ? "bg-sijil-blue text-white" : "bg-[#f1f5f9] text-[#64748b] hover:text-sijil-blue",
               )}
             >
               {item.label}
@@ -354,7 +354,7 @@ export default function RecruiterInterviews() {
                       >
                         <span className={cn(
                           "flex h-11 w-11 shrink-0 items-center justify-center rounded-xl",
-                          interview.mode === INTERVIEW_MODE.VIDEO_CALL && "bg-[#e0f2fe] text-[#0369a1]",
+                          interview.mode === INTERVIEW_MODE.VIDEO_CALL && "bg-[hsl(var(--sijil-blue)/0.08)] text-sijil-blue",
                           interview.mode === INTERVIEW_MODE.PHONE && "bg-[#fff7ed] text-[#c2410c]",
                           interview.mode === INTERVIEW_MODE.IN_PERSON && "bg-[#ecfdf5] text-[#059669]",
                         )}>
@@ -362,7 +362,7 @@ export default function RecruiterInterviews() {
                         </span>
                         <span className="min-w-0">
                           <span className="flex flex-wrap items-center gap-2">
-                            <span className="text-base font-semibold text-[#023E8A]">{interview.candidateName}</span>
+                            <span className="text-base font-semibold text-sijil-blue">{interview.candidateName}</span>
                             {campus ? <span className="text-xs text-[#64748b]">{campus}</span> : null}
                             <StatusBadge variant={phase === "cancelled" ? "destructive" : phase === "past" ? "neutral" : "verified"}>
                               {phase === "cancelled" ? "Cancelled" : phase === "past" ? "Past" : "Scheduled"}
@@ -388,7 +388,7 @@ export default function RecruiterInterviews() {
                       <div className="flex shrink-0 flex-wrap gap-2">
                         <Button
                           size="sm"
-                          className="rounded-xl bg-[#023E8A] hover:bg-[#012A5C]"
+                          className="rounded-xl bg-sijil-blue hover:bg-sijil-blue"
                           onClick={() => navigate(`/recruiter/candidate/${interview.candidateUserId}`)}
                         >
                           View candidate

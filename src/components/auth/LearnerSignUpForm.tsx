@@ -9,7 +9,7 @@ import { Field } from "@/components/sijil/Field";
 import { PasswordRequirements } from "@/components/sijil/PasswordRequirements";
 import { toast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
-import { signupLearner, LearnerSignupError } from "@/lib/learner-signup";
+import { confirmLearnerSignup, resendLearnerSignupConfirmation, signupLearner, LearnerSignupError } from "@/lib/learner-signup";
 import { verifyLearnerAccess } from "@/lib/learner-auth";
 import { formatSupabaseError } from "@/lib/utils";
 
@@ -42,6 +42,9 @@ export function LearnerSignUpForm({ onSwitchToSignin, showSigninLink = true }: L
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [pendingEmail, setPendingEmail] = useState<string | null>(null);
+  const [code, setCode] = useState("");
+  const [confirmationError, setConfirmationError] = useState("");
 
   useEffect(() => {
     if (loading || !user || !rolesReady) return;
@@ -52,6 +55,15 @@ export function LearnerSignUpForm({ onSwitchToSignin, showSigninLink = true }: L
       });
     });
   }, [user, loading, rolesReady, navigate]);
+
+  const finishSignup = async () => {
+    await refreshRoles();
+    toast({
+      title: "Account created",
+      description: "Welcome to SIJIL. Complete your profile to get started.",
+    });
+    navigate("/learner/complete-profile", { replace: true });
+  };
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -83,19 +95,19 @@ export function LearnerSignUpForm({ onSwitchToSignin, showSigninLink = true }: L
     setBusy(true);
 
     try {
-      await signupLearner({
+      const result = await signupLearner({
         fullName: parsed.data.fullName,
         email: parsed.data.email,
         password: parsed.data.password,
       });
 
-      await refreshRoles();
-
-      toast({
-        title: "Account created",
-        description: "Welcome to SIJIL. Complete your profile to get started.",
-      });
-      navigate("/learner/complete-profile", { replace: true });
+      if (result.status === "confirmation_required") {
+        setPendingEmail(result.email);
+        setPassword("");
+        setConfirmPassword("");
+        return;
+      }
+      await finishSignup();
     } catch (err) {
       if (err instanceof LearnerSignupError) {
         if (err.field === "email" || err.field === "password" || err.field === "fullName") {
@@ -114,6 +126,45 @@ export function LearnerSignUpForm({ onSwitchToSignin, showSigninLink = true }: L
   const clearError = (key: keyof FieldErrors) => {
     if (errors[key]) setErrors((prev) => ({ ...prev, [key]: undefined }));
   };
+
+  if (pendingEmail) {
+    const confirm = async (resend: boolean) => {
+      if (busy) return;
+      setBusy(true);
+      setConfirmationError("");
+      try {
+        if (resend) {
+          await resendLearnerSignupConfirmation(pendingEmail);
+          setCode("");
+          toast({ title: "Confirmation email sent" });
+        } else {
+          await confirmLearnerSignup(pendingEmail, code.trim(), fullName);
+          await finishSignup();
+        }
+      } catch (error) {
+        setConfirmationError(error instanceof LearnerSignupError ? error.message : "Could not complete email confirmation. Try again.");
+      } finally {
+        setBusy(false);
+      }
+    };
+    return (
+      <form className="auth-form-stack" onSubmit={(event) => { event.preventDefault(); void confirm(false); }}>
+        <h2 className="text-lg font-semibold">Verify your email</h2>
+        <p className="text-sm text-muted-foreground">
+          Check {pendingEmail}. Enter the code from the email, or open its confirmation link and sign in.
+        </p>
+        <Field label="Verification code" required>
+          <Input aria-label="Verification code" className="auth-input" value={code}
+            onChange={(event) => setCode(event.target.value)} inputMode="numeric"
+            autoComplete="one-time-code" pattern="[0-9]+" required />
+        </Field>
+        {confirmationError && <p role="alert" className="text-sm text-destructive">{confirmationError}</p>}
+        <button className="auth-submit-btn" type="submit" disabled={busy || !code.trim()}>Verify email</button>
+        <button type="button" disabled={busy} className="text-sm text-primary underline" onClick={() => void confirm(true)}>Resend confirmation email</button>
+        {onSwitchToSignin && <button type="button" className="text-sm text-primary underline" onClick={onSwitchToSignin}>Go to sign in</button>}
+      </form>
+    );
+  }
 
   return (
     <>

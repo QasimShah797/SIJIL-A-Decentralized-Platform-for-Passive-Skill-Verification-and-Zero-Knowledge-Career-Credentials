@@ -14,8 +14,8 @@
 }
 
 .pr-review-card:hover {
-  border-color: #c5d4eb;
-  box-shadow: 0 2px 10px rgba(2, 62, 138, 0.08);
+  border-color: hsl(var(--sijil-blue)/0.21);
+  box-shadow: 0 2px 10px hsl(var(--sijil-blue)/0.08);
 }
 
 .pr-stat-card {
@@ -23,6 +23,6 @@
 }
 
 .pr-stat-card:focus-visible {
-  outline: 2px solid #023e8a;
+  outline: 2px solid hsl(var(--sijil-blue));
   outline-offset: 2px;
 }

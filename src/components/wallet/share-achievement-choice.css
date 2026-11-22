@@ -11,14 +11,14 @@
   margin-bottom: 22px;
   border: 0;
   background: transparent;
-  color: #023e8a;
+  color: hsl(var(--sijil-blue));
   font-size: 0.95rem;
   font-weight: 600;
   cursor: pointer;
 }
 
 .sac-back:hover {
-  color: #012a5c;
+  color: hsl(var(--sijil-blue));
 }
 
 .sac-header {
@@ -35,10 +35,10 @@
   width: 56px;
   height: 56px;
   border-radius: 999px;
-  background: linear-gradient(145deg, #dbeafe, #eff6ff);
-  color: #023e8a;
+  background: linear-gradient(145deg, hsl(var(--sijil-blue)/0.1), hsl(var(--sijil-blue)/0.04));
+  color: hsl(var(--sijil-blue));
   flex-shrink: 0;
-  box-shadow: 0 8px 20px rgba(2, 62, 138, 0.12);
+  box-shadow: 0 8px 20px hsl(var(--sijil-blue)/0.12);
 }
 
 .sac-title {
@@ -79,8 +79,8 @@
 }
 
 .sac-card-recruiter {
-  background: linear-gradient(160deg, #eff6ff 0%, #dbeafe 55%, #e0f2fe 100%);
-  border-color: #bfdbfe;
+  background: linear-gradient(160deg, hsl(var(--sijil-blue)/0.04) 0%, hsl(var(--sijil-blue)/0.1) 55%, hsl(var(--sijil-blue)/0.08) 100%);
+  border-color: hsl(var(--sijil-blue)/0.17);
 }
 
 .sac-card-public {
@@ -101,7 +101,7 @@
 
 .sac-art-recruiter {
   background: rgba(255, 255, 255, 0.72);
-  color: #023e8a;
+  color: hsl(var(--sijil-blue));
 }
 
 .sac-art-public {
@@ -116,8 +116,8 @@
   padding: 6px;
   border-radius: 12px;
   background: #fff;
-  color: #0369a1;
-  box-shadow: 0 6px 14px rgba(2, 62, 138, 0.12);
+  color: hsl(var(--sijil-blue));
+  box-shadow: 0 6px 14px hsl(var(--sijil-blue)/0.12);
 }
 
 .sac-card-title {
@@ -153,11 +153,11 @@
 }
 
 .sac-btn-blue {
-  background: #023e8a;
+  background: hsl(var(--sijil-blue));
 }
 
 .sac-btn-blue:hover {
-  background: #012a5c;
+  background: hsl(var(--sijil-blue));
 }
 
 .sac-btn-purple {
@@ -180,7 +180,7 @@
   width: min(100%, 720px);
   min-height: 320px;
   padding: 48px 48px 36px;
-  border: 1px solid #e8eef7;
+  border: 1px solid hsl(var(--sijil-blue)/0.08);
   border-radius: 28px;
   background: #fff;
   box-shadow: 0 22px 56px rgba(15, 23, 42, 0.12);
@@ -196,7 +196,7 @@
   margin-bottom: 22px;
   border-radius: 18px;
   background: #ede9fe;
-  color: #023e8a;
+  color: hsl(var(--sijil-blue));
 }
 
 .sac-modal-icon svg {
@@ -248,7 +248,7 @@
   padding: 0 22px;
   border: 0;
   border-radius: 12px;
-  background: #023e8a;
+  background: hsl(var(--sijil-blue));
   color: #fff;
   font-size: 1rem;
   font-weight: 600;
@@ -256,7 +256,7 @@
 }
 
 .sac-modal-create:hover {
-  background: #012a5c;
+  background: hsl(var(--sijil-blue));
 }
 
 .sac-modal-create:disabled {
@@ -565,7 +565,7 @@
 .pvc-footer-link {
   border: 0;
   background: transparent;
-  color: #023e8a;
+  color: hsl(var(--sijil-blue));
   font-size: 0.95rem;
   font-weight: 600;
   cursor: pointer;

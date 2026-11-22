@@ -24,7 +24,7 @@ import { cn } from "@/lib/utils";
 export function IntegrationsHero() {
   return (
     <div className="flex items-start gap-3">
-      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#e8eef7] text-[#023E8A]">
+      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[hsl(var(--sijil-blue)/0.08)] text-sijil-blue">
         <Plug className="h-5 w-5" aria-hidden />
       </div>
       <div className="min-w-0">
@@ -83,7 +83,7 @@ export function LinkedPlatformCard({
           <div
             className={cn(
               "flex h-11 w-11 shrink-0 items-center justify-center rounded-xl",
-              iconClassName ?? "bg-[#e8eef7] text-[#023E8A]",
+              iconClassName ?? "bg-[hsl(var(--sijil-blue)/0.08)] text-sijil-blue",
             )}
           >
             <Icon className="h-5 w-5" aria-hidden />
@@ -159,7 +159,7 @@ export function LinkedPlatformCard({
       <Button
         type="button"
         variant="secondary"
-        className="mt-5 h-10 rounded-xl bg-[#e8eef7] text-[#023E8A] hover:bg-[#dbe7f6]"
+        className="mt-5 h-10 rounded-xl bg-[hsl(var(--sijil-blue)/0.08)] text-sijil-blue hover:bg-[hsl(var(--sijil-blue)/0.12)]"
         onClick={onPrimary}
         disabled={connecting || syncing}
       >

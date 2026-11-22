@@ -7,22 +7,30 @@ import {
   Check,
   ChevronRight,
   Clock3,
+  ClipboardList,
   Copy,
   FileText,
+  Github,
+  GraduationCap,
   Info,
+  Laptop,
   Layers,
   Link2,
   Share2,
+  Search,
   ShieldCheck,
   UserRound,
   Users,
+  Wallet,
 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
+import { PasswordInput } from "@/components/auth/PasswordInput";
 import { toast } from "@/hooks/use-toast";
 import { useDeclaredSkills } from "@/hooks/useLearnerData";
 import { useSsiIdentity } from "@/hooks/useSsiIdentity";
 import { issueCredentialForSkill, type CredentialView } from "@/lib/db/credentials";
 import { buildAllValidationSummaries, type ValidationSummary } from "@/lib/db/validation";
+import { ApiUnavailableError, apiRequest } from "@/services/api/client";
 import "./verified-proof-flow.css";
 
 export type ProofStatus = "issued" | "eligible" | "pending";
@@ -47,7 +55,7 @@ export type ProofItem = {
 };
 
 const REVIEW_NOTE =
-  "All evidence and peer reviews have been collected from your connected platforms.";
+  "Peer reviews are optional. SIJIL checks the required evidence before issuing a credential.";
 
 export function proofStatusForSkill(
   summary: { skill: string; pipelineStage: string },
@@ -93,7 +101,7 @@ export function toProofItem(
     credentialId: matched?.id ?? null,
     githubCount: githubCount || (summary.sources.some((source) => /github/i.test(source)) ? 1 : 0),
     lmsCount: lmsCount || (summary.sources.some((source) => /moodle|lms/i.test(source)) ? 1 : 0),
-    taskCount: taskCount || (summary.sources.some((source) => /practical|task/i.test(source)) ? 1 : 0),
+    taskCount: taskCount || (summary.assessmentCompleted || summary.sources.some((source) => /practical|task/i.test(source)) ? 1 : 0),
     reviewCount: summary.reviewCount ?? 0,
   };
 }
@@ -164,6 +172,8 @@ export function VerifiedProofGuide({
   onBack,
   onViewInWallet,
   onIssue,
+  identityUnlocked,
+  onUnlock,
 }: {
   items: ProofItem[];
   loading: boolean;
@@ -172,11 +182,17 @@ export function VerifiedProofGuide({
   onBack: () => void;
   onViewInWallet: () => void;
   onIssue: (skillId: string) => Promise<CredentialView | null>;
+  identityUnlocked: boolean;
+  onUnlock?: (password: string) => Promise<void>;
 }) {
   const navigate = useNavigate();
   const [step, setStep] = useState<Step>("choose");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [issuing, setIssuing] = useState(false);
+  const [showUnlock, setShowUnlock] = useState(false);
+  const [password, setPassword] = useState("");
+  const [unlocking, setUnlocking] = useState(false);
+  const [unlockError, setUnlockError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [issued, setIssued] = useState<CredentialView | null>(null);
   const [accessLinkOn, setAccessLinkOn] = useState(true);
@@ -194,7 +210,7 @@ export function VerifiedProofGuide({
   }), [items]);
 
   const confirmIssue = async () => {
-    if (!selected || selected.status !== "eligible" || issuing) return;
+    if (!selected || selected.status !== "eligible" || issuing || !identityUnlocked) return;
     setIssuing(true);
     setError(null);
     try {
@@ -223,34 +239,88 @@ export function VerifiedProofGuide({
     }
   };
 
+  const unlockPrompt = (
+    <div className="vpf-warn mt-3">
+      <p className="font-semibold">Unlock your identity to issue this credential.</p>
+      {onUnlock ? (
+        showUnlock ? (
+          <form className="mt-3 grid gap-2" onSubmit={async (event) => {
+            event.preventDefault();
+            if (unlocking || password.length < 10) return;
+            setUnlocking(true);
+            setUnlockError(null);
+            try {
+              await onUnlock(password);
+              setPassword("");
+              setShowUnlock(false);
+            } catch {
+              setUnlockError("Could not unlock your identity. Check your recovery password and try again.");
+            } finally {
+              setUnlocking(false);
+            }
+          }}>
+            <label htmlFor="issue-unlock-password">Recovery password</label>
+            <PasswordInput id="issue-unlock-password" value={password} onChange={setPassword} disabled={unlocking} />
+            {unlockError ? <p role="alert">{unlockError}</p> : null}
+            <button type="submit" className="vpf-btn vpf-btn-primary" disabled={unlocking || password.length < 10}>
+              {unlocking ? "Unlocking…" : "Unlock Identity"}
+            </button>
+          </form>
+        ) : (
+          <button type="button" className="vpf-btn vpf-btn-primary mt-3" onClick={() => setShowUnlock(true)}>Unlock Identity</button>
+        )
+      ) : <Link className="mt-3 inline-block underline" to="/learner/secure-identity">Open Privacy &amp; Security</Link>}
+    </div>
+  );
+
   return (
-    <section className={`vpf vpf-theme-${theme}`} aria-label="Get verified proof">
-      <button type="button" className="vpf-back" onClick={onBack}>
-        <ArrowLeft className="h-4 w-4" />
-        {step === "choose" ? "Back to Dashboard" : "Back to Wallet"}
-      </button>
+    <section className={`vpf vpf-theme-${theme}${step === "choose" ? " vpf-choose" : step === "review" ? " vpf-choose vpf-review" : ""}`} aria-label="Get verified proof">
+      {step === "choose" || step === "review" ? (
+        <header className="vpf-choose-header">
+          {step === "choose" ? (
+            <Link className="vpf-back" to="/learner/dashboard"><ArrowLeft className="h-4 w-4" /> Back to Dashboard</Link>
+          ) : (
+            <button type="button" className="vpf-back" onClick={onBack}><ArrowLeft className="h-4 w-4" /> Back to Wallet</button>
+          )}
+          <div className="vpf-hero">
+            <div className="vpf-hero-icon"><ShieldCheck className="h-8 w-8" /></div>
+            <div>
+              <h1 className="vpf-hero-title">Get <span>Verified Proof</span></h1>
+              <p className="vpf-hero-sub">
+                {step === "choose" ? <>
+                  Select the achievement you want to digitally sign with your identity.
+                  <br />A signed credential confirms that you have reviewed and approve it for sharing.
+                </> : "Review the information and supporting evidence before issuing this credential."}
+              </p>
+            </div>
+          </div>
+          <div className="vpf-choose-art" aria-hidden="true">
+            <div className="vpf-art-back" />
+            <div className="vpf-art-front"><span /><ShieldCheck /></div>
+          </div>
+        </header>
+      ) : (
+        <button type="button" className="vpf-back" onClick={onBack}><ArrowLeft className="h-4 w-4" /> Back to Wallet</button>
+      )}
 
       <Progress active={progress} />
 
       {error ? <p role="alert" className="vpf-error">{error}</p> : null}
 
       {step === "choose" ? (
-        <div className="vpf-card">
-          <div className="vpf-hero">
-            <div className="vpf-hero-icon"><ShieldCheck className="h-7 w-7" /></div>
-            <div>
-              <h1 className="vpf-hero-title">Get Verified Proof</h1>
-              <p className="vpf-hero-sub">
-                Select the achievements you want to digitally sign with your identity. A signed credential confirms that you have reviewed and approve it for sharing.
-              </p>
-            </div>
-          </div>
+        <div className="vpf-card vpf-choose-card">
+          <section className="vpf-how" aria-label="How it works">
+            <h2><Info aria-hidden="true" /> How it works?</h2>
+            <div><Laptop aria-hidden="true" /><span><strong>Select an achievement</strong>Choose the skill you want to sign.</span></div>
+            <div><Search aria-hidden="true" /><span><strong>Review evidence</strong>Check your linked evidence.</span></div>
+            <div><Award aria-hidden="true" /><span><strong>Confirm issuance</strong>Digitally sign and add it to your wallet.</span></div>
+          </section>
 
           {loading ? <p className="text-sm text-[#64748b]">Checking your validation trail…</p> : null}
           {!loading && items.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-[#dbeafe] bg-[#f8fafc] p-6 text-sm text-[#475569]">
+            <div className="rounded-2xl border border-dashed border-[hsl(var(--sijil-blue)/0.1)] bg-[#f8fafc] p-6 text-sm text-[#475569]">
               <p>No declared achievements are available to review.</p>
-              <Link className="mt-3 inline-flex font-semibold text-[#023E8A] underline" to="/learner/validation">
+              <Link className="mt-3 inline-flex font-semibold text-sijil-blue underline" to="/learner/validation">
                 Open Competency Progress
               </Link>
             </div>
@@ -265,7 +335,7 @@ export function VerifiedProofGuide({
                 selectedId={selectedId}
                 onSelect={setSelectedId}
                 badgeFor={(item) => (
-                  <span className="vpf-badge vpf-badge-issued">Issued: {formatDate(item.issuedAt)}</span>
+                  <span className="vpf-badge vpf-badge-issued"><Check className="h-3.5 w-3.5" aria-hidden="true" /> Issued: {formatDate(item.issuedAt)}</span>
                 )}
               />
               <ProofGroup
@@ -308,7 +378,7 @@ export function VerifiedProofGuide({
               <div className="vpf-hero-icon"><Award className="h-7 w-7" /></div>
               <div>
                 <p className="vpf-kicker">Review Credential Details</p>
-                <h1 className="vpf-hero-title">{selected.skill}</h1>
+                <h2 className="vpf-hero-title">{selected.skill}</h2>
                 <p className="vpf-hero-sub">Review the information and supporting evidence before issuing this credential.</p>
               </div>
             </div>
@@ -316,19 +386,21 @@ export function VerifiedProofGuide({
               <SummaryCell icon={<Layers className="h-4 w-4" />} label="Credential Type" value="Competency" />
               <SummaryCell icon={<Clock3 className="h-4 w-4" />} label="Achievement" value={selected.skill} />
               <SummaryCell icon={<UserRound className="h-4 w-4" />} label="Credential For" value={displayName} />
-              <SummaryCell icon={<FileText className="h-4 w-4" />} label="Wallet" value="My Wallet" />
+              <SummaryCell icon={<Wallet className="h-4 w-4" />} label="Wallet" value="My Wallet" />
             </div>
           </article>
 
-          <article className="vpf-card">
+          <div className="vpf-review-grid">
+          <article className="vpf-card vpf-review-evidence">
             <div className="vpf-evidence-head">
               <div>
-                <h2 className="vpf-hero-title" style={{ fontSize: "1.25rem" }}>Review Evidence</h2>
+                <h2 className="vpf-review-heading"><Layers aria-hidden="true" /> Review Evidence</h2>
                 <p className="vpf-hero-sub">Explore the evidence and reviews used to verify this achievement.</p>
               </div>
               <button
                 type="button"
                 className="vpf-peer-btn"
+                title="Peer reviews are optional"
                 onClick={() => navigate("/learner/peer-reviews")}
               >
                 <Users className="h-4 w-4" />
@@ -340,27 +412,25 @@ export function VerifiedProofGuide({
             <div className="vpf-evidence-list">
               <EvidenceRow
                 title="GitHub"
+                icon={<Github />}
                 description="Code, commits, and project work"
                 count={selected.githubCount}
                 onOpen={() => navigate("/learner/integrations")}
               />
               <EvidenceRow
                 title="Moodle (LMS)"
+                icon={<GraduationCap />}
                 description="Course progress, submissions, and grades"
                 count={selected.lmsCount}
                 onOpen={() => navigate("/learner/integrations")}
               />
               <EvidenceRow
                 title="Practical Task"
+                icon={<ClipboardList />}
                 description="Hands-on task to demonstrate the competency"
                 count={selected.taskCount}
                 onOpen={() => navigate("/learner/task")}
               />
-            </div>
-
-            <div className="vpf-info vpf-info-purple">
-              <span className="vpf-info-icon" aria-hidden="true"><Info className="h-3.5 w-3.5" /></span>
-              <p>{REVIEW_NOTE}</p>
             </div>
 
             {selected.status === "pending" ? (
@@ -377,10 +447,24 @@ export function VerifiedProofGuide({
               <p className="mt-4 text-sm text-[#065f46]">A credential for this achievement is already on your account. A second one will not be requested.</p>
             ) : null}
           </article>
+            <aside className="vpf-card vpf-review-check" aria-label="Issuance check">
+              <h2 className="vpf-review-heading"><ShieldCheck aria-hidden="true" /> Issuance Check</h2>
+              <p>{selected.status === "eligible" ? "Required checks are complete. SIJIL rechecks them before signing." : "SIJIL verifies the following before issuing a new credential."}</p>
+              <ul className={selected.status === "eligible" ? "is-verified" : undefined}>
+                {["Qualifying supporting evidence", "Completed assessment record", "Verified holder identity (DID)", "Trusted assessment commitment"].map((label) => (
+                  <li key={label}>
+                    {selected.status === "eligible" ? <Check aria-hidden="true" /> : <span aria-hidden="true" />}
+                    {label}
+                  </li>
+                ))}
+              </ul>
+              <p className="vpf-review-optional">{REVIEW_NOTE}</p>
+            </aside>
+          </div>
 
           <div className="vpf-actions">
             <button type="button" className="vpf-btn vpf-btn-ghost" onClick={() => setStep("choose")}>Back</button>
-            {selected.status === "eligible" ? (
+            {selected.status === "eligible" && identityUnlocked ? (
               <button type="button" className="vpf-btn vpf-btn-primary" onClick={() => setStep("confirm")}>
                 Confirm Issuance <ArrowRight className="h-4 w-4" />
               </button>
@@ -391,6 +475,7 @@ export function VerifiedProofGuide({
               </button>
             ) : null}
           </div>
+          {selected.status === "eligible" && !identityUnlocked ? unlockPrompt : null}
         </div>
       ) : null}
 
@@ -489,12 +574,13 @@ export function VerifiedProofGuide({
             <button
               type="button"
               className="vpf-btn vpf-btn-primary"
-              disabled={issuing}
+              disabled={issuing || !identityUnlocked}
               onClick={() => void confirmIssue()}
             >
               {issuing ? "Issuing…" : "Confirm Issuance →"}
             </button>
           </div>
+          {!identityUnlocked ? unlockPrompt : null}
         </article>
       ) : null}
 
@@ -533,18 +619,42 @@ export function VerifiedProofFlow({
   onIssued: () => void;
 }) {
   const { skills, loading: skillsLoading } = useDeclaredSkills();
-  const { snapshot } = useSsiIdentity();
+  const { snapshot, signingIdentity, unlock } = useSsiIdentity();
   const holderDid = snapshot.local?.did ?? snapshot.server.did;
-  const [summaries, setSummaries] = useState<ValidationSummary[]>([]);
+  const [items, setItems] = useState<ProofItem[]>([]);
   const [summariesLoading, setSummariesLoading] = useState(true);
 
   useEffect(() => {
     if (skillsLoading) return;
     let cancelled = false;
     setSummariesLoading(true);
-    buildAllValidationSummaries(userId, skills)
+    buildAllValidationSummaries(userId, skills, { includeAssessmentProgress: true })
+      .then((summaries) => Promise.all(summaries.map(async (summary) => {
+        const item = toProofItem(summary, credentials);
+        if (item.status === "issued") return item;
+        try {
+          const readiness = await apiRequest<{ ready: boolean; reason: string | null }>(
+            `/credentials/readiness/${encodeURIComponent(summary.skillId)}`,
+          );
+          return {
+            ...item,
+            status: readiness.ready ? "eligible" as const : "pending" as const,
+            nextStep: readiness.reason ?? "Check the required evidence and try again.",
+          };
+        } catch (error) {
+          const missingRoute = error instanceof ApiUnavailableError
+            && error.status === 404 && error.message.startsWith("API 404: Route not found:");
+          return {
+            ...item,
+            status: "pending" as const,
+            nextStep: missingRoute
+              ? "The running Wallet service does not support readiness checks yet. Try again after the service is updated."
+              : "Wallet could not check issuance readiness. Reopen Get Verified Proof to try again.",
+          };
+        }
+      })))
       .then((rows) => {
-        if (!cancelled) setSummaries(rows);
+        if (!cancelled) setItems(rows);
       })
       .finally(() => {
         if (!cancelled) setSummariesLoading(false);
@@ -552,18 +662,15 @@ export function VerifiedProofFlow({
     return () => {
       cancelled = true;
     };
-  }, [userId, skills, skillsLoading]);
-
-  const items = useMemo(
-    () => summaries.map((summary) => toProofItem(summary, credentials)),
-    [summaries, credentials],
-  );
+  }, [userId, skills, skillsLoading, credentials]);
 
   return (
     <VerifiedProofGuide
       items={items}
       loading={skillsLoading || summariesLoading}
       holderDid={holderDid}
+      identityUnlocked={Boolean(signingIdentity && signingIdentity.did === snapshot.server.did)}
+      onUnlock={snapshot.status === "locked" ? unlock : undefined}
       learnerName={learnerName}
       onBack={onBack}
       onViewInWallet={onViewInWallet}
@@ -643,7 +750,7 @@ function ProofGroup({
               <span className="vpf-code-icon" aria-hidden="true">{"</>"}</span>
               <span className="vpf-item-copy">
                 <span className="vpf-item-title">{item.skill}</span>
-                <span className="vpf-item-sub">{item.stageLabel} · {item.evidence}</span>
+                <span className="vpf-item-sub">{[item.stageLabel, item.evidence?.replace(/practical task passed/i, "Practical task completed")].filter(Boolean).join(" · ")}</span>
               </span>
               {badgeFor(item)}
             </button>
@@ -676,18 +783,20 @@ function SummaryCell({
 
 function EvidenceRow({
   title,
+  icon,
   description,
   count,
   onOpen,
 }: {
   title: string;
+  icon: ReactNode;
   description: string;
   count: number;
   onOpen: () => void;
 }) {
   return (
     <div className="vpf-evidence-row">
-      <span className="vpf-code-icon" aria-hidden="true">{"</>"}</span>
+      <span className="vpf-code-icon" aria-hidden="true">{icon}</span>
       <div className="vpf-item-copy">
         <p className="vpf-item-title">{title}</p>
         <p className="vpf-item-sub">{description}</p>

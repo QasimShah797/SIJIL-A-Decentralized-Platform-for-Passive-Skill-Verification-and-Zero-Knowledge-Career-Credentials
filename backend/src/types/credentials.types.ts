@@ -62,6 +62,7 @@ export interface CredentialView {
 
 export interface IssueCredentialInput {
   skillId: string;
+  approval?: { challengeId: string; signature: string };
 }
 
 export interface ShareCredentialInput {

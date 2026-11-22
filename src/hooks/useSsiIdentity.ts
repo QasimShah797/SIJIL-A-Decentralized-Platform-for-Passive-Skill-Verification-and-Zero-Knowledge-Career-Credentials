@@ -21,13 +21,13 @@ import {
   unlockPersistedIdentity,
 } from "@/lib/ssi/session";
 import { restoreOnThisDevice } from "@/lib/ssi/recovery";
-import { learnerIdentityError } from "@/lib/ssi/onboarding";
+import { learnerIdentityError, SSI_IDENTITY_LOOKUP_ERROR } from "@/lib/ssi/onboarding";
 import { type EncryptedSsiBackup } from "@/lib/ssi/vault";
 import { evaluateSsiBrowserSupport, type SsiSupportResult } from "@/lib/ssi/support";
 import {
   bindSsiIdentityApi,
   createSsiChallengeApi,
-  getSsiIdentityApi,
+  readSsiIdentityApi,
 } from "@/services/api/ssi.api";
 
 const unsupportedSupport: SsiSupportResult = {
@@ -53,6 +53,16 @@ async function bindDid(record: StoredSsiIdentity): Promise<void> {
   await bindSsiIdentityApi(body);
 }
 
+async function readServerIdentity() {
+  try {
+    const identity = await readSsiIdentityApi();
+    if (identity?.tableReady) return identity;
+  } catch {
+    // The caller needs to distinguish an unavailable lookup from an empty binding.
+  }
+  throw new Error(SSI_IDENTITY_LOOKUP_ERROR);
+}
+
 export function useSsiIdentity() {
   const { user } = useAuth();
   const [snapshot, setSnapshot] = useState<SsiSnapshot>({
@@ -66,6 +76,7 @@ export function useSsiIdentity() {
   const [working, setWorking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [recoverable, setRecoverable] = useState(false);
+  const [serverLookupFailed, setServerLookupFailed] = useState(false);
 
   const refresh = useCallback(async () => {
     if (!user?.id) {
@@ -77,6 +88,7 @@ export function useSsiIdentity() {
         message: "Sign in as a learner to activate an SSI identity.",
       });
       setRecoverable(false);
+      setServerLookupFailed(false);
       setLoading(false);
       return;
     }
@@ -94,7 +106,8 @@ export function useSsiIdentity() {
       if (!local && persisted && !vault && isUsablePrivateKey(persisted.privateKey)) {
         local = rememberUnlocked(persisted);
       }
-      const api = await getSsiIdentityApi();
+      const api = await readServerIdentity().catch(() => null);
+      setServerLookupFailed(!api);
       const server: ServerSsiIdentity = {
         did: api?.did ?? null,
         fingerprint: api?.fingerprint ?? null,
@@ -140,7 +153,7 @@ export function useSsiIdentity() {
       if (!support.ok) {
         throw new Error(support.reasons[0] ?? "Browser cannot store a learner SSI identity");
       }
-      const api = await getSsiIdentityApi();
+      const api = await readServerIdentity();
       let record: StoredSsiIdentity;
       if (passphrase) {
         const created = await createPassphraseVault(indexedDbKeyStore, user.id, passphrase, api?.did ?? null);
@@ -213,15 +226,9 @@ export function useSsiIdentity() {
     void refresh();
   }, [user?.id, refresh]);
 
-  const exportBackup = useCallback(async (): Promise<EncryptedSsiBackup> => {
+  const exportBackup = useCallback(async (recoveryPassword: string): Promise<EncryptedSsiBackup> => {
     if (!user?.id) throw new Error("Sign in required");
-    const persisted = indexedDbKeyStore.loadPersisted
-      ? await indexedDbKeyStore.loadPersisted(user.id)
-      : null;
-    if (!isVaultRecord(persisted)) {
-      throw new Error("This identity uses a non-extractable key and cannot be exported. Encrypted backup is only available for passphrase-protected identities.");
-    }
-    return exportStoredBackup(persisted);
+    return exportStoredBackup(indexedDbKeyStore, user.id, recoveryPassword);
   }, [user?.id]);
 
   const restoreBackup = useCallback(async (raw: string, passphrase: string) => {
@@ -229,8 +236,7 @@ export function useSsiIdentity() {
     setWorking(true);
     setError(null);
     try {
-      const api = await getSsiIdentityApi();
-      if (!api) throw new Error("Identity verification is temporarily unavailable");
+      const api = await readServerIdentity();
       const result = await restoreOnThisDevice({
         store: indexedDbKeyStore,
         backupRaw: raw,
@@ -265,6 +271,7 @@ export function useSsiIdentity() {
     working,
     error,
     recoverable,
+    serverLookupFailed,
     signingIdentity,
     refresh,
     activate,

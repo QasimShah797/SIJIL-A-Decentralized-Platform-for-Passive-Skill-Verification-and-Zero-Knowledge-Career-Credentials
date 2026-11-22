@@ -1,9 +1,9 @@
-/* Match learner nav brand: --dash-sidebar / --dash-brand = #023E8A */
+/* Match learner nav brand: --dash-sidebar / --dash-brand = hsl(var(--sijil-blue)) */
 .sd-page {
-  --sd-brand: #023e8a;
-  --sd-brand-dark: #012a5c;
-  --sd-brand-light: #e8eef7;
-  --sd-brand-border: #c5d4eb;
+  --sd-brand: hsl(var(--sijil-blue));
+  --sd-brand-dark: hsl(var(--sijil-blue));
+  --sd-brand-light: hsl(var(--sijil-blue)/0.08);
+  --sd-brand-border: hsl(var(--sijil-blue)/0.21);
   --sd-on-brand: #ffffff;
   --sd-text: #0f172a;
   --sd-muted: #64748b;

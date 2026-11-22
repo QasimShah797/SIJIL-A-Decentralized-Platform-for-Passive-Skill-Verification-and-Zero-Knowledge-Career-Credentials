@@ -7,7 +7,7 @@ export function AssessmentProofRequestCard(_props: {
   presentationId?: string;
 }) {
   return (
-    <div className="rounded-xl border border-[#e2e8f0] bg-[#F4F7FC] p-4 text-sm text-[#475569]">
+    <div className="rounded-xl border border-[#e2e8f0] bg-[hsl(var(--sijil-blue)/0.04)] p-4 text-sm text-[#475569]">
       Private verification requests are retired. Open the candidate profile to inspect proofs the learner already shared.
     </div>
   );

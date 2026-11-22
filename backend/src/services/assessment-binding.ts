@@ -4,7 +4,6 @@
  */
 import { pathToFileURL } from "node:url";
 import path from "node:path";
-import { WALLET_READY_PASS_PERCENT } from "../utils/wallet-ready-promotion";
 
 export const TRUSTED_COMMITMENT_SCHEME = "poseidon-bn254-v1";
 export const TRUSTED_CIRCUIT_ID = "score-threshold-v1";
@@ -124,8 +123,7 @@ function claimFor(attempt: AssessmentAttemptRecord): AssessmentCommitmentClaim {
 
 /**
  * Latest submitted attempt wins. Ties break on created_at, then attempt id.
- * Only a completed, passed attempt at or above the wallet-ready percentage,
- * with Phase 2 commitment metadata, is eligible.
+ * A completed attempt needs a valid recorded score and trusted commitment metadata.
  */
 export function selectTrustedAssessmentAttempt(input: {
   learnerId: string;
@@ -167,22 +165,21 @@ export function selectTrustedAssessmentAttempt(input: {
     };
   }
 
-  const passed = completed.filter((attempt) => {
+  const scored = completed.filter((attempt) => {
     const percentage = integerPercent(attempt.percentage);
-    return attempt.passed === true
-      && percentage !== null
-      && percentage >= WALLET_READY_PASS_PERCENT
+    return percentage !== null
+      && percentage >= 0
       && percentage <= 100;
   });
-  if (passed.length === 0) {
+  if (scored.length === 0) {
     return {
       ok: false,
       status: 409,
-      message: "Assessment attempt does not meet the pass requirement",
+      message: "Assessment attempt has no valid recorded score",
     };
   }
 
-  const trusted = passed.filter(hasTrustedMetadata);
+  const trusted = scored.filter(hasTrustedMetadata);
   if (trusted.length === 0) {
     return {
       ok: false,

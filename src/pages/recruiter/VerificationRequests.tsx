@@ -22,7 +22,7 @@ export default function RecruiterVerificationRequests() {
             Use the directory to find shared candidates, then open Private verification on a profile.
           </p>
           <div className="mt-4 flex flex-wrap gap-2">
-            <Button asChild className="bg-[#0B1F46] hover:bg-[#16325c]">
+            <Button asChild className="bg-sijil-blue hover:bg-sijil-blue">
               <Link to="/recruiter/search">Open candidate directory</Link>
             </Button>
             <Button asChild variant="outline">

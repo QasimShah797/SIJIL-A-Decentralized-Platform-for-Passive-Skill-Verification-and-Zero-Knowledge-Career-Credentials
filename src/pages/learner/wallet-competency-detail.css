@@ -351,8 +351,8 @@
 }
 
 .scd-row-icon.task {
-  background: #eff6ff;
-  color: #2563eb;
+  background: hsl(var(--sijil-blue)/0.04);
+  color: hsl(var(--sijil-blue));
 }
 
 .scd-row-icon.share {

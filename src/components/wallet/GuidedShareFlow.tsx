@@ -333,7 +333,7 @@ export function GuidedShareFlow({
       ) : null}
 
       {step === "choose" && method ? (
-        <div className="space-y-5 rounded-[28px] border border-[#e0e7ff] bg-white p-5 shadow-sm sm:p-8">
+        <div className="space-y-5 rounded-[28px] border border-[hsl(var(--sijil-blue)/0.08)] bg-white p-5 shadow-sm sm:p-8">
           <div>
             <h1 className="text-2xl font-semibold text-[#0f172a]">
               {method === "public" ? "Choose Credential" : "Choose Achievements"}
@@ -345,7 +345,7 @@ export function GuidedShareFlow({
             </p>
           </div>
           {credentials.length === 0 ? (
-            <p className="rounded-2xl border border-dashed border-[#dbeafe] bg-[#f8fafc] p-4 text-sm text-[#475569]">
+            <p className="rounded-2xl border border-dashed border-[hsl(var(--sijil-blue)/0.1)] bg-[#f8fafc] p-4 text-sm text-[#475569]">
               No achievements are ready to share yet.
             </p>
           ) : (
@@ -358,9 +358,9 @@ export function GuidedShareFlow({
                       type="button"
                       aria-pressed={checked}
                       onClick={() => toggle(credential.id)}
-                      className={`flex h-full w-full items-start gap-3 rounded-2xl border p-4 text-left ${checked ? "border-[#023E8A] bg-[#eff6ff] ring-2 ring-[#bfdbfe]" : "border-[#e2e8f0] bg-white"}`}
+                      className={`flex h-full w-full items-start gap-3 rounded-2xl border p-4 text-left ${checked ? "border-sijil-blue bg-[hsl(var(--sijil-blue)/0.04)] ring-2 ring-[hsl(var(--sijil-blue)/0.17)]" : "border-[#e2e8f0] bg-white"}`}
                     >
-                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#eff6ff] text-[#023E8A]">
+                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[hsl(var(--sijil-blue)/0.04)] text-sijil-blue">
                         <Award className="h-5 w-5" />
                       </span>
                       <span className="min-w-0">
@@ -378,7 +378,7 @@ export function GuidedShareFlow({
             <Button type="button" variant="ghost" onClick={() => { setMethod(null); setStep("method"); resetSelection(); }}>Back</Button>
             <Button
               type="button"
-              className="rounded-xl bg-[#023E8A] hover:bg-[#012A5C]"
+              className="rounded-xl bg-sijil-blue hover:bg-sijil-blue"
               disabled={method === "public" ? selected.length !== 1 : selected.length === 0}
               onClick={() => setStep("review")}
             >
