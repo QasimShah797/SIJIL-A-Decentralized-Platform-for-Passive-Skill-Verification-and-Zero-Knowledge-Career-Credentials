@@ -1,3 +1,4 @@
+import { ZKP_UI_ENABLED } from "@/lib/zkp-ui";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -118,7 +119,7 @@ export function ShareAchievementFlow({
           </article>
         </div>
       ) : null}
-      <p className="text-sm text-[#475569]">{proof.message}</p>
+      {ZKP_UI_ENABLED && <p className="text-sm text-[#475569]">{proof.message}</p>}
 
       {step === "choose" && method === "direct-recruiter" ? (
         <div className="space-y-3">

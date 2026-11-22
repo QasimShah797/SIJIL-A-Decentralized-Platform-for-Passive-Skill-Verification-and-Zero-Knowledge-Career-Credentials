@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { redactExactValues } from "../utils/exact-value-redaction";
+import { enforcePrivateGithubDisclosure, redactExactValues } from "../utils/exact-value-redaction";
 import { buildAtsResume, buildEvidenceLedger } from "../utils/public-credential-map";
 import { DEFAULT_DISCLOSURE_PREFERENCES } from "./disclosure-preferences.service";
 import { disclosurePreferencesPatchSchema } from "../validators/disclosure-preferences.validator";
@@ -42,6 +42,40 @@ function payload(): Record<string, unknown> {
     },
   };
 }
+
+describe("GitHub exact counts in wallet shares", () => {
+  for (const mode of ["details", "private", "omit"]) {
+    for (const complete of [false, true]) {
+      for (const globalExact of [false, true]) {
+        it(`enforces ${mode} with complete package=${complete} and global exact=${globalExact}`, () => {
+          const github = {
+            repos: [{ commit_count: 83, contributionCount: 83 }],
+            activities: [{ activity_type: "commit", commit_hash: "test-sha" }],
+          };
+          const share = {
+            evidenceModes: { github_evidence: mode },
+            evidence: complete ? { completeEvidencePackage: { github, practicalTask: { score: 97 } } } : { github },
+            privateResults: [{ claimType: "github_activity", threshold: "50" }],
+          };
+          const stored = enforcePrivateGithubDisclosure(share);
+          const read = redactExactValues(share, {
+            ...DEFAULT_DISCLOSURE_PREFERENCES, shareExactGithubCommitCount: globalExact, shareExactAssessmentMarks: true,
+          }, "test");
+          assert.equal(JSON.stringify(stored).includes('"commit_count"'), mode !== "private");
+          assert.equal(JSON.stringify(read).includes('"commit_count"'), mode !== "private" && globalExact);
+          assert.equal(JSON.stringify(read).includes("test-sha"), mode !== "private" && globalExact);
+          if (mode === "private") {
+            for (const view of [stored, read]) {
+              assert.doesNotMatch(JSON.stringify(view), /contributionCount|test-sha|commit_count/);
+              assert.deepEqual(view.privateResults, share.privateResults);
+            }
+            if (complete) assert.match(JSON.stringify(read), /"score":97/);
+          }
+        });
+      }
+    }
+  }
+});
 
 const FIELDS = ["github_evidence", "lms_evidence", "practical_task_result"];
 

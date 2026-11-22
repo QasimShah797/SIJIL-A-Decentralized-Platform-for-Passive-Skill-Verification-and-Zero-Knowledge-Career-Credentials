@@ -3,6 +3,8 @@
  * Mirrors backend assessEvidenceShareAvailability — only linked evidence for the
  * selected competency may appear as a share card.
  */
+import { ZKP_UI_ENABLED } from "@/lib/zkp-ui";
+
 export type EvidenceShareMode = "details" | "private" | "omit";
 
 export type EvidenceModes = {
@@ -131,6 +133,7 @@ export function defaultEvidenceModesForAvailability(
   availability: EvidenceShareAvailability,
 ): EvidenceModes {
   const next = { ...OMIT_EVIDENCE_MODES };
+  if (!ZKP_UI_ENABLED) return next;
   (Object.keys(next) as Array<keyof EvidenceModes>).forEach((field) => {
     const avail = availability[field];
     if (!avail.present) {

@@ -9,6 +9,8 @@ export const PEER_REVIEW_ZKP_TYPE = "peer-review-count-v1" as const;
 
 export const ASSESSMENT_POLICY_VERSION = "assess-60-v1" as const;
 export const GITHUB_POLICY_VERSION = "github-70-repo-v1" as const;
+export const SHARE_GITHUB_POLICY_VERSION = "share-github-50-repo-v1" as const;
+export const SHARE_GITHUB_THRESHOLD = 50;
 /** Share-flow private result: score ≥ 50% (does not affect credential issuance). */
 export const SHARE_ASSESSMENT_POLICY_VERSION = "share-assess-50-v1" as const;
 export const SHARE_MOODLE_POLICY_VERSION = "share-moodle-50-v1" as const;

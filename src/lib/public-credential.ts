@@ -149,6 +149,8 @@ export type PublicPrivateResultView = {
   policyId?: string | null;
   circuitId?: string | null;
   verifiedBy?: string | null;
+  threshold?: string | null;
+  proofType?: string | null;
 };
 
 export type PublicCompetencyResponse = {

@@ -185,7 +185,7 @@ export function mapWalletShareToView(row: {
     return null;
   }
 
-  const payload = asRecord(row.disclosed_payload) ?? {};
+  const { privateResults: _unverified, zkProofs: _proofs, ...payload } = asRecord(row.disclosed_payload) ?? {};
   const selectedFields = Array.isArray(row.selected_fields)
     ? row.selected_fields.filter((item): item is string => typeof item === "string")
     : [];
@@ -293,7 +293,7 @@ export function buildCandidateDetail(params: {
       : [];
     return total + raw.filter((item) => {
       const record = asRecord(item);
-      return record && asText(record.status) === "confirmed";
+      return record && record.status === "confirmed" && record.proofType === "Groth16";
     }).length;
   }, 0);
 

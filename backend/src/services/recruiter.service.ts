@@ -11,9 +11,10 @@ import type { CredentialVerifyResult } from "./credential-verify";
 import { verifyPublicCredential } from "./credential-verify.service";
 import { recruiterVerifyCredential } from "./recruiter-verify";
 import { canReadLearnerData, type AuthCaller } from "./learner-access";
-import { directRecipientId, isAllRecruiterShare, shareVisibleToRecruiter } from "./share-directory";
+import { DIRECT_RECRUITER_SHARE, directRecipientId, isAllRecruiterShare, shareVisibleToRecruiter } from "./share-directory";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { redactExactValues } from "../utils/exact-value-redaction";
+import { hasValidSharedPayloadSignature, verifySharedPrivateResults } from "./shared-zkp-verification";
 import {
   DEFAULT_DISCLOSURE_PREFERENCES,
   disclosurePreferencesStore,
@@ -282,7 +283,7 @@ function countConfirmedPrivateResults(credentials: SharedCredentialView[]): numb
       : [];
     return total + raw.filter((item) => {
       const record = asRecord(item);
-      return record && asText(record.status) === "confirmed";
+      return record && record.status === "confirmed" && record.proofType === "Groth16";
     }).length;
   }, 0);
 }
@@ -631,11 +632,15 @@ function recruiterDb(accessToken?: string): SupabaseClient {
 async function redactShareRows<T extends Record<string, unknown>>(
   rows: T[],
   learnerIdOf: (row: T) => string | null | undefined,
+  recruiterUserId: string,
 ): Promise<T[]> {
   const prefsByLearner = new Map<string, Awaited<ReturnType<DisclosurePreferencesStore["get"]>>>();
   const asOf = new Date().toISOString();
   const out: T[] = [];
   for (const row of rows) {
+    const payload = asRecord(row.disclosed_payload);
+    if ((row.proof_value || payload?.shareKind === DIRECT_RECRUITER_SHARE || isAllRecruiterShare(payload))
+      && !hasValidSharedPayloadSignature(row)) continue;
     const learnerId = learnerIdOf(row) ?? "";
     let prefs = prefsByLearner.get(learnerId);
     if (!prefs) {
@@ -644,8 +649,8 @@ async function redactShareRows<T extends Record<string, unknown>>(
         : { ...DEFAULT_DISCLOSURE_PREFERENCES };
       prefsByLearner.set(learnerId, prefs);
     }
-    const payload = asRecord(row.disclosed_payload);
-    out.push(payload ? { ...row, disclosed_payload: redactExactValues(payload, prefs, asOf) } : row);
+    const validated = await verifySharedPrivateResults(row, { recruiterUserId });
+    out.push(payload ? { ...row, disclosed_payload: redactExactValues(validated, prefs, asOf) } : row);
   }
   return out;
 }
@@ -653,7 +658,7 @@ async function redactShareRows<T extends Record<string, unknown>>(
 async function fetchActiveShareRows(db: SupabaseClient, recruiterUserId: string): Promise<ShareRow[]> {
   const { data, error } = await db
     .from("selective_disclosure_presentations")
-    .select("id, learner_id, selected_fields, selection_mode, disclosed_payload, proof_type, expires_at, revoked_at, created_at")
+    .select("id, learner_id, competency_id, selected_fields, selection_mode, disclosed_payload, payload_hash, proof_type, proof_value, verification_method, expires_at, revoked_at, created_at")
     .is("revoked_at", null)
     .order("created_at", { ascending: false })
     .limit(500);
@@ -671,7 +676,7 @@ async function fetchActiveShareRows(db: SupabaseClient, recruiterUserId: string)
       recruiterUserId,
     }),
   ) as ShareRow[];
-  return redactShareRows(active, (row) => asText(row.learner_id));
+  return redactShareRows(active, (row) => asText(row.learner_id), recruiterUserId);
 }
 
 function groupSharesByLearner(rows: ShareRow[]): Map<string, SharedCredentialView[]> {
@@ -736,7 +741,7 @@ async function listActiveSharedCredentials(
   const db = recruiterDb(accessToken);
   const { data: walletRows, error: walletError } = await db
     .from("selective_disclosure_presentations")
-    .select("id, selected_fields, selection_mode, disclosed_payload, proof_type, expires_at, revoked_at, created_at")
+    .select("id, learner_id, competency_id, selected_fields, selection_mode, disclosed_payload, payload_hash, proof_type, proof_value, verification_method, expires_at, revoked_at, created_at")
     .eq("learner_id", candidateId)
     .is("revoked_at", null);
 
@@ -752,7 +757,7 @@ async function listActiveSharedCredentials(
       recruiterUserId,
     }),
   );
-  const redactedWalletRows = await redactShareRows(listedRows, () => candidateId);
+  const redactedWalletRows = await redactShareRows(listedRows, () => candidateId, recruiterUserId);
   const shared = redactedWalletRows
     .map((row) => mapWalletShare(row))
     .filter((item): item is SharedCredentialView => item !== null);

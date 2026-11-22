@@ -47,6 +47,7 @@ export const shareWalletCompetencySchema = z.object({
   shareAudience: z.literal("all-recruiters").optional(),
   consentToAllRecruiters: z.boolean().optional(),
   competencyVersionIds: z.array(z.string().uuid()).max(20).optional(),
+  credentialId: z.string().trim().min(1).max(512).optional(),
 }).superRefine((value, ctx) => {
   if (value.shareAudience === "all-recruiters" && value.recipientUserId) {
     ctx.addIssue({

@@ -16,8 +16,8 @@ import {
   buildShareZkpAttachment,
 } from "../src/services/share-zkp.service";
 import { getServiceSupabase } from "../src/config/supabase";
-
-const GITHUB_POLICY_THRESHOLD = 70;
+import { findCredentialForLearnerCompetency } from "../src/services/credential-verify.service";
+import { SHARE_GITHUB_THRESHOLD } from "../src/services/zkp-policy";
 
 const LEARNER_ID = "f0620086-9dbf-4bdf-a743-331111353d3e";
 const RECRUITER_ID = "2b1c0399-cd1b-46d4-8091-9584663ce516";
@@ -69,8 +69,8 @@ async function main() {
   record("T1_typescript_record", "PASS", `${ts.competencyName} id=${ts.competencyId}`);
 
   const avail = assessEvidenceShareAvailability(ts);
+  const credential = await findCredentialForLearnerCompetency(LEARNER_ID, ts.competencyId);
   console.log("\nTypescript evidence availability:", JSON.stringify(avail, null, 2));
-  console.log("practical latest:", ts.evidencePackage.practicalTask?.latestAttempt ?? null);
   console.log("lms assignments:", (ts.evidencePackage.lms?.assignments ?? []).length);
   console.log("peerReviews:", (ts.evidencePackage.peerReviews ?? []).length);
   console.log("github repos:", (ts.evidencePackage.github?.repos ?? []).length);
@@ -124,6 +124,7 @@ async function main() {
     const zkp = await buildShareZkpAttachment({
       userId: LEARNER_ID,
       record: ts,
+      credential,
       modes: {
         practical_task_result: "private",
         github_evidence: "omit",
@@ -144,14 +145,16 @@ async function main() {
     }
   }
 
-  // GitHub thr-70 only if authentic eligible proof/evidence
+  // GitHub at the wallet-share threshold, using authentic eligible evidence.
   const githubAvail = avail.github_evidence;
+  let githubMode: "private" | "omit" = "omit";
   if (!githubAvail.present) {
-    record("T7_github_thr70", "BLOCKED", "No GitHub evidence linked to Typescript");
+    record("T7_github_thr50", "BLOCKED", "No GitHub evidence linked to Typescript");
   } else {
     const zkp = await buildShareZkpAttachment({
       userId: LEARNER_ID,
       record: ts,
+      credential,
       modes: {
         practical_task_result: "omit",
         github_evidence: "private",
@@ -161,17 +164,18 @@ async function main() {
     });
     const github = zkp.privateResults.find((r) => r.claimType === "github_activity");
     const proof = zkp.proofs.find((p) => p.claimType === "github_activity");
-    if (github?.status === "confirmed" && proof?.verified && Number(proof.threshold) === GITHUB_POLICY_THRESHOLD) {
-      record("T7_github_thr70", "PASS", `confirmed at threshold ${proof.threshold}`);
+    if (github?.status === "confirmed" && proof?.verified && Number(proof.threshold) === SHARE_GITHUB_THRESHOLD) {
+      githubMode = "private";
+      record("T7_github_thr50", "PASS", `confirmed at threshold ${proof.threshold}`);
     } else if (github?.status === "unmet" || github?.status === "unavailable") {
       record(
-        "T7_github_thr70",
+        "T7_github_thr50",
         "BLOCKED",
-        `No authentic eligible thr-${GITHUB_POLICY_THRESHOLD} proof (status=${github.status}, label=${github.label})`,
+        `No authentic eligible thr-${SHARE_GITHUB_THRESHOLD} proof (status=${github.status}, label=${github.label})`,
       );
     } else {
       record(
-        "T7_github_thr70",
+        "T7_github_thr50",
         "FAIL",
         `Unexpected github result status=${github?.status} verified=${proof?.verified} thr=${proof?.threshold}`,
       );
@@ -181,12 +185,13 @@ async function main() {
   // Create genuine recruiter share (details for competency + private practical if allowed)
   const evidenceModes = {
     practical_task_result: (practicalAvail.privateAllowed ? "private" : "omit") as "private" | "omit",
-    github_evidence: "omit" as const,
+    github_evidence: githubMode,
     lms_evidence: "omit" as const,
     peer_reviews: "omit" as const,
   };
 
   const share = await walletService.shareCompetency(LEARNER_ID, ts.competencyId, {
+    credentialId: credential?.id,
     selectionMode: "custom",
     selectedFields: [
       "competency_name",
@@ -204,7 +209,7 @@ async function main() {
   record(
     "T8_create_recruiter_share",
     share.token && share.delivery === "direct-recruiter" ? "PASS" : "FAIL",
-    `delivery=${share.delivery} recipient=${share.recipientName ?? "n/a"} tokenHint=${share.token?.slice(0, 8) ?? "none"}`,
+    `delivery=${share.delivery}`,
   );
 
   const recruiterCaller: AuthCaller = { id: RECRUITER_ID, roles: [ROLES.RECRUITER] };

@@ -11,7 +11,8 @@ import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import {
   ASSESSMENT_ZKP_TYPE,
-  GITHUB_POLICY_THRESHOLD,
+  SHARE_GITHUB_POLICY_VERSION,
+  SHARE_GITHUB_THRESHOLD,
   GITHUB_ZKP_TYPE,
   MOODLE_ZKP_TYPE,
   PEER_REVIEW_ZKP_TYPE,
@@ -22,8 +23,8 @@ import {
   SHARE_PEER_POLICY_VERSION,
   SHARE_PEER_REVIEW_THRESHOLD,
 } from "./zkp-policy";
-import { generateScoreThresholdProof } from "./score-zkp-proof.service";
-import { resolveZkpArtifactDir, PINNED_VERIFICATION_KEY_SHA256 } from "./zkp-artifacts";
+import { generateShareScoreThresholdProof } from "./score-zkp-proof.service";
+import { commitmentModulePath, resolveZkpArtifactDir, PINNED_VERIFICATION_KEY_SHA256 } from "./zkp-artifacts";
 import {
   privateResultPlaceholder,
   type EvidenceModes,
@@ -31,7 +32,10 @@ import {
 } from "./share-evidence-summary";
 import type { WalletCompetencyRecordView } from "../types/wallet.types";
 import { AppError } from "../utils/AppError";
-import { loadCredentialByIdOrUri } from "./credential-verify.service";
+import type { CredentialRow } from "../types/credentials.types";
+import { createSupabaseGitHubZkpStore } from "./github-zkp-store";
+import { validationReferenceFromDocument } from "./versioned-issuance";
+import { createSupabaseZkpPolicyStore } from "./zkp-policy-store";
 import { readAssessmentCommitment, assertTrustedOpening, type AssessmentAttemptRecord, type AssessmentOpeningRecord } from "./assessment-binding";
 import { supabaseService } from "./supabase.service";
 import { isMissingColumnError, isMissingRelationError } from "../utils/supabase-errors";
@@ -55,6 +59,7 @@ export type AttachedPrivateProof = {
   publicSignals: string[];
   proof: unknown;
   credentialId: string | null;
+  snapshotId?: string;
   verified: true;
 };
 
@@ -92,27 +97,25 @@ function mapOpening(row: Record<string, unknown> | null): AssessmentOpeningRecor
   };
 }
 
+function hasTrustedCredentialSignature(credential: CredentialRow): boolean {
+  const hash = recomputeStoredDocumentHash(credential.credential_document);
+  const proofValue = credential.proof?.proofValue;
+  return Boolean(hash && hash === credential.credential_hash
+    && typeof proofValue === "string" && verifyCredentialHash(hash, proofValue));
+}
+
 async function provePracticalPrivate(
   userId: string,
-  competencyName: string,
+  competencyId: string,
+  credRow: CredentialRow | null,
 ): Promise<{ result: PrivateResultView; proof?: AttachedPrivateProof }> {
   const policyId = SHARE_ASSESSMENT_POLICY_VERSION;
   const circuitId = ASSESSMENT_ZKP_TYPE;
   try {
-    const { data: credRow, error } = await supabaseService.client
-      .from("credentials")
-      .select("id, credential_uri, credential_hash, credential_document, proof, revoked_at, skill_name, user_id")
-      .eq("user_id", userId)
-      .eq("skill_name", competencyName)
-      .maybeSingle();
-    if (error || !credRow) {
+    if (!credRow || credRow.user_id !== userId || credRow.revoked_at) {
       return { result: privateResultPlaceholder("practical_assessment", "unavailable", policyId, circuitId) };
     }
-    const proofValue = credRow.proof && typeof credRow.proof === "object"
-      ? String((credRow.proof as Record<string, unknown>).proofValue ?? "")
-      : "";
-    const recomputed = recomputeStoredDocumentHash(credRow.credential_document);
-    if (!recomputed || recomputed !== credRow.credential_hash || !proofValue || !verifyCredentialHash(recomputed, proofValue)) {
+    if (!hasTrustedCredentialSignature(credRow)) {
       return { result: privateResultPlaceholder("practical_assessment", "failed", policyId, circuitId) };
     }
     const commitmentRead = readAssessmentCommitment(credRow.credential_document);
@@ -137,7 +140,7 @@ async function provePracticalPrivate(
       .eq("learner_user_id", userId)
       .maybeSingle();
     const opening = mapOpening((openingRow as Record<string, unknown> | null) ?? null);
-    if (!attempt || !opening) {
+    if (!attempt || attempt.skillId !== competencyId || !opening) {
       return { result: privateResultPlaceholder("practical_assessment", "unavailable", policyId, circuitId) };
     }
     const checked = await assertTrustedOpening({
@@ -159,20 +162,19 @@ async function provePracticalPrivate(
       return { result: privateResultPlaceholder("practical_assessment", "unavailable", policyId, circuitId) };
     }
 
-    const { commitmentModulePath } = await import("./zkp-artifacts");
-    const mod = await import(pathToFileURL(commitmentModulePath()).href) as {
+    const importCommitment = new Function("url", "return import(url)") as (url: string) => Promise<{
       decimal: (value: bigint | number) => string;
       uuidToField: (value: string) => bigint;
-    };
+    }>;
+    const mod = await importCommitment(pathToFileURL(commitmentModulePath()).href);
 
-    const generated = await generateScoreThresholdProof({
+    const generated = await generateShareScoreThresholdProof({
       score,
       blinding: opening.blinding,
       learnerId: mod.decimal(mod.uuidToField(userId)),
       attemptId: mod.decimal(mod.uuidToField(opening.attemptId)),
       commitment: commitmentRead.claim.commitment,
       variant: "meets",
-      threshold: SHARE_ASSESSMENT_THRESHOLD,
     });
 
     // Verify before attach
@@ -204,13 +206,13 @@ async function provePracticalPrivate(
         commitment: commitmentRead.claim.commitment,
         publicSignals: generated.publicSignals,
         proof: generated.proof,
-        credentialId: typeof credRow.credential_uri === "string" ? credRow.credential_uri : null,
+        credentialId: credRow.id,
         verified: true,
       },
     };
   } catch (err) {
     console.error("[share-zkp] practical private prove failed", {
-      competencyName,
+      competencyId,
       message: err instanceof Error ? err.message : String(err),
     });
     return { result: privateResultPlaceholder("practical_assessment", "failed", policyId, circuitId) };
@@ -515,13 +517,13 @@ async function provePeerPrivate(
   }
 }
 
-async function listCompetencyGithubRepoFullNames(
+export async function listCompetencyGithubRepoFullNames(
   userId: string,
   competencyId: string,
-): Promise<Array<{ fullName: string; commitCount: number }>> {
+): Promise<string[]> {
   const { data: repos, error: reposErr } = await supabaseService.client
     .from("github_repos")
-    .select("id, full_name, linked_skill_id, commit_count")
+    .select("id, full_name, linked_skill_id")
     .eq("user_id", userId);
   if (reposErr) {
     if (isMissingRelationError(reposErr) || isMissingColumnError(reposErr)) return [];
@@ -539,207 +541,103 @@ async function listCompetencyGithubRepoFullNames(
       if (!fullName) return false;
       return row.linked_skill_id === competencyId || linkedIds.has(String(row.id ?? ""));
     })
-    .map((row) => ({
-      fullName: String(row.full_name),
-      commitCount: typeof row.commit_count === "number" ? row.commit_count : Number(row.commit_count) || 0,
-    }))
-    .sort((a, b) => b.commitCount - a.commitCount);
-}
-
-async function verifyStoredGithubProofRow(
-  data: Record<string, unknown>,
-  competencyId: string,
-  policyId: string,
-  circuitId: string,
-): Promise<{ result: PrivateResultView; proof?: AttachedPrivateProof } | null> {
-  if (!data.proof) return null;
-  const thresholdText = String(data.public_threshold ?? data.threshold ?? GITHUB_POLICY_THRESHOLD);
-  if (Number(thresholdText) !== GITHUB_POLICY_THRESHOLD) return null;
-  const commitment = String(data.public_commitment ?? "");
-  const publicSignals = [thresholdText, commitment];
-  const verified = await verifyGitHubContributionProof(
-    {
-      circuitId: GITHUB_ZKP_TYPE,
-      proof: data.proof,
-      publicSignals,
-    },
-    commitment,
-    "meets",
-  );
-  if (!verified.cryptographicallyValid) {
-    return { result: privateResultPlaceholder("github_activity", "failed", policyId, circuitId) };
-  }
-  return {
-    result: privateResultPlaceholder("github_activity", "confirmed", policyId, circuitId),
-    proof: {
-      claimType: "github_activity",
-      policyId,
-      circuitId,
-      threshold: String(GITHUB_POLICY_THRESHOLD),
-      commitment,
-      publicSignals,
-      proof: data.proof,
-      credentialId: competencyId,
-      verified: true,
-    },
-  };
+    .map((row) => String(row.full_name));
 }
 
 async function proveGithubPrivate(
   userId: string,
   competencyId: string,
+  credential: CredentialRow | null,
 ): Promise<{ result: PrivateResultView; proof?: AttachedPrivateProof }> {
-  const policyId = "github-70-repo-v1";
+  const policyId = SHARE_GITHUB_POLICY_VERSION;
   const circuitId = GITHUB_ZKP_TYPE;
+  const result = (status: PrivateResultView["status"]) =>
+    privateResultPlaceholder("github_activity", status, policyId, circuitId);
   try {
-    // Reuse trusted github_contribution_proofs (not github_zkp_proofs). Bind to competency via linked repos.
+    if (!credential || credential.user_id !== userId || credential.revoked_at) {
+      return { result: result("unavailable") };
+    }
+    if (!hasTrustedCredentialSignature(credential)) return { result: result("failed") };
+
     const linkedRepos = await listCompetencyGithubRepoFullNames(userId, competencyId);
-    const linkedNames = new Set(linkedRepos.map((r) => r.fullName.toLowerCase()));
+    const linkedNames = new Set(linkedRepos.map((repo) => repo.toLowerCase()));
+    if (linkedNames.size === 0) return { result: result("unavailable") };
 
-    const { data: rows, error } = await supabaseService.client
-      .from("github_contribution_proofs")
-      .select("id, threshold, public_threshold, public_commitment, proof, snapshot_id, github_contribution_snapshots!inner(repository_full_name)")
-      .eq("learner_user_id", userId)
-      .eq("threshold", GITHUB_POLICY_THRESHOLD)
-      .order("created_at", { ascending: false })
-      .limit(20);
-    if (error) {
-      if (isMissingRelationError(error) || isMissingColumnError(error)) {
-        return { result: privateResultPlaceholder("github_activity", "unavailable", policyId, circuitId) };
-      }
-      return { result: privateResultPlaceholder("github_activity", "failed", policyId, circuitId) };
-    }
+    const validationReference = validationReferenceFromDocument(credential.credential_document);
+    const policy = validationReference
+      ? (await createSupabaseZkpPolicyStore().listForLearner(userId))
+        .find((row) => row.id === validationReference && row.zkpType === GITHUB_ZKP_TYPE
+          && row.outcome === "MEETS_THRESHOLD")
+      : null;
+    const versionSnapshotId = policy?.evidenceScope.snapshotId;
+    if (validationReference && typeof versionSnapshotId !== "string") return { result: result("unavailable") };
 
-    for (const row of rows ?? []) {
-      const snap = row.github_contribution_snapshots as { repository_full_name?: string } | { repository_full_name?: string }[] | null;
-      const repoName = Array.isArray(snap)
-        ? String(snap[0]?.repository_full_name ?? "")
-        : String(snap?.repository_full_name ?? "");
-      if (linkedNames.size > 0 && repoName && !linkedNames.has(repoName.toLowerCase())) {
-        continue; // do not substitute a proof from an unrelated skill's repo
-      }
-      if (linkedNames.size === 0 && repoName) {
-        // No linked repos for this competency — refuse cross-skill reuse.
-        continue;
-      }
-      const verified = await verifyStoredGithubProofRow(
-        row as unknown as Record<string, unknown>,
-        competencyId,
-        policyId,
-        circuitId,
-      );
-      if (verified) return verified;
-    }
-
-    if (linkedRepos.length === 0) {
-      return { result: privateResultPlaceholder("github_activity", "unavailable", policyId, circuitId) };
-    }
-
-    // Prefer existing trusted openings for linked repos before calling GitHub again.
-    const { data: existingOpenings } = await supabaseService.client
-      .from("github_contribution_openings")
-      .select("snapshot_id, contribution_count, github_contribution_snapshots!inner(repository_full_name, learner_user_id)")
-      .eq("learner_user_id", userId)
-      .limit(50);
-    const openingByRepo = new Map<string, { snapshotId: string; count: number }>();
-    for (const row of existingOpenings ?? []) {
-      const snap = row.github_contribution_snapshots as
-        | { repository_full_name?: string }
-        | { repository_full_name?: string }[]
-        | null;
-      const repoName = Array.isArray(snap)
-        ? String(snap[0]?.repository_full_name ?? "")
-        : String(snap?.repository_full_name ?? "");
-      if (!repoName || !linkedNames.has(repoName.toLowerCase())) continue;
-      const count = typeof row.contribution_count === "number"
-        ? row.contribution_count
-        : Number(row.contribution_count) || 0;
-      const prev = openingByRepo.get(repoName.toLowerCase());
-      if (!prev || count > prev.count) {
-        openingByRepo.set(repoName.toLowerCase(), {
-          snapshotId: String(row.snapshot_id),
-          count,
-        });
-      }
-    }
-
-    // Generate a real threshold-70 proof from trusted GitHub snapshot when evidence may qualify.
-    // Never reuse a lower-threshold proof and never lower the policy threshold.
+    const credentialId = credential.id;
+    const store = createSupabaseGitHubZkpStore();
     const { githubZkp } = await import("./github-zkp-workflow.service");
     let sawBelowThreshold = false;
-    let sawAuthOrConnectionFailure = false;
-    for (const repo of linkedRepos) {
-      const existing = openingByRepo.get(repo.fullName.toLowerCase());
-      if (existing && existing.count < GITHUB_POLICY_THRESHOLD) {
-        sawBelowThreshold = true;
-        continue;
-      }
-      // Total synced commits below policy cannot satisfy unique authored SHA threshold.
-      if (!existing && repo.commitCount > 0 && repo.commitCount < GITHUB_POLICY_THRESHOLD) {
-        sawBelowThreshold = true;
-        continue;
-      }
+    let sawVerificationFailure = false;
+    async function proveSnapshot(snapshot: NonNullable<Awaited<ReturnType<typeof store.getSnapshot>>>): Promise<AttachedPrivateProof | null> {
+      if (!linkedNames.has(snapshot.repositoryFullName.toLowerCase())) return null;
       try {
-        const snapshotId = existing?.snapshotId
-          ?? (await githubZkp.createSnapshot(userId, repo.fullName)).snapshotId;
-        const proofView = await githubZkp.requestProof(userId, snapshotId, GITHUB_POLICY_THRESHOLD);
-        const publicSignals = proofView.publicSignals;
-        const verified = await verifyGitHubContributionProof(
-          {
-            circuitId: GITHUB_ZKP_TYPE,
-            proof: proofView.proof,
-            publicSignals: [...publicSignals],
-          },
-          proofView.commitment,
-          "meets",
-        );
-        if (!verified.cryptographicallyValid) {
-          continue;
+        const proofView = await githubZkp.requestProof(userId, snapshot.snapshotId, SHARE_GITHUB_THRESHOLD);
+        const publicSignals = [...proofView.publicSignals];
+        const checked = await verifyGitHubContributionProof({
+          circuitId,
+          proof: proofView.proof,
+          publicSignals,
+        }, snapshot.commitment, "meets");
+        if (publicSignals[0] !== String(SHARE_GITHUB_THRESHOLD) || !checked.cryptographicallyValid) {
+          sawVerificationFailure = true;
+          return null;
         }
         return {
-          result: privateResultPlaceholder("github_activity", "confirmed", policyId, circuitId),
-          proof: {
-            claimType: "github_activity",
-            policyId,
-            circuitId,
-            threshold: String(GITHUB_POLICY_THRESHOLD),
-            commitment: proofView.commitment,
-            publicSignals: [...publicSignals],
-            proof: proofView.proof,
-            credentialId: competencyId,
-            verified: true,
-          },
+          claimType: "github_activity",
+          policyId,
+          circuitId,
+          threshold: String(SHARE_GITHUB_THRESHOLD),
+          commitment: snapshot.commitment,
+          publicSignals,
+          proof: proofView.proof,
+          credentialId,
+          snapshotId: snapshot.snapshotId,
+          verified: true,
         };
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        if (/does not meet that threshold|does not meet/i.test(message)) {
+      } catch (error) {
+        if (error instanceof AppError && error.message === "The verified commit count does not meet that threshold") {
           sawBelowThreshold = true;
-          continue;
+        } else {
+          sawVerificationFailure = true;
         }
-        if (/not connected|authentication failed|author does not match|Invalid/i.test(message)) {
-          sawAuthOrConnectionFailure = true;
-          continue;
-        }
-        console.error("[share-zkp] github private prove attempt failed", {
-          repo: repo.fullName,
-          message,
-        });
+        return null;
       }
     }
 
-    if (sawBelowThreshold) {
-      return { result: privateResultPlaceholder("github_activity", "unmet", policyId, circuitId) };
+    if (typeof versionSnapshotId === "string") {
+      const snapshot = await store.getSnapshot(versionSnapshotId, userId);
+      // The background policy row can be refreshed after issuance.
+      if (snapshot && Date.parse(snapshot.verifiedAt) <= Date.parse(credential.valid_from)
+        && snapshot.repositoryFullName.toLowerCase() === String(policy?.evidenceScope.repositoryFullName ?? "").toLowerCase()) {
+        const proof = await proveSnapshot(snapshot);
+        if (proof) return { result: result("confirmed"), proof };
+      }
+    } else {
+      const snapshots = await store.listSnapshots(userId);
+      for (const snapshot of snapshots) {
+        const proof = await proveSnapshot(snapshot);
+        if (proof) return { result: result("confirmed"), proof };
+      }
+      for (const repo of linkedRepos) {
+        const snapshot = await githubZkp.createSnapshot(userId, repo).catch(() => null);
+        if (!snapshot) continue;
+        const stored = await store.getSnapshot(snapshot.snapshotId, userId);
+        const proof = stored && await proveSnapshot(stored);
+        if (proof) return { result: result("confirmed"), proof };
+      }
     }
-    if (sawAuthOrConnectionFailure) {
-      return { result: privateResultPlaceholder("github_activity", "unavailable", policyId, circuitId) };
-    }
-    return { result: privateResultPlaceholder("github_activity", "unavailable", policyId, circuitId) };
-  } catch (err) {
-    console.error("[share-zkp] github private prove failed", {
-      competencyId,
-      message: err instanceof Error ? err.message : String(err),
-    });
-    return { result: privateResultPlaceholder("github_activity", "failed", policyId, circuitId) };
+    return { result: result(sawVerificationFailure ? "failed" : sawBelowThreshold ? "unmet" : "unavailable") };
+  } catch {
+    return { result: result("failed") };
   }
 }
 
@@ -747,17 +645,18 @@ export async function buildShareZkpAttachment(input: {
   userId: string;
   record: WalletCompetencyRecordView;
   modes: EvidenceModes;
+  credential?: CredentialRow | null;
 }): Promise<ShareZkpAttachment> {
   const privateResults: PrivateResultView[] = [];
   const proofs: AttachedPrivateProof[] = [];
 
   if (input.modes.practical_task_result === "private") {
-    const out = await provePracticalPrivate(input.userId, input.record.competencyName);
+    const out = await provePracticalPrivate(input.userId, input.record.competencyId, input.credential ?? null);
     privateResults.push(out.result);
     if (out.proof) proofs.push(out.proof);
   }
   if (input.modes.github_evidence === "private") {
-    const out = await proveGithubPrivate(input.userId, input.record.competencyId);
+    const out = await proveGithubPrivate(input.userId, input.record.competencyId, input.credential ?? null);
     privateResults.push(out.result);
     if (out.proof) proofs.push(out.proof);
   }
@@ -784,6 +683,3 @@ export function assertNoPrivateWitnessLeak(payload: Record<string, unknown>): vo
     }
   }
 }
-
-// silence unused import in some builds
-void loadCredentialByIdOrUri;

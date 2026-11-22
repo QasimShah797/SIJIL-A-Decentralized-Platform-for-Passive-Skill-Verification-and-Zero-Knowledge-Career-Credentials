@@ -1,3 +1,4 @@
+import { ZKP_UI_ENABLED } from "@/lib/zkp-ui";
 ﻿import { useNavigate } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
 import { AppShell } from "@/components/sijil/AppShell";
@@ -45,7 +46,7 @@ export default function RecruiterSearch() {
     const needle = query.trim().toLowerCase();
     return candidates.filter((candidate) => {
       if (focusIds && !focusIds.includes(candidate.id)) return false;
-      if (statFilter === "verified" && candidate.attestation !== "Approved" && !(candidate.confirmedPrivateResults ?? 0)) return false;
+      if (statFilter === "verified" && candidate.attestation !== "Approved" && !(ZKP_UI_ENABLED && (candidate.confirmedPrivateResults ?? 0))) return false;
       if (statFilter === "zkp" && !(candidate.confirmedPrivateResults ?? 0)) return false;
       if (statFilter === "credentials" && (candidate.credentialCount ?? 0) <= 0) return false;
       if (skill !== "all") {
@@ -235,7 +236,7 @@ export default function RecruiterSearch() {
               >
                 <DropdownMenuRadioItem value="all">All</DropdownMenuRadioItem>
                 <DropdownMenuRadioItem value="verified">Verified</DropdownMenuRadioItem>
-                <DropdownMenuRadioItem value="zkp">Confirmed ZKP</DropdownMenuRadioItem>
+                {ZKP_UI_ENABLED && <DropdownMenuRadioItem value="zkp">Confirmed ZKP</DropdownMenuRadioItem>}
                 <DropdownMenuRadioItem value="credentials">With credentials</DropdownMenuRadioItem>
               </DropdownMenuRadioGroup>
             </DropdownMenuContent>

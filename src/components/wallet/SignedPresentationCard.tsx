@@ -93,6 +93,7 @@ export function SignedPresentationCard({ onBack }: { onBack: () => void }) {
         shareAudience: extra.shareAudience,
         consentToAllRecruiters: extra.consentToAllRecruiters,
         recipientUserId: extra.recipientUserId,
+        credentialId: credential.id,
         ...(versionIds.length > 0 ? { competencyVersionIds: versionIds } : {}),
       });
       recipientName = created.recipientName ?? recipientName;
@@ -141,6 +142,7 @@ export function SignedPresentationCard({ onBack }: { onBack: () => void }) {
       ...request,
       selectedFields: request.selectedFields as WalletShareFieldId[],
       evidenceModes: input.evidenceModes,
+      credentialId: credential.id,
     });
     try {
       sessionStorage.setItem(

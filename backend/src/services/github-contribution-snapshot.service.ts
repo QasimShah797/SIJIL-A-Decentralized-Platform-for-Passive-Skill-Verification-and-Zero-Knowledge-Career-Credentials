@@ -100,6 +100,7 @@ export async function createGitHubContributionSnapshot(
     repositoryFullName,
     githubUsername: identity.login,
     expectedGitHubUserId: identity.id,
+    rejectMismatchedOnly: true,
     fetchImpl,
   });
 

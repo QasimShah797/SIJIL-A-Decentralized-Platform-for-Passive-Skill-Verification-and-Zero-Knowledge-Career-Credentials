@@ -1,3 +1,4 @@
+import { ZKP_UI_ENABLED } from "@/lib/zkp-ui";
 import type { ReactNode } from "react";
 import {
   Award,
@@ -318,7 +319,7 @@ export function RecruiterShareDisclosure({
                           <InfoTip text={card.tooltip} />
                         </div>
                         <span>{card.description}</span>
-                        {privateDisabled && avail.privateBlockedReason ? (
+                        {ZKP_UI_ENABLED && privateDisabled && avail.privateBlockedReason ? (
                           <span className="mt-1 block text-xs text-[#64748b]">{avail.privateBlockedReason}</span>
                         ) : null}
                       </div>
@@ -326,11 +327,11 @@ export function RecruiterShareDisclosure({
                     <div className="sd-radio-group" role="radiogroup" aria-label={card.title}>
                       {(
                         [
-                          ["details", card.detailsLabel],
+                          ["details", ZKP_UI_ENABLED ? card.detailsLabel : "Share details"],
                           ["private", "Show result privately"],
                           ["omit", "Don't share"],
                         ] as const
-                      ).map(([value, label]) => {
+                      ).filter(([value]) => ZKP_UI_ENABLED || value !== "private").map(([value, label]) => {
                         const disabled = value === "private" && privateDisabled;
                         return (
                           <label
@@ -362,10 +363,10 @@ export function RecruiterShareDisclosure({
           </section>
 
           <aside>
-            <div className="sd-privacy">
+            {ZKP_UI_ENABLED && <div className="sd-privacy">
               <Lock className="h-4 w-4 shrink-0 mt-0.5" />
               <p>When you choose “Show result privately”, SIJIL confirms you meet the requirement without sharing exact numbers.</p>
-            </div>
+            </div>}
             <div className="sd-card">
               <h2 className="sd-preview-title"><Eye className="h-4 w-4" /> Sharing Preview</h2>
               <p className="sd-card-sub">This is what the recruiter will see.</p>
@@ -528,7 +529,7 @@ export function PublicLinkDisclosure({
                           <strong>{card.title}</strong>
                           <InfoTip text={card.tooltip} />
                         </div>
-                        {privateDisabled && avail.privateBlockedReason ? (
+                        {ZKP_UI_ENABLED && privateDisabled && avail.privateBlockedReason ? (
                           <span className="mt-1 block text-xs text-[#64748b]">{avail.privateBlockedReason}</span>
                         ) : null}
                       </div>
@@ -540,7 +541,7 @@ export function PublicLinkDisclosure({
                           ["private", "Show result privately"],
                           ["omit", "Don't share"],
                         ] as const
-                      ).map(([value, label]) => {
+                      ).filter(([value]) => ZKP_UI_ENABLED || value !== "private").map(([value, label]) => {
                         const disabled = value === "private" && privateDisabled;
                         return (
                           <label

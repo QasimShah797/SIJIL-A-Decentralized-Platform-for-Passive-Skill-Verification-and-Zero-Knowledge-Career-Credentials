@@ -1,3 +1,4 @@
+import { ZKP_UI_ENABLED } from "@/lib/zkp-ui";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
@@ -181,8 +182,8 @@ export default function RecruiterDashboard() {
       accent: "bg-[#f0fdfa] text-[#0f766e]",
     },
     {
-      label: "Verified Credentials / ZKP",
-      value: verifiedZkpTotal,
+      label: ZKP_UI_ENABLED ? "Verified Credentials / ZKP" : "Verified Credential Candidates",
+      value: ZKP_UI_ENABLED ? verifiedZkpTotal : verifiedCredentialCandidates,
       hint: `${verifiedCredentialCandidates} ${verifiedCredentialCandidates === 1 ? "candidate" : "candidates"} disclosed as verified`,
       to: "/recruiter/search",
       icon: ShieldCheck,
@@ -286,7 +287,7 @@ export default function RecruiterDashboard() {
                 { label: "Confirmed private ZKP results", count: verifiedZkpTotal, to: "/recruiter/search", icon: ShieldCheck, accent: "bg-[#ecfdf5] text-[#047857]" },
                 { label: "Active Job Postings", count: openJobs, to: "/recruiter/jobs", icon: Briefcase, accent: "bg-[#eff6ff] text-[#1d4ed8]" },
                 { label: "Upcoming Interviews", count: upcoming.length, to: "/recruiter/interviews", icon: CalendarClock, accent: "bg-[#f5f3ff] text-[#6d28d9]" },
-              ].map((row) => (
+              ].filter((row) => ZKP_UI_ENABLED || row.label !== "Confirmed private ZKP results").map((row) => (
                 <li key={row.label}>
                   <Link to={row.to} className="flex min-h-[68px] items-center gap-3 rounded-2xl px-2 py-2 transition hover:bg-[#F4F7FC] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]">
                     <span className={cn("flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl", row.accent)}><row.icon className="h-5 w-5" /></span>

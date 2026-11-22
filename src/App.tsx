@@ -1,3 +1,4 @@
+import { ZKP_UI_ENABLED } from "@/lib/zkp-ui";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
@@ -111,7 +112,7 @@ const App = () => (
           <Route path="/learner/zkp" element={<Navigate to="/learner/wallet" replace />} />
           <Route path="/learner/peer-reviews" element={<LR><LearnerPeerReviews /></LR>} />
           <Route path="/learner/interviews" element={<LR><LearnerInterviews /></LR>} />
-          <Route path="/learner/verification-requests" element={<LR><LearnerVerificationRequests /></LR>} />
+          <Route path="/learner/verification-requests" element={<LR>{ZKP_UI_ENABLED ? <LearnerVerificationRequests /> : <Navigate to="/learner/wallet" replace />}</LR>} />
           <Route path="/learner/credential/:id" element={<LR><LearnerCredentialDetails /></LR>} />
           <Route path="/learner/credential/:id/proof" element={<LR><LearnerCredentialProof /></LR>} />
           <Route path="/learner/credential/:id/share" element={<LR><LearnerSelectiveDisclosure /></LR>} />
@@ -122,11 +123,11 @@ const App = () => (
           <Route path="/recruiter/jobs" element={<RR><RecruiterJobs /></RR>} />
           <Route path="/recruiter/jobs/:jobId" element={<RR><RecruiterJobDetail /></RR>} />
           <Route path="/recruiter/interviews" element={<RR><RecruiterInterviews /></RR>} />
-          <Route path="/recruiter/verification-requests" element={<RR><RecruiterVerificationRequests /></RR>} />
+          <Route path="/recruiter/verification-requests" element={<RR>{ZKP_UI_ENABLED ? <RecruiterVerificationRequests /> : <Navigate to="/recruiter/search" replace />}</RR>} />
           <Route path="/recruiter/profile" element={<RR><RecruiterProfile /></RR>} />
           <Route path="/recruiter/candidate/:id" element={<RR><RecruiterCandidateSummary /></RR>} />
           <Route path="/recruiter/compare" element={<RR><RecruiterCompare /></RR>} />
-          <Route path="/recruiter/github-proof" element={<RR><RecruiterGitHubProof /></RR>} />
+          <Route path="/recruiter/github-proof" element={<RR>{ZKP_UI_ENABLED ? <RecruiterGitHubProof /> : <Navigate to="/recruiter/search" replace />}</RR>} />
           <Route path="/recruiter/verify/:token" element={<CompetencyPresentationView />} />
           <Route path="/verify/vp/:id" element={<LearnerPresentationVerifyPage />} />
           <Route path="/credential/:shareToken" element={<PublicCredentialPage />} />

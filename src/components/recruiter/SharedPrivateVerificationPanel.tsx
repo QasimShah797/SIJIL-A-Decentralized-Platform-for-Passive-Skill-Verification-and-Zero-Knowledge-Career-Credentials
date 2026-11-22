@@ -28,16 +28,31 @@ export function readPrivateResults(payload: Record<string, unknown>): PublicPriv
   const raw = Array.isArray(payload.privateResults) ? payload.privateResults : [];
   return raw
     .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object")
-    .map((item) => ({
-      claimType: String(item.claimType ?? ""),
-      status: String(item.status ?? ""),
-      label: item.status === "preparing" ? "Could not confirm" : String(item.label ?? "Could not confirm"),
-      detailHidden: String(item.detailHidden ?? ""),
-      policyId: typeof item.policyId === "string" ? item.policyId : null,
-      circuitId: typeof item.circuitId === "string" ? item.circuitId : null,
-      verifiedBy: typeof item.verifiedBy === "string" ? item.verifiedBy : null,
-    }))
+    .map((item) => {
+      const threshold = typeof item.threshold === "string" ? item.threshold : null;
+      const validated = item.proofType === "Groth16" && threshold !== null;
+      const status = item.status === "confirmed" && !validated ? "unavailable" : String(item.status ?? "");
+      return {
+        claimType: String(item.claimType ?? ""),
+        status,
+        label: status === "confirmed" ? "VERIFIED"
+          : status === "preparing" || status === "unavailable" ? "Could not confirm" : String(item.label ?? "Could not confirm"),
+        detailHidden: String(item.detailHidden ?? ""),
+        policyId: typeof item.policyId === "string" ? item.policyId : null,
+        circuitId: typeof item.circuitId === "string" ? item.circuitId : null,
+        verifiedBy: typeof item.verifiedBy === "string" ? item.verifiedBy : null,
+        threshold: validated ? threshold : null,
+        proofType: validated ? "Groth16" : null,
+      };
+    })
     .filter((item) => item.claimType);
+}
+
+export function privateProofRequirement(result: PublicPrivateResultView): string | null {
+  if (!result.proofType || !result.threshold) return null;
+  const unit = result.claimType === "github_activity" ? " verified commits"
+    : result.claimType === "peer_review" ? " eligible review" : "%";
+  return `${result.proofType} · ≥${result.threshold}${unit}`;
 }
 
 export function countConfirmedPrivateResults(payload: Record<string, unknown>): number {
@@ -168,7 +183,14 @@ export function SharedPrivateVerificationPanel({
                   key={`${result.claimType}-${result.policyId ?? ""}`}
                   className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[#f1f5f9] px-3 py-2 text-sm"
                 >
-                  <span className="font-medium text-[#0f172a]">{claimTitle(result.claimType)}</span>
+                  <span className="font-medium text-[#0f172a]">
+                    {claimTitle(result.claimType)}
+                    {result.proofType && result.threshold && (
+                      <span className="ml-2 text-xs font-normal text-[#64748b]">
+                        {privateProofRequirement(result)}
+                      </span>
+                    )}
+                  </span>
                   <span
                     className={cn(
                       "inline-flex items-center gap-1 font-medium",

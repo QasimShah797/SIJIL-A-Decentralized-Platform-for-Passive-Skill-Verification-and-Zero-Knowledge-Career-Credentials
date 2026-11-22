@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { GuidedShareFlow, type GuidedShareCredential } from "./GuidedShareFlow";
 import type { EvidenceShareAvailability } from "@/lib/evidence-share-availability";
@@ -27,7 +27,7 @@ const credential: GuidedShareCredential = {
 };
 
 function renderFlow(overrides: Partial<Parameters<typeof GuidedShareFlow>[0]> = {}) {
-  const onShareAll = vi.fn(async () => undefined);
+  const onShareAll = vi.fn<NonNullable<Parameters<typeof GuidedShareFlow>[0]["onShareAll"]>>(async () => undefined);
   const onCreatePublicLink = vi.fn(async () => ({
     shareUrl: "http://localhost:8080/credential/public-token",
     shareId: "share-uuid-1",
@@ -65,13 +65,14 @@ describe("wallet share flow", () => {
     expect(screen.getByRole("heading", { name: "Share with Recruiter" })).toBeTruthy();
     expect(screen.getByText("Choose What to Share")).toBeTruthy();
     expect(screen.getByText("Practical Assessment")).toBeTruthy();
-    expect(screen.getAllByText("Show result privately").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Show result privately")).toBeNull();
+    fireEvent.click(within(screen.getByRole("radiogroup", { name: "Practical Assessment" })).getByRole("radio", { name: "Share details" }));
     expect(screen.queryByText(/Selective Disclosure/i)).toBeNull();
     expect(screen.queryByText(/Blockchain Anchored/i)).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /Continue to Preview/ }));
     expect(onShareAll).toHaveBeenCalled();
-    const shareArg = onShareAll.mock.calls[0]?.[0] as { evidenceModes?: { practical_task_result?: string } } | undefined;
-    expect(shareArg?.evidenceModes?.practical_task_result).toBe("private");
+    const shareArg = onShareAll.mock.calls[0]?.[0];
+    expect(shareArg?.evidenceModes).toMatchObject({ practical_task_result: "details", github_evidence: "omit" });
     expect(await screen.findByText("Your achievements are now visible to all SIJIL recruiters.")).toBeTruthy();
   });
 
@@ -95,9 +96,15 @@ describe("wallet share flow", () => {
     fireEvent.click(screen.getByRole("button", { name: /TypeScript/ }));
     fireEvent.click(screen.getByRole("button", { name: "Continue" }));
     expect(screen.getByRole("heading", { name: "Choose What to Share" })).toBeTruthy();
+    expect(screen.queryByText("Show result privately")).toBeNull();
+    const github = within(screen.getByRole("radiogroup", { name: "GitHub Activity" }));
+    fireEvent.click(github.getByRole("radio", { name: "Share details" }));
+    fireEvent.click(github.getByRole("radio", { name: "Don't share" }));
     expect(screen.getByRole("heading", { name: "Preview – Public Link" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /Create Public Link$/ }));
-    expect(onCreatePublicLink).toHaveBeenCalled();
+    expect(onCreatePublicLink).toHaveBeenCalledWith(expect.objectContaining({
+      evidenceModes: expect.objectContaining({ github_evidence: "omit" }),
+    }));
     expect(onShareAll).not.toHaveBeenCalled();
     expect(await screen.findByRole("heading", { name: "Public Verification Link Created" })).toBeTruthy();
     expect(screen.getByDisplayValue("http://localhost:8080/credential/public-token")).toBeTruthy();

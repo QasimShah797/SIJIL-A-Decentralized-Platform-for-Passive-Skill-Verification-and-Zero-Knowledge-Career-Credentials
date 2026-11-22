@@ -164,7 +164,7 @@ function readSignals(value: unknown): [string, string] | null {
   return [value[0], value[1]];
 }
 
-async function defaultVerifyGroth16(
+export async function defaultVerifyGroth16(
   verificationKey: object,
   publicSignals: string[],
   proof: Groth16Proof,

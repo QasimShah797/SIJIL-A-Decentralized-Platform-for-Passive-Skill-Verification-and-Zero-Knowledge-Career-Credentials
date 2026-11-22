@@ -1,3 +1,4 @@
+import { ZKP_UI_ENABLED } from "@/lib/zkp-ui";
 import { useEffect, useMemo, useState } from "react";
 import {
   CompetencyPackageCard,
@@ -113,7 +114,7 @@ export function RecruiterCompetencyDetail({
   }, [inspector.availableSources, source]);
 
   const showEvidence = section !== "requests";
-  const showPrivate = section !== "evidence";
+  const showPrivate = ZKP_UI_ENABLED && section !== "evidence";
   // Public share tokens are hashed server-side; recruiter-only shares verify in-panel.
   const verifyHref = card.token
     ? `/recruiter/verify/${encodeURIComponent(card.token)}`

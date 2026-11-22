@@ -11,7 +11,8 @@ describe("SharedPrivateVerificationPanel", () => {
   it("counts only confirmed private results", () => {
     expect(countConfirmedPrivateResults({
       privateResults: [
-        { claimType: "practical_assessment", status: "confirmed", label: "Requirement met" },
+        { claimType: "practical_assessment", status: "confirmed", label: "Requirement met", proofType: "Groth16", threshold: "50" },
+        { claimType: "peer_review", status: "confirmed", label: "Requirement met" },
         { claimType: "github_activity", status: "failed", label: "Could not confirm" },
         { claimType: "moodle_learning", status: "preparing", label: "Preparing result…" },
       ],
@@ -46,17 +47,20 @@ describe("SharedPrivateVerificationPanel", () => {
           payload={{
             privateResults: [
               {
-                claimType: "moodle_learning",
+                claimType: "github_activity",
                 status: "confirmed",
                 label: "Requirement met",
-                detailHidden: "Completion threshold satisfied",
+                detailHidden: "Count hidden",
+                proofType: "Groth16",
+                threshold: "50",
               },
             ],
           }}
         />
       </MemoryRouter>,
     );
-    expect(screen.getByText("Moodle Learning")).toBeInTheDocument();
-    expect(screen.getByText(/Requirement met/)).toBeInTheDocument();
+    expect(screen.getByText(/GitHub Activity/)).toBeInTheDocument();
+    expect(screen.getByText("Groth16 · ≥50 verified commits")).toBeInTheDocument();
+    expect(screen.getByText(/VERIFIED/)).toBeInTheDocument();
   });
 });

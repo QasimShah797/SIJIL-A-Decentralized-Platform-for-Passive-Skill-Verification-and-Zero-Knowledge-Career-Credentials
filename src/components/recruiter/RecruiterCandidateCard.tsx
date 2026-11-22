@@ -1,3 +1,4 @@
+import { ZKP_UI_ENABLED } from "@/lib/zkp-ui";
 import { ArrowRight, ShieldCheck, Wallet } from "lucide-react";
 
 import { StatusBadge } from "@/components/sijil/StatusBadge";
@@ -99,10 +100,10 @@ export function RecruiterCandidateCard({
             ) : null}
           </div>
         </div>
-        {candidate.attestation === "Approved" || (candidate.confirmedPrivateResults ?? 0) > 0 ? (
+        {candidate.attestation === "Approved" || (ZKP_UI_ENABLED && (candidate.confirmedPrivateResults ?? 0) > 0) ? (
           <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-success-soft px-2.5 py-1 text-[11px] font-semibold text-success">
             <ShieldCheck className="h-3 w-3" />
-            {(candidate.confirmedPrivateResults ?? 0) > 0 ? "ZKP shared" : candidate.attestation}
+            {(ZKP_UI_ENABLED && (candidate.confirmedPrivateResults ?? 0) > 0) ? "ZKP shared" : candidate.attestation}
           </span>
         ) : (
           <StatusBadge
@@ -148,7 +149,7 @@ export function RecruiterCandidateCard({
             <dt className="sr-only">Evidence</dt>
             <dd className="whitespace-nowrap"><span className="font-semibold text-foreground">{getEvidenceStats(candidate).evidenceTotal}</span> evidence</dd>
           </div>
-          {(candidate.confirmedPrivateResults ?? 0) > 0 ? (
+          {(ZKP_UI_ENABLED && (candidate.confirmedPrivateResults ?? 0) > 0) ? (
             <div className="flex items-center gap-1.5">
               <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-success" aria-hidden />
               <dt className="sr-only">Private ZKPs</dt>

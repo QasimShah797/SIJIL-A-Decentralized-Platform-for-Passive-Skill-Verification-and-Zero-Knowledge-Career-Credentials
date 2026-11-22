@@ -1,3 +1,4 @@
+import { ZKP_UI_ENABLED } from "@/lib/zkp-ui";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Copy, Info, ShieldAlert, ShieldCheck } from "lucide-react";
@@ -198,6 +199,7 @@ export default function CompetencyPresentationView() {
     if (!presentation) return [];
     const hideKeys = new Set([
       "privateResults",
+      "zkProofs",
       "evidenceModes",
       "selectiveDisclosure",
       "audience",
@@ -408,6 +410,7 @@ export default function CompetencyPresentationView() {
                   </CardContent>
                 </Card>
 
+                {ZKP_UI_ENABLED && <>
                 <p className="text-sm text-muted-foreground">
                   The badge above is the credential record. Private ZKP results below are accepted only after SIJIL verifies learner-shared proofs.
                 </p>
@@ -425,6 +428,7 @@ export default function CompetencyPresentationView() {
                   expiresAt={presentation.expiresAt}
                   proofType={presentation.proofType ?? presentation.verificationMethod}
                 />
+                </>}
 
                 <Card>
                   <CardHeader className="pb-3">

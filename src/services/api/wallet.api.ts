@@ -1,4 +1,5 @@
 import { apiRequest, isApiEnabled, tryApiRequest } from "./client";
+import { ZKP_UI_ENABLED } from "@/lib/zkp-ui";
 import type { WalletCompetencyRecordView } from "@/lib/db/wallet-competency-records";
 import type {
   WalletShareFieldId,
@@ -117,6 +118,7 @@ export async function shareWalletCompetencyApi(input: {
   shareAudience?: "all-recruiters";
   consentToAllRecruiters?: boolean;
   competencyVersionIds?: string[];
+  credentialId?: string;
 }): Promise<ShareWalletCompetencyResult> {
   return apiRequest<ShareWalletCompetencyResult>(
     `/wallet/competencies/${encodeURIComponent(input.competencyId)}/share`,
@@ -125,13 +127,16 @@ export async function shareWalletCompetencyApi(input: {
       body: JSON.stringify({
         selectionMode: input.selectionMode,
         selectedFields: input.selectedFields,
-        evidenceModes: input.evidenceModes,
+        evidenceModes: input.evidenceModes && !ZKP_UI_ENABLED
+          ? Object.fromEntries(Object.entries(input.evidenceModes).map(([field, mode]) => [field, mode === "private" ? "omit" : mode]))
+          : input.evidenceModes,
         shareScope: input.shareScope,
         expiresInDays: input.expiresInDays,
         recipientUserId: input.recipientUserId,
         shareAudience: input.shareAudience,
         consentToAllRecruiters: input.consentToAllRecruiters,
         competencyVersionIds: input.competencyVersionIds,
+        credentialId: input.credentialId,
       }),
     },
   );

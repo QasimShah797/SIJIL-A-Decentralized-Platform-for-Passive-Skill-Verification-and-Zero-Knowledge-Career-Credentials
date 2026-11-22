@@ -1,3 +1,4 @@
+import { ZKP_UI_ENABLED } from "@/lib/zkp-ui";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { VerificationBell } from "@/components/zkp/VerificationBell";
 import { useState } from "react";
@@ -391,7 +392,7 @@ export function AppShell({
           </div>
           <div className="flex items-center gap-1 sm:gap-2">
             <ThemeToggle />
-            {role === "learner" || role === "recruiter" ? <VerificationBell role={role} /> : null}
+            {ZKP_UI_ENABLED && (role === "learner" || role === "recruiter") ? <VerificationBell role={role} /> : null}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 {role === "recruiter" ? (

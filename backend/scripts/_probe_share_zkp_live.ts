@@ -1,5 +1,6 @@
 import "dotenv/config";
 import { walletService } from "../src/services/wallet.service";
+import { findCredentialForLearnerCompetency } from "../src/services/credential-verify.service";
 import {
   buildShareZkpAttachment,
   moodleCompletionCounts,
@@ -34,6 +35,7 @@ async function main() {
   const javaOut = await buildShareZkpAttachment({
     userId,
     record: java,
+    credential: await findCredentialForLearnerCompetency(userId, java.competencyId),
     modes: {
       practical_task_result: "omit",
       github_evidence: "private",

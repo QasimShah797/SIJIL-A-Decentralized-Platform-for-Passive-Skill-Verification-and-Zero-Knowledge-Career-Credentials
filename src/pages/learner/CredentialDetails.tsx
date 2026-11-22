@@ -1,3 +1,4 @@
+import { ZKP_UI_ENABLED } from "@/lib/zkp-ui";
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { AppShell } from "@/components/sijil/AppShell";
@@ -155,7 +156,7 @@ export default function CredentialDetails() {
                 {blockchainConfirmed
                   ? "Blockchain confirmed"
                   : ledgerResult?.status === "verified" && ledgerResult.checks?.zkp === "not_checked"
-                    ? "Record matches. Privacy proof not checked"
+                    ? ZKP_UI_ENABLED ? "Record matches. Privacy proof not checked" : "Record matches. Verification incomplete"
                     : ledgerResult?.status === "ledger_unavailable"
                       ? "Blockchain not checked"
                       : "Not blockchain-verified"}

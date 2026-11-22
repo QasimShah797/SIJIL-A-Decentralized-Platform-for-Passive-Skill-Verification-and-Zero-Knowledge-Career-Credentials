@@ -1,3 +1,4 @@
+import { ZKP_UI_ENABLED } from "@/lib/zkp-ui";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { AppShell } from "@/components/sijil/AppShell";
 import { StatusBadge } from "@/components/sijil/StatusBadge";
@@ -186,7 +187,7 @@ export default function CandidateSummary() {
                 ["competencies", "Competencies"],
                 ["journey", "Skill growth"],
                 ["verification", "Private verification"],
-              ] as const).map(([id, label]) => (
+              ] as const).filter(([id]) => ZKP_UI_ENABLED || id !== "verification").map(([id, label]) => (
                 <button
                   key={id}
                   type="button"
@@ -315,13 +316,13 @@ export default function CandidateSummary() {
                 <SummaryRow
                   label="Verification"
                   value={
-                    countSharedZkpConfirmations(sharedCredentials) > 0
+                    ZKP_UI_ENABLED && countSharedZkpConfirmations(sharedCredentials) > 0
                       ? "Approved"
                       : candidate.attestation
                   }
                 />
                 <SummaryRow label="Shared credentials" value={String(evidence.credentials || candidate.credentialCount)} />
-                <SummaryRow label="Confirmed private results" value={String(countSharedZkpConfirmations(sharedCredentials))} />
+                {ZKP_UI_ENABLED && <SummaryRow label="Confirmed private results" value={String(countSharedZkpConfirmations(sharedCredentials))} />}
                 <SummaryRow label="Disclosed evidence" value={String(evidence.evidenceTotal)} />
                 <SummaryRow label="Active presentations" value={String(sharedCredentials.length)} />
               </dl>

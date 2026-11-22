@@ -281,11 +281,11 @@ export default function PeerReviewsPage() {
       const [data, stats, githubConn] = await Promise.all([
         loadPeerReviewPageData(userId),
         isApiEnabled() ? getPeerReviewStatsApi().catch(() => null) : Promise.resolve(null),
-        supabase
+        Promise.resolve(supabase
           .from("github_connections")
           .select("github_username")
           .eq("user_id", userId)
-          .maybeSingle()
+          .maybeSingle())
           .then(({ data: row }) => row?.github_username ?? null)
           .catch(() => null),
       ]);

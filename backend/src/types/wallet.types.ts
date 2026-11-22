@@ -202,6 +202,7 @@ export interface ShareWalletCompetencyInput {
   shareAudience?: "all-recruiters";
   consentToAllRecruiters?: boolean;
   competencyVersionIds?: string[];
+  credentialId?: string;
 }
 
 export interface ShareWalletCompetencyResult {

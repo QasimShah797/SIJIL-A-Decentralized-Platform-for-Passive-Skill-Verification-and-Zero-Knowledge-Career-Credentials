@@ -34,22 +34,21 @@ describe("wallet-ready promotion", () => {
     assert.equal(result.promote, true);
   });
 
-  it("never promotes a failing or incomplete assessment", () => {
-    assert.equal(base({ scoredPassed: false, scoredPercent: 80 }).promote, false);
-    assert.equal(base({ scoredPassed: true, scoredPercent: 59 }).promote, false);
-    assert.equal(base({ attemptStatus: "in_progress", scoredPassed: false, scoredPercent: 0 }).promote, false);
+  it("advances a server-scored sitting and rejects unscored or already completed attempts", () => {
+    assert.equal(base({ scoredPassed: false, scoredPercent: 59 }).promote, true);
+    assert.equal(base({ scoredPassed: false, scoredPercent: 0 }).promote, true);
+    assert.deepEqual(base({ scoredPercent: NaN }), { promote: false, reason: "assessment_not_scored" });
     assert.equal(base({ attemptStatus: "completed", scoredPassed: true, scoredPercent: 100 }).promote, false);
   });
 
-  it("ignores learner-supplied passed flags when the scorer failed", () => {
-    const result = base({
-      scoredPassed: false,
-      scoredPercent: 40,
-      clientClaimedPassed: true,
-      storedAttemptPassed: true,
-    });
-    assert.equal(result.promote, false);
-    if (!result.promote) assert.equal(result.reason, "assessment_not_passed");
+  it("does not let learner-supplied pass flags substitute for server scoring", () => {
+    for (const passed of [true, false]) {
+      assert.deepEqual(base({
+        scoredPercent: NaN,
+        clientClaimedPassed: passed,
+        storedAttemptPassed: passed,
+      }), { promote: false, reason: "assessment_not_scored" });
+    }
   });
 
   it("does not promote without qualifying GitHub evidence", () => {

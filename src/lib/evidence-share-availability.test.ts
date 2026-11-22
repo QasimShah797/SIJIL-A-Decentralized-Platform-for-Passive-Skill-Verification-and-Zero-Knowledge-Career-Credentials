@@ -21,8 +21,8 @@ describe("evidence-share-availability", () => {
     const modes = defaultEvidenceModesForAvailability(avail);
     expect(modes.lms_evidence).toBe("omit");
     expect(modes.peer_reviews).toBe("omit");
-    expect(modes.github_evidence).toBe("private");
-    expect(modes.practical_task_result).toBe("private");
+    expect(modes.github_evidence).toBe("omit");
+    expect(modes.practical_task_result).toBe("omit");
   });
 
   it("enables Moodle private for Java with assignments", () => {

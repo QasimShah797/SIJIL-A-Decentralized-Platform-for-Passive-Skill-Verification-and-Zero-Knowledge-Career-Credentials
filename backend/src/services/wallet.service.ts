@@ -50,8 +50,9 @@ import {
   buildEvidenceLedger,
   competencyFromSharePayload,
 } from "../utils/public-credential-map";
-import { redactExactValues } from "../utils/exact-value-redaction";
+import { enforcePrivateGithubDisclosure, redactExactValues } from "../utils/exact-value-redaction";
 import { disclosurePreferencesStore } from "./disclosure-preferences.service";
+import { verifySharedPrivateResults } from "./shared-zkp-verification";
 import { walletExportAvailability } from "./wallet-pass.service";
 import {
   DEFAULT_EVIDENCE_MODES,
@@ -79,6 +80,7 @@ import { verifyCredentialHash } from "./signing.service";
 import { getEvaluateLedgerService } from "./ledger.factory";
 import {
   findCredentialForLearnerCompetency,
+  loadCredentialByIdOrUri,
   isIssuedCredentialRevoked,
   verifyPublicCredential,
 } from "./credential-verify.service";
@@ -1589,6 +1591,7 @@ function recordsForShareScope(
 async function annotatePayloadSkillTrust(
   learnerId: string,
   payload: Record<string, unknown>,
+  primary: { competencyId: string; credential: Awaited<ReturnType<typeof findCredentialForLearnerCompetency>> },
 ): Promise<void> {
   const skills = Array.isArray(payload.skills) ? payload.skills : [];
   for (const item of skills) {
@@ -1596,7 +1599,9 @@ async function annotatePayloadSkillTrust(
     const skill = item as Record<string, unknown>;
     const competencyId = typeof skill.competencyId === "string" ? skill.competencyId : "";
     if (!competencyId) continue;
-    const cred = await findCredentialForLearnerCompetency(learnerId, competencyId);
+    const cred = competencyId === primary.competencyId
+      ? primary.credential
+      : await findCredentialForLearnerCompetency(learnerId, competencyId);
     if (!cred) {
       Object.assign(skill, annotateSkillTrust({
         issued: false,
@@ -1777,7 +1782,15 @@ export class WalletService {
     const records = await loadAggregatedWallet(userId);
     const record = records.find((item) => item.competencyId === competencyId);
     if (!record) throw new AppError("Competency wallet record not found", 404);
-    if (await isIssuedCredentialRevoked(userId, competencyId)) {
+    const issuedCred = input.credentialId
+      ? await loadCredentialByIdOrUri(input.credentialId)
+      : await findCredentialForLearnerCompetency(userId, competencyId);
+    if (input.credentialId && (
+      !issuedCred || issuedCred.user_id !== userId || issuedCred.skill_name !== record.competencyName
+    )) {
+      throw new AppError("Credential does not belong to this wallet competency", 404);
+    }
+    if (issuedCred?.revoked_at) {
       throw new AppError("Cannot create a presentation for a revoked credential", 409);
     }
     await persistWalletRecord(record);
@@ -1804,7 +1817,7 @@ export class WalletService {
       input.selectedFields,
       evidenceModes,
     ) as WalletShareFieldId[];
-    const disclosedPayload = buildDisclosedPayload(
+    let disclosedPayload = buildDisclosedPayload(
       record,
       fieldsForPayload,
       learnerContext,
@@ -1822,12 +1835,13 @@ export class WalletService {
       }
       disclosedPayload.competencyVersionIds = allowed;
     }
-    await annotatePayloadSkillTrust(userId, disclosedPayload);
+    await annotatePayloadSkillTrust(userId, disclosedPayload, { competencyId, credential: issuedCred });
 
     const zkpAttachment = await buildShareZkpAttachment({
       userId,
       record,
-      modes: evidenceModes,
+      modes: { ...evidenceModes, lms_evidence: "omit", peer_reviews: "omit" },
+      credential: issuedCred,
     });
     if (zkpAttachment.privateResults.length > 0) {
       disclosedPayload.privateResults = zkpAttachment.privateResults;
@@ -1842,13 +1856,13 @@ export class WalletService {
         publicSignals: proof.publicSignals,
         proof: proof.proof,
         credentialId: proof.credentialId,
+        ...(proof.snapshotId ? { snapshotId: proof.snapshotId } : {}),
         verified: true,
         verifiedBy: "sijil",
       }));
     }
 
     // Issuer-bound SD metadata (crypto when credential has selectiveDisclosure; else legacy label).
-    const issuedCred = await findCredentialForLearnerCompetency(userId, competencyId);
     if (issuedCred) {
       const proofValue = issuedCred.proof && typeof issuedCred.proof === "object"
         ? String((issuedCred.proof as Record<string, unknown>).proofValue ?? "") || null
@@ -1961,6 +1975,7 @@ export class WalletService {
       disclosedPayload.issuerSignatureStatus = "missing";
     }
 
+    disclosedPayload = enforcePrivateGithubDisclosure(disclosedPayload);
     assertNoPrivateWitnessLeak(disclosedPayload);
 
     if (Object.keys(disclosedPayload).length === 0) {
@@ -2241,7 +2256,7 @@ export class WalletService {
     const disclosedPayload = payloadVisibleToRecipient(
       access,
       access === "active"
-        ? await recruiterPayload(row, row.disclosed_payload, row.created_at)
+        ? await recruiterPayload(row, row.created_at)
         : {},
     );
 
@@ -2294,7 +2309,7 @@ export class WalletService {
     disclosedPayload?: Record<string, unknown>,
   ): Promise<PublicPresentationView> {
     const row = await loadPresentationByToken(token);
-    const redacted = await recruiterPayload(row, row.disclosed_payload, row.created_at);
+    const redacted = await recruiterPayload(row, row.created_at);
     // A recruiter echoing back the redacted view is checked against the signed original.
     const checked = !disclosedPayload || withoutDisclosureMeta(disclosedPayload) === withoutDisclosureMeta(redacted)
       ? row.disclosed_payload
@@ -2313,7 +2328,9 @@ export class WalletService {
       competencyId: row.competency_id,
       selectedFields: row.selected_fields,
       selectionMode: (row.selection_mode || "custom") as PublicPresentationView["selectionMode"],
-      disclosedPayload: payloadVisibleToRecipient(access, access === "active" ? redacted : {}),
+      disclosedPayload: payloadVisibleToRecipient(access, access === "active"
+        ? verification.result === "Valid Proof" ? redacted : withoutPrivateResults(redacted)
+        : {}),
       proofType: row.proof_type || "SignedSelectiveDisclosure",
       verificationMethod: row.verification_method,
       createdAt: row.created_at,
@@ -2379,7 +2396,7 @@ export class WalletService {
       };
     }
     // Frozen share only — never re-hydrate live wallet evidence into a presentation.
-    const payload = await recruiterPayload(row, row.disclosed_payload, verifiedAt);
+    const payload = await recruiterPayload(row, verifiedAt);
     const competency = competencyFromSharePayload(
       payload,
       competencyId,
@@ -2389,7 +2406,7 @@ export class WalletService {
       throw new AppError("This competency was not included in the share", 404);
     }
 
-    const privateResults = Array.isArray((payload as Record<string, unknown>).privateResults)
+    const privateResults = competencyId === row.competency_id && Array.isArray(payload.privateResults)
       ? ((payload as Record<string, unknown>).privateResults as Array<Record<string, unknown>>)
         .filter((item) => item && typeof item === "object")
         .map((item) => ({
@@ -2400,6 +2417,8 @@ export class WalletService {
           policyId: asNullableText(item.policyId),
           circuitId: asNullableText(item.circuitId),
           verifiedBy: asNullableText(item.verifiedBy),
+          threshold: asNullableText(item.threshold),
+          proofType: asNullableText(item.proofType),
         }))
         .filter((item) => item.claimType && item.label)
       : [];
@@ -2544,7 +2563,7 @@ export class WalletService {
 
     const resumeToken = token === "owner" ? row.id : token;
     // Frozen share only — never re-hydrate live wallet evidence into a presentation.
-    const payload = await recruiterPayload(row, row.disclosed_payload, verifiedAt);
+    const payload = await recruiterPayload(row, verifiedAt);
     const resume = buildAtsResume(payload, resumeToken, row.competency_id, row.selected_fields);
     if (resume) {
       if (learnerPhotoHidden(payload)) {
@@ -2581,11 +2600,16 @@ export class WalletService {
 
 async function recruiterPayload(
   row: PresentationRow,
-  payload: Record<string, unknown>,
   asOf: string,
 ): Promise<Record<string, unknown>> {
   const prefs = await disclosurePreferencesStore().get(row.learner_id);
+  const payload = await verifySharedPrivateResults(row, { bearerLink: true });
   return redactExactValues(payload, prefs, asOf);
+}
+
+function withoutPrivateResults(payload: Record<string, unknown>): Record<string, unknown> {
+  const { privateResults: _results, ...rest } = payload;
+  return rest;
 }
 
 function withoutDisclosureMeta(payload: Record<string, unknown>): string {
