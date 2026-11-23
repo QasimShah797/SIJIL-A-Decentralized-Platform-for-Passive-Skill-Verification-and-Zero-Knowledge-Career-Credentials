@@ -74,6 +74,7 @@ const PRESETS: Array<{
       "competency_domain",
       "verification_status",
       "practical_task_result",
+      "peer_reviews",
       "timestamps",
     ],
   },

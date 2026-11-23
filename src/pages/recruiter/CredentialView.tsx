@@ -1,6 +1,6 @@
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useEffect, useState } from "react";
-import { AppShell } from "@/components/sijil/AppShell";
+import { RecruiterWorkspaceShell } from "@/components/sijil/RecruiterWorkspaceShell";
 import { PageHeader } from "@/components/sijil/PageHeader";
 import { StatusBadge } from "@/components/sijil/StatusBadge";
 import { FieldRow } from "@/components/sijil/FieldRow";
@@ -37,19 +37,19 @@ export default function RecruiterCredentialView() {
   }, [token]);
 
   if (loading) {
-    return <AppShell role="recruiter"><PageSkeleton rows={4} /></AppShell>;
+    return <RecruiterWorkspaceShell><PageSkeleton rows={4} /></RecruiterWorkspaceShell>;
   }
 
   if (!presentation) {
     return (
-      <AppShell role="recruiter">
+      <RecruiterWorkspaceShell>
         <EmptyState
           icon={ShieldAlert}
           title="Presentation not found"
           description="The shared link is invalid, expired or has been revoked."
           action={{ label: "Back", onClick: () => navigate(-1) }}
         />
-      </AppShell>
+      </RecruiterWorkspaceShell>
     );
   }
 
@@ -102,7 +102,7 @@ export default function RecruiterCredentialView() {
   };
 
   return (
-    <AppShell role="recruiter">
+    <RecruiterWorkspaceShell>
       <PageHeader
         title="Verifiable Presentation"
         description="This page lists the fields stored for this share. A stopped or expired link does not show those fields. This is not a zero-knowledge proof."
@@ -140,7 +140,7 @@ export default function RecruiterCredentialView() {
           <Card>
             <CardHeader>
               <CardTitle className="text-base">Disclosed claims</CardTitle>
-              <p className="text-xs text-muted-foreground">Only fields the candidate chose to reveal are shown.</p>
+              <p className="text-xs text-muted-foreground">Only fields the learner chose to reveal are shown.</p>
             </CardHeader>
             <CardContent>
               {open ? presentation.disclosedFields.filter((field) => !isInstitutionClaim(field.id) && !isInstitutionClaim(field.label)).map((f) => (
@@ -190,7 +190,7 @@ export default function RecruiterCredentialView() {
           </Card>
         </div>
       </div>
-    </AppShell>
+    </RecruiterWorkspaceShell>
   );
 }
 

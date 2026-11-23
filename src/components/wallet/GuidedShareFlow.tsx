@@ -39,6 +39,8 @@ const SHARE_FIELDS = [
   { id: "learner_institution", label: "Institution" },
   { id: "github_evidence", label: "Project evidence" },
   { id: "lms_evidence", label: "Course evidence" },
+  { id: "practical_task_result", label: "Practical task" },
+  { id: "peer_reviews", label: "Peer reviews" },
 ] as const;
 
 type Method = "all-recruiters" | "public";

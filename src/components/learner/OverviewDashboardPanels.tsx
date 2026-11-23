@@ -219,8 +219,6 @@ export function CompetencySkillRow({
   onDelete: () => void;
   onOpenPipeline: () => void;
 }) {
-  const progress = competencyProgress(skill);
-
   return (
     <li className="group flex items-start gap-3 rounded-xl py-1">
       <div className="learner-competency-icon flex h-11 w-11 shrink-0 items-center justify-center">
@@ -256,12 +254,6 @@ export function CompetencySkillRow({
             <CompetencyStatusBadges status={skill.status} />
           </div>
         ) : null}
-        <div className="mt-3 flex items-center gap-2">
-          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-[#e2e8f0]">
-            <div className="h-full rounded-full bg-[#14b8a6]" style={{ width: `${progress}%` }} />
-          </div>
-          <span className="shrink-0 text-[10px] font-medium text-[#64748b]">{progress}% complete</span>
-        </div>
       </div>
     </li>
   );

@@ -67,6 +67,8 @@ describe("wallet share flow", () => {
         "learner_institution",
         "github_evidence",
         "lms_evidence",
+        "practical_task_result",
+        "peer_reviews",
       ],
     });
     expect(await screen.findByText("Your achievements are now visible to all SIJIL recruiters.")).toBeTruthy();
@@ -89,6 +91,8 @@ describe("wallet share flow", () => {
         "learner_institution",
         "github_evidence",
         "lms_evidence",
+        "practical_task_result",
+        "peer_reviews",
       ],
       expiresInDays: 30,
     });

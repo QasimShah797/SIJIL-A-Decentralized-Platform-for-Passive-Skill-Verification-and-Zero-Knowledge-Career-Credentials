@@ -100,7 +100,8 @@ export function validateRecruiterMatchAnswer(value: unknown, allowedIds: string[
     if (!item || typeof item !== "object") return [];
     const candidate = item as Record<string, unknown>;
     const id = text(candidate.id, 80);
-    if (!id || !allowed.has(id)) return [];
+    // Empty allow-list means "do not filter" (client may still pass ids when available).
+    if (!id || (allowed.size > 0 && !allowed.has(id))) return [];
     const basis = candidate.basis && typeof candidate.basis === "object"
       ? candidate.basis as Record<string, unknown>
       : {};
@@ -135,7 +136,7 @@ export function validateRecruiterMatchAnswer(value: unknown, allowedIds: string[
       if (!item || typeof item !== "object") return [];
       const line = item as Record<string, unknown>;
       const candidateId = text(line.candidateId, 80);
-      if (!candidateId || !allowed.has(candidateId)) return [];
+      if (!candidateId || (allowed.size > 0 && !allowed.has(candidateId))) return [];
       const cells = (Array.isArray(line.cells) ? line.cells : []).flatMap((cell) => {
         if (!cell || typeof cell !== "object") return [];
         const entry = cell as Record<string, unknown>;

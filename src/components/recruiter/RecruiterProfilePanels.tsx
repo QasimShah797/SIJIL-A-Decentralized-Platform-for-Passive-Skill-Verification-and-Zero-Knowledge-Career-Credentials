@@ -103,7 +103,7 @@ export function RecruiterProfileQuickActionsCard() {
     { label: "Open directory", icon: LayoutDashboard, to: "/recruiter/search" },
     { label: "Open jobs", icon: Briefcase, to: "/recruiter/jobs" },
     { label: "View interviews", icon: CalendarClock, to: "/recruiter/interviews" },
-    { label: "Compare candidates", icon: GitCompare, to: "/recruiter/compare" },
+    { label: "Compare learners", icon: GitCompare, to: "/recruiter/compare" },
   ];
 
   return (

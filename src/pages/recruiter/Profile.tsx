@@ -17,7 +17,7 @@ import {
   User,
   X,
 } from "lucide-react";
-import { AppShell } from "@/components/sijil/AppShell";
+import { RecruiterWorkspaceShell } from "@/components/sijil/RecruiterWorkspaceShell";
 import { Field } from "@/components/sijil/Field";
 import { PageSkeleton } from "@/components/sijil/SkeletonLoader";
 import { LinkedInProfileUrlField } from "@/components/profile/LinkedInProfileUrlField";
@@ -272,22 +272,22 @@ export default function RecruiterProfile() {
 
   if (loading) {
     return (
-      <AppShell role="recruiter">
+      <RecruiterWorkspaceShell>
         <PageSkeleton rows={5} />
-      </AppShell>
+      </RecruiterWorkspaceShell>
     );
   }
 
   if (error || !profile) {
     return (
-      <AppShell role="recruiter">
+      <RecruiterWorkspaceShell>
         <div className="mx-auto max-w-3xl py-10">
           <p className="text-lg font-semibold">Could not load profile</p>
           <p className="mt-2 text-sm text-muted-foreground">
             {error ?? "This account does not have a recruiter profile yet."}
           </p>
         </div>
-      </AppShell>
+      </RecruiterWorkspaceShell>
     );
   }
 
@@ -295,11 +295,11 @@ export default function RecruiterProfile() {
   const verification = recruiterVerificationLabel(profile.verificationStatus);
   const verified = profile.verificationStatus === "verified" || profile.verificationStatus === "company_domain_verified";
 
+  const rightRail = <RecruiterProfileRightRail profile={profile} />;
+
   return (
-    <AppShell role="recruiter" contentClassName="!max-w-none flex min-h-0 flex-col p-0">
-      <div className="learner-shell-dashboard flex min-h-[calc(100vh-3.5rem)] flex-1 flex-col lg:flex-row">
-        <div className="min-w-0 flex-1 px-4 pb-6 pt-3 sm:px-6 lg:px-8 lg:pb-8 lg:pt-4">
-          <div id="profile-top" className="space-y-3">
+    <RecruiterWorkspaceShell rightRail={rightRail}>
+          <div id="profile-top" className="space-y-6">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div>
                 <h1 className="text-2xl font-bold text-[#023E8A] sm:text-[1.65rem]">My Profile</h1>
@@ -485,7 +485,7 @@ export default function RecruiterProfile() {
                   Professional Links
                 </h3>
                 <p className="mb-5 mt-1 text-xs text-[#64748b]">
-                  Add the accounts candidates and colleagues can use to recognize you.
+                  Add the accounts learners and colleagues can use to recognize you.
                 </p>
                 <div className="space-y-4">
                   <LinkedInProfileUrlField
@@ -595,12 +595,6 @@ export default function RecruiterProfile() {
             </div>
             </div>
           </div>
-        </div>
-
-        <aside className="w-full shrink-0 space-y-4 border-t border-[#e2e8f0] bg-[#f8fafc] px-4 pb-4 pt-3 sm:px-6 lg:w-[320px] lg:border-l lg:border-t-0 lg:p-6 lg:pt-4">
-          <RecruiterProfileRightRail profile={profile} />
-        </aside>
-      </div>
-    </AppShell>
+    </RecruiterWorkspaceShell>
   );
 }

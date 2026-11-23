@@ -11,7 +11,6 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Mail, Copy, Link as LinkIcon, ExternalLink, MessageSquare } from "lucide-react";
 import {
-  computeTrustSignals,
   type PeerReview, type ProjectContributor,
   type ReviewInvitation,
 } from "@/lib/sijil-data";
@@ -21,7 +20,6 @@ import { deliveryToast } from "@/lib/invite-delivery";
 import { useDeclaredSkills } from "@/hooks/useLearnerData";
 import {
   PeerReviewsHero,
-  PeerReviewsStatsGrid,
   PeerReviewNextAction,
   PeerReviewsEmptySkills,
   PeerReviewsEmptyProjects,
@@ -41,8 +39,8 @@ import {
   nextAction,
   type ContributorViewFilter,
   type ReviewSort,
-  type TrustFilter,
 } from "@/lib/peer-review-insights";
+import { filterReviewsForDeclaredSkills, normalizeSkillName } from "@/lib/skill-review-filter";
 import { fetchWalletCompetencyRecords, type WalletCompetencyRecordView } from "@/lib/db/wallet-competency-records";
 import {
   loadPeerReviewPageData,
@@ -195,29 +193,10 @@ export default function PeerReviewsPage() {
     [contextRequests, legacyInvitations],
   );
 
-  const signals = useMemo(() => {
-    const local = computeTrustSignals(reviews);
-    if (!apiStats || local.total > apiStats.totalReviews) {
-      return {
-        ...local,
-        pending: Math.max(local.pending, apiStats?.pendingInvites ?? 0),
-      };
-    }
-    return {
-      total: apiStats.totalReviews,
-      verifiedContext: apiStats.contextVerified,
-      imported: apiStats.imported,
-      sijil: apiStats.fromSIJILForm,
-      highTrust: apiStats.highTrust,
-      pending: apiStats.pendingInvites,
-    };
-  }, [apiStats, reviews]);
-
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
   const selectedProject = projects.find((p) => p.id === selectedProjectId);
   const [skillForProject, setSkillForProject] = useState<string>("");
   const [reviewFilter, setReviewFilter] = useState<ReviewFeedFilter>("all");
-  const [trustFilter, setTrustFilter] = useState<TrustFilter>("all");
   const [reviewSearch, setReviewSearch] = useState("");
   const [reviewSort, setReviewSort] = useState<ReviewSort>("newest");
   const [contributorFilter, setContributorFilter] = useState<ContributorViewFilter>("all");
@@ -226,6 +205,7 @@ export default function PeerReviewsPage() {
   const loadGenRef = useRef(0);
   const walletReviewsRef = useRef<PeerReview[]>([]);
   const skillKey = declaredSkills.map((skill) => skill.id).join("|");
+  const firstDeclaredSkillName = declaredSkills[0]?.name ?? "";
 
   const applyPageData = useCallback((
     data: {
@@ -245,10 +225,10 @@ export default function PeerReviewsPage() {
     if (stats) setApiStats(stats);
     setSelectedProjectId((current) => current || data.projects[0]?.id || "");
     setSkillForProject((current) =>
-      current || data.projects[0]?.linkedSkills[0] || declaredSkills[0]?.name || "",
+      current || data.projects[0]?.linkedSkills[0] || firstDeclaredSkillName || "",
     );
     return merged;
-  }, [declaredSkills]);
+  }, [firstDeclaredSkillName]);
 
   const reload = useCallback(async (opts?: { silent?: boolean; skipGithub?: boolean }) => {
     if (!user?.id) return;
@@ -332,7 +312,7 @@ export default function PeerReviewsPage() {
       setLoadError(err instanceof Error ? err.message : "Could not load peer reviews");
       throw new Error("load failed");
     }
-  }, [applyPageData, declaredSkills, user?.id]);
+  }, [applyPageData, user?.id]);
 
   useEffect(() => {
     if (!user?.id || skillsLoading) return;
@@ -405,13 +385,22 @@ export default function PeerReviewsPage() {
   );
   const [focusedReviewId, setFocusedReviewId] = useState<string | null>(null);
 
-  const visibleReviews = useMemo(
-    () => filterReviews(reviews, reviewFilter, trustFilter, reviewSearch, reviewSort),
-    [reviews, reviewFilter, trustFilter, reviewSearch, reviewSort],
-  );
+  const skillScopedReviews = useMemo(() => {
+    if (!skillForProject) return [];
+    const selectedSkill = declaredSkills.find(
+      (skill) => normalizeSkillName(skill.name) === normalizeSkillName(skillForProject),
+    );
+    if (selectedSkill) {
+      return filterReviewsForDeclaredSkills(reviews, [selectedSkill]);
+    }
+    const target = normalizeSkillName(skillForProject);
+    return reviews.filter((review) => normalizeSkillName(review.skill) === target);
+  }, [declaredSkills, reviews, skillForProject]);
 
-  const pendingInviteCount = apiStats?.pendingInvites
-    ?? invitations.filter((invitation) => invitation.status !== "Completed").length;
+  const visibleReviews = useMemo(
+    () => filterReviews(skillScopedReviews, reviewFilter, "all", reviewSearch, reviewSort),
+    [skillScopedReviews, reviewFilter, reviewSearch, reviewSort],
+  );
 
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteResend, setInviteResend] = useState(false);
@@ -897,18 +886,6 @@ export default function PeerReviewsPage() {
             importDisabled={!selectedProject || loading}
             syncing={githubSyncing}
           />
-          <PeerReviewsStatsGrid
-            total={signals.total}
-            verifiedContext={signals.verifiedContext}
-            highTrust={signals.highTrust}
-            pending={pendingInviteCount}
-            activeTrust={trustFilter}
-            onSelectTrust={setTrustFilter}
-            onFocusInvites={() => {
-              setContributorFilter("invited");
-              document.getElementById("peer-contributors")?.scrollIntoView({ behavior: "smooth", block: "start" });
-            }}
-          />
           <PeerReviewNextAction
             action={insightAction}
             busy={bulkBusy}
@@ -917,16 +894,38 @@ export default function PeerReviewsPage() {
             onImport={() => void importExisting()}
           />
           {projects.length === 0 ? (
-            <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#e2e8f0] bg-white px-4 py-3">
-              <p className="text-sm text-[#64748b]">
-                Link a GitHub repository to request contributor reviews for a project.
-              </p>
-              <Button
-                className="rounded-xl bg-[#023E8A] hover:bg-[#012A5C]"
-                onClick={() => navigate("/learner/integrations")}
-              >
-                Open integrations
-              </Button>
+            <div className="mb-6 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#e2e8f0] bg-white px-4 py-3">
+                <p className="text-sm text-[#64748b]">
+                  Link a GitHub repository to request contributor reviews for a project.
+                </p>
+                <Button
+                  className="rounded-xl bg-[#023E8A] hover:bg-[#012A5C]"
+                  onClick={() => navigate("/learner/integrations")}
+                >
+                  Open integrations
+                </Button>
+              </div>
+              {skillOptions.length > 0 && (
+                <div className="rounded-xl border border-[#e2e8f0] bg-white px-4 py-3">
+                  <Label className="text-[11px] font-semibold uppercase tracking-wide text-[#64748b]">
+                    Skill
+                  </Label>
+                  <Select
+                    value={skillOptions.includes(skillForProject) ? skillForProject : undefined}
+                    onValueChange={setSkillForProject}
+                  >
+                    <SelectTrigger className="mt-1.5 max-w-sm rounded-xl border-[#e2e8f0]">
+                      <SelectValue placeholder="Select a skill" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {skillOptions.filter(Boolean).map((name) => (
+                        <SelectItem key={name} value={name}>{name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
             </div>
           ) : (
             <PeerReviewProjectToolbar
@@ -974,9 +973,13 @@ export default function PeerReviewsPage() {
             <PeerReviewFeed
               reviews={visibleReviews}
               focusId={focusedReviewId}
-              emptyTitle={reviews.length === 0 ? "No reviews yet" : "No matches"}
-              emptyDescription={reviews.length === 0
-                ? "Invite a contributor or import from GitHub."
+              emptyTitle={skillScopedReviews.length === 0
+                ? (skillForProject ? `No reviews for ${skillForProject}` : "No reviews yet")
+                : "No matches"}
+              emptyDescription={skillScopedReviews.length === 0
+                ? (skillForProject
+                  ? "Invite a contributor or import from GitHub for this skill."
+                  : "Select a skill to see related reviews.")
                 : "Try a different search or filter."}
               header={(
                 <div className="flex flex-col gap-3 border-b border-[#e2e8f0] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
@@ -985,6 +988,11 @@ export default function PeerReviewsPage() {
                       <MessageSquare className="h-4 w-4" />
                     </span>
                     Reviews
+                    {skillForProject ? (
+                      <span className="rounded-full bg-[#e8eef7] px-2.5 py-0.5 text-xs font-semibold text-[#023E8A]">
+                        {skillForProject}
+                      </span>
+                    ) : null}
                     <span className="rounded-full bg-[#e8eef7] px-2.5 py-0.5 text-xs font-semibold tabular-nums">{visibleReviews.length}</span>
                   </h2>
                   <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
@@ -998,9 +1006,9 @@ export default function PeerReviewsPage() {
                       value={reviewFilter}
                       onChange={setReviewFilter}
                       counts={{
-                        all: reviews.length,
-                        imported: reviews.filter((review) => review.imported).length,
-                        sijil: reviews.filter((review) => !review.imported).length,
+                        all: skillScopedReviews.length,
+                        imported: skillScopedReviews.filter((review) => review.imported).length,
+                        sijil: skillScopedReviews.filter((review) => !review.imported).length,
                       }}
                     />
                   </div>

@@ -1,8 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import {
-  BadgeCheck,
   ChevronDown,
-  Clock,
   Download,
   ExternalLink,
   FolderGit2,
@@ -31,7 +29,6 @@ import type {
   CoverageStats,
   NextAction,
   ReviewSort,
-  TrustFilter,
 } from "@/lib/peer-review-insights";
 
 export type ReviewFeedFilter = "all" | "imported" | "sijil";
@@ -106,90 +103,6 @@ export function PeerReviewsHero({
         <Download className="mr-1.5 h-4 w-4" />
         Import
       </Button>
-    </div>
-  );
-}
-
-export function PeerReviewsStatsGrid({
-  total,
-  verifiedContext,
-  highTrust,
-  pending,
-  activeTrust,
-  onSelectTrust,
-  onFocusInvites,
-}: {
-  total: number;
-  verifiedContext: number;
-  highTrust: number;
-  pending: number;
-  activeTrust: TrustFilter;
-  onSelectTrust: (trust: TrustFilter) => void;
-  onFocusInvites: () => void;
-}) {
-  const items = [
-    {
-      id: "total",
-      label: "Reviews",
-      value: String(total),
-      icon: MessageSquare,
-      iconClass: "bg-[#e8eef7] text-[#023E8A]",
-      active: false,
-      onClick: () => onSelectTrust("all"),
-    },
-    {
-      id: "verified",
-      label: "Verified",
-      value: String(verifiedContext),
-      icon: ShieldCheck,
-      iconClass: "bg-[#ccfbf1] text-[#0f766e]",
-      active: false,
-      onClick: () => onSelectTrust("all"),
-    },
-    {
-      id: "high",
-      label: "High trust",
-      value: String(highTrust),
-      icon: BadgeCheck,
-      iconClass: "bg-[#ecfdf5] text-[#059669]",
-      active: activeTrust === "high",
-      onClick: () => onSelectTrust(activeTrust === "high" ? "all" : "high"),
-    },
-    {
-      id: "pending",
-      label: "Pending",
-      value: String(pending),
-      icon: Clock,
-      iconClass: "bg-[#fef9c3] text-[#CA8A04]",
-      active: false,
-      onClick: onFocusInvites,
-    },
-  ];
-
-  return (
-    <div className="mb-6 grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-[#e2e8f0] bg-[#e2e8f0] shadow-[0_1px_2px_rgba(2,62,138,0.06)] sm:grid-cols-4">
-      {items.map((item) => {
-        const Icon = item.icon;
-        return (
-          <button
-            key={item.id}
-            type="button"
-            onClick={item.onClick}
-            className={cn(
-              "pr-stat-card flex items-center gap-3 bg-white px-5 py-4 text-left transition-colors hover:bg-[#f8fafc]",
-              item.active && "bg-[#eff6ff]",
-            )}
-          >
-            <span className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-xl", item.iconClass)}>
-              <Icon className="h-4 w-4" />
-            </span>
-            <span className="min-w-0">
-              <span className="block text-2xl font-bold leading-none text-[#023E8A]">{item.value}</span>
-              <span className="mt-1 block text-xs text-[#64748b]">{item.label}</span>
-            </span>
-          </button>
-        );
-      })}
     </div>
   );
 }

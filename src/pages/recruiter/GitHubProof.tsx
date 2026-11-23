@@ -1,12 +1,12 @@
-import { AppShell } from "@/components/sijil/AppShell";
+import { RecruiterWorkspaceShell } from "@/components/sijil/RecruiterWorkspaceShell";
 import { GitHubContributionProofCard } from "@/components/recruiter/GitHubContributionProofCard";
 
 export default function RecruiterGitHubProof() {
   return (
-    <AppShell role="recruiter">
+    <RecruiterWorkspaceShell>
       <div className="mx-auto max-w-2xl">
         <GitHubContributionProofCard />
       </div>
-    </AppShell>
+    </RecruiterWorkspaceShell>
   );
 }

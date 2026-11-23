@@ -75,8 +75,20 @@ describe("exact value disclosure", () => {
       source: "sijil_backend_records",
       asOf: "2026-10-31T00:00:00.000Z",
     });
+    const complete = (out.evidence as {
+      completeEvidencePackage?: {
+        practicalTask?: { scoreThresholdSignals?: { latestVsReference?: string; bands?: Record<string, string> } };
+      };
+    })?.completeEvidencePackage;
+    const practical = complete?.practicalTask;
+    assert.equal(practical?.scoreThresholdSignals?.latestVsReference, "above");
+    assert.equal(practical?.scoreThresholdSignals?.bands?.["70"], "above");
+    assert.equal(practical?.scoreThresholdSignals?.bands?.["80"], "above");
     const ledger = JSON.stringify(buildEvidenceLedger(out, SKILL, FIELDS));
-    assert.equal(/\d+%|commits|Grade \d/.test(ledger), false);
+    assert.equal(ledger.includes("91%"), false);
+    assert.equal(ledger.includes("83 commits"), false);
+    assert.equal(/Grade \d/.test(ledger), false);
+    assert.match(ledger, /above 70% threshold/);
     const resume = JSON.stringify(buildAtsResume(out, "tok", SKILL, FIELDS));
     assert.equal(resume.includes("83 commits"), false);
   });

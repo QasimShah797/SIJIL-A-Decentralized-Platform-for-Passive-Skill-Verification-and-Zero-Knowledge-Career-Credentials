@@ -7,10 +7,10 @@ import {
 import {
   buildEvidenceLedger,
   inspectorViewFromLedger,
+  practicalSummaryFromPayload,
 } from "@/lib/public-credential";
 import type { SharedCredentialView } from "@/lib/shared-presentation";
-import { AssessmentProofRequestCard } from "@/components/recruiter/AssessmentProofRequestCard";
-import { GitHubActivityRequestCard } from "@/components/recruiter/GitHubActivityRequestCard";
+import { SsiVerifyCredentialCard } from "@/components/recruiter/SsiVerifyCredentialCard";
 
 export type RecruiterSkillCard = {
   id: string;
@@ -22,6 +22,7 @@ export type RecruiterSkillCard = {
   selectedFields: string[];
   payload: Record<string, unknown>;
   presentationId: string;
+  credentialId: string | null;
 };
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -67,6 +68,7 @@ export function recruiterSkillCards(credentials: SharedCredentialView[]): Recrui
         selectedFields: credential.selectedFields,
         payload,
         presentationId: credential.presentationId,
+        credentialId: asText(credential.credentialId) || null,
       });
     }
   }
@@ -82,12 +84,13 @@ export function displayRecruiterSkillName(name: string) {
 
 export function RecruiterCompetencyDetail({
   card,
-  learnerUserId,
   section = "all",
+  credentialId = null,
 }: {
   card: RecruiterSkillCard;
-  learnerUserId?: string;
-  section?: "all" | "evidence" | "requests";
+  section?: "all" | "evidence" | "verify";
+  /** Issued credential id from shared competency versions (selective disclosure). */
+  credentialId?: string | null;
 }) {
   const [source, setSource] = useState<InspectorSource>("github");
   const inspector = useMemo(() => {
@@ -95,24 +98,32 @@ export function RecruiterCompetencyDetail({
     return inspectorViewFromLedger(ledger);
   }, [card.payload, card.competencyId, card.selectedFields]);
 
+  const practicalSummary = useMemo(
+    () => practicalSummaryFromPayload(card.payload, card.competencyId),
+    [card.payload, card.competencyId],
+  );
+
   useEffect(() => {
     if (!inspector.availableSources.includes(source)) {
       setSource(inspector.availableSources[0] ?? "github");
     }
   }, [inspector.availableSources, source]);
 
-  const showEvidence = section !== "requests";
-  const showRequests = section !== "evidence";
+  const showEvidence = section === "all" || section === "evidence";
+  const showVerify = section === "all" || section === "verify";
+  const issuedCredentialId = credentialId || card.credentialId;
 
   return (
-    <div className="grid gap-4 xl:grid-cols-2">
+    <div className="space-y-4">
       {showEvidence ? (
-        <>
+        <div className="grid gap-4 xl:grid-cols-2">
           <CompetencyPackageCard
             competencyName={displayRecruiterSkillName(card.name)}
             github={inspector.github}
             lmsRows={inspector.lmsRows}
             taskLabel={inspector.taskDetail}
+            practicalSummary={practicalSummary}
+            reviews={inspector.reviews}
           />
           <EvidenceInspectorCard
             source={source}
@@ -124,20 +135,15 @@ export function RecruiterCompetencyDetail({
             reviews={inspector.reviews}
             verifyUrl={inspector.verifyUrl}
           />
-        </>
-      ) : null}
-      {showRequests && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(card.presentationId) ? (
-        <div className="xl:col-span-2">
-          <div className="space-y-3">
-            <div>
-              <h2 className="text-base font-semibold text-[#0f172a]">Request Private Verification</h2>
-              <p className="mt-1 text-sm text-[#64748b]">Practical task score and GitHub activity can be requested. Moodle performance and skill progression are not ready. A request never shows the exact score or commit count.</p>
-            </div>
-            <AssessmentProofRequestCard presentationId={card.presentationId} />
-            {learnerUserId ? <GitHubActivityRequestCard learnerUserId={learnerUserId} /> : null}
-          </div>
-          <p className="mt-2 text-xs text-[#64748b]">Shared means the learner permitted this achievement. A proof is verified only after the server accepts the cryptographic check. A signature check, a revocation check, and a ledger check are separate.</p>
         </div>
+      ) : null}
+
+      {showVerify ? (
+        <SsiVerifyCredentialCard
+          payload={card.payload}
+          versionCredentialId={issuedCredentialId}
+          sharedAt={card.createdAt}
+        />
       ) : null}
     </div>
   );

@@ -80,15 +80,14 @@ export type McqProgress = {
 
 export type TaskMode = "MCQ" | "Coding";
 
-export const MCQ_SITTING_SECONDS = 30;
 export const MCQ_SECONDS_PER_QUESTION = 30;
-export const MCQ_CODE_SECONDS = 60;
+export const MCQ_CODE_SECONDS = 30;
 export const MCQ_CONCEPT_COUNT = 10;
 export const MCQ_CODE_COUNT = 4;
 
 export function secondsForQuestion(question?: { kind?: string; seconds?: number } | null): number {
   if (question?.kind === "code") return MCQ_CODE_SECONDS;
-  if (typeof question?.seconds === "number" && question.seconds > 0 && question.kind !== "code") {
+  if (typeof question?.seconds === "number" && question.seconds > 0) {
     return Math.min(question.seconds, MCQ_SECONDS_PER_QUESTION);
   }
   return MCQ_SECONDS_PER_QUESTION;

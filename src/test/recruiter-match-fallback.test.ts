@@ -91,7 +91,7 @@ describe("fallback match ranking", () => {
     const answer = buildFallbackMatchAnswer("Show candidates with Java and Mobile App Development", [syed, aaiza]);
     const syedCard = answer.candidates.find((item) => item.id === "q1");
     const aaizaCard = answer.candidates.find((item) => item.id === "a1");
-    expect(answer.headline).toBe("1 of 2 candidates has both Java and Mobile App Development.");
+    expect(answer.headline).toBe("1 of 2 learners has both Java and Mobile App Development.");
     expect(answer.headline.toLowerCase()).not.toContain("backend");
     expect(syedCard?.matchLevel).toBe("full");
     expect(aaizaCard?.matchLevel).toBe("partial");
@@ -138,14 +138,14 @@ describe("fallback match ranking", () => {
       verifiedSkills: ["TypeScript", "Frontend Development", "JavaScript", "Java"],
     });
     const answer = buildFallbackMatchAnswer("Which candidates have 2 or more skills", [syed, aaiza]);
-    expect(answer.headline).toBe("2 of 2 candidates have 2 or more skills.");
+    expect(answer.headline).toBe("2 of 2 learners have 2 or more skills.");
     expect(answer.candidates.map((item) => item.matchLevel)).toEqual(["count", "count"]);
     expect(answer.candidates.every((item) => item.rank === null)).toBe(true);
     expect(answer.candidates.find((item) => item.id === "q1")?.strengths).toEqual(["Dart", "Mobile App Development", "TypeScript", "Java"]);
     expect(answer.candidates.find((item) => item.id === "a1")?.strengths).toEqual(["TypeScript", "Frontend Development", "JavaScript", "Java"]);
     expect(answer.candidates.find((item) => item.id === "q1")?.verdict).toBe("4 skills");
     const none = buildFallbackMatchAnswer("Which candidates have at least 5 skills", [syed, aaiza]);
-    expect(none.headline).toBe("No candidates have 5 or more skills.");
+    expect(none.headline).toBe("No learners have 5 or more skills.");
     expect(none.candidates.every((item) => item.matchLevel === "none")).toBe(true);
     expect(none.caution).toMatch(/lower number/);
   });
@@ -174,7 +174,7 @@ describe("fallback match ranking", () => {
     const answer = buildFallbackMatchAnswer("Which candidates have skills without supporting evidence?", [syed, aaiza]);
     const syedCard = answer.candidates.find((item) => item.id === "q1");
     const aaizaCard = answer.candidates.find((item) => item.id === "a1");
-    expect(answer.headline).toBe("1 of 2 candidates has skills without supporting evidence.");
+    expect(answer.headline).toBe("1 of 2 learners has skills without supporting evidence.");
     expect(syedCard?.matchLevel).toBe("count");
     expect(syedCard?.rank).toBeNull();
     expect(syedCard?.gaps).toEqual(["Dart", "Mobile App Development"]);

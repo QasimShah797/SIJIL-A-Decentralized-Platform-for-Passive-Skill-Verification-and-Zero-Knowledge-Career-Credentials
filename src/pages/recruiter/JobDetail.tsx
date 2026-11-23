@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Briefcase, CalendarClock, GitCompare, Search, UserCheck, UserX } from "lucide-react";
-import { AppShell } from "@/components/sijil/AppShell";
+import { RecruiterWorkspaceShell } from "@/components/sijil/RecruiterWorkspaceShell";
 import { EmptyState } from "@/components/sijil/EmptyState";
 import { PageSkeleton } from "@/components/sijil/SkeletonLoader";
 import { StatusBadge } from "@/components/sijil/StatusBadge";
@@ -11,7 +11,6 @@ import { useAuth } from "@/hooks/useAuth";
 import { useCandidates } from "@/hooks/useCandidates";
 import { toast } from "@/hooks/use-toast";
 import {
-  jobsUseBrowserStorage,
   listRecruiterJobs,
   matchesForJob,
   setRecruiterJobDecision,
@@ -155,7 +154,7 @@ export default function RecruiterJobDetail() {
   };
 
   return (
-    <AppShell role="recruiter">
+    <RecruiterWorkspaceShell>
       <div className="mb-5">
         <button
           type="button"
@@ -174,7 +173,6 @@ export default function RecruiterJobDetail() {
                   {job.seats} {job.seats === 1 ? "seat" : "seats"}
                   {" · "}
                   {counts.hired} hired
-                  {jobsUseBrowserStorage() ? " · saved in this browser" : ""}
                 </p>
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   {job.skills.map((skill) => (
@@ -227,7 +225,7 @@ export default function RecruiterJobDetail() {
             <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
               <div>
                 <h2 className="flex items-center gap-2 text-base font-semibold text-[#023E8A]">
-                  Candidates
+                  Learners
                   <span className="rounded-full bg-[#e8eef7] px-2.5 py-0.5 text-xs font-semibold tabular-nums text-[#023E8A]">
                     {visible.length}
                   </span>
@@ -276,7 +274,7 @@ export default function RecruiterJobDetail() {
               {visible.length === 0 ? (
                 <EmptyState
                   icon={UserCheck}
-                  title={matches.length === 0 ? "No candidates match yet" : "No matches"}
+                  title={matches.length === 0 ? "No learners match yet" : "No matches"}
                   description={
                     matches.length === 0
                       ? "Matching uses skills already shared with recruiters. A broader skill on the job will widen this list."
@@ -386,6 +384,6 @@ export default function RecruiterJobDetail() {
           }}
         />
       ) : null}
-    </AppShell>
+    </RecruiterWorkspaceShell>
   );
 }

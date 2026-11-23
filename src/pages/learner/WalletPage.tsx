@@ -506,7 +506,25 @@ export default function WalletPage() {
   const githubStats = summary ? buildGithubStats(summary) : { repos: 0, commits: 0, activities: 0, pullRequests: 0, languages: [], commitSeries: [] };
   const lmsRows = summary ? buildLmsRows(summary) : [];
   const attempt = summary ? latestAttempt(summary) : null;
-  const peerReviews = summary ? asEvidenceArray(summary.peerReviews) : [];
+  const peerReviews = summary
+    ? (() => {
+      const rows = [
+        ...asEvidenceArray(summary.peerReviews),
+        ...asEvidenceArray(summary.github.reviews),
+      ];
+      const seen = new Set<string>();
+      return rows.filter((review) => {
+        const key = [
+          textValue(review.id),
+          textValue(review.reviewer_name) || textValue(review.reviewer),
+          textValue(review.review_text) || textValue(review.comment) || textValue(review.body),
+        ].join("|");
+        if (!key.replace(/\|/g, "") || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    })()
+    : [];
 
   useEffect(() => {
     if (!activeRecord) {
@@ -649,7 +667,19 @@ export default function WalletPage() {
     if (profile?.skillsSummary || records.length > 1) next.push("learner_skills_summary");
     if (profilePhotoUrl) next.push("learner_photo");
     setEnabledFields(next);
-  }, [activeRecord?.competencyId, profilePhotoUrl]);
+  }, [
+    activeRecord?.competencyId,
+    profilePhotoUrl,
+    attempt,
+    peerReviews.length,
+    githubStats.repos,
+    githubStats.activities,
+    lmsRows.length,
+    profile?.institution,
+    profile?.careerGoal,
+    profile?.skillsSummary,
+    records.length,
+  ]);
 
   const issuedCredential = activeRecord
     ? matchingCredential(credentials, activeRecord.competencyName)
@@ -826,6 +856,17 @@ export default function WalletPage() {
               lmsRows={lmsRows}
               taskLabel={taskLabel}
               attempts={summary.practicalTask.attemptHistory}
+              reviews={peerReviews.map((review) => ({
+                reviewer: textValue(review.reviewer_name)
+                  || textValue(review.reviewer)
+                  || textValue(review.author_name)
+                  || "Reviewer",
+                text: textValue(review.review_text)
+                  || textValue(review.comment)
+                  || textValue(review.body)
+                  || textValue(review.feedback)
+                  || "Review submitted",
+              }))}
             />
 
             <div className="space-y-4">
@@ -850,8 +891,15 @@ export default function WalletPage() {
                 taskDetail={taskLabel}
                 attempts={summary.practicalTask.attemptHistory}
                 reviews={peerReviews.map((review) => ({
-                  reviewer: textValue(review.reviewer_name) || "Reviewer",
-                  text: textValue(review.review_text) || textValue(review.comment) || "Review submitted",
+                  reviewer: textValue(review.reviewer_name)
+                    || textValue(review.reviewer)
+                    || textValue(review.author_name)
+                    || "Reviewer",
+                  text: textValue(review.review_text)
+                    || textValue(review.comment)
+                    || textValue(review.body)
+                    || textValue(review.feedback)
+                    || "Review submitted",
                 }))}
                 onViewPackage={() => setSelectedRecord(activeRecord)}
               />

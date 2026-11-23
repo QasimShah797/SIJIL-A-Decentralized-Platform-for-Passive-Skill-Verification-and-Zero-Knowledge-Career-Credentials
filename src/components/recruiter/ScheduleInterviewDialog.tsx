@@ -243,7 +243,7 @@ export function ScheduleInterviewDialog({
               id="interview-notes"
               value={notes}
               onChange={(event) => setNotes(event.target.value)}
-              placeholder="Agenda, interviewer names, or anything the candidate should prepare"
+              placeholder="Agenda, interviewer names, or anything the learner should prepare"
               maxLength={2000}
             />
           </div>

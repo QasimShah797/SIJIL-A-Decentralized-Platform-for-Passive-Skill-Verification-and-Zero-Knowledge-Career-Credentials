@@ -160,19 +160,11 @@ export async function issueCredentialForSkill(
   });
 }
 
-/** Recruiter verify with selective disclosure — backend first, Supabase fallback. */
-export async function verifyCredentialForRecruiter(
-  credentialOrToken: string,
-): Promise<{ credential: CredentialView | Partial<CredentialView>; disclosedOnly: boolean } | null> {
-  const viaApi = await verifyCredentialApi(credentialOrToken);
-  if (viaApi?.credential) {
-    return {
-      credential: viaApi.credential as CredentialView,
-      disclosedOnly: (viaApi.disclosedFields?.length ?? 0) > 0,
-    };
+/** Recruiter verify via share-authorized backend endpoint. */
+export async function verifyCredentialForRecruiter(credentialOrToken: string) {
+  try {
+    return await verifyCredentialApi(credentialOrToken);
+  } catch {
+    return null;
   }
-
-  const cred = await fetchCredentialByUriGlobal(credentialOrToken);
-  if (!cred) return null;
-  return { credential: cred, disclosedOnly: false };
 }

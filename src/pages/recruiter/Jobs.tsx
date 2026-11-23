@@ -1,41 +1,32 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Briefcase, CircleCheck, CircleDot, Plus, Search, UserCheck, X } from "lucide-react";
-import { AppShell } from "@/components/sijil/AppShell";
+import { Briefcase, Plus, Search, X } from "lucide-react";
+import { RecruiterWorkspaceShell } from "@/components/sijil/RecruiterWorkspaceShell";
 import { EmptyState } from "@/components/sijil/EmptyState";
 import { PageSkeleton } from "@/components/sijil/SkeletonLoader";
 import { StatusBadge } from "@/components/sijil/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useAuth } from "@/hooks/useAuth";
 import { useCandidates } from "@/hooks/useCandidates";
 import { toast } from "@/hooks/use-toast";
 import {
   createRecruiterJob,
   decisionCounts,
-  jobsUseBrowserStorage,
   listRecruiterJobs,
   matchesForJob,
   parseSkillList,
   type RecruiterJob,
 } from "@/lib/recruiter-jobs";
-import { cn } from "@/lib/utils";
 
-const FILTERS = [
-  { id: "open", label: "Open", hint: "Seats still being filled", icon: CircleDot },
-  { id: "closed", label: "Closed", hint: "No longer hiring", icon: Briefcase },
-  { id: "interview", label: "In interview", hint: "Someone is in process", icon: UserCheck },
-  { id: "hired", label: "Hired", hint: "A decision was recorded", icon: CircleCheck },
-] as const;
-
-type FilterId = (typeof FILTERS)[number]["id"];
-
-const iconTints = [
-  "bg-[#e8eef7] text-[#023E8A]",
-  "bg-[#f1f5f9] text-[#475569]",
-  "bg-[#fff7ed] text-[#c2410c]",
-  "bg-[#ecfdf5] text-[#059669]",
-];
+type FilterId = "all" | "open" | "closed" | "interview" | "hired";
 
 export default function RecruiterJobs() {
   const navigate = useNavigate();
@@ -44,7 +35,6 @@ export default function RecruiterJobs() {
   const [jobs, setJobs] = useState<RecruiterJob[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [browserOnly, setBrowserOnly] = useState(false);
   const [filter, setFilter] = useState<FilterId>("open");
   const [query, setQuery] = useState("");
   const [title, setTitle] = useState("");
@@ -60,7 +50,6 @@ export default function RecruiterJobs() {
     try {
       const rows = await listRecruiterJobs(user.id);
       setJobs(rows);
-      setBrowserOnly(jobsUseBrowserStorage());
     } catch (err) {
       setJobs([]);
       setError(err instanceof Error ? err.message : "Could not load jobs.");
@@ -84,13 +73,6 @@ export default function RecruiterJobs() {
     }
     return [...names].sort((a, b) => a.localeCompare(b)).slice(0, 16);
   }, [candidates, skills]);
-
-  const counts = useMemo(() => ({
-    open: jobs.filter((job) => job.status === "open").length,
-    closed: jobs.filter((job) => job.status === "closed").length,
-    interview: jobs.filter((job) => decisionCounts(job).interview > 0).length,
-    hired: jobs.filter((job) => decisionCounts(job).hired > 0).length,
-  }), [jobs]);
 
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -126,9 +108,11 @@ export default function RecruiterJobs() {
       setSeats("1");
       setSkills([]);
       setSkillDraft("");
-      setBrowserOnly(jobsUseBrowserStorage());
       setFilter("open");
-      toast({ title: "Job opened", description: `${job.title} is ready to match candidates.` });
+      toast({
+        title: "Job opened",
+        description: `${job.title} is live. All SIJIL learners can see this role and share matching competencies.`,
+      });
       navigate(`/recruiter/jobs/${job.id}`);
     } catch (err) {
       toast({
@@ -142,15 +126,12 @@ export default function RecruiterJobs() {
   };
 
   return (
-    <AppShell role="recruiter">
+    <RecruiterWorkspaceShell>
       <div className="mb-5">
         <h1 className="text-2xl font-bold tracking-tight text-[#023E8A] sm:text-3xl">Jobs</h1>
         <p className="mt-1 text-sm text-[#64748b]">
           Open a seat, match shared skills, then interview, hire, or reject from that role.
         </p>
-        {browserOnly ? (
-          <p className="mt-1 text-xs text-[#64748b]">Saved in this browser until the jobs table is on the account.</p>
-        ) : null}
       </div>
 
       {loading ? <PageSkeleton /> : (
@@ -247,31 +228,6 @@ export default function RecruiterJobs() {
             </form>
           </section>
 
-          <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            {FILTERS.map((item, index) => {
-              const StatIcon = item.icon;
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  aria-pressed={filter === item.id}
-                  onClick={() => setFilter(item.id)}
-                  className={cn(
-                    "learner-stat-card p-5 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#023E8A]",
-                    filter === item.id && "ring-2 ring-[#023E8A]",
-                  )}
-                >
-                  <div className={cn("flex h-10 w-10 items-center justify-center rounded-xl", iconTints[index])}>
-                    <StatIcon className="h-5 w-5" />
-                  </div>
-                  <p className="mt-4 text-2xl font-bold text-[#023E8A]">{counts[item.id]}</p>
-                  <p className="text-sm font-medium text-[#334155]">{item.label}</p>
-                  <p className="mt-0.5 text-xs text-[#64748b]">{item.hint}</p>
-                </button>
-              );
-            })}
-          </div>
-
           <section className="learner-stat-card p-5">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
               <div>
@@ -283,14 +239,28 @@ export default function RecruiterJobs() {
                 </h2>
                 <p className="text-xs text-[#64748b]">Open a role to see who matches and record the hire.</p>
               </div>
-              <div className="relative min-w-0 lg:w-72">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <input
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                  placeholder="Search title or skill"
-                  className="h-10 w-full rounded-xl border border-border/70 bg-background pl-9 pr-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                />
+              <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center lg:w-auto">
+                <Select value={filter} onValueChange={(value) => setFilter(value as FilterId)}>
+                  <SelectTrigger className="h-10 w-full rounded-xl sm:w-44">
+                    <SelectValue placeholder="Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All roles</SelectItem>
+                    <SelectItem value="open">Open</SelectItem>
+                    <SelectItem value="closed">Closed</SelectItem>
+                    <SelectItem value="interview">In interview</SelectItem>
+                    <SelectItem value="hired">Hired</SelectItem>
+                  </SelectContent>
+                </Select>
+                <div className="relative min-w-0 sm:w-72">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <input
+                    value={query}
+                    onChange={(event) => setQuery(event.target.value)}
+                    placeholder="Search title or skill"
+                    className="h-10 w-full rounded-xl border border-border/70 bg-background pl-9 pr-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  />
+                </div>
               </div>
             </div>
 
@@ -308,7 +278,7 @@ export default function RecruiterJobs() {
                   title={jobs.length === 0 ? "No jobs yet" : "No matches"}
                   description={
                     jobs.length === 0
-                      ? "Open a role above. Matching uses skills candidates have already shared."
+                      ? "Open a role above. Matching uses skills learners have already shared."
                       : "Try another status or search."
                   }
                   action={jobs.length > 0
@@ -366,6 +336,6 @@ export default function RecruiterJobs() {
           </section>
         </>
       )}
-    </AppShell>
+    </RecruiterWorkspaceShell>
   );
 }

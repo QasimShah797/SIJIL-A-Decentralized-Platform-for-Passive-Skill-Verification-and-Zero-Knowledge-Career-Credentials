@@ -9,7 +9,15 @@ import { resolveLearnerDisplayName } from "../utils/learnerDisplayName";
 import { CredentialView } from "../types/credentials.types";
 import type { CredentialVerifyResult } from "./credential-verify";
 import { verifyPublicCredential } from "./credential-verify.service";
-import { recruiterVerifyCredential } from "./recruiter-verify";
+import {
+  assertRecruiterCredentialAccess,
+  classifyRecruiterCredentialAccess,
+  recruiterVerifyCredential,
+} from "./recruiter-verify";
+import {
+  findCredentialForLearnerCompetency,
+  loadCredentialByIdOrUri,
+} from "./credential-verify.service";
 import { canReadLearnerData, type AuthCaller } from "./learner-access";
 import { directRecipientId, isAllRecruiterShare, shareVisibleToRecruiter } from "./share-directory";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -19,6 +27,7 @@ import {
   disclosurePreferencesStore,
   type DisclosurePreferencesStore,
 } from "./disclosure-preferences.service";
+import { enrichSharePayloadForRecruiter } from "./wallet.service";
 
 type ShareRow = Record<string, unknown>;
 type ProfileRow = {
@@ -54,6 +63,8 @@ export interface SharedCredentialView {
   expiresAt: string | null;
   token: string | null;
   proofType: string | null;
+  /** Issued credential id when this share covers an issued credential (opaque id only). */
+  credentialId?: string | null;
 }
 
 export interface CandidateView {
@@ -157,7 +168,10 @@ function flattenDisclosedPayload(value: unknown, prefix = ""): DisclosedClaim[] 
   }];
 }
 
-function mapWalletShare(row: Record<string, unknown>): SharedCredentialView | null {
+function mapWalletShare(
+  row: Record<string, unknown>,
+  credentialId: string | null = null,
+): SharedCredentialView | null {
   if (!isActiveShare({
     revokedAt: asText(row.revoked_at),
     expiresAt: asText(row.expires_at),
@@ -190,6 +204,7 @@ function mapWalletShare(row: Record<string, unknown>): SharedCredentialView | nu
     expiresAt: asText(row.expires_at),
     token: null,
     proofType: asText(row.proof_type),
+    credentialId,
   };
 }
 
@@ -721,7 +736,7 @@ async function listActiveSharedCredentials(
   const db = recruiterDb(accessToken);
   const { data: walletRows, error: walletError } = await db
     .from("selective_disclosure_presentations")
-    .select("id, selected_fields, selection_mode, disclosed_payload, proof_type, expires_at, revoked_at, created_at")
+    .select("id, competency_id, selected_fields, selection_mode, disclosed_payload, proof_type, expires_at, revoked_at, created_at")
     .eq("learner_id", candidateId)
     .is("revoked_at", null);
 
@@ -737,10 +752,44 @@ async function listActiveSharedCredentials(
       recruiterUserId,
     }),
   );
-  const redactedWalletRows = await redactShareRows(listedRows, () => candidateId);
-  const shared = redactedWalletRows
-    .map((row) => mapWalletShare(row))
-    .filter((item): item is SharedCredentialView => item !== null);
+  const enrichedRows = await Promise.all(listedRows.map(async (row) => {
+    const competencyId = asText(row.competency_id)
+      ?? asText(asRecord(asRecord(row.disclosed_payload)?.competency)?.competencyId);
+    const selectedFields = Array.isArray(row.selected_fields)
+      ? row.selected_fields.filter((item): item is string => typeof item === "string")
+      : [];
+    const payload = asRecord(row.disclosed_payload) ?? {};
+    try {
+      const enriched = await enrichSharePayloadForRecruiter({
+        learnerId: candidateId,
+        competencyId,
+        selectedFields,
+        disclosedPayload: payload,
+      });
+      return {
+        ...row,
+        selected_fields: enriched.selectedFields,
+        disclosed_payload: enriched.disclosedPayload,
+      };
+    } catch {
+      return row;
+    }
+  }));
+  const redactedWalletRows = await redactShareRows(enrichedRows, () => candidateId);
+  const shared = (await Promise.all(redactedWalletRows.map(async (row) => {
+    const competencyId = asText(row.competency_id)
+      ?? asText(asRecord(asRecord(row.disclosed_payload)?.competency)?.competencyId);
+    let credentialId: string | null = null;
+    if (competencyId) {
+      try {
+        const issued = await findCredentialForLearnerCompetency(candidateId, competencyId);
+        credentialId = issued && !issued.revoked_at ? issued.id : null;
+      } catch {
+        credentialId = null;
+      }
+    }
+    return mapWalletShare(row, credentialId);
+  }))).filter((item): item is SharedCredentialView => item !== null);
 
   return dedupeSharedCredentials(
     shared.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
@@ -770,7 +819,11 @@ async function countPeerReviews(candidateId: string, accessToken?: string): Prom
 }
 
 export class RecruiterService {
-  async verifyCredential(credentialId: string): Promise<CredentialVerifyResult> {
+  async verifyCredential(
+    credentialId: string,
+    recruiterUserId: string,
+    accessToken?: string,
+  ): Promise<CredentialVerifyResult> {
     return recruiterVerifyCredential(credentialId, {
       lookupPresentation: async (token) => {
         const { data: presentation } = await supabaseService.client
@@ -786,8 +839,55 @@ export class RecruiterService {
         const cred = Array.isArray(raw) ? raw[0] : raw;
         return cred?.id ?? cred?.credential_uri ?? null;
       },
-      verify: verifyPublicCredential,
+      verify: async (resolvedId) => {
+        await this.assertSharedCredentialAccess(resolvedId, recruiterUserId, accessToken);
+        return verifyPublicCredential(resolvedId);
+      },
     });
+  }
+
+  /**
+   * Recruiters may verify only credentials covered by an active, authorized share.
+   * Does not return undisclosed credential contents — only gates the verify call.
+   */
+  private async assertSharedCredentialAccess(
+    credentialId: string,
+    recruiterUserId: string,
+    accessToken?: string,
+  ): Promise<void> {
+    const credential = await loadCredentialByIdOrUri(credentialId);
+    if (!credential) {
+      // Fall through to public verify so the caller gets a not_found result, not a leak.
+      return;
+    }
+
+    const db = recruiterDb(accessToken);
+    const { data, error } = await db
+      .from("selective_disclosure_presentations")
+      .select("competency_id, expires_at, revoked_at, disclosed_payload")
+      .eq("learner_id", credential.user_id)
+      .order("created_at", { ascending: false })
+      .limit(200);
+
+    if (error && !/schema cache|does not exist|could not find the table/i.test(error.message)) {
+      throw new AppError("Credential verification is temporarily unavailable", 503);
+    }
+
+    const shares = ((data ?? []) as Record<string, unknown>[]).map((row) => ({
+      revokedAt: asText(row.revoked_at),
+      expiresAt: asText(row.expires_at),
+      disclosedPayload: row.disclosed_payload,
+      competencyId: asText(row.competency_id),
+    }));
+
+    const access = classifyRecruiterCredentialAccess({
+      recruiterUserId,
+      credentialId: credential.id,
+      skillName: credential.skill_name,
+      competencyId: null,
+      shares,
+    });
+    assertRecruiterCredentialAccess(access);
   }
 
   async getCandidate(

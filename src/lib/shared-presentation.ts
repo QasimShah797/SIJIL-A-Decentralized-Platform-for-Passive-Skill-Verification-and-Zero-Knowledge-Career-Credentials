@@ -28,6 +28,8 @@ export type SharedCredentialView = {
   expiresAt: string | null;
   token: string | null;
   proofType: string | null;
+  /** Opaque issued credential id when the share covers one. */
+  credentialId?: string | null;
 };
 
 export type CandidateDetailView = {

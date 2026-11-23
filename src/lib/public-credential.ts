@@ -80,10 +80,24 @@ export type EvidenceLedgerItem = {
 
 export type PublicInspectorSource = "github" | "lms" | "task" | "reviews";
 
+export type ScoreThresholdSide = "above" | "below";
+
+export type PracticalPackageSummary = {
+  sittings: number;
+  latestStatus: string | null;
+  latestPassed: boolean | null;
+  exactScorePercent: number | null;
+  scoreWithheld: boolean;
+  referenceThreshold: number;
+  latestVsReference: ScoreThresholdSide | null;
+  bands: Partial<Record<"60" | "70" | "80", ScoreThresholdSide>>;
+};
+
 export type PublicInspectorView = {
   githubRepos: Array<{ name: string; language: string | null; commits: number | null; url: string | null }>;
   lmsAssignments: Array<{ name: string; course: string; grade: string }>;
   taskDetail: string | null;
+  practicalSummary: PracticalPackageSummary | null;
   reviews: Array<{ reviewer: string; text: string }>;
   github: {
     repos: number;
@@ -487,13 +501,13 @@ export function buildEvidenceLedger(
     ? Object.keys(snapshotGithub).length > 0
     : isPrimary && (selectedFields.includes("github_evidence") || selectedFields.includes("complete_evidence_package"));
   const includeTask = hasSkillSnapshot
-    ? Boolean(skillEvidence.practicalTask)
+    ? Boolean(skillEvidence.practicalTask) || Boolean(packageEvidence.practicalTask) || Boolean(evidence.practicalTask)
     : isPrimary && (selectedFields.includes("practical_task_result") || selectedFields.includes("complete_evidence_package"));
   const includeReviews = hasSkillSnapshot
-    ? Boolean(skillEvidence.peerReviews)
+    ? Boolean(skillEvidence.peerReviews) || Boolean(packageEvidence.peerReviews) || Boolean(evidence.peerReviews)
     : isPrimary && (selectedFields.includes("peer_reviews") || selectedFields.includes("complete_evidence_package"));
   const includeTeacher = hasSkillSnapshot
-    ? Boolean(skillEvidence.teacherFeedback)
+    ? Boolean(skillEvidence.teacherFeedback) || Boolean(packageEvidence.teacherFeedback)
     : isPrimary && (selectedFields.includes("teacher_feedback") || selectedFields.includes("complete_evidence_package"));
 
   if (includeLms) {
@@ -502,10 +516,16 @@ export function buildEvidenceLedger(
       ...asRecords(lms.evidence),
       ...asRecords(lms.importedEvidence),
       ...asRecords(lms.grades),
+      ...asRecords(lms.courses),
     ];
     rows.forEach((row, index) => {
-      const title = asText(row.assignment_name) || asText(row.name) || asText(row.activity_name) || "LMS evidence";
-      const course = asText(row.course_name) || asText(row.fullname) || "LMS";
+      const title = asText(row.assignment_name)
+        || asText(row.activity_name)
+        || asText(row.name)
+        || asText(row.fullname)
+        || asText(row.course_name)
+        || "LMS evidence";
+      const course = asText(row.course_name) || asText(row.fullname) || asText(row.shortname) || "LMS";
       const grade = row.grade != null
         ? (row.grade_max != null ? `Grade ${row.grade} / ${row.grade_max}` : `Grade ${row.grade}`)
         : "";
@@ -533,6 +553,7 @@ export function buildEvidenceLedger(
         row.commit_count != null ? `${row.commit_count} commits` : "",
         asText(row.description),
       ].filter(Boolean).join(" · ");
+      const rawUrl = asNullableText(row.html_url ?? row.github_url ?? row.url ?? row.repo_url);
       items.push(ledgerItem(
         "github",
         title,
@@ -540,26 +561,49 @@ export function buildEvidenceLedger(
         asNullableText(row.status) ?? "Synced",
         itemTimestamp(row, allowTimestamps),
         index,
-        asNullableText(row.html_url ?? row.github_url ?? row.url ?? row.repo_url) ?? null,
+        normalizeGithubRepoUrl(rawUrl, title),
       ));
     });
   }
 
   if (includeTask) {
-    const practical = isRecord(packageEvidence.practicalTask)
-      ? packageEvidence.practicalTask
-      : (isRecord(skillEvidence.practicalTask) ? skillEvidence.practicalTask : {});
+    const practical = isRecord(skillEvidence.practicalTask)
+      ? skillEvidence.practicalTask
+      : (isRecord(packageEvidence.practicalTask)
+        ? packageEvidence.practicalTask
+        : (isRecord(evidence.practicalTask) ? evidence.practicalTask : {}));
     const attempts = [
       ...(isRecord(practical.latestAttempt) ? [practical.latestAttempt] : []),
       ...asRecords(practical.attemptHistory),
     ];
+    if (attempts.length === 0 && (practical.scorePercent != null || practical.score != null || asText(practical.status))) {
+      attempts.push(practical);
+    }
+    const signals = isRecord(practical.scoreThresholdSignals) ? practical.scoreThresholdSignals : null;
+    if (attempts.length === 0 && signals) {
+      items.push(ledgerItem(
+        "practical_task",
+        "Practical task",
+        typeof signals.status === "string"
+          ? signals.status
+          : (signals.latestVsReference === "above" || signals.latestVsReference === "below"
+            ? `Latest ${signals.latestVsReference} ${signals.referenceThreshold ?? 70}% threshold`
+            : "Practical task result"),
+        typeof signals.status === "string" ? signals.status : "Submitted",
+        null,
+        0,
+      ));
+    }
     attempts.forEach((row, index) => {
       const title = asText(row.title) || "Practical task";
       const score = row.scorePercent != null ? `${row.scorePercent}%` : "";
+      const thresholdHint = !score && signals && (signals.latestVsReference === "above" || signals.latestVsReference === "below")
+        ? `${signals.latestVsReference} ${signals.referenceThreshold ?? 70}% threshold`
+        : "";
       items.push(ledgerItem(
         "practical_task",
         title,
-        [score, asText(row.status)].filter(Boolean).join(" · ") || "Practical task result",
+        [score, thresholdHint, asText(row.status)].filter(Boolean).join(" · ") || "Practical task result",
         asNullableText(row.status) ?? (row.passed === true ? "Passed" : "Submitted"),
         itemTimestamp(row, allowTimestamps || Boolean(row.submittedAt) || Boolean(row.submitted_at)),
         index,
@@ -568,16 +612,26 @@ export function buildEvidenceLedger(
   }
 
   if (includeReviews) {
+    const githubBundle = isRecord(packageEvidence.github)
+      ? packageEvidence.github
+      : (isRecord(skillEvidence.github) ? skillEvidence.github : (isRecord(evidence.github) ? evidence.github : {}));
     const reviews = [
       ...asRecords(packageEvidence.peerReviews),
       ...asRecords(skillEvidence.peerReviews),
       ...asRecords(evidence.peerReviews),
+      ...asRecords(githubBundle.reviews),
     ];
+    const seenReviews = new Set<string>();
     reviews.forEach((row, index) => {
+      const reviewer = asText(row.reviewer_name) || asText(row.reviewer) || "Peer review";
+      const text = asText(row.review_text) || asText(row.comment) || "Peer review submitted";
+      const key = `${reviewer}:${text}`;
+      if (seenReviews.has(key)) return;
+      seenReviews.add(key);
       items.push(ledgerItem(
         "peer_review",
-        asText(row.reviewer_name) || asText(row.reviewer) || "Peer review",
-        asText(row.review_text) || asText(row.comment) || "Peer review submitted",
+        reviewer,
+        text,
         asNullableText(row.status) ?? "Reviewed",
         itemTimestamp(row, allowTimestamps),
         index,
@@ -612,6 +666,27 @@ export function buildEvidenceLedger(
   });
 }
 
+/** Build a clickable GitHub URL; never return a relative path that would 404 in the SPA. */
+export function normalizeGithubRepoUrl(
+  url: string | null | undefined,
+  repoName: string | null | undefined,
+): string | null {
+  const raw = (url ?? "").trim();
+  if (raw) {
+    if (/^https?:\/\//i.test(raw)) return raw;
+    if (/^github\.com\//i.test(raw)) return `https://${raw}`;
+    if (/^www\.github\.com\//i.test(raw)) return `https://${raw}`;
+    if (/^[\w.-]+\/[\w.-]+(?:\.git)?$/i.test(raw)) {
+      return `https://github.com/${raw.replace(/\.git$/i, "")}`;
+    }
+  }
+  const name = (repoName ?? "").trim();
+  if (/^[\w.-]+\/[\w.-]+$/i.test(name)) {
+    return `https://github.com/${name}`;
+  }
+  return null;
+}
+
 function parseGithubDetail(detail: string): { language: string | null; commits: number | null } {
   const commitsMatch = detail.match(/(\d+)\s+commits/i);
   const first = detail.split("·")[0]?.trim() ?? "";
@@ -637,6 +712,44 @@ function parseScore(value: string): number | null {
   return match ? Number(match[1]) : null;
 }
 
+function practicalSummaryFromTaskItems(taskItems: EvidenceLedgerItem[]): PracticalPackageSummary | null {
+  if (taskItems.length === 0) return null;
+
+  const latest = taskItems[0];
+  const detail = `${latest.detail ?? ""} ${latest.status ?? ""}`;
+  const exactMatch = detail.match(/(\d+(?:\.\d+)?)\s*%/);
+  const exactScorePercent = exactMatch ? Number(exactMatch[1]) : null;
+  const thresholdMatch = detail.match(/\b(above|below)\s+(\d+)\s*%\s*threshold/i);
+  const latestVsReference = thresholdMatch
+    ? (thresholdMatch[1].toLowerCase() as ScoreThresholdSide)
+    : (exactScorePercent != null
+      ? (exactScorePercent >= 70 ? "above" : "below")
+      : null);
+  const referenceThreshold = thresholdMatch ? Number(thresholdMatch[2]) : 70;
+  const bands: PracticalPackageSummary["bands"] = {};
+  if (exactScorePercent != null) {
+    bands["60"] = exactScorePercent >= 60 ? "above" : "below";
+    bands["70"] = exactScorePercent >= 70 ? "above" : "below";
+    bands["80"] = exactScorePercent >= 80 ? "above" : "below";
+  } else if (latestVsReference) {
+    bands["70"] = latestVsReference;
+    if (referenceThreshold === 60 || referenceThreshold === 80) {
+      bands[String(referenceThreshold) as "60" | "80"] = latestVsReference;
+    }
+  }
+
+  return {
+    sittings: taskItems.length,
+    latestStatus: latest.status || null,
+    latestPassed: /pass/i.test(latest.status ?? "") ? true : null,
+    exactScorePercent,
+    scoreWithheld: exactScorePercent == null && latestVsReference != null,
+    referenceThreshold,
+    latestVsReference,
+    bands,
+  };
+}
+
 export function inspectorViewFromLedger(items: EvidenceLedgerItem[]): PublicInspectorView {
   const githubItems = items.filter((item) => item.source === "github");
   const lmsItems = items.filter((item) => item.source === "lms");
@@ -649,7 +762,7 @@ export function inspectorViewFromLedger(items: EvidenceLedgerItem[]): PublicInsp
       name: item.title,
       language: parsed.language,
       commits: parsed.commits,
-      url: item.url ?? null,
+      url: normalizeGithubRepoUrl(item.url, item.title),
     };
   });
 
@@ -664,6 +777,7 @@ export function inspectorViewFromLedger(items: EvidenceLedgerItem[]): PublicInsp
 
   const task = taskItems[0];
   const taskDetail = task ? (task.detail || task.status) : null;
+  const practicalSummary = practicalSummaryFromTaskItems(taskItems);
 
   const reviews = reviewItems.map((item) => ({
     reviewer: item.title,
@@ -693,22 +807,23 @@ export function inspectorViewFromLedger(items: EvidenceLedgerItem[]): PublicInsp
       id,
       name: row.name,
       assignments: row.assignments,
-      scoreLabel: avg != null ? String(avg) : "Linked",
+      scoreLabel: avg != null ? `${avg}%` : "Score not disclosed",
       scorePercent: avg,
     };
   });
 
   const availableSources: PublicInspectorSource[] = [];
-  if (githubRepos.length > 0) availableSources.push("github");
-  if (lmsAssignments.length > 0) availableSources.push("lms");
-  if (taskDetail) availableSources.push("task");
+  // Always offer GitHub + LMS so recruiters can see an empty state when not shared.
+  availableSources.push("github");
+  availableSources.push("lms");
+  if (taskDetail || taskItems.length > 0) availableSources.push("task");
   if (reviews.length > 0) availableSources.push("reviews");
-  if (availableSources.length === 0) availableSources.push("github");
 
   return {
     githubRepos,
     lmsAssignments,
     taskDetail,
+    practicalSummary,
     reviews,
     github: {
       repos: githubRepos.length,
@@ -722,6 +837,127 @@ export function inspectorViewFromLedger(items: EvidenceLedgerItem[]): PublicInsp
     verifyUrl: githubRepos.find((repo) => repo.url)?.url ?? null,
     availableSources,
   };
+}
+
+function practicalTaskFromPayload(
+  payload: Record<string, unknown>,
+  competencyId: string,
+): Record<string, unknown> | null {
+  const evidence = evidenceFromPayload(payload);
+  const complete = isRecord(evidence.completeEvidencePackage) ? evidence.completeEvidencePackage : {};
+  const skillRows = asRecords(payload.skills);
+  const matchedSkill = skillRows.find((row) => asText(row.competencyId) === competencyId);
+  const skillEvidence = isRecord(matchedSkill?.evidence) ? matchedSkill.evidence : {};
+  const packageEvidence = isRecord(complete) && Object.keys(complete).length > 0
+    ? complete
+    : (Object.keys(skillEvidence).length > 0 ? skillEvidence : evidence);
+
+  const fromSkill = isRecord(skillEvidence.practicalTask) ? skillEvidence.practicalTask : null;
+  const fromPackage = isRecord(packageEvidence.practicalTask) ? packageEvidence.practicalTask : null;
+  const fromEvidence = isRecord(evidence.practicalTask) ? evidence.practicalTask : null;
+  return fromSkill ?? fromPackage ?? fromEvidence;
+}
+
+function attemptRowsFromPractical(practical: Record<string, unknown>): Record<string, unknown>[] {
+  const latest = isRecord(practical.latestAttempt) ? practical.latestAttempt : null;
+  const history = asRecords(practical.attemptHistory);
+  const selfScore = typeof practical.scorePercent === "number"
+    ? practical.scorePercent
+    : (typeof practical.score === "number" ? practical.score : null);
+  const selfRow = selfScore != null && !latest
+    ? [{
+      title: asText(practical.title) || "Practical task",
+      status: asText(practical.status) || null,
+      passed: typeof practical.passed === "boolean" ? practical.passed : null,
+      scorePercent: selfScore,
+      submittedAt: practical.submittedAt ?? practical.submitted_at ?? null,
+    }]
+    : [];
+  const rows = [...(latest ? [latest] : []), ...history, ...selfRow];
+  const seen = new Set<string>();
+  return rows.filter((row) => {
+    const key = asText(row.attemptId) || asText(row.attempt_id) || `${asText(row.title)}:${asText(row.submittedAt) || asText(row.submitted_at)}`;
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+/** Build package-summary practical task view, including above/below threshold when exact score is withheld. */
+export function practicalSummaryFromPayload(
+  payload: Record<string, unknown>,
+  competencyId: string,
+): PracticalPackageSummary | null {
+  const practical = practicalTaskFromPayload(payload, competencyId);
+  if (!practical) return null;
+
+  const disclosure = isRecord(payload.exactValueDisclosure) ? payload.exactValueDisclosure : null;
+  const scoreWithheld = disclosure?.assessmentMarks === "withheld";
+  const attempts = attemptRowsFromPractical(practical);
+  const signals = isRecord(practical.scoreThresholdSignals) ? practical.scoreThresholdSignals : null;
+
+  const sorted = attempts.slice().sort((a, b) => {
+    const left = Date.parse(String(a.submittedAt ?? a.submitted_at ?? 0));
+    const right = Date.parse(String(b.submittedAt ?? b.submitted_at ?? 0));
+    return (Number.isFinite(left) ? left : 0) - (Number.isFinite(right) ? right : 0);
+  });
+  const latest = sorted.at(-1) ?? null;
+  const exactScore = latest
+    ? (typeof latest.scorePercent === "number" ? latest.scorePercent
+      : typeof latest.percentage === "number" ? latest.percentage
+        : typeof latest.score === "number" ? latest.score
+          : null)
+    : null;
+
+  const bands: PracticalPackageSummary["bands"] = {};
+  const signalBands = isRecord(signals?.bands) ? signals.bands : null;
+  if (signalBands) {
+    for (const key of ["60", "70", "80"] as const) {
+      const side = signalBands[key];
+      if (side === "above" || side === "below") bands[key] = side;
+    }
+  } else if (exactScore != null) {
+    bands["60"] = exactScore >= 60 ? "above" : "below";
+    bands["70"] = exactScore >= 70 ? "above" : "below";
+    bands["80"] = exactScore >= 80 ? "above" : "below";
+  }
+
+  const referenceThreshold = typeof signals?.referenceThreshold === "number"
+    ? signals.referenceThreshold
+    : 70;
+  const latestVsReference = signals?.latestVsReference === "above" || signals?.latestVsReference === "below"
+    ? signals.latestVsReference
+    : (exactScore != null
+      ? (exactScore >= referenceThreshold ? "above" : "below")
+      : null);
+
+  const sittings = typeof signals?.sittings === "number"
+    ? signals.sittings
+    : Math.max(attempts.length, taskItemsLengthFallback(practical));
+
+  if (sittings <= 0 && !latest && !signals) return null;
+
+  return {
+    sittings: Math.max(sittings, attempts.length, latest || signals ? 1 : 0),
+    latestStatus: typeof signals?.status === "string"
+      ? signals.status
+      : (latest && typeof latest.status === "string" ? latest.status : null),
+    latestPassed: typeof signals?.passed === "boolean"
+      ? signals.passed
+      : (latest && typeof latest.passed === "boolean"
+        ? latest.passed
+        : (exactScore != null ? true : null)),
+    exactScorePercent: scoreWithheld ? null : exactScore,
+    scoreWithheld: scoreWithheld || (exactScore == null && latestVsReference != null),
+    referenceThreshold,
+    latestVsReference,
+    bands,
+  };
+}
+
+function taskItemsLengthFallback(practical: Record<string, unknown>): number {
+  if (isRecord(practical.latestAttempt)) return 1;
+  return asRecords(practical.attemptHistory).length;
 }
 
 export function competencyFromSharePayload(

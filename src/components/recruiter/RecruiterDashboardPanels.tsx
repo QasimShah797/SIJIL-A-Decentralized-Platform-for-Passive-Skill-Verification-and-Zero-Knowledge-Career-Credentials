@@ -7,6 +7,7 @@ import {
   GitCompare,
   Mail,
   UserCircle,
+  Users,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -201,7 +202,7 @@ export function RecruiterShortlistCard({
       <ul className="mt-4 space-y-4">
         {selected.length === 0 ? (
           <li className="py-6 text-center text-sm text-[#64748b]">
-            Select candidates below to keep a shortlist on this browser.
+            Select learners below to keep a shortlist on this browser.
           </li>
         ) : (
           selected.map((candidate) => {
@@ -315,7 +316,7 @@ export function RecruiterRecentlyShared({
       <h2 className="text-base font-semibold text-[#023E8A]">Recently shared</h2>
       <ul className="mt-4 space-y-3">
         {recent.length === 0 ? (
-          <li className="text-sm text-[#64748b]">No shared credentials yet. A learner must choose your recruiter account. A public verification link does not add a candidate here.</li>
+          <li className="text-sm text-[#64748b]">No shared credentials yet. A learner must choose your recruiter account. A public verification link does not add a learner here.</li>
         ) : (
           recent.map((candidate) => (
             <li key={candidate.id}>
@@ -344,26 +345,31 @@ export function RecruiterRecentlyShared({
 
 type ActivityItem = { id: string; label: string; at: string };
 
+type ActivityKind = "share" | "interview" | "invite" | "cancel";
+
+type RichActivityItem = ActivityItem & { kind: ActivityKind; subject: string };
+
 export function recruiterActivityItems(
   candidates: CandidateView[],
   interviews: ScheduledInterviewView[],
-): ActivityItem[] {
-  const items: ActivityItem[] = [];
+): RichActivityItem[] {
+  const items: RichActivityItem[] = [];
   for (const row of interviews) {
     if (row.status === "cancelled" && row.cancelledAt) {
       items.push({
         id: `cancel-${row.id}`,
-        label: `Interview with ${row.candidateName} cancelled`,
+        label: "Interview cancelled",
+        subject: row.candidateName,
+        kind: "cancel",
         at: row.cancelledAt,
       });
       continue;
     }
     items.push({
       id: `interview-${row.id}`,
-      label:
-        row.emailStatus === "sent"
-          ? `Invitation emailed to ${row.candidateName}`
-          : `Interview scheduled with ${row.candidateName}`,
+      label: row.emailStatus === "sent" ? "Invite sent" : "Interview booked",
+      subject: row.candidateName,
+      kind: row.emailStatus === "sent" ? "invite" : "interview",
       at: row.createdAt || row.scheduledAt,
     });
   }
@@ -371,13 +377,22 @@ export function recruiterActivityItems(
     if (!candidate.sharedAt) continue;
     items.push({
       id: `share-${candidate.id}`,
-      label: `${candidate.name} shared credentials`,
+      label: "Profile shared",
+      subject: candidate.name,
+      kind: "share",
       at: candidate.sharedAt,
     });
   }
   return items
     .sort((a, b) => b.at.localeCompare(a.at))
-    .slice(0, 5);
+    .slice(0, 6);
+}
+
+function activityTone(kind: ActivityKind) {
+  if (kind === "share") return "bg-[#e8eef7] text-[#023E8A]";
+  if (kind === "invite") return "bg-[#ecfeff] text-[#0891b2]";
+  if (kind === "cancel") return "bg-[#fef2f2] text-[#dc2626]";
+  return "bg-[#ecfdf5] text-[#059669]";
 }
 
 export function RecruiterRecentActivity({
@@ -390,32 +405,45 @@ export function RecruiterRecentActivity({
   const items = recruiterActivityItems(candidates, interviews);
 
   return (
-    <div className="learner-stat-card p-6">
-      <h2 className="text-base font-semibold text-[#023E8A]">Recent activity</h2>
-      <ul className="mt-4 space-y-3">
-        {items.length === 0 ? (
-          <li className="text-sm text-[#64748b]">No recent activity.</li>
-        ) : (
-          items.map((item) => (
-            <li key={item.id} className="flex gap-3">
-              <div className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#ccfbf1]">
-                <BadgeCheck className="h-3 w-3 text-[#0f766e]" />
-              </div>
-              <div>
-                <p className="text-sm text-[#023E8A]">{item.label}</p>
-                <p className="text-xs text-[#64748b]">{relativeShareTime(item.at)}</p>
+    <div className="learner-stat-card overflow-hidden">
+      <div className="flex items-center justify-between gap-3 border-b border-[#e2e8f0] px-5 py-4">
+        <div>
+          <h2 className="text-base font-semibold text-[#023E8A]">Recent activity</h2>
+          <p className="mt-0.5 text-xs text-[#64748b]">Shares and interview updates</p>
+        </div>
+        <Link
+          to="/recruiter/interviews"
+          className="inline-flex items-center text-xs font-semibold text-[#023E8A] hover:underline"
+        >
+          Interviews
+          <ChevronRight className="ml-0.5 h-3.5 w-3.5" />
+        </Link>
+      </div>
+      {items.length === 0 ? (
+        <p className="px-5 py-8 text-sm text-[#64748b]">Nothing new yet.</p>
+      ) : (
+        <ul className="divide-y divide-[#f1f5f9]">
+          {items.map((item) => (
+            <li key={item.id} className="flex items-start gap-3 px-5 py-3.5">
+              <span
+                className={cn(
+                  "mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full",
+                  activityTone(item.kind),
+                )}
+              >
+                <BadgeCheck className="h-3.5 w-3.5" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                  <p className="text-sm font-semibold text-[#023E8A]">{item.label}</p>
+                  <p className="truncate text-sm text-[#334155]">{item.subject}</p>
+                </div>
+                <p className="mt-0.5 text-[11px] text-[#94a3b8]">{relativeShareTime(item.at)}</p>
               </div>
             </li>
-          ))
-        )}
-      </ul>
-      <Link
-        to="/recruiter/interviews"
-        className="mt-4 inline-flex items-center text-xs font-medium text-[#023E8A] hover:underline"
-      >
-        View all interviews
-        <ChevronRight className="ml-0.5 h-3.5 w-3.5" />
-      </Link>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
@@ -448,7 +476,7 @@ export function RecruiterDashboardRail({
       onClick: () => navigate("/recruiter/interviews"),
     },
     {
-      label: "Compare candidates",
+      label: "Compare learners",
       sub: selectedCount >= 2 ? `${selectedCount} selected` : "Select at least 2",
       icon: GitCompare,
       onClick: onCompare,
@@ -464,14 +492,22 @@ export function RecruiterDashboardRail({
   return (
     <>
       <div className="learner-stat-card p-5">
-        <h3 className="text-sm font-semibold text-[#023E8A]">Quick actions</h3>
+        <h3 className="text-sm font-semibold text-[#023E8A]">Quick Actions</h3>
         <div className="mt-4 space-y-2">
+          <Button
+            type="button"
+            onClick={() => navigate("/recruiter/search")}
+            className="h-auto min-h-11 w-full !whitespace-normal justify-start rounded-xl bg-[#023E8A] px-3 py-2.5 text-left text-sm leading-snug text-white hover:bg-[#012A5C]"
+          >
+            <Users className="mr-2 h-4 w-4 shrink-0" />
+            <span className="min-w-0 flex-1">Explore Learners</span>
+          </Button>
           {actions.map(({ label, sub, icon: Icon, onClick }) => (
             <button
               key={label}
               type="button"
               onClick={onClick}
-              className="flex w-full items-center gap-3 rounded-xl border border-[#e2e8f0] bg-white p-3 text-left transition-colors hover:border-[#023E8A]/30"
+              className="flex w-full items-center gap-3 rounded-xl border border-[#e2e8f0] bg-white p-3 text-left transition-colors hover:border-[#0ea5e9]/40"
             >
               <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#f1f5f9] text-[#023E8A]">
                 <Icon className="h-4 w-4" />

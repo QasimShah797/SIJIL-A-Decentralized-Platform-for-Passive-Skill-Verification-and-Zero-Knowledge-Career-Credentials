@@ -556,7 +556,10 @@ function buildSkillEvidenceSlice(
     if (practicalTask) evidence.practicalTask = practicalTask;
   }
   if (hasField("peer_reviews") || hasField("complete_evidence_package")) {
-    const peerReviews = sanitizeForDisclosure(record.evidencePackage.peerReviews);
+    const peerReviews = sanitizeForDisclosure([
+      ...record.evidencePackage.peerReviews,
+      ...record.evidencePackage.github.reviews,
+    ]);
     if (peerReviews) evidence.peerReviews = peerReviews;
   }
   if (hasField("teacher_feedback") || hasField("complete_evidence_package")) {
@@ -635,11 +638,15 @@ function buildDisclosedPayload(
   if (hasField("practical_task_result")) {
     const practicalTask = sanitizeForDisclosure({
       latestAttempt: record.evidencePackage.practicalTask.latestAttempt,
+      attemptHistory: record.evidencePackage.practicalTask.attemptHistory,
     });
     if (practicalTask) evidence.practicalTask = practicalTask;
   }
   if (hasField("peer_reviews")) {
-    const peerReviews = sanitizeForDisclosure(record.evidencePackage.peerReviews);
+    const peerReviews = sanitizeForDisclosure([
+      ...record.evidencePackage.peerReviews,
+      ...record.evidencePackage.github.reviews,
+    ]);
     if (peerReviews) evidence.peerReviews = peerReviews;
   }
   if (hasField("teacher_feedback")) {
@@ -662,7 +669,10 @@ function buildDisclosedPayload(
         importedEvidence: record.evidencePackage.lms.importedEvidence,
       },
       practicalTask: record.evidencePackage.practicalTask,
-      peerReviews: record.evidencePackage.peerReviews,
+      peerReviews: [
+        ...record.evidencePackage.peerReviews,
+        ...record.evidencePackage.github.reviews,
+      ],
       teacherFeedback: record.evidencePackage.teacherFeedback,
       externalEvidence: record.evidencePackage.externalEvidence,
     });
@@ -727,9 +737,19 @@ async function hydrateSharedWalletPayload(row: PresentationRow): Promise<Record<
   }
   if (records.length === 0) return payload;
 
-  const fields: WalletShareFieldId[] = row.selected_fields.length > 0
+  const baseFields: WalletShareFieldId[] = row.selected_fields.length > 0
     ? [...row.selected_fields]
     : ["competency_name"];
+  // Package summary always surfaces practical + peer reviews alongside GitHub/LMS evidence.
+  const fields: WalletShareFieldId[] = [...baseFields];
+  if (
+    baseFields.includes("github_evidence")
+    || baseFields.includes("lms_evidence")
+    || baseFields.includes("complete_evidence_package")
+  ) {
+    if (!fields.includes("practical_task_result")) fields.push("practical_task_result");
+    if (!fields.includes("peer_reviews")) fields.push("peer_reviews");
+  }
   const shareScope: WalletShareScope = payload.shareScope === "selected"
     ? "selected"
     : payload.shareScope === "issued"
@@ -766,7 +786,9 @@ async function hydrateSharedWalletPayload(row: PresentationRow): Promise<Record<
 
   const includeGithub = fields.includes("github_evidence") || fields.includes("complete_evidence_package");
   const includeLms = fields.includes("lms_evidence") || fields.includes("complete_evidence_package");
-  if (includeGithub || includeLms) {
+  const includePractical = fields.includes("practical_task_result") || fields.includes("complete_evidence_package");
+  const includePeerReviews = fields.includes("peer_reviews") || fields.includes("complete_evidence_package");
+  if (includeGithub || includeLms || includePractical || includePeerReviews) {
     const existingEvidence = asRecord(payload.evidence) ?? {};
     const nextEvidence: Record<string, unknown> = { ...existingEvidence };
     if (includeGithub) {
@@ -781,6 +803,21 @@ async function hydrateSharedWalletPayload(row: PresentationRow): Promise<Record<
         courses: scopedRecords.flatMap((record) => record.evidencePackage.lms.courses),
         assignments: scopedRecords.flatMap((record) => record.evidencePackage.lms.assignments),
       };
+    }
+    if (includePractical) {
+      const primaryForTask = scopedRecords.find((record) => record.competencyId === primaryId) ?? scopedRecords[0];
+      if (primaryForTask) {
+        nextEvidence.practicalTask = {
+          latestAttempt: primaryForTask.evidencePackage.practicalTask.latestAttempt,
+          attemptHistory: primaryForTask.evidencePackage.practicalTask.attemptHistory,
+        };
+      }
+    }
+    if (includePeerReviews) {
+      nextEvidence.peerReviews = scopedRecords.flatMap((record) => [
+        ...record.evidencePackage.peerReviews,
+        ...record.evidencePackage.github.reviews,
+      ]);
     }
     payload.evidence = nextEvidence;
   }
@@ -1280,16 +1317,17 @@ async function loadAggregatedWallet(userId: string): Promise<WalletCompetencyRec
     );
 
     const skillPeerReviews = dedupeByKey(
-      peerReviews.filter((row) =>
-        asText(row.source) !== "LMS"
-        && !isLmsPeerReviewRow(row)
-        && !githubReviews.some((review) => asText(review.id) === asText(row.id))
-        && (
-          asText(row.skill_id) === competencyId
-          || competencyMatches(row.skill, competencyName)
-          || competencyMatches(row.competency_name, competencyName)
-        ),
-      ),
+      peerReviews.filter((row) => {
+        if (asText(row.source) === "LMS" || isLmsPeerReviewRow(row)) return false;
+        if (githubReviews.some((review) => asText(review.id) === asText(row.id))) return false;
+        if (asText(row.skill_id) === competencyId) return true;
+        if (competencyMatches(row.skill, competencyName)) return true;
+        if (competencyMatches(row.competency_name, competencyName)) return true;
+        const hasSkillBinding = Boolean(
+          asText(row.skill_id) || asText(row.skill) || asText(row.competency_name),
+        );
+        return !hasSkillBinding && skillRows.length === 1;
+      }),
       (row) => asText(row.id) || asText(row.external_reference),
     );
 
@@ -2459,6 +2497,49 @@ async function recruiterPayload(
 ): Promise<Record<string, unknown>> {
   const prefs = await disclosurePreferencesStore().get(row.learner_id);
   return redactExactValues(payload, prefs, asOf);
+}
+
+/** Live-refresh practical task + peer reviews onto an existing share for recruiter package summary. */
+export async function enrichSharePayloadForRecruiter(input: {
+  learnerId: string;
+  competencyId: string | null;
+  selectedFields: string[];
+  disclosedPayload: Record<string, unknown>;
+}): Promise<{ selectedFields: string[]; disclosedPayload: Record<string, unknown> }> {
+  const selectedFields = input.selectedFields.filter((item): item is WalletShareFieldId =>
+    typeof item === "string"
+  );
+  const row: PresentationRow = {
+    id: "recruiter-enrich",
+    learner_id: input.learnerId,
+    competency_id: input.competencyId || "",
+    selected_fields: selectedFields,
+    selection_mode: "custom",
+    disclosed_payload: input.disclosedPayload,
+    payload_hash: "",
+    proof_type: "selective_disclosure",
+    proof_value: null,
+    verification_method: null,
+    share_token_hash: "",
+    share_token_hint: null,
+    expires_at: null,
+    revoked_at: null,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+  const disclosedPayload = await hydrateSharedWalletPayload(row);
+  const effectiveFields = [...selectedFields];
+  if (
+    effectiveFields.includes("github_evidence")
+    || effectiveFields.includes("lms_evidence")
+    || effectiveFields.includes("complete_evidence_package")
+    || effectiveFields.includes("practical_task_result")
+    || effectiveFields.includes("peer_reviews")
+  ) {
+    if (!effectiveFields.includes("practical_task_result")) effectiveFields.push("practical_task_result");
+    if (!effectiveFields.includes("peer_reviews")) effectiveFields.push("peer_reviews");
+  }
+  return { selectedFields: effectiveFields, disclosedPayload };
 }
 
 function withoutDisclosureMeta(payload: Record<string, unknown>): string {

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { CalendarCheck, CalendarClock, CalendarX, ExternalLink, Mail, MapPin, Phone, Search, Video } from "lucide-react";
-import { AppShell } from "@/components/sijil/AppShell";
+import { RecruiterWorkspaceShell } from "@/components/sijil/RecruiterWorkspaceShell";
 import { StatusBadge } from "@/components/sijil/StatusBadge";
 import { EmptyState } from "@/components/sijil/EmptyState";
 import { PageSkeleton } from "@/components/sijil/SkeletonLoader";
@@ -177,7 +177,7 @@ export default function RecruiterInterviews() {
             ? `${updated.candidateName} has been emailed about the cancellation.`
             : updated.emailStatus === "failed"
               ? "The interview is cancelled, but the email provider did not accept the notice."
-              : "The interview is cancelled. The candidate was not emailed because email delivery is not configured.",
+              : "The interview is cancelled. The learner was not emailed because email delivery is not configured.",
         variant: updated.emailStatus === "sent" ? "default" : "destructive",
       });
       setCancellingId(null);
@@ -194,31 +194,28 @@ export default function RecruiterInterviews() {
 
   if (loading) {
     return (
-      <AppShell role="recruiter">
+      <RecruiterWorkspaceShell>
         <PageSkeleton rows={4} />
-      </AppShell>
+      </RecruiterWorkspaceShell>
     );
   }
 
   return (
-    <AppShell role="recruiter">
+    <RecruiterWorkspaceShell>
       <div className="mb-6">
-        <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-[1.75rem]">Interviews</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Schedule a conversation with a shared candidate, then track upcoming, past, and cancelled interviews here.
-        </p>
+        <h1 className="text-2xl font-bold text-[#023E8A] sm:text-[1.65rem]">Interviews</h1>
       </div>
 
       <section className="learner-stat-card mb-6 p-5">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <h2 className="text-base font-semibold text-[#023E8A]">Schedule an interview</h2>
-            <p className="mt-1 text-xs text-[#64748b]">Pick a candidate, then send the date, mode, and meeting details.</p>
+            <p className="mt-1 text-xs text-[#64748b]">Pick a learner, then send the date, mode, and meeting details.</p>
           </div>
           <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center lg:w-auto">
             <Select value={pickerId || undefined} onValueChange={setPickerId} disabled={sortedCandidates.length === 0}>
               <SelectTrigger className="h-10 w-full rounded-xl sm:w-72">
-                <SelectValue placeholder={sortedCandidates.length === 0 ? "No shared candidates yet" : "Choose a candidate"} />
+                <SelectValue placeholder={sortedCandidates.length === 0 ? "No shared learners yet" : "Choose a learner"} />
               </SelectTrigger>
               <SelectContent>
                 {sortedCandidates.map((candidate) => {
@@ -277,39 +274,29 @@ export default function RecruiterInterviews() {
                 {visible.length}
               </span>
             </h2>
-            <p className="text-xs text-[#64748b]">Open a candidate, join the meeting, or send the invitation again.</p>
           </div>
-          <div className="relative min-w-0 lg:w-72">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search name, campus, or email"
-              className="h-10 w-full rounded-xl border border-border/70 bg-background pl-9 pr-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            />
+          <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center lg:w-auto">
+            <Select value={mode} onValueChange={(value) => setMode(value as ModeFilter)}>
+              <SelectTrigger className="h-10 w-full rounded-xl sm:w-44">
+                <SelectValue placeholder="Mode" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All modes</SelectItem>
+                <SelectItem value={INTERVIEW_MODE.VIDEO_CALL}>Video</SelectItem>
+                <SelectItem value={INTERVIEW_MODE.PHONE}>Phone</SelectItem>
+                <SelectItem value={INTERVIEW_MODE.IN_PERSON}>In person</SelectItem>
+              </SelectContent>
+            </Select>
+            <div className="relative min-w-0 sm:w-72">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search name, campus, or email"
+                className="h-10 w-full rounded-xl border border-border/70 bg-background pl-9 pr-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              />
+            </div>
           </div>
-        </div>
-
-        <div className="mt-4 flex flex-wrap gap-2">
-          {([
-            { id: "all" as const, label: "All modes" },
-            { id: INTERVIEW_MODE.VIDEO_CALL, label: "Video" },
-            { id: INTERVIEW_MODE.PHONE, label: "Phone" },
-            { id: INTERVIEW_MODE.IN_PERSON, label: "In person" },
-          ]).map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              aria-pressed={mode === item.id}
-              onClick={() => setMode(item.id)}
-              className={cn(
-                "rounded-full px-3 py-1.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                mode === item.id ? "bg-[#023E8A] text-white" : "bg-[#f1f5f9] text-[#64748b] hover:text-[#023E8A]",
-              )}
-            >
-              {item.label}
-            </button>
-          ))}
         </div>
 
         <div className="mt-5">
@@ -326,7 +313,7 @@ export default function RecruiterInterviews() {
               title={interviews.length === 0 ? "No interviews scheduled" : "No matches"}
               description={
                 interviews.length === 0
-                  ? "Choose a candidate above to schedule the first interview."
+                  ? "Choose a learner above to schedule the first interview."
                   : "Try another status, mode, or search."
               }
               action={interviews.length > 0
@@ -391,7 +378,7 @@ export default function RecruiterInterviews() {
                           className="rounded-xl bg-[#023E8A] hover:bg-[#012A5C]"
                           onClick={() => navigate(`/recruiter/candidate/${interview.candidateUserId}`)}
                         >
-                          View candidate
+                          View learner
                         </Button>
                         {href ? (
                           <Button size="sm" variant="outline" className="rounded-xl" asChild>
@@ -449,12 +436,12 @@ export default function RecruiterInterviews() {
           if (!open && !busyId) setCancellingId(null);
         }}
         title="Cancel this interview?"
-        description="The candidate will receive an email that this interview has been cancelled."
+        description="The learner will receive an email that this interview has been cancelled."
         confirmLabel="Cancel interview"
         cancelLabel="Keep interview"
         loading={Boolean(busyId)}
         onConfirm={confirmCancel}
       />
-    </AppShell>
+    </RecruiterWorkspaceShell>
   );
 }
