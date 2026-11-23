@@ -1,16 +1,21 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "@/hooks/use-toast";
-import { useCredentials } from "@/hooks/useLearnerData";
+import { useCredentials, useLearnerProfile } from "@/hooks/useLearnerData";
 import type { CredentialView } from "@/lib/db/credentials";
 import type { WalletShareFieldId } from "@/lib/wallet-competency-shared";
+import {
+  assessEvidenceShareAvailability,
+  type EvidenceShareAvailability,
+} from "@/lib/evidence-share-availability";
 import {
   emailPublicShareApi,
   getWalletCompetenciesApi,
   listOwnerSharesApi,
   revokeWalletShareApi,
-  shareWalletCompetencyApi,
   type OwnerShareSummary,
+  shareWalletCompetencyApi,
 } from "@/services/api/wallet.api";
+import type { WalletCompetencyRecordView } from "@/lib/db/wallet-competency-records";
 import { walletShareRequest } from "@/lib/sharing/guide";
 import { apiRequest } from "@/services/api/client";
 import { GuidedShareFlow, type ManagedShare } from "./GuidedShareFlow";
@@ -59,10 +64,37 @@ export function SignedPresentationCard({ onBack }: { onBack: () => void }) {
     void loadShares();
   }, []);
 
+  const { profile } = useLearnerProfile();
+  const [walletRows, setWalletRows] = useState<WalletCompetencyRecordView[] | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void getWalletCompetenciesApi().then((rows) => {
+      if (!cancelled) setWalletRows(rows);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const availabilityBySkill = useMemo(() => {
+    const map = new Map<string, EvidenceShareAvailability>();
+    for (const row of walletRows ?? []) {
+      const key = row.competencyName.trim().toLowerCase();
+      map.set(key, assessEvidenceShareAvailability(row.evidencePackage));
+    }
+    return map;
+  }, [walletRows]);
+
   const shareSelected = async (
     chosenIds: string[],
     selectedFields: string[],
-    extra: { recipientUserId?: string; shareAudience?: "all-recruiters"; consentToAllRecruiters?: boolean },
+    extra: {
+      recipientUserId?: string;
+      shareAudience?: "all-recruiters";
+      consentToAllRecruiters?: boolean;
+      evidenceModes?: import("@/services/api/wallet.api").ShareEvidenceModes;
+    },
   ) => {
     const rows = await getWalletCompetenciesApi();
     if (!rows) {
@@ -91,7 +123,11 @@ export function SignedPresentationCard({ onBack }: { onBack: () => void }) {
       const created = await shareWalletCompetencyApi({
         ...request,
         selectedFields: request.selectedFields as WalletShareFieldId[],
-        ...extra,
+        evidenceModes: extra.evidenceModes,
+        shareAudience: extra.shareAudience,
+        consentToAllRecruiters: extra.consentToAllRecruiters,
+        recipientUserId: extra.recipientUserId,
+        credentialId: credential.id,
         ...(versionIds.length > 0 ? { competencyVersionIds: versionIds } : {}),
       });
       recipientName = created.recipientName ?? recipientName;
@@ -101,10 +137,15 @@ export function SignedPresentationCard({ onBack }: { onBack: () => void }) {
     return { recipientName, recipientOrganization };
   };
 
-  const shareWithAllRecruiters = async (input: { credentialIds: string[]; selectedFields: string[] }) => {
+  const shareWithAllRecruiters = async (input: {
+    credentialIds: string[];
+    selectedFields: string[];
+    evidenceModes: import("@/services/api/wallet.api").ShareEvidenceModes;
+  }) => {
     await shareSelected(input.credentialIds, input.selectedFields, {
       shareAudience: "all-recruiters",
       consentToAllRecruiters: true,
+      evidenceModes: input.evidenceModes,
     });
     toast({ title: "Visible to all SIJIL recruiters" });
   };
@@ -112,6 +153,7 @@ export function SignedPresentationCard({ onBack }: { onBack: () => void }) {
   const createPublicLink = async (input: {
     credentialId: string;
     selectedFields: string[];
+    evidenceModes: import("@/services/api/wallet.api").ShareEvidenceModes;
     expiresInDays: number;
   }) => {
     const rows = await getWalletCompetenciesApi();
@@ -134,6 +176,8 @@ export function SignedPresentationCard({ onBack }: { onBack: () => void }) {
     const created = await shareWalletCompetencyApi({
       ...request,
       selectedFields: request.selectedFields as WalletShareFieldId[],
+      evidenceModes: input.evidenceModes,
+      credentialId: credential.id,
     });
     try {
       sessionStorage.setItem(
@@ -157,21 +201,28 @@ export function SignedPresentationCard({ onBack }: { onBack: () => void }) {
     const confirmed = window.confirm(
       "Stop this share? Access ends the next time someone opens SIJIL or the public link. A copy they already saved is not deleted.",
     );
-    if (!confirmed) return;
+    if (!confirmed) return false;
     const stopped = await revokeWalletShareApi(shareId);
     if (!stopped) throw new Error("The share could not be stopped.");
     toast({ title: "Sharing stopped" });
     await loadShares();
+    return true;
   };
 
   return (
     <GuidedShareFlow
-      credentials={credentials.map((credential) => ({
-        id: credential.id,
-        title: credential.skill !== "—" ? credential.skill : credential.name,
-        issuer: credential.issuer || credential.issuerDid,
-        status: statusLabel(credential),
-      }))}
+      credentials={credentials.map((credential) => {
+        const title = credential.skill !== "—" ? credential.skill : credential.name;
+        return {
+          id: credential.id,
+          title,
+          issuer: credential.issuer || "SIJIL",
+          status: statusLabel(credential),
+          issuedAt: credential.validFrom,
+          evidenceAvailability: availabilityBySkill.get(title.trim().toLowerCase()),
+        };
+      })}
+      learnerName={profile?.name || "Learner"}
       onBack={onBack}
       onShareAll={shareWithAllRecruiters}
       onCreatePublicLink={createPublicLink}
@@ -180,6 +231,7 @@ export function SignedPresentationCard({ onBack }: { onBack: () => void }) {
       }}
       managedShares={managedShares}
       onRevokeManagedShare={revokeManagedShare}
+      onStopPublicLink={revokeManagedShare}
     />
   );
 }

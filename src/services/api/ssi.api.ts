@@ -76,6 +76,10 @@ export async function getSsiIdentityApi(): Promise<SsiIdentityApiView | null> {
   return tryApiRequest<SsiIdentityApiView>("/ssi/identity");
 }
 
+export function readSsiIdentityApi(): Promise<SsiIdentityApiView> {
+  return apiRequest<SsiIdentityApiView>("/ssi/identity");
+}
+
 export async function createSsiChallengeApi(): Promise<SsiChallengeView> {
   return apiRequest<SsiChallengeView>("/ssi/challenge", { method: "POST" });
 }

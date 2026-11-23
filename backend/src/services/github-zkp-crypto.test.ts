@@ -8,6 +8,7 @@ import { loadGitHubCommitmentModule } from "./github-commitment-loader";
 import { generateGitHubContributionProof } from "./github-zkp-proof.service";
 import { verifyGitHubContributionProof } from "./github-zkp-verify.service";
 import { resolveGitHubZkpArtifactDir } from "./github-zkp-artifacts";
+import { SHARE_GITHUB_THRESHOLD } from "./zkp-policy";
 
 const LEARNER = "123e4567-e89b-42d3-a456-426614174000";
 const SNAPSHOT = "223e4567-e89b-42d3-a456-426614174000";
@@ -111,5 +112,28 @@ describe("github-contributions-v1 cryptography", () => {
       }),
       /do not meet the threshold/,
     );
+  });
+
+  it("verifies the wallet proof at 50 and rejects the 49 boundary", async () => {
+    assert.equal(SHARE_GITHUB_THRESHOLD, 50);
+    const commitment = await loadGitHubCommitmentModule();
+    const generate = async (count: number) => {
+      const created = await commitment.createGitHubCommitment({
+        count, learnerId: LEARNER, snapshotId: SNAPSHOT,
+      });
+      const generated = await generateGitHubContributionProof({
+        ...created.opening,
+        commitment: created.publicCommitment.commitment,
+        threshold: SHARE_GITHUB_THRESHOLD,
+      });
+      return { ...generated, commitment: created.publicCommitment.commitment };
+    };
+    const { proof, publicSignals, commitment: expectedCommitment } = await generate(50);
+    assert.equal(publicSignals[0], "50");
+    const checked = await verifyGitHubContributionProof({
+      circuitId: "github-contributions-v1", proof, publicSignals,
+    }, expectedCommitment);
+    assert.equal(checked.cryptographicallyValid, true);
+    await assert.rejects(() => generate(49), /do not meet the threshold/);
   });
 });

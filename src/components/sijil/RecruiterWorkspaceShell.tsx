@@ -1,3 +1,4 @@
+import { ZKP_UI_ENABLED } from "@/lib/zkp-ui";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { VerificationBell } from "@/components/zkp/VerificationBell";
 import { useEffect, useState, type ReactNode } from "react";
@@ -431,7 +432,7 @@ export function RecruiterWorkspaceShell({
         <div className="flex min-w-0 flex-1 items-center gap-3 pl-3 pr-4 sm:pl-6 sm:pr-6">
           <div className="ml-auto flex items-center gap-2">
             <ThemeToggle />
-            <VerificationBell role="recruiter" />
+            {ZKP_UI_ENABLED && <VerificationBell role="recruiter" />}
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>

@@ -97,6 +97,7 @@ export interface FetchGitHubCommitsOptions {
   repositoryFullName: string;
   githubUsername: string;
   expectedGitHubUserId: number;
+  rejectMismatchedOnly?: boolean;
   fetchImpl?: typeof fetch;
 }
 
@@ -105,6 +106,7 @@ export async function fetchPaginatedGitHubCommits({
   repositoryFullName,
   githubUsername,
   expectedGitHubUserId,
+  rejectMismatchedOnly = false,
   fetchImpl = fetch,
 }: FetchGitHubCommitsOptions): Promise<GitHubCommitRef[]> {
   if (!accessToken.trim()) {
@@ -137,6 +139,7 @@ export async function fetchPaginatedGitHubCommits({
   let nextUrl: string | null = baseUrl.toString();
   const visited = new Set<string>();
   const commits: GitHubCommitRef[] = [];
+  let sawDifferentAuthor = false;
   const maxPages = 100;
 
   while (nextUrl !== null) {
@@ -199,6 +202,10 @@ export async function fetchPaginatedGitHubCommits({
       }
 
       const author = item.author;
+      if (author && typeof author === "object" && Number.isSafeInteger(author.id)
+        && author.id !== expectedGitHubUserId) {
+        sawDifferentAuthor = true;
+      }
       if (
         !author ||
         typeof author !== "object" ||
@@ -240,5 +247,8 @@ export async function fetchPaginatedGitHubCommits({
     }
   }
 
+  if (rejectMismatchedOnly && commits.length === 0 && sawDifferentAuthor) {
+    throw new Error("GitHub commit author does not match the connected account");
+  }
   return commits;
 }

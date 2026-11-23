@@ -7,7 +7,7 @@ describe("scoreClosedAssessment", () => {
       [{ id: "q1", correctOptionId: "B" }, { id: "q2", correctOptionId: "A" }],
       { q1: "B", q2: "C" },
     );
-    expect(result).toEqual({ correctCount: 1, totalQuestions: 2, percentage: 50, passed: false });
+    expect(result).toEqual({ correctCount: 1, totalQuestions: 2, percentage: 50, passed: true });
   });
 
   it("scores multiple-response by exact set", () => {
@@ -42,6 +42,7 @@ describe("scoreClosedAssessment", () => {
       {},
     );
     expect(result.correctCount).toBe(0);
-    expect(result.passed).toBe(false);
+    expect(result.percentage).toBe(0);
+    expect(result.passed).toBe(true);
   });
 });

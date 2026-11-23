@@ -1,5 +1,14 @@
 import type { Config } from "tailwindcss";
 
+// Some semantic surfaces already have an alpha channel. Apply utility opacity
+// to the resulting color so classes like bg-background/80 remain valid.
+function surfaceColor(property: string) {
+  return ({ opacityValue }: { opacityValue?: string }) => {
+    const color = `hsl(var(--${property}))`;
+    return opacityValue ? `color-mix(in srgb, ${color} calc(${opacityValue} * 100%), transparent)` : color;
+  };
+}
+
 export default {
   darkMode: ["class"],
   content: ["./pages/**/*.{ts,tsx}", "./components/**/*.{ts,tsx}", "./app/**/*.{ts,tsx}", "./src/**/*.{ts,tsx}"],
@@ -15,7 +24,8 @@ export default {
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",
-        background: "hsl(var(--background))",
+        "sijil-blue": "hsl(var(--sijil-blue) / <alpha-value>)",
+        background: surfaceColor("background"),
         foreground: "hsl(var(--foreground))",
         primary: {
           DEFAULT: "hsl(var(--primary))",
@@ -23,7 +33,7 @@ export default {
           glow: "hsl(var(--primary-glow))",
         },
         secondary: {
-          DEFAULT: "hsl(var(--secondary))",
+          DEFAULT: surfaceColor("secondary"),
           foreground: "hsl(var(--secondary-foreground))",
         },
         destructive: {
@@ -43,7 +53,7 @@ export default {
         info: {
           DEFAULT: "hsl(var(--info))",
           foreground: "hsl(var(--info-foreground))",
-          soft: "hsl(var(--info-soft))",
+          soft: surfaceColor("info-soft"),
         },
         violet: {
           DEFAULT: "hsl(var(--violet))",
@@ -54,7 +64,7 @@ export default {
           foreground: "hsl(var(--muted-foreground))",
         },
         accent: {
-          DEFAULT: "hsl(var(--accent))",
+          DEFAULT: surfaceColor("accent"),
           foreground: "hsl(var(--accent-foreground))",
         },
         popover: {

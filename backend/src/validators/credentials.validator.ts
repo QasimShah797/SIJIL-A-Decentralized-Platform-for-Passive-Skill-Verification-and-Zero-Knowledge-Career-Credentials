@@ -5,6 +5,10 @@ import { z } from "zod";
 
 export const issueCredentialSchema = z.object({
   skillId: z.string().uuid(),
+  approval: z.object({
+    challengeId: z.string().uuid(),
+    signature: z.string().regex(/^[A-Za-z0-9_-]{86}$/),
+  }).strict().optional(),
 }).strict();
 
 export const shareCredentialSchema = z.object({

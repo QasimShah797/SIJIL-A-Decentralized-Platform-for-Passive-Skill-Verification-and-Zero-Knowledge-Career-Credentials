@@ -14,7 +14,7 @@ export type ConnectionStatus = "connected" | "available" | "disconnected";
 
 const statusStyles: Record<ConnectionStatus, string> = {
   connected: "bg-[#ecfdf5] text-[#059669] border-[#bbf7d0]",
-  available: "bg-[#e8eef7] text-[#023E8A] border-[#c5d4eb]",
+  available: "bg-[hsl(var(--sijil-blue)/0.08)] text-sijil-blue border-[hsl(var(--sijil-blue)/0.21)]",
   disconnected: "bg-[#f1f5f9] text-[#64748b] border-[#e2e8f0]",
 };
 
@@ -27,7 +27,7 @@ const statusLabel: Record<ConnectionStatus, string> = {
 const iconStyles: Record<string, string> = {
   "Moodle LMS": "bg-[#fff7ed] text-[#ea580c]",
   GitHub: "bg-[#0f172a] text-white",
-  "External Certificate Upload": "bg-[#e8eef7] text-[#023E8A]",
+  "External Certificate Upload": "bg-[hsl(var(--sijil-blue)/0.08)] text-sijil-blue",
 };
 
 export type IntegrationConnectionCardProps = {
@@ -84,7 +84,7 @@ export function IntegrationConnectionCard({
         <div
           className={cn(
             "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl",
-            iconStyles[name] ?? "bg-[#e8eef7] text-[#023E8A]",
+            iconStyles[name] ?? "bg-[hsl(var(--sijil-blue)/0.08)] text-sijil-blue",
           )}
         >
           <Icon className="h-5 w-5" aria-hidden />
@@ -100,7 +100,7 @@ export function IntegrationConnectionCard({
       </div>
 
       <div className="mt-4 flex-1 space-y-2">
-        <h3 className="text-base font-semibold text-[#023E8A]">{name}</h3>
+        <h3 className="text-base font-semibold text-sijil-blue">{name}</h3>
         {isAvailable && subtitle ? (
           <p className="text-xs leading-relaxed text-[#64748b]">{subtitle}</p>
         ) : null}
@@ -147,7 +147,7 @@ export function IntegrationConnectionCard({
             size="sm"
             className={cn(
               "min-h-9 flex-1 rounded-xl",
-              isAvailable ? "bg-[#023E8A] hover:bg-[#012A5C]" : "border-[#e2e8f0]",
+              isAvailable ? "bg-sijil-blue hover:bg-sijil-blue" : "border-[#e2e8f0]",
             )}
             variant={isConnected ? "outline" : "default"}
             onClick={onPrimary}

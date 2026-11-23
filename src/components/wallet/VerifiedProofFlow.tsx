@@ -1,10 +1,34 @@
-import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
-import { Award, Check, ShieldCheck } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import {
+  ArrowLeft,
+  ArrowRight,
+  Award,
+  Check,
+  ChevronRight,
+  Clock3,
+  ClipboardList,
+  Copy,
+  FileText,
+  Github,
+  GraduationCap,
+  Info,
+  Laptop,
+  Layers,
+  Search,
+  ShieldCheck,
+  UserRound,
+  Users,
+  Wallet,
+} from "lucide-react";
+import { PasswordInput } from "@/components/auth/PasswordInput";
+import { toast } from "@/hooks/use-toast";
 import { useDeclaredSkills } from "@/hooks/useLearnerData";
+import { useSsiIdentity } from "@/hooks/useSsiIdentity";
 import { issueCredentialForSkill, type CredentialView } from "@/lib/db/credentials";
 import { buildAllValidationSummaries, type ValidationSummary } from "@/lib/db/validation";
+import { ApiUnavailableError, apiRequest } from "@/services/api/client";
+import "./verified-proof-flow.css";
 
 export type ProofStatus = "issued" | "eligible" | "pending";
 
@@ -19,10 +43,16 @@ export type ProofItem = {
   sources: string[];
   result: string;
   pipelineStage: string;
+  issuedAt: string | null;
+  credentialId: string | null;
+  githubCount: number;
+  lmsCount: number;
+  taskCount: number;
+  reviewCount: number;
 };
 
-const PROVENANCE_NOTE =
-  "A signed credential records that SIJIL accepted this evidence and the checks that apply to it. It does not independently verify the underlying project, course, or review content.";
+const REVIEW_NOTE =
+  "Peer reviews are optional. SIJIL checks the required evidence before issuing a credential.";
 
 export function proofStatusForSkill(
   summary: { skill: string; pipelineStage: string },
@@ -34,52 +64,138 @@ export function proofStatusForSkill(
   return "pending";
 }
 
-export function toProofItem(summary: ValidationSummary, credentials: { skill: string; name: string }[]): ProofItem {
+function matchingCredential<T extends { skill: string; name: string }>(
+  credentials: T[],
+  skill: string,
+): T | undefined {
+  return credentials.find((credential) => credential.skill === skill || credential.name === skill);
+}
+
+function countRows(rows: ValidationSummary["rows"], matcher: (type: string) => boolean): number {
+  return rows.filter((row) => matcher(row.type.toLowerCase())).length;
+}
+
+export function toProofItem(
+  summary: ValidationSummary,
+  credentials: { skill: string; name: string; validFrom?: string; id?: string }[],
+): ProofItem {
+  const matched = matchingCredential(credentials, summary.skill);
+  const githubCount = countRows(summary.rows, (type) => type.includes("github") || type.includes("repo"));
+  const lmsCount = countRows(summary.rows, (type) => type.includes("moodle") || type.includes("lms") || type.includes("course"));
+  const taskCount = countRows(summary.rows, (type) => type.includes("practical") || type.includes("task") || type.includes("assessment"));
   return {
     skillId: summary.skillId,
     skill: summary.skill,
     status: proofStatusForSkill(summary, credentials),
     stageLabel: summary.currentStageLabel,
     evidence: summary.evidence,
-    institution: summary.institution,
+    institution: "SIJIL",
     nextStep: summary.nextStep,
     sources: summary.sources,
     result: summary.result,
     pipelineStage: summary.pipelineStage,
+    issuedAt: matched?.validFrom ?? null,
+    credentialId: matched?.id ?? null,
+    githubCount: githubCount || (summary.sources.some((source) => /github/i.test(source)) ? 1 : 0),
+    lmsCount: lmsCount || (summary.sources.some((source) => /moodle|lms/i.test(source)) ? 1 : 0),
+    taskCount: taskCount || (summary.assessmentCompleted || summary.sources.some((source) => /practical|task/i.test(source)) ? 1 : 0),
+    reviewCount: summary.reviewCount ?? 0,
   };
 }
 
 type Step = "choose" | "review" | "confirm" | "success";
 
+function formatDate(value: string | null | undefined): string {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+function shortDid(did: string): string {
+  if (did.length <= 22) return did;
+  return `${did.slice(0, 12)}...${did.slice(-6)}`;
+}
+
+function slugSkill(name: string): string {
+  return name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "").slice(0, 12) || "skill";
+}
+
+function previewCredentialId(skill: string, skillId: string, credentialId?: string | null): string {
+  if (credentialId) {
+    const raw = credentialId.replace(/^https?:\/\//, "");
+    if (raw.length > 28) return `${raw.slice(0, 18)}...${raw.slice(-4)}`;
+    return raw;
+  }
+  const clean = skillId.replace(/[^a-zA-Z0-9]/g, "");
+  const hint = clean.length > 8 ? `${clean.slice(0, 4)}...${clean.slice(-4)}` : clean || "0000";
+  return `cred:${slugSkill(skill)}:${hint}`;
+}
+
+function friendlySources(sources: string[]): string {
+  if (!sources.length || sources.includes("No evidence yet")) {
+    return "GitHub, Moodle (LMS), Practical Task";
+  }
+  const mapped = sources.map((source) => {
+    const lower = source.toLowerCase();
+    if (lower.includes("github")) return "GitHub";
+    if (lower.includes("moodle") || lower.includes("lms")) return "Moodle (LMS)";
+    if (lower.includes("practical") || lower.includes("task") || lower.includes("assessment")) return "Practical Task";
+    if (lower.includes("upload")) return "Upload";
+    return source;
+  });
+  return [...new Set(mapped)].join(", ");
+}
+
+function sourceCount(sources: string[]): number {
+  if (!sources.length || sources.includes("No evidence yet")) return 3;
+  return Math.max(1, new Set(friendlySources(sources).split(", ")).size);
+}
+
 export function VerifiedProofGuide({
   items,
   loading,
+  holderDid,
+  learnerName,
   onBack,
   onViewInWallet,
   onIssue,
+  identityUnlocked,
+  onUnlock,
 }: {
   items: ProofItem[];
   loading: boolean;
+  holderDid?: string | null;
+  learnerName?: string | null;
   onBack: () => void;
   onViewInWallet: () => void;
   onIssue: (skillId: string) => Promise<CredentialView | null>;
+  identityUnlocked: boolean;
+  onUnlock?: (password: string) => Promise<void>;
 }) {
+  const navigate = useNavigate();
   const [step, setStep] = useState<Step>("choose");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [issuing, setIssuing] = useState(false);
+  const [showUnlock, setShowUnlock] = useState(false);
+  const [password, setPassword] = useState("");
+  const [unlocking, setUnlocking] = useState(false);
+  const [unlockError, setUnlockError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [issued, setIssued] = useState<CredentialView | null>(null);
+
   const selected = items.find((item) => item.skillId === selectedId) ?? null;
   const progress = step === "success" ? 3 : step === "confirm" ? 2 : step === "review" ? 1 : 0;
+  const displayName = (learnerName || "Learner").trim() || "Learner";
 
   const groups = useMemo(() => ({
-    eligible: items.filter((item) => item.status === "eligible"),
     issued: items.filter((item) => item.status === "issued"),
+    eligible: items.filter((item) => item.status === "eligible"),
     pending: items.filter((item) => item.status === "pending"),
   }), [items]);
 
   const confirmIssue = async () => {
-    if (!selected || selected.status !== "eligible" || issuing) return;
+    if (!selected || selected.status !== "eligible" || issuing || !identityUnlocked) return;
     setIssuing(true);
     setError(null);
     try {
@@ -97,117 +213,340 @@ export function VerifiedProofGuide({
     }
   };
 
-  return (
-    <section className="mx-auto w-full max-w-3xl" aria-label="Get confirmed proof">
-      <Progress active={progress} />
-      {error ? <p role="alert" className="mb-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</p> : null}
+  const copyDid = async () => {
+    if (!holderDid) return;
+    try {
+      await navigator.clipboard.writeText(holderDid);
+      toast({ title: "Wallet ID copied" });
+    } catch {
+      toast({ title: "Could not copy Wallet ID", variant: "destructive" });
+    }
+  };
 
-      {step === "choose" ? (
-        <div className="space-y-4 rounded-[28px] border border-[#e0e7ff] bg-white p-5 shadow-sm sm:p-8">
-          <div className="flex items-start gap-4">
-            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-[#eef2ff] text-[#4f46e5]">
-              <ShieldCheck className="h-7 w-7" />
-            </div>
+  const unlockPrompt = (
+    <div className="vpf-warn mt-3">
+      <p className="font-semibold">Unlock your identity to issue this credential.</p>
+      {onUnlock ? (
+        showUnlock ? (
+          <form className="mt-3 grid gap-2" onSubmit={async (event) => {
+            event.preventDefault();
+            if (unlocking || password.length < 10) return;
+            setUnlocking(true);
+            setUnlockError(null);
+            try {
+              await onUnlock(password);
+              setPassword("");
+              setShowUnlock(false);
+            } catch {
+              setUnlockError("Could not unlock your identity. Check your recovery password and try again.");
+            } finally {
+              setUnlocking(false);
+            }
+          }}>
+            <label htmlFor="issue-unlock-password">Recovery password</label>
+            <PasswordInput id="issue-unlock-password" value={password} onChange={setPassword} disabled={unlocking} />
+            {unlockError ? <p role="alert">{unlockError}</p> : null}
+            <button type="submit" className="vpf-btn vpf-btn-primary" disabled={unlocking || password.length < 10}>
+              {unlocking ? "Unlocking…" : "Unlock Identity"}
+            </button>
+          </form>
+        ) : (
+          <button type="button" className="vpf-btn vpf-btn-primary mt-3" onClick={() => setShowUnlock(true)}>Unlock Identity</button>
+        )
+      ) : <Link className="mt-3 inline-block underline" to="/learner/secure-identity">Open Privacy &amp; Security</Link>}
+    </div>
+  );
+
+  return (
+    <section className={`vpf vpf-theme-blue${step === "choose" ? " vpf-choose" : step === "review" ? " vpf-choose vpf-review" : ""}`} aria-label="Get verified proof">
+      {step === "choose" || step === "review" ? (
+        <header className="vpf-choose-header">
+          {step === "choose" ? (
+            <Link className="vpf-back" to="/learner/dashboard"><ArrowLeft className="h-4 w-4" /> Back to Dashboard</Link>
+          ) : (
+            <button type="button" className="vpf-back" onClick={onBack}><ArrowLeft className="h-4 w-4" /> Back to Wallet</button>
+          )}
+          <div className="vpf-hero">
+            <div className="vpf-hero-icon"><ShieldCheck className="h-8 w-8" /></div>
             <div>
-              <h1 className="text-2xl font-semibold text-[#0f172a]">Get Verified Proof</h1>
-              <p className="mt-1 text-sm leading-relaxed text-[#475569]">
-                Choose one achievement. SIJIL can issue a signed credential only when the existing validation trail already says it is ready.
+              <h1 className="vpf-hero-title">Get <span>Verified Proof</span></h1>
+              <p className="vpf-hero-sub">
+                {step === "choose" ? <>
+                  Select the achievement you want to digitally sign with your identity.
+                  <br />SIJIL adds the signed credential to your wallet.
+                </> : "Review the information and supporting evidence before issuing this credential."}
               </p>
             </div>
           </div>
+          <div className="vpf-choose-art" aria-hidden="true">
+            <div className="vpf-art-back" />
+            <div className="vpf-art-front"><span /><ShieldCheck /></div>
+          </div>
+        </header>
+      ) : (
+        <button type="button" className="vpf-back" onClick={onBack}><ArrowLeft className="h-4 w-4" /> Back to Wallet</button>
+      )}
+
+      <Progress active={progress} />
+
+      {error ? <p role="alert" className="vpf-error">{error}</p> : null}
+
+      {step === "choose" ? (
+        <div className="vpf-card vpf-choose-card">
+          <section className="vpf-how" aria-label="How it works">
+            <h2><Info aria-hidden="true" /> How it works?</h2>
+            <div><Laptop aria-hidden="true" /><span><strong>Select an achievement</strong>Choose the skill you want to sign.</span></div>
+            <div><Search aria-hidden="true" /><span><strong>Review evidence</strong>Check your linked evidence.</span></div>
+            <div><Award aria-hidden="true" /><span><strong>Confirm issuance</strong>Digitally sign and add it to your wallet.</span></div>
+          </section>
+
           {loading ? <p className="text-sm text-[#64748b]">Checking your validation trail…</p> : null}
           {!loading && items.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-[#dbeafe] bg-[#f8fafc] p-6 text-sm text-[#475569]">
+            <div className="rounded-2xl border border-dashed border-[hsl(var(--sijil-blue)/0.1)] bg-[#f8fafc] p-6 text-sm text-[#475569]">
               <p>No declared achievements are available to review.</p>
-              <Link className="mt-3 inline-flex font-semibold text-[#023E8A] underline" to="/learner/validation">Open Validation Trail</Link>
+              <Link className="mt-3 inline-flex font-semibold text-sijil-blue underline" to="/learner/validation">
+                Open Competency Progress
+              </Link>
             </div>
           ) : null}
+
           {!loading ? (
-            <div className="space-y-5">
-              <ProofGroup title="Ready to issue" items={groups.eligible} selectedId={selectedId} onSelect={setSelectedId} />
-              <ProofGroup title="Already issued" items={groups.issued} selectedId={selectedId} onSelect={setSelectedId} />
-              <ProofGroup title="Still in progress" items={groups.pending} selectedId={selectedId} onSelect={setSelectedId} />
+            <div className="space-y-1">
+              <ProofGroup
+                title={`Already Issued (${groups.issued.length})`}
+                icon={<Layers className="h-4 w-4" />}
+                items={groups.issued}
+                selectedId={selectedId}
+                onSelect={setSelectedId}
+                badgeFor={(item) => (
+                  <span className="vpf-badge vpf-badge-issued"><Check className="h-3.5 w-3.5" aria-hidden="true" /> Issued: {formatDate(item.issuedAt)}</span>
+                )}
+              />
+              <ProofGroup
+                title={`Ready to Issue (${groups.eligible.length})`}
+                icon={<ShieldCheck className="h-4 w-4" />}
+                items={groups.eligible}
+                selectedId={selectedId}
+                onSelect={setSelectedId}
+                badgeFor={() => <span className="vpf-badge vpf-badge-ready">Ready</span>}
+              />
+              <ProofGroup
+                title={`In Progress (${groups.pending.length})`}
+                icon={<Clock3 className="h-4 w-4" />}
+                items={groups.pending}
+                selectedId={selectedId}
+                onSelect={setSelectedId}
+                badgeFor={() => <span className="vpf-badge vpf-badge-progress">In Progress</span>}
+              />
             </div>
           ) : null}
-          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-between">
-            <Button type="button" variant="ghost" onClick={onBack}>Back</Button>
-            <Button type="button" className="rounded-xl bg-[#4f46e5] hover:bg-[#4338ca]" disabled={!selected} onClick={() => setStep("review")}>
-              Continue
-            </Button>
+
+          <div className="vpf-actions">
+            <button type="button" className="vpf-btn vpf-btn-ghost" onClick={onBack}>Back</button>
+            <button
+              type="button"
+              className="vpf-btn vpf-btn-primary"
+              disabled={!selected}
+              onClick={() => setStep("review")}
+            >
+              Continue <ArrowRight className="h-4 w-4" />
+            </button>
           </div>
         </div>
       ) : null}
 
       {step === "review" && selected ? (
-        <article className="space-y-4 rounded-[28px] border border-[#e0e7ff] bg-white p-5 shadow-sm sm:p-8">
-          <div className="flex items-center gap-3">
-            <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#fff7ed] text-[#c2410c]">
-              <Award className="h-6 w-6" />
-            </span>
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-[#4f46e5]">Review verified details</p>
-              <h1 className="text-2xl font-semibold text-[#0f172a]">{selected.skill}</h1>
+        <div className="space-y-4">
+          <article className="vpf-card vpf-review-summary">
+            <div className="vpf-hero">
+              <div className="vpf-hero-icon"><Award className="h-7 w-7" /></div>
+              <div>
+                <p className="vpf-kicker">Review Credential Details</p>
+                <h2 className="vpf-hero-title">{selected.skill}</h2>
+                <p className="vpf-hero-sub">Review the information and supporting evidence before issuing this credential.</p>
+              </div>
             </div>
+            <div className="vpf-summary-grid">
+              <SummaryCell icon={<Layers className="h-4 w-4" />} label="Credential Type" value="Competency" />
+              <SummaryCell icon={<Clock3 className="h-4 w-4" />} label="Achievement" value={selected.skill} />
+              <SummaryCell icon={<UserRound className="h-4 w-4" />} label="Credential For" value={displayName} />
+              <SummaryCell icon={<Wallet className="h-4 w-4" />} label="Wallet" value="My Wallet" />
+            </div>
+          </article>
+
+          <div className="vpf-review-grid">
+          <article className="vpf-card vpf-review-evidence">
+            <div className="vpf-evidence-head">
+              <div>
+                <h2 className="vpf-review-heading"><Layers aria-hidden="true" /> Review Evidence</h2>
+                <p className="vpf-hero-sub">Explore the evidence and reviews used to verify this achievement.</p>
+              </div>
+              <button
+                type="button"
+                className="vpf-peer-btn"
+                title="Peer reviews are optional"
+                onClick={() => navigate("/learner/peer-reviews")}
+              >
+                <Users className="h-4 w-4" />
+                Peer Reviews ({selected.reviewCount})
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="vpf-evidence-list">
+              <EvidenceRow
+                title="GitHub"
+                icon={<Github />}
+                description="Code, commits, and project work"
+                count={selected.githubCount}
+                onOpen={() => navigate("/learner/integrations")}
+              />
+              <EvidenceRow
+                title="Moodle (LMS)"
+                icon={<GraduationCap />}
+                description="Course progress, submissions, and grades"
+                count={selected.lmsCount}
+                onOpen={() => navigate("/learner/integrations")}
+              />
+              <EvidenceRow
+                title="Practical Task"
+                icon={<ClipboardList />}
+                description="Hands-on task to demonstrate the competency"
+                count={selected.taskCount}
+                onOpen={() => navigate("/learner/task")}
+              />
+            </div>
+
+            {selected.status === "pending" ? (
+              <div className="vpf-warn">
+                <p className="font-semibold">This achievement is not ready to issue.</p>
+                <p className="mt-1">Remaining step: {selected.nextStep}</p>
+                <Link className="mt-3 inline-flex font-semibold text-sijil-blue underline" to={`/learner/validation/${selected.skillId}`}>
+                  Open Competency Progress
+                </Link>
+              </div>
+            ) : null}
+
+            {selected.status === "issued" ? (
+              <p className="mt-4 text-sm text-[#065f46]">A credential for this achievement is already on your account. A second one will not be requested.</p>
+            ) : null}
+          </article>
+            <aside className="vpf-card vpf-review-check" aria-label="Issuance check">
+              <h2 className="vpf-review-heading"><ShieldCheck aria-hidden="true" /> Issuance Check</h2>
+              <p>{selected.status === "eligible" ? "Required checks are complete. SIJIL rechecks them before signing." : "SIJIL verifies the following before issuing a new credential."}</p>
+              <ul className={selected.status === "eligible" ? "is-verified" : undefined}>
+                {["Qualifying supporting evidence", "Completed assessment record", "Verified holder identity (DID)", "Trusted assessment commitment"].map((label) => (
+                  <li key={label}>
+                    {selected.status === "eligible" ? <Check aria-hidden="true" /> : <span aria-hidden="true" />}
+                    {label}
+                  </li>
+                ))}
+              </ul>
+              <p className="vpf-review-optional">{REVIEW_NOTE}</p>
+            </aside>
           </div>
-          <dl className="grid gap-3 rounded-2xl bg-[#f8fafc] p-4 text-sm sm:grid-cols-2">
-            <Detail label="Validation stage" value={selected.stageLabel} />
-            <Detail label="Evidence accepted so far" value={selected.evidence} />
-            <Detail label="Institution" value={selected.institution || "Not recorded"} />
-            <Detail label="Result" value={selected.result || "Not recorded"} />
-            <Detail label="Sources" value={selected.sources.length ? selected.sources.join(", ") : "No evidence yet"} />
-          </dl>
-          <p className="rounded-2xl border border-[#dbeafe] bg-[#eff6ff] p-4 text-sm leading-relaxed text-[#1e3a8a]">{PROVENANCE_NOTE}</p>
-          {selected.status === "pending" ? (
-            <div className="rounded-2xl border border-[#fed7aa] bg-[#fff7ed] p-4 text-sm text-[#9a3412]">
-              <p className="font-semibold">This achievement is not ready to issue.</p>
-              <p className="mt-1">Remaining step: {selected.nextStep}</p>
-              <Link className="mt-3 inline-flex font-semibold text-[#023E8A] underline" to={`/learner/validation/${selected.skillId}`}>
-                Open Validation Trail
-              </Link>
-            </div>
-          ) : null}
-          {selected.status === "issued" ? (
-            <p className="text-sm text-[#065f46]">A credential for this achievement is already on your account. A second one will not be requested.</p>
-          ) : null}
-          {selected.status === "eligible" && selected.pipelineStage === "in_wallet" ? (
-            <p className="text-sm text-[#475569]">The validation trail marks this as in the wallet, and no issued credential matched this name. Issuance still uses the existing ready-to-issue rule.</p>
-          ) : null}
-          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-between">
-            <Button type="button" variant="ghost" onClick={() => setStep("choose")}>Back</Button>
-            {selected.status === "eligible" ? (
-              <Button type="button" className="rounded-xl bg-[#4f46e5] hover:bg-[#4338ca]" onClick={() => setStep("confirm")}>Continue</Button>
+
+          <div className="vpf-actions">
+            <button type="button" className="vpf-btn vpf-btn-ghost" onClick={() => setStep("choose")}>Back</button>
+            {selected.status === "eligible" && identityUnlocked ? (
+              <button type="button" className="vpf-btn vpf-btn-primary" onClick={() => setStep("confirm")}>
+                Confirm Issuance <ArrowRight className="h-4 w-4" />
+              </button>
             ) : null}
             {selected.status === "issued" ? (
-              <Button type="button" className="rounded-xl bg-[#4f46e5] hover:bg-[#4338ca]" onClick={onViewInWallet}>View in Wallet</Button>
+              <button type="button" className="vpf-btn vpf-btn-primary" onClick={onViewInWallet}>
+                View in Wallet <ArrowRight className="h-4 w-4" />
+              </button>
             ) : null}
           </div>
-        </article>
+          {selected.status === "eligible" && !identityUnlocked ? unlockPrompt : null}
+        </div>
       ) : null}
 
       {step === "confirm" && selected?.status === "eligible" ? (
-        <article className="space-y-4 rounded-[28px] border border-[#e0e7ff] bg-white p-5 text-center shadow-sm sm:p-8">
-          <h1 className="text-2xl font-semibold text-[#0f172a]">Confirm issuance</h1>
-          <p className="text-sm text-[#475569]">Request a signed credential for <span className="font-semibold text-[#0f172a]">{selected.skill}</span> using the evidence SIJIL has already accepted.</p>
-          <p className="text-left text-sm leading-relaxed text-[#334155]">{PROVENANCE_NOTE}</p>
-          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-between">
-            <Button type="button" variant="ghost" onClick={() => setStep("review")}>Back</Button>
-            <Button type="button" className="rounded-xl bg-[#4f46e5] hover:bg-[#4338ca]" disabled={issuing} onClick={() => void confirmIssue()}>
-              {issuing ? "Issuing…" : "Issue verified proof"}
-            </Button>
+        <article className="vpf-card">
+          <div className="vpf-hero">
+            <div className="vpf-hero-icon" aria-hidden="true">{"</>"}</div>
+            <div>
+              <h1 className="vpf-hero-title">Confirm Credential Issuance</h1>
+              <p className="vpf-hero-sub">Review the details below and issue the signed credential to your wallet.</p>
+            </div>
           </div>
+
+          <h2 className="vpf-section-title"><UserRound className="h-4 w-4" /> Recipient</h2>
+          <div className="vpf-panel vpf-recipient">
+            <div className="vpf-recipient-main">
+              <span className="vpf-recipient-icon"><UserRound className="h-4 w-4" /></span>
+              <div>
+                <p className="vpf-item-title">You (Self)</p>
+                <p className="vpf-item-sub">Learner Wallet</p>
+              </div>
+            </div>
+            <div className="vpf-did">
+              <span>Wallet ID</span>
+              <span>{holderDid ? shortDid(holderDid) : "Not set"}</span>
+              {holderDid ? (
+                <button type="button" className="vpf-copy" onClick={() => void copyDid()} aria-label="Copy wallet ID">
+                  <Copy className="h-3.5 w-3.5" />
+                </button>
+              ) : null}
+            </div>
+          </div>
+
+          <h2 className="vpf-section-title"><FileText className="h-4 w-4" /> Credential Details</h2>
+          <div className="vpf-panel vpf-cred-row">
+            <div className="flex items-center gap-3 min-w-0">
+              <span className="vpf-code-icon" aria-hidden="true">{"</>"}</span>
+              <div className="min-w-0">
+                <p className="vpf-item-title">{selected.skill}</p>
+                <p className="vpf-item-sub">Course Completion</p>
+              </div>
+            </div>
+            <div>
+              <p className="vpf-meta-label">Issue Date</p>
+              <p className="vpf-meta-value">{formatDate(new Date().toISOString())}</p>
+            </div>
+            <div>
+              <p className="vpf-meta-label">Credential ID</p>
+              <p className="vpf-meta-value">{previewCredentialId(selected.skill, selected.skillId, selected.credentialId)}</p>
+            </div>
+            <div>
+              <p className="vpf-meta-label">Evidence Sources</p>
+              <p className="vpf-meta-value">
+                <span className="vpf-badge vpf-badge-ready mr-2">{sourceCount(selected.sources)}</span>
+                {friendlySources(selected.sources)}
+              </p>
+            </div>
+          </div>
+
+          <div className="vpf-actions">
+            <button type="button" className="vpf-btn vpf-btn-ghost" onClick={() => setStep("review")}>Back</button>
+            <button
+              type="button"
+              className="vpf-btn vpf-btn-primary"
+              disabled={issuing || !identityUnlocked}
+              onClick={() => void confirmIssue()}
+            >
+              {issuing ? "Issuing…" : "Confirm Issuance →"}
+            </button>
+          </div>
+          {!identityUnlocked ? unlockPrompt : null}
         </article>
       ) : null}
 
       {step === "success" && issued ? (
-        <article className="space-y-4 rounded-[28px] border border-emerald-200 bg-white p-5 text-center shadow-sm sm:p-8">
-          <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-[#ecfdf5] text-[#059669]">
-            <Check className="h-10 w-10" />
+        <article className="vpf-card vpf-success">
+          <div className="vpf-success-icon"><Check className="h-9 w-9" /></div>
+          <h1 className="vpf-hero-title">Signed credential issued</h1>
+          <p className="vpf-hero-sub" style={{ margin: "8px auto 0", maxWidth: "28rem" }}>
+            SIJIL added a signed record for {issued.name || selected?.skill} to your wallet.
+          </p>
+          <p className="mt-3 text-sm text-[#475569]">Issuer: SIJIL</p>
+          <div className="vpf-actions" style={{ justifyContent: "center" }}>
+            <button type="button" className="vpf-btn vpf-btn-primary" onClick={onViewInWallet}>
+              View in Wallet
+            </button>
           </div>
-          <h1 className="text-2xl font-semibold text-[#064e3b]">Signed credential issued</h1>
-          <p className="text-sm text-[#065f46]">SIJIL returned a credential for {issued.name || selected?.skill}.</p>
-          <p className="text-sm text-[#475569]">Issuer: {issued.issuer || "Not included"} · Verification status: {issued.verification || "Not included"}</p>
-          <p className="text-sm leading-relaxed text-[#334155]">{PROVENANCE_NOTE}</p>
-          <Button type="button" className="h-11 rounded-xl bg-[#4f46e5] hover:bg-[#4338ca]" onClick={onViewInWallet}>View in Wallet</Button>
         </article>
       ) : null}
     </section>
@@ -217,27 +556,55 @@ export function VerifiedProofGuide({
 export function VerifiedProofFlow({
   userId,
   credentials,
+  learnerName,
   onBack,
   onViewInWallet,
   onIssued,
 }: {
   userId: string;
   credentials: CredentialView[];
+  learnerName?: string | null;
   onBack: () => void;
   onViewInWallet: () => void;
   onIssued: () => void;
 }) {
   const { skills, loading: skillsLoading } = useDeclaredSkills();
-  const [summaries, setSummaries] = useState<ValidationSummary[]>([]);
+  const { snapshot, signingIdentity, unlock } = useSsiIdentity();
+  const holderDid = snapshot.local?.did ?? snapshot.server.did;
+  const [items, setItems] = useState<ProofItem[]>([]);
   const [summariesLoading, setSummariesLoading] = useState(true);
 
   useEffect(() => {
     if (skillsLoading) return;
     let cancelled = false;
     setSummariesLoading(true);
-    buildAllValidationSummaries(userId, skills)
+    buildAllValidationSummaries(userId, skills, { includeAssessmentProgress: true })
+      .then((summaries) => Promise.all(summaries.map(async (summary) => {
+        const item = toProofItem(summary, credentials);
+        if (item.status === "issued") return item;
+        try {
+          const readiness = await apiRequest<{ ready: boolean; reason: string | null }>(
+            `/credentials/readiness/${encodeURIComponent(summary.skillId)}`,
+          );
+          return {
+            ...item,
+            status: readiness.ready ? "eligible" as const : "pending" as const,
+            nextStep: readiness.reason ?? "Check the required evidence and try again.",
+          };
+        } catch (error) {
+          const missingRoute = error instanceof ApiUnavailableError
+            && error.status === 404 && error.message.startsWith("API 404: Route not found:");
+          return {
+            ...item,
+            status: "pending" as const,
+            nextStep: missingRoute
+              ? "The running Wallet service does not support readiness checks yet. Try again after the service is updated."
+              : "Wallet could not check issuance readiness. Reopen Get Verified Proof to try again.",
+          };
+        }
+      })))
       .then((rows) => {
-        if (!cancelled) setSummaries(rows);
+        if (!cancelled) setItems(rows);
       })
       .finally(() => {
         if (!cancelled) setSummariesLoading(false);
@@ -245,17 +612,16 @@ export function VerifiedProofFlow({
     return () => {
       cancelled = true;
     };
-  }, [userId, skills, skillsLoading]);
-
-  const items = useMemo(
-    () => summaries.map((summary) => toProofItem(summary, credentials)),
-    [summaries, credentials],
-  );
+  }, [userId, skills, skillsLoading, credentials]);
 
   return (
     <VerifiedProofGuide
       items={items}
       loading={skillsLoading || summariesLoading}
+      holderDid={holderDid}
+      identityUnlocked={Boolean(signingIdentity && signingIdentity.did === snapshot.server.did)}
+      onUnlock={snapshot.status === "locked" ? unlock : undefined}
+      learnerName={learnerName}
       onBack={onBack}
       onViewInWallet={onViewInWallet}
       onIssue={async (skillId) => {
@@ -268,18 +634,31 @@ export function VerifiedProofFlow({
 }
 
 function Progress({ active }: { active: number }) {
-  const labels = ["Choose achievement", "Review details", "Confirm issuance"];
+  const labels = ["Choose Achievement", "Review Details", "Confirm Issuance"];
   return (
-    <ol className="mb-5 grid grid-cols-3 gap-2" aria-label="Proof progress">
+    <ol className="vpf-steps" aria-label="Proof progress">
       {labels.map((label, index) => {
         const current = index === active;
         const done = index < active;
         return (
-          <li key={label} aria-current={current ? "step" : undefined} className={`rounded-2xl px-2 py-3 text-center text-xs font-semibold ${current ? "bg-white text-[#312e81] shadow-sm" : "text-[#64748b]"}`}>
-            <span className={`mx-auto mb-1 flex h-8 w-8 items-center justify-center rounded-full ${current || done ? "bg-[#4f46e5] text-white" : "bg-[#e2e8f0] text-[#475569]"}`}>
-              {done ? <Check className="h-4 w-4" /> : index + 1}
-            </span>
-            {label}
+          <li key={label} className="contents">
+            {index > 0 ? <span className={`vpf-step-line ${done || current ? "is-done" : ""}`} aria-hidden="true" /> : null}
+            <div
+              aria-current={current ? "step" : undefined}
+              className={`vpf-step ${current ? "is-active" : ""} ${done ? "is-done" : ""}`}
+            >
+              {current ? (
+                <span className="vpf-step-pill">
+                  <span className="vpf-step-num">{done ? <Check className="h-3.5 w-3.5" /> : index + 1}</span>
+                  {label}
+                </span>
+              ) : (
+                <>
+                  <span className="vpf-step-num">{done ? <Check className="h-3.5 w-3.5" /> : index + 1}</span>
+                  <span>{label}</span>
+                </>
+              )}
+            </div>
           </li>
         );
       })}
@@ -289,48 +668,93 @@ function Progress({ active }: { active: number }) {
 
 function ProofGroup({
   title,
+  icon,
   items,
   selectedId,
   onSelect,
+  badgeFor,
 }: {
   title: string;
+  icon: ReactNode;
   items: ProofItem[];
   selectedId: string | null;
   onSelect: (skillId: string) => void;
+  badgeFor: (item: ProofItem) => ReactNode;
 }) {
   if (items.length === 0) return null;
   return (
-    <div className="space-y-2">
-      <h2 className="text-sm font-semibold text-[#0f172a]">{title}</h2>
-      {items.map((item) => {
-        const selected = item.skillId === selectedId;
-        return (
-          <button
-            key={item.skillId}
-            type="button"
-            aria-pressed={selected}
-            onClick={() => onSelect(item.skillId)}
-            className={`flex w-full items-center gap-3 rounded-2xl border px-4 py-4 text-left ${selected ? "border-[#4f46e5] bg-[#eef2ff] ring-2 ring-[#c7d2fe]" : "border-[#e2e8f0] bg-white"}`}
-          >
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#fff7ed] text-[#c2410c]">
-              <Award className="h-5 w-5" />
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block truncate font-semibold text-[#0f172a]">{item.skill}</span>
-              <span className="block truncate text-xs text-[#64748b]">{item.stageLabel} · {item.evidence}</span>
-            </span>
-          </button>
-        );
-      })}
+    <div className="vpf-group">
+      <h2 className="vpf-group-title">{icon}{title}</h2>
+      <div className="vpf-list">
+        {items.map((item) => {
+          const selected = item.skillId === selectedId;
+          return (
+            <button
+              key={item.skillId}
+              type="button"
+              aria-pressed={selected}
+              onClick={() => onSelect(item.skillId)}
+              className={`vpf-item ${selected ? "is-selected" : ""}`}
+            >
+              <span className="vpf-check" aria-hidden="true"><Check className="h-3.5 w-3.5" /></span>
+              <span className="vpf-code-icon" aria-hidden="true">{"</>"}</span>
+              <span className="vpf-item-copy">
+                <span className="vpf-item-title">{item.skill}</span>
+                <span className="vpf-item-sub">{[item.stageLabel, item.evidence?.replace(/practical task passed/i, "Practical task completed")].filter(Boolean).join(" · ")}</span>
+              </span>
+              {badgeFor(item)}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
 
-function Detail({ label, value }: { label: string; value: string }) {
+function SummaryCell({
+  icon,
+  label,
+  value,
+}: {
+  icon: ReactNode;
+  label: string;
+  value: string;
+}) {
   return (
-    <div>
-      <dt className="text-xs font-semibold uppercase tracking-wide text-[#64748b]">{label}</dt>
-      <dd className="mt-1 text-[#0f172a]">{value}</dd>
+    <div className="vpf-summary-cell">
+      <span className="vpf-meta-icon">{icon}</span>
+      <div>
+        <p className="vpf-meta-label">{label}</p>
+        <p className="vpf-meta-value">{value}</p>
+      </div>
+    </div>
+  );
+}
+
+function EvidenceRow({
+  title,
+  icon,
+  description,
+  count,
+  onOpen,
+}: {
+  title: string;
+  icon: ReactNode;
+  description: string;
+  count: number;
+  onOpen: () => void;
+}) {
+  return (
+    <div className="vpf-evidence-row">
+      <span className="vpf-code-icon" aria-hidden="true">{icon}</span>
+      <div className="vpf-item-copy">
+        <p className="vpf-item-title">{title}</p>
+        <p className="vpf-item-sub">{description}</p>
+      </div>
+      <span className="vpf-item-count">{count} item{count === 1 ? "" : "s"}</span>
+      <button type="button" className="vpf-view-btn" onClick={onOpen}>
+        View Details <ChevronRight className="h-4 w-4" />
+      </button>
     </div>
   );
 }

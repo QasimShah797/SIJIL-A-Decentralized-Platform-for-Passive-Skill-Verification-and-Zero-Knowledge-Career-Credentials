@@ -1,0 +1,3 @@
+# These verification keys are checked against SHA-256 digests of their committed bytes.
+/zkp-artifacts/*/verification_key.json text eol=lf
+/circuits/github-contributions-v1/verification_key.json text eol=lf

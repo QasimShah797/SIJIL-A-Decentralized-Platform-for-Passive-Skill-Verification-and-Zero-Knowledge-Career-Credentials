@@ -395,7 +395,7 @@ html:has(.auth-page) #root {
   font-weight: 600;
   letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: #bfdbfe;
+  color: hsl(var(--sijil-blue)/0.17);
 }
 
 .auth-left-headline {
@@ -417,7 +417,7 @@ html:has(.auth-page) #root {
   max-width: 32rem;
   font-size: 0.875rem;
   line-height: 1.65;
-  color: rgba(219, 234, 254, 0.88);
+  color: hsl(var(--sijil-blue)/0.88);
 }
 
 @media (min-width: 1024px) {

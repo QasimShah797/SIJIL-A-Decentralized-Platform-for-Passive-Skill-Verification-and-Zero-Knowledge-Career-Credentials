@@ -1,3 +1,4 @@
+import { ZKP_UI_ENABLED } from "@/lib/zkp-ui";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
@@ -26,6 +27,7 @@ import LearnerIntegrations from "./pages/learner/Integrations";
 import LearnerPracticalTask from "./pages/learner/PracticalTask";
 import LearnerValidation from "./pages/learner/Validation";
 import LearnerWallet from "./pages/learner/WalletPage";
+import WalletCompetencyDetail from "./pages/learner/WalletCompetencyDetail";
 import SecureIdentity from "./pages/learner/SecureIdentity";
 import LearnerPeerReviews from "./pages/learner/PeerReviews";
 import LearnerInterviews from "./pages/learner/Interviews";
@@ -73,8 +75,8 @@ const LR = ({ children }: { children: React.ReactNode }) => (
   <RequireLearnerRoute>{children}</RequireLearnerRoute>
 );
 
-const LRIncomplete = ({ children }: { children: React.ReactNode }) => (
-  <RequireLearnerRoute requireCompleteProfile={false}>{children}</RequireLearnerRoute>
+const LROnboarding = ({ children }: { children: React.ReactNode }) => (
+  <RequireLearnerRoute requireCompleteProfile={false} requireSsiIdentity={false}>{children}</RequireLearnerRoute>
 );
 
 const AR = ({ children }: { children: React.ReactNode }) => (
@@ -104,11 +106,11 @@ const App = () => (
           <Route path="/review/request/:token" element={<ContextReviewRequest />} />
 
           <Route path="/auth/callback" element={<AuthCallback />} />
-          <Route path="/auth/github/prepare" element={<LRIncomplete><GitHubPrepare /></LRIncomplete>} />
+          <Route path="/auth/github/prepare" element={<LROnboarding><GitHubPrepare /></LROnboarding>} />
           <Route path="/auth/github/callback" element={<GitHubCallback />} />
 
           <Route path="/learner/dashboard" element={<LR><LearnerDashboard /></LR>} />
-          <Route path="/learner/complete-profile" element={<LRIncomplete><CompleteProfile /></LRIncomplete>} />
+          <Route path="/learner/complete-profile" element={<LROnboarding><CompleteProfile /></LROnboarding>} />
           <Route path="/learner/profile" element={<LR><LearnerProfile /></LR>} />
           <Route path="/learner/my-profile" element={<LR><MyProfile /></LR>} />
           <Route path="/learner/integrations" element={<LR><LearnerIntegrations /></LR>} />
@@ -116,11 +118,12 @@ const App = () => (
           <Route path="/learner/validation" element={<LR><LearnerValidation /></LR>} />
           <Route path="/learner/validation/:skillId" element={<LR><LearnerValidation /></LR>} />
           <Route path="/learner/wallet" element={<LR><LearnerWallet /></LR>} />
+          <Route path="/learner/wallet/competency/:competencyId" element={<LR><WalletCompetencyDetail /></LR>} />
           <Route path="/learner/secure-identity" element={<LR><SecureIdentity /></LR>} />
           <Route path="/learner/zkp" element={<Navigate to="/learner/wallet" replace />} />
           <Route path="/learner/peer-reviews" element={<LR><LearnerPeerReviews /></LR>} />
           <Route path="/learner/interviews" element={<LR><LearnerInterviews /></LR>} />
-          <Route path="/learner/verification-requests" element={<LR><LearnerVerificationRequests /></LR>} />
+          <Route path="/learner/verification-requests" element={<LR>{ZKP_UI_ENABLED ? <LearnerVerificationRequests /> : <Navigate to="/learner/wallet" replace />}</LR>} />
           <Route path="/learner/credential/:id" element={<LR><LearnerCredentialDetails /></LR>} />
           <Route path="/learner/credential/:id/proof" element={<LR><LearnerCredentialProof /></LR>} />
           <Route path="/learner/credential/:id/share" element={<LR><LearnerSelectiveDisclosure /></LR>} />
@@ -131,11 +134,11 @@ const App = () => (
           <Route path="/recruiter/jobs" element={<RR><RecruiterJobs /></RR>} />
           <Route path="/recruiter/jobs/:jobId" element={<RR><RecruiterJobDetail /></RR>} />
           <Route path="/recruiter/interviews" element={<RR><RecruiterInterviews /></RR>} />
-          <Route path="/recruiter/verification-requests" element={<RR><RecruiterVerificationRequests /></RR>} />
+          <Route path="/recruiter/verification-requests" element={<RR>{ZKP_UI_ENABLED ? <RecruiterVerificationRequests /> : <Navigate to="/recruiter/search" replace />}</RR>} />
           <Route path="/recruiter/profile" element={<RR><RecruiterProfile /></RR>} />
           <Route path="/recruiter/candidate/:id" element={<RR><RecruiterCandidateSummary /></RR>} />
           <Route path="/recruiter/compare" element={<RR><RecruiterCompare /></RR>} />
-          <Route path="/recruiter/github-proof" element={<RR><RecruiterGitHubProof /></RR>} />
+          <Route path="/recruiter/github-proof" element={<RR>{ZKP_UI_ENABLED ? <RecruiterGitHubProof /> : <Navigate to="/recruiter/search" replace />}</RR>} />
           <Route path="/recruiter/verify/:token" element={<CompetencyPresentationView />} />
           <Route path="/verify/vp/:id" element={<LearnerPresentationVerifyPage />} />
           <Route path="/credential/:shareToken" element={<PublicCredentialPage />} />

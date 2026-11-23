@@ -60,13 +60,11 @@ export async function fetchAttempts(userId: string): Promise<Record<string, Atte
 
 export type PracticalTaskState = "NOT_STARTED" | "IN_PROGRESS" | "COMPLETED";
 
+const COMPLETED_MCQ_STATUSES = ["completed", "submitted", "auto_submitted", "passed"];
+
 export function isMcqRowCompleted(row: McqAttemptResultRow): boolean {
   const status = String(row.status ?? "").toLowerCase();
-  return status === "completed"
-    || status === "submitted"
-    || status === "passed"
-    || row.submitted_at != null
-    || (typeof row.percentage === "number" && row.submitted_at != null);
+  return COMPLETED_MCQ_STATUSES.includes(status);
 }
 
 function isMcqRowInProgress(row: McqAttemptResultRow): boolean {
@@ -131,14 +129,14 @@ export async function fetchLatestCompletedMcqAttemptResult(
         .select(columns)
         .eq("learner_user_id", userId)
         .eq("skill_id", skillId)
-        .not("submitted_at", "is", null)
-        .order("submitted_at", { ascending: false })
+        .in("status", COMPLETED_MCQ_STATUSES)
+        .order("submitted_at", { ascending: false, nullsFirst: false })
         .order("created_at", { ascending: false })
         .limit(1);
 
       if (error) throw error;
       const row = ((data ?? [])[0] as McqAttemptResultRow | undefined) ?? null;
-      if (row) return row;
+      return row?.skill_id === skillId && isMcqRowCompleted(row) ? row : null;
     } catch (error) {
       if (!isMissingColumnError(error) && !isMissingRelationError(error)) {
         console.warn("mcq_task_attempts completed query failed:", error);
@@ -146,23 +144,7 @@ export async function fetchLatestCompletedMcqAttemptResult(
     }
   }
 
-  try {
-    const { data, error } = await rawTable("mcq_task_attempts")
-      .select(completedColumns)
-      .eq("learner_user_id", userId)
-      .eq("skill_id", skillId)
-      .eq("status", "completed")
-      .order("created_at", { ascending: false })
-      .limit(1);
-
-    if (error) throw error;
-    return ((data ?? [])[0] as McqAttemptResultRow | undefined) ?? null;
-  } catch (error) {
-    if (!isMissingRelationError(error)) {
-      console.warn("mcq_task_attempts completed status query failed:", error);
-    }
-    return null;
-  }
+  return null;
 }
 
 export async function fetchLatestMcqAttemptResults(

@@ -39,9 +39,11 @@ function downloadText(filename: string, raw: string): void {
 export function LearnerCredentialWallet({
   userId,
   credentials,
+  onOpenSkill,
 }: {
   userId: string;
   credentials: CredentialView[];
+  onOpenSkill?: (skill: string, id: string) => void;
 }) {
   const identity = useSsiIdentity();
   const learnerDid = identity.snapshot.local?.did ?? identity.snapshot.server.did;
@@ -166,6 +168,7 @@ export function LearnerCredentialWallet({
       error={error}
       onDownload={(id) => void onDownload(id)}
       onImport={(raw) => void onImport(raw)}
+      onOpenSkill={onOpenSkill}
       onExportCollection={() => {
         const files = local.map((record) => record.file);
         if (!files.length) {

@@ -29,6 +29,8 @@ export type CandidateView = {
   skillStats?: SkillEvidenceStat[];
   /** Latest active share time, when the directory row includes one. */
   sharedAt?: string | null;
+  /** Confirmed private ZKP results across active shares (from API). */
+  confirmedPrivateResults?: number;
 };
 
 export function coalesceCandidateText(...values: (string | null | undefined)[]): string | null {
@@ -87,6 +89,10 @@ export function mergeCandidateLists(base: CandidateView[], extra: CandidateView[
       reviews: Math.max(primary.reviews, secondary.reviews),
       attestation: primary.attestation !== "Pending" ? primary.attestation : secondary.attestation,
       sharedAt: latestTimestamp(primary.sharedAt, secondary.sharedAt),
+      confirmedPrivateResults: Math.max(
+        primary.confirmedPrivateResults ?? 0,
+        secondary.confirmedPrivateResults ?? 0,
+      ),
     });
   }
   return [...byId.values()].sort((a, b) => {

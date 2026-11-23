@@ -12,6 +12,7 @@ import { AuthChangeEvent, Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { AppRole, fetchUserRoles, pickPrimaryRole } from "@/lib/auth-helpers";
 import { clearAllGitHubConnectionState } from "@/lib/github-env";
+import { lockIdentity } from "@/lib/ssi/session";
 
 type AuthCtx = {
   user: User | null;
@@ -124,6 +125,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         (prevUserId && prevUserId !== nextUserId)
       ) {
         clearAllGitHubConnectionState();
+        if (prevUserId) lockIdentity(prevUserId);
       }
 
       if (event === "SIGNED_OUT") {
@@ -177,8 +179,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const refreshRoles = useCallback(async () => {
-    await loadRoles(session?.user?.id, { force: true });
-  }, [loadRoles, session?.user?.id]);
+    // Signup and OTP handlers may have started before Supabase emitted SIGNED_IN.
+    await loadRoles(prevUserIdRef.current ?? undefined, { force: true });
+  }, [loadRoles]);
 
   const value = useMemo<AuthCtx>(
     () => ({

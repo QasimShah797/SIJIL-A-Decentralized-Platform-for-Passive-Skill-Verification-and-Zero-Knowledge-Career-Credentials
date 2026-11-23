@@ -1,4 +1,4 @@
-/* SIJIL marketing landing — brand blue #023E8A (matches nav drawer) */
+/* SIJIL marketing landing — brand blue hsl(var(--sijil-blue)) (matches nav drawer) */
 
 .landing-page {
   --lp-brand: var(--sijil-brand);
@@ -100,7 +100,7 @@
   border-radius: 1rem;
   border: 1px solid var(--lp-border);
   background: #fff;
-  box-shadow: 0 8px 30px rgba(2, 62, 138, 0.06);
+  box-shadow: 0 8px 30px hsl(var(--sijil-blue)/0.06);
 }
 
 .landing-page .lp-hero-wrap {
@@ -116,7 +116,7 @@
   height: 520px;
   right: -120px;
   top: -80px;
-  background: radial-gradient(circle, rgba(2, 62, 138, 0.1) 0%, transparent 68%);
+  background: radial-gradient(circle, hsl(var(--sijil-blue)/0.1) 0%, transparent 68%);
   pointer-events: none;
 }
 
@@ -134,7 +134,7 @@
 .landing-page .lp-showcase-panel {
   background: linear-gradient(180deg, var(--lp-brand-light) 0%, #f8fafc 100%);
   border-radius: 1.25rem;
-  border: 1px solid #c5d4eb;
+  border: 1px solid hsl(var(--sijil-blue)/0.21);
 }
 
 .landing-page .lp-dark-section {

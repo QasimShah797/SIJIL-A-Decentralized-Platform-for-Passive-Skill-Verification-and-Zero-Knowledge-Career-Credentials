@@ -11,6 +11,8 @@ export default function SecureIdentity() {
         loading={identity.loading}
         working={identity.working}
         recoverable={identity.recoverable}
+        serverLookupFailed={identity.serverLookupFailed}
+        onRetryLookup={identity.refresh}
         onActivate={async (passphrase) => {
           const result = await identity.activate(passphrase);
           return result.backup;

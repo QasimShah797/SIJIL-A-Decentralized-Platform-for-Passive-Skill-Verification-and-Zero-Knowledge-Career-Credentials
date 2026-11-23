@@ -23,6 +23,7 @@ describe("GitHub contribution snapshot", () => {
             { sha: "abc123", author: { id: 12345 } },
             { sha: "def456", author: { id: 12345 } },
             { sha: "abc123", author: { id: 12345 } },
+            { sha: "fed789", author: { id: 99999 } },
           ]),
           { status: 200 },
         );

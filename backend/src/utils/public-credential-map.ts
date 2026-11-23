@@ -302,18 +302,40 @@ export function buildEvidenceLedger(
     ? snapshotGithub
     : (isRecord(packageEvidence.github) ? packageEvidence.github : {});
 
+  const modes = isRecord(payload.evidenceModes) ? payload.evidenceModes : {};
+  const modeAllows = (field: string) => modes[field] === "details";
   const includeLms = hasSkillSnapshot
     ? Object.keys(snapshotLms).length > 0
-    : isPrimary && (selectedFields.includes("lms_evidence") || selectedFields.includes("complete_evidence_package"));
+    : isPrimary && (
+      selectedFields.includes("lms_evidence")
+      || selectedFields.includes("complete_evidence_package")
+      || modeAllows("lms_evidence")
+      || Boolean(isRecord(packageEvidence.lms) && Object.keys(packageEvidence.lms).length > 0)
+    );
   const includeGithub = hasSkillSnapshot
     ? Object.keys(snapshotGithub).length > 0
-    : isPrimary && (selectedFields.includes("github_evidence") || selectedFields.includes("complete_evidence_package"));
+    : isPrimary && (
+      selectedFields.includes("github_evidence")
+      || selectedFields.includes("complete_evidence_package")
+      || modeAllows("github_evidence")
+      || Boolean(isRecord(packageEvidence.github) && Object.keys(packageEvidence.github).length > 0)
+    );
   const includeTask = hasSkillSnapshot
-    ? Boolean(skillEvidence.practicalTask) || Boolean(packageEvidence.practicalTask) || Boolean(evidence.practicalTask)
-    : isPrimary && (selectedFields.includes("practical_task_result") || selectedFields.includes("complete_evidence_package"));
+    ? Boolean(skillEvidence.practicalTask)
+    : isPrimary && (
+      selectedFields.includes("practical_task_result")
+      || selectedFields.includes("complete_evidence_package")
+      || modeAllows("practical_task_result")
+      || Boolean(skillEvidence.practicalTask || packageEvidence.practicalTask)
+    );
   const includeReviews = hasSkillSnapshot
-    ? Boolean(skillEvidence.peerReviews) || Boolean(packageEvidence.peerReviews) || Boolean(evidence.peerReviews)
-    : isPrimary && (selectedFields.includes("peer_reviews") || selectedFields.includes("complete_evidence_package"));
+    ? Boolean(skillEvidence.peerReviews)
+    : isPrimary && (
+      selectedFields.includes("peer_reviews")
+      || selectedFields.includes("complete_evidence_package")
+      || modeAllows("peer_reviews")
+      || Boolean(skillEvidence.peerReviews || packageEvidence.peerReviews)
+    );
   const includeTeacher = hasSkillSnapshot
     ? Boolean(skillEvidence.teacherFeedback) || Boolean(packageEvidence.teacherFeedback)
     : isPrimary && (selectedFields.includes("teacher_feedback") || selectedFields.includes("complete_evidence_package"));
@@ -378,31 +400,12 @@ export function buildEvidenceLedger(
     if (attempts.length === 0 && (practical.scorePercent != null || practical.score != null || asText(practical.status))) {
       attempts.push(practical);
     }
-    const signals = isRecord(practical.scoreThresholdSignals) ? practical.scoreThresholdSignals : null;
-    if (attempts.length === 0 && signals) {
-      items.push(ledgerItem(
-        "practical_task",
-        "Practical task",
-        typeof signals.status === "string"
-          ? signals.status
-          : (signals.latestVsReference === "above" || signals.latestVsReference === "below"
-            ? `Latest ${String(signals.latestVsReference)} ${String(signals.referenceThreshold ?? 70)}% threshold`
-            : "Practical task result"),
-        typeof signals.status === "string" ? signals.status : "Submitted",
-        null,
-        0,
-      ));
-    }
     attempts.forEach((row, index) => {
       const score = row.scorePercent != null ? `${row.scorePercent}%` : "";
-      const thresholdHint = !score && signals
-        && (signals.latestVsReference === "above" || signals.latestVsReference === "below")
-        ? `${String(signals.latestVsReference)} ${String(signals.referenceThreshold ?? 70)}% threshold`
-        : "";
       items.push(ledgerItem(
         "practical_task",
         asText(row.title) || "Practical task",
-        [score, thresholdHint, asText(row.status)].filter(Boolean).join(" · ")
+        [score, asText(row.status)].filter(Boolean).join(" · ")
           || "Practical task result",
         asNullableText(row.status) ?? (row.passed === true ? "Passed" : "Submitted"),
         itemTimestamp(row, allowTimestamps || Boolean(row.submittedAt ?? row.submitted_at)),

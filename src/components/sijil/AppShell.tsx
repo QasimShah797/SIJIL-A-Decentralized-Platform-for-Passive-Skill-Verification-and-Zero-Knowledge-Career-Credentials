@@ -1,3 +1,4 @@
+import { ZKP_UI_ENABLED } from "@/lib/zkp-ui";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { VerificationBell } from "@/components/zkp/VerificationBell";
 import { useState } from "react";
@@ -112,7 +113,7 @@ function SidebarLink({
         "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring",
         active
           ? tone === "recruiter"
-            ? "bg-[#16325c] font-medium text-white shadow-sm"
+            ? "bg-sijil-blue font-medium text-white shadow-sm"
             : "relative bg-white/15 font-medium text-sidebar-accent-foreground shadow-sm before:absolute before:left-0 before:top-2 before:h-[calc(100%-1rem)] before:w-1 before:rounded-full before:bg-sidebar-primary"
           : "text-sidebar-foreground/85 hover:bg-white/10 hover:text-sidebar-accent-foreground",
       )}
@@ -189,7 +190,7 @@ function MobileBottomTabs({
           {account.avatarUrl ? (
             <img src={account.avatarUrl} alt="" className="h-7 w-7 rounded-full object-cover ring-2 ring-primary/20" />
           ) : (
-            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#023E8A] text-[10px] font-semibold text-white">
+            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-sijil-blue text-[10px] font-semibold text-white">
               {account.initials}
             </span>
           )}
@@ -228,7 +229,7 @@ function RecruiterSidebarAccount({
           {avatarUrl ? (
             <img src={avatarUrl} alt="" className="h-12 w-12 shrink-0 rounded-full object-cover ring-2 ring-white/40" />
           ) : (
-            <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white text-base font-semibold text-[#023E8A] ring-2 ring-white/40">
+            <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white text-base font-semibold text-sijil-blue ring-2 ring-white/40">
               {initials}
             </span>
           )}
@@ -361,7 +362,7 @@ export function AppShell({
       {/* Desktop sidebar */}
       <aside className={cn(
         "sticky top-0 z-30 hidden h-screen w-[17.5rem] shrink-0 flex-col overflow-hidden border-r text-sidebar-foreground lg:flex",
-        role === "recruiter" ? "border-white/10 bg-[#071833]" : "border-sidebar-border bg-[image:var(--sidebar-gradient)]",
+        role === "recruiter" ? "border-white/10 bg-sijil-blue" : "border-sidebar-border bg-[image:var(--sidebar-gradient)]",
       )}>
         {sidebarContent}
       </aside>
@@ -375,7 +376,7 @@ export function AppShell({
                   <Menu className="h-5 w-5" />
                 </Button>
               </SheetTrigger>
-              <SheetContent side="left" className={cn("w-64 p-0 text-sidebar-foreground", role === "recruiter" ? "bg-[#071833]" : "bg-[image:var(--sidebar-gradient)]")}>
+              <SheetContent side="left" className={cn("w-64 p-0 text-sidebar-foreground", role === "recruiter" ? "bg-sijil-blue" : "bg-[image:var(--sidebar-gradient)]")}>
                 <SheetHeader className="sr-only">
                   <SheetTitle>Navigation</SheetTitle>
                 </SheetHeader>
@@ -391,24 +392,24 @@ export function AppShell({
           </div>
           <div className="flex items-center gap-1 sm:gap-2">
             <ThemeToggle />
-            {role === "learner" || role === "recruiter" ? <VerificationBell role={role} /> : null}
+            {ZKP_UI_ENABLED && (role === "learner" || role === "recruiter") ? <VerificationBell role={role} /> : null}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 {role === "recruiter" ? (
                   <button
                     type="button"
-                    className="flex items-center gap-2 rounded-xl border border-[#e2e8f0] bg-white py-1 pl-1 pr-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#023E8A]"
+                    className="flex items-center gap-2 rounded-xl border border-[#e2e8f0] bg-white py-1 pl-1 pr-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sijil-blue"
                     aria-label="Account menu"
                   >
                     {recruiterProfile?.avatarUrl ? (
                       <img src={recruiterProfile.avatarUrl} alt="" className="h-8 w-8 rounded-full object-cover" />
                     ) : (
-                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#023E8A] text-xs font-semibold text-white">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-sijil-blue text-xs font-semibold text-white">
                         {avatar}
                       </div>
                     )}
                     <div className="hidden min-w-0 text-left sm:block">
-                      <p className="max-w-[9rem] truncate text-xs font-semibold text-[#023E8A]">
+                      <p className="max-w-[9rem] truncate text-xs font-semibold text-sijil-blue">
                         {recruiterProfile?.fullName ?? "Recruiter"}
                       </p>
                       <p className="text-[10px] text-[#64748b]">Recruiter</p>

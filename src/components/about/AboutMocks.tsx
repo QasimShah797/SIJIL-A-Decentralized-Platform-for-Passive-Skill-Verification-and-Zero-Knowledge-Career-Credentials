@@ -7,7 +7,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 
-const NAVY = "#063B82";
+const NAVY = "hsl(var(--sijil-blue))";
 
 /** Professional developer at work — career-tech, not education */
 const HERO_PHOTO =
@@ -47,7 +47,7 @@ export function AboutHeroProduct() {
           </div>
 
           <div className="about-mock-body space-y-2.5">
-            <span className="inline-block rounded-md bg-[#eef2f6] px-2 py-0.5 text-[11px] font-semibold text-[#102A43]">
+            <span className="inline-block rounded-md bg-[hsl(var(--sijil-blue)/0.07)] px-2 py-0.5 text-[11px] font-semibold text-sijil-blue">
               TypeScript
             </span>
 

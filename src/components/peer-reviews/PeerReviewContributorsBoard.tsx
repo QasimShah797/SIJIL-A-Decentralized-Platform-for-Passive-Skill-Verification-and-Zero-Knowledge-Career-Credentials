@@ -59,7 +59,7 @@ function ContributorRowView({
         {story.action === "invite" && onToggleSelect ? (
           <input
             type="checkbox"
-            className="h-4 w-4 shrink-0 accent-[#023E8A]"
+            className="h-4 w-4 shrink-0 accent-[hsl(var(--sijil-blue))]"
             checked={Boolean(selected)}
             disabled={!isDeliverableContributorEmail(contributor.email)}
             aria-label={`Select ${contributor.name}`}
@@ -69,12 +69,12 @@ function ContributorRowView({
         {contributor.avatarUrl ? (
           <img src={contributor.avatarUrl} alt="" className="h-10 w-10 shrink-0 rounded-full object-cover" />
         ) : (
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#e8eef7] text-xs font-bold text-[#023E8A]">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[hsl(var(--sijil-blue)/0.08)] text-xs font-bold text-sijil-blue">
             {initials(contributor.name)}
           </div>
         )}
         <div className="min-w-0">
-          <p className="truncate font-semibold text-[#023E8A]">{contributor.name}</p>
+          <p className="truncate font-semibold text-sijil-blue">{contributor.name}</p>
           <p className="mt-0.5 truncate text-xs text-[#64748b]">
             {displayHandle ? `@${displayHandle}` : contributor.role}
             {" · "}
@@ -88,7 +88,7 @@ function ContributorRowView({
           className={cn(
             "text-sm font-semibold",
             story.group === "done" && "text-[#059669]",
-            story.group === "action" && "text-[#023E8A]",
+            story.group === "action" && "text-sijil-blue",
             story.group === "waiting" && "text-[#CA8A04]",
             story.group === "skip" && "text-[#94a3b8]",
           )}
@@ -110,7 +110,7 @@ function ContributorRowView({
             className={cn(
               "h-8 rounded-lg text-xs",
               story.action === "invite" || story.stale
-                ? "bg-[#023E8A] hover:bg-[#012A5C]"
+                ? "bg-sijil-blue hover:bg-sijil-blue"
                 : "border-[#e2e8f0]",
             )}
             disabled={sending}
@@ -171,7 +171,7 @@ export function PeerReviewContributorsBoard({
   const eligible = Math.max(0, coverage.total - coverage.ineligible);
 
   const sections: { key: "action" | "waiting" | "done" | "skip"; title: string; bar: string }[] = [
-    { key: "action", title: "Needs you", bar: "bg-[#023E8A]" },
+    { key: "action", title: "Needs you", bar: "bg-sijil-blue" },
     { key: "waiting", title: "Waiting", bar: "bg-[#CA8A04]" },
     { key: "done", title: "Reviewed", bar: "bg-[#059669]" },
   ];
@@ -186,19 +186,19 @@ export function PeerReviewContributorsBoard({
       <div className="border-b border-[#e2e8f0] px-5 py-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#e8eef7] text-[#023E8A]">
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[hsl(var(--sijil-blue)/0.08)] text-sijil-blue">
               <Users className="h-4 w-4" />
             </span>
-            <p className="text-base font-semibold text-[#023E8A]">Contributors</p>
+            <p className="text-base font-semibold text-sijil-blue">Contributors</p>
           </div>
           <div className="flex items-center gap-2">
             {onRequestSelected && (selectedIds?.length ?? 0) > 0 ? (
-              <Button size="sm" className="h-8 rounded-lg bg-[#023E8A] hover:bg-[#012A5C]" onClick={onRequestSelected}>
+              <Button size="sm" className="h-8 rounded-lg bg-sijil-blue hover:bg-sijil-blue" onClick={onRequestSelected}>
                 <Mail className="mr-1 h-3 w-3" />
                 Request Feedback ({selectedIds?.length})
               </Button>
             ) : null}
-            <p className="rounded-full bg-[#e8eef7] px-3 py-1 text-xs font-semibold text-[#023E8A]">
+            <p className="rounded-full bg-[hsl(var(--sijil-blue)/0.08)] px-3 py-1 text-xs font-semibold text-sijil-blue">
               {coverage.reviewed} of {eligible} reviewed
             </p>
           </div>
@@ -206,7 +206,7 @@ export function PeerReviewContributorsBoard({
 
         <div className="mt-4 grid gap-2 sm:grid-cols-3">
           {([
-            { id: "pending" as const, label: "Needs invite", count: coverage.pending, tone: "border-[#bfdbfe] bg-[#f8fbff] text-[#023E8A]", on: "ring-2 ring-[#023E8A]/25" },
+            { id: "pending" as const, label: "Needs invite", count: coverage.pending, tone: "border-[hsl(var(--sijil-blue)/0.17)] bg-[hsl(var(--sijil-blue)/0.025)] text-sijil-blue", on: "ring-2 ring-sijil-blue/25" },
             { id: "invited" as const, label: "Waiting", count: coverage.invited, tone: "border-[#fde68a] bg-[#fffbeb] text-[#CA8A04]", on: "ring-2 ring-[#CA8A04]/30" },
             { id: "reviewed" as const, label: "Reviewed", count: coverage.reviewed, tone: "border-[#bbf7d0] bg-[#f0fdf4] text-[#059669]", on: "ring-2 ring-[#059669]/25" },
           ]).map((step) => (
@@ -242,7 +242,7 @@ export function PeerReviewContributorsBoard({
           return (
             <div key={section.key} className="border-t border-[#e2e8f0]">
               <div className="flex items-center justify-between gap-3 bg-[#f8fafc] px-5 py-2.5">
-                <p className="flex items-center gap-2 text-xs font-semibold text-[#023E8A]">
+                <p className="flex items-center gap-2 text-xs font-semibold text-sijil-blue">
                   <span className={cn("h-2 w-2 rounded-full", section.bar)} />
                   {section.title}
                 </p>

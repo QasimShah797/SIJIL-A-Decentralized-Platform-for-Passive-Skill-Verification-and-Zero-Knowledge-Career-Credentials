@@ -1,3 +1,5 @@
+import { ZKP_UI_ENABLED } from "@/lib/zkp-ui";
+import { SharedPrivateVerificationPanel } from "@/components/recruiter/SharedPrivateVerificationPanel";
 import { useEffect, useMemo, useState } from "react";
 import {
   CompetencyPackageCard,
@@ -7,7 +9,6 @@ import {
 import {
   buildEvidenceLedger,
   inspectorViewFromLedger,
-  practicalSummaryFromPayload,
 } from "@/lib/public-credential";
 import type { SharedCredentialView } from "@/lib/shared-presentation";
 import { SsiVerifyCredentialCard } from "@/components/recruiter/SsiVerifyCredentialCard";
@@ -23,6 +24,8 @@ export type RecruiterSkillCard = {
   payload: Record<string, unknown>;
   presentationId: string;
   credentialId: string | null;
+  token?: string | null;
+  proofType?: string | null;
 };
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -68,6 +71,8 @@ export function recruiterSkillCards(credentials: SharedCredentialView[]): Recrui
         selectedFields: credential.selectedFields,
         payload,
         presentationId: credential.presentationId,
+        token: credential.token,
+        proofType: credential.proofType,
         credentialId: asText(credential.credentialId) || null,
       });
     }
@@ -98,11 +103,6 @@ export function RecruiterCompetencyDetail({
     return inspectorViewFromLedger(ledger);
   }, [card.payload, card.competencyId, card.selectedFields]);
 
-  const practicalSummary = useMemo(
-    () => practicalSummaryFromPayload(card.payload, card.competencyId),
-    [card.payload, card.competencyId],
-  );
-
   useEffect(() => {
     if (!inspector.availableSources.includes(source)) {
       setSource(inspector.availableSources[0] ?? "github");
@@ -122,7 +122,7 @@ export function RecruiterCompetencyDetail({
             github={inspector.github}
             lmsRows={inspector.lmsRows}
             taskLabel={inspector.taskDetail}
-            practicalSummary={practicalSummary}
+            practicalSummary={inspector.practicalSummary}
             reviews={inspector.reviews}
           />
           <EvidenceInspectorCard
@@ -138,6 +138,17 @@ export function RecruiterCompetencyDetail({
         </div>
       ) : null}
 
+      {showVerify && ZKP_UI_ENABLED ? (
+        <SharedPrivateVerificationPanel
+          payload={card.payload}
+          competencyName={displayRecruiterSkillName(card.name)}
+          selectedFields={card.selectedFields}
+          createdAt={card.createdAt}
+          expiresAt={card.expiresAt}
+          proofType={card.proofType ?? null}
+          verifyHref={card.token ? `/recruiter/verify/${encodeURIComponent(card.token)}` : undefined}
+        />
+      ) : null}
       {showVerify ? (
         <SsiVerifyCredentialCard
           payload={card.payload}

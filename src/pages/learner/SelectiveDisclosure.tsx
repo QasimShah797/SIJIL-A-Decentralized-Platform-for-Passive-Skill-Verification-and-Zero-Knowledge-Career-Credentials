@@ -8,14 +8,8 @@ import { EmptyState } from "@/components/sijil/EmptyState";
 import { Button } from "@/components/ui/button";
 import { ShieldAlert } from "lucide-react";
 import { ShareAchievementFlow, type ShareRecord } from "@/components/sharing/ShareAchievementFlow";
-import { useAuth } from "@/hooks/useAuth";
 import { useCredentials } from "@/hooks/useLearnerData";
-import { useSsiIdentity } from "@/hooks/useSsiIdentity";
-import { getCredentialDbId } from "@/lib/db/credentials";
-import { eligiblePresentationCredentials } from "@/lib/ssi/presentation-selection";
-import { signUtf8 } from "@/lib/ssi/keystore";
-import { getUnlockedIdentity } from "@/lib/ssi/session";
-import { presentationSubmitBody, walletShareRequest } from "@/lib/sharing/guide";
+import { walletShareRequest } from "@/lib/sharing/guide";
 import type { WalletShareFieldId } from "@/lib/wallet-competency-shared";
 import { apiRequest } from "@/services/api/client";
 import {
@@ -24,11 +18,6 @@ import {
   shareWalletCompetencyApi,
   type WalletCompetencyDetailView,
 } from "@/services/api/wallet.api";
-import {
-  createPresentationChallengeApi,
-  revokeLearnerPresentationApi,
-  submitLearnerPresentationApi,
-} from "@/services/api/ssi.api";
 
 const LINK_FIELDS: Array<{ id: WalletShareFieldId; label: string }> = [
   { id: "competency_name", label: "Achievement name" },
@@ -54,9 +43,7 @@ function shareError(error: unknown): string {
 export default function SelectiveDisclosure() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { user } = useAuth();
   const { credentials, loading } = useCredentials();
-  const { snapshot } = useSsiIdentity();
   const credential = credentials.find((item) => item.id === decodeURIComponent(id || ""));
   const [competencyId, setCompetencyId] = useState<string | null>(null);
   const [shares, setShares] = useState<ShareRecord[]>([]);
@@ -187,67 +174,12 @@ export default function SelectiveDisclosure() {
     }
   };
 
-  const createSigned = async () => {
-    if (!user || !credential) return;
-    const signingIdentity = getUnlockedIdentity(user.id);
-    const activeDid = signingIdentity?.did
-      ?? (typeof snapshot.local?.did === "string" ? snapshot.local.did : null)
-      ?? snapshot.server.did
-      ?? null;
-    if (!signingIdentity) {
-      setError(snapshot.status === "locked"
-        ? "Unlock your learning identity on this device before signing."
-        : "Set up your learning identity on this device before signing.");
-      return;
-    }
-    const eligible = eligiblePresentationCredentials([credential], activeDid);
-    if (eligible.length === 0) {
-      setError("This achievement is not tied to the identity on this device, so it cannot be signed here.");
-      return;
-    }
-    setWorking(true);
-    setError(null);
-    setResultNote(null);
-    try {
-      const dbId = await getCredentialDbId(credential.id);
-      const challenge = await createPresentationChallengeApi({
-        credentialIds: [dbId ?? credential.id],
-        audience: "sijil-recruiter-verify",
-      });
-      if (challenge.holderDid !== signingIdentity.did) {
-        throw new Error("The identity on this device does not match the signed challenge.");
-      }
-      const signature = await signUtf8(signingIdentity.privateKey, challenge.canonicalPayload);
-      const body = presentationSubmitBody({
-        challengeId: challenge.challengeId,
-        did: signingIdentity.did,
-        signature,
-      });
-      const submitted = await submitLearnerPresentationApi(body);
-      setResultUrl(submitted.verifyUrl);
-      setShares((current) => [{
-        token: submitted.presentationId,
-        label: credential.skill,
-        access: "active",
-        kind: "presentation",
-      }, ...current]);
-    } catch (next) {
-      setError(shareError(next));
-    } finally {
-      setWorking(false);
-    }
-  };
-
   const revoke = async (share: ShareRecord) => {
     setWorking(true);
     setError(null);
     try {
-      if (share.kind === "presentation") {
-        await revokeLearnerPresentationApi(share.token);
-      } else {
-        const stopped = await revokeWalletShareApi(share.token);
-        if (!stopped) throw new Error("The link could not be stopped.");
-      }
+      const stopped = await revokeWalletShareApi(share.token);
+      if (!stopped) throw new Error("The share could not be stopped.");
       setShares((current) => current.map((item) => (
         item.kind === share.kind && item.token === share.token
           ? { ...item, access: "revoked" }
@@ -281,7 +213,7 @@ export default function SelectiveDisclosure() {
     <AppShell role="learner">
       <PageHeader
         title="Share Achievement"
-        description="Share with one registered recruiter, or create a public verification link. A public link does not add anyone to a recruiter dashboard."
+        description="Share with all SIJIL recruiters, or create a public verification link. Both options use the same disclosure selection."
         actions={(
           <Button variant="outline" onClick={() => navigate(-1)}>
             <ArrowLeft className="mr-1.5 h-4 w-4" />Back
@@ -300,7 +232,9 @@ export default function SelectiveDisclosure() {
         resultNote={resultNote}
         onCreateLink={(input) => { void createLink(input); }}
         onCreateAll={(input) => { void createAll(input); }}
-        onCreateSigned={() => { void createSigned(); }}
+        onCreateSigned={() => {
+          setError("Use Share with All SIJIL Recruiters or Create Public Verification Link.");
+        }}
         onRevoke={(share) => { void revoke(share); }}
         historyUnavailable={historyUnavailable}
         onRetryHistory={() => setHistoryAttempt((attempt) => attempt + 1)}

@@ -26,7 +26,7 @@ export function TrustLayerSection() {
             <ul className="mt-6 space-y-3">
               {bullets.map((b) => (
                 <li key={b} className="flex items-center gap-2.5 text-sm text-gray-700">
-                  <Check className="h-4 w-4 shrink-0 text-[#023E8A]" />
+                  <Check className="h-4 w-4 shrink-0 text-sijil-blue" />
                   {b}
                 </li>
               ))}

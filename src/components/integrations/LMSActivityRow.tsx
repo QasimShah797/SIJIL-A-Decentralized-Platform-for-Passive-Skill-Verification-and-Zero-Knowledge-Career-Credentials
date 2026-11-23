@@ -51,7 +51,7 @@ export function LMSActivityRow({
             <BookOpen className="h-4 w-4" aria-hidden />
           </div>
           <div className="min-w-0">
-            <p className="truncate text-sm font-semibold text-[#023E8A]">{courseLabel}</p>
+            <p className="truncate text-sm font-semibold text-sijil-blue">{courseLabel}</p>
             <p className="text-[10px] uppercase tracking-wide text-[#64748b]">{a.activityType}</p>
           </div>
         </div>
@@ -67,10 +67,10 @@ export function LMSActivityRow({
       <div className="mt-4 grid grid-cols-3 gap-3 text-xs">
         <div>
           <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-[#64748b]">Grade</p>
-          <p className="font-semibold text-[#023E8A]">{gradeText}</p>
+          <p className="font-semibold text-sijil-blue">{gradeText}</p>
           {percent > 0 ? (
             <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#e2e8f0]">
-              <div className="h-full rounded-full bg-[#023E8A]" style={{ width: `${percent}%` }} />
+              <div className="h-full rounded-full bg-sijil-blue" style={{ width: `${percent}%` }} />
             </div>
           ) : null}
         </div>

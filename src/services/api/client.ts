@@ -26,7 +26,7 @@ export interface ApiResponse<T> {
 }
 
 export class ApiUnavailableError extends Error {
-  constructor(message = "Backend API unavailable") {
+  constructor(message = "Backend API unavailable", public readonly status?: number) {
     super(message);
     this.name = "ApiUnavailableError";
   }
@@ -64,7 +64,7 @@ export async function apiRequest<T>(
     } catch {
       // ignore non-JSON bodies
     }
-    throw new ApiUnavailableError(`API ${res.status}: ${detail}`);
+    throw new ApiUnavailableError(`API ${res.status}: ${detail}`, res.status);
   }
 
   const json = (await res.json()) as ApiResponse<T>;

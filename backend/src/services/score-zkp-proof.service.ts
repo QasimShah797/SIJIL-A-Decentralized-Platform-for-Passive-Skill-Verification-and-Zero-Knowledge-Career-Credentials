@@ -1,6 +1,6 @@
 /**
  * Backend score-threshold-v1 Groth16 proof generation (meets or below).
- * Threshold is always the SIJIL assessment policy constant.
+ * Wallet and background proofs use their respective fixed SIJIL policies.
  * A failed meets proof is never treated as evidence of BELOW_THRESHOLD.
  */
 import { createRequire } from "node:module";
@@ -11,6 +11,7 @@ import {
 } from "./zkp-artifacts";
 import {
   ASSESSMENT_POLICY_THRESHOLD,
+  SHARE_ASSESSMENT_THRESHOLD,
   type CircuitVariant,
 } from "./zkp-policy";
 
@@ -40,18 +41,24 @@ export interface ScoreProofInput {
   attemptId: string;
   commitment: string;
   variant: CircuitVariant;
-  /** Ignored when set; policy threshold is always used. */
-  threshold?: number;
 }
 
 function inScoreRange(value: number): boolean {
   return Number.isInteger(value) && value >= 0 && value <= 100;
 }
 
-export async function generateScoreThresholdProof(
+export function generateScoreThresholdProof(input: ScoreProofInput): Promise<Groth16Result> {
+  return proveScore(input, ASSESSMENT_POLICY_THRESHOLD);
+}
+
+export function generateShareScoreThresholdProof(input: ScoreProofInput): Promise<Groth16Result> {
+  return proveScore(input, SHARE_ASSESSMENT_THRESHOLD);
+}
+
+async function proveScore(
   input: ScoreProofInput,
+  threshold: number,
 ): Promise<Groth16Result> {
-  const threshold = ASSESSMENT_POLICY_THRESHOLD;
   if (!inScoreRange(input.score) || !inScoreRange(threshold)) {
     throw new Error("Score and threshold must be integers from 0 through 100");
   }

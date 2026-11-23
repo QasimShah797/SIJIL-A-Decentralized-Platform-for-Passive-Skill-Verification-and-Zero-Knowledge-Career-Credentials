@@ -4,16 +4,21 @@ import { z } from "zod";
 import {
   User,
   GraduationCap,
-  Sparkles,
-  ChevronRight,
-  UploadCloud,
-  X,
+  ArrowRight,
+  BookOpen,
+  CalendarDays,
+  ClipboardCheck,
+  Image,
+  Info,
   MapPin,
+  Phone,
+  School,
+  UserRoundCheck,
+  X,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Progress } from "@/components/ui/progress";
 import {
   Select,
   SelectContent,
@@ -25,11 +30,11 @@ import { toast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { Field } from "@/components/sijil/Field";
 import { PageSkeleton } from "@/components/sijil/SkeletonLoader";
-import { PipelineStepper } from "@/components/sijil/PipelineStepper";
 import { VerifiedProfessionalAccounts } from "@/components/profile/VerifiedProfessionalAccounts";
 import {
   fetchLearnerProfileRow,
   isLearnerProfileComplete,
+  isValidGraduationYear,
   rowToSelfSignupForm,
   saveSelfSignupOnboarding,
   saveSelfSignupProfileProgress,
@@ -50,6 +55,7 @@ import {
   validateOptionalLinkedInProfileUrl,
 } from "@/lib/linkedin-profile-url";
 import { formatSupabaseError } from "@/lib/utils";
+import "./SelfSignupCompleteProfile.css";
 
 const profileSchema = z.object({
   contactNumber: z.string().trim().min(1, "Phone number is required").max(40),
@@ -57,12 +63,13 @@ const profileSchema = z.object({
   gender: z.string().trim().optional().or(z.literal("")),
   country: z.string().trim().min(1, "Country is required").max(80),
   city: z.string().trim().min(1, "City is required").max(80),
-  institutionName: z.string().trim().max(200).optional().or(z.literal("")),
-  program: z.string().trim().max(200).optional().or(z.literal("")),
-  graduationYear: z.string().trim().optional().or(z.literal("")),
-  bio: z.string().trim().min(1, "Bio is required").max(2000),
-  skillsSummary: z.string().trim().min(1, "Skills summary is required").max(2000),
-  careerGoal: z.string().trim().min(1, "Career goal is required").max(1000),
+  institutionName: z.string().trim().min(1, "Current institution is required").max(200),
+  program: z.string().trim().min(1, "Program or degree is required").max(200),
+  graduationYear: z.string().trim().regex(/^\d{4}$/, "Enter a four-digit graduation year")
+    .refine(isValidGraduationYear, "Graduation year must be between 1950 and 2100"),
+  bio: z.string().trim().max(2000),
+  skillsSummary: z.string().trim().max(2000),
+  careerGoal: z.string().trim().max(1000),
   linkedinUrl: z
     .string()
     .trim()
@@ -257,19 +264,6 @@ export default function SelfSignupCompleteProfile() {
       return;
     }
 
-    const gradYearStr = parsed.data.graduationYear?.trim();
-    if (gradYearStr) {
-      const year = Number.parseInt(gradYearStr, 10);
-      if (Number.isNaN(year) || year < 1950 || year > 2100) {
-        toast({
-          title: "Invalid graduation year",
-          description: "Please enter a valid year between 1950 and 2100.",
-          variant: "destructive",
-        });
-        return;
-      }
-    }
-
     setBusy(true);
     try {
       let avatarUrl: string | undefined;
@@ -279,7 +273,7 @@ export default function SelfSignupCompleteProfile() {
         avatarUrl = existingAvatarUrl;
       }
 
-      const gradYear = gradYearStr ? Number.parseInt(gradYearStr, 10) : undefined;
+      const gradYear = Number(parsed.data.graduationYear);
       const linkedinUrl = validateOptionalLinkedInProfileUrl(parsed.data.linkedinUrl ?? "");
 
       const data: LearnerSelfSignupOnboardingData = {
@@ -327,188 +321,169 @@ export default function SelfSignupCompleteProfile() {
     );
   }
 
-  const stepperStages = [
-    { id: "personal", label: "Personal", status: progress >= 25 ? "complete" as const : "current" as const },
-    { id: "education", label: "Education", status: progress >= 50 ? "complete" as const : progress >= 25 ? "current" as const : "upcoming" as const },
-    { id: "professional", label: "Links", status: progress >= 75 ? "complete" as const : progress >= 50 ? "current" as const : "upcoming" as const },
-    { id: "about", label: "About", status: progress >= 100 ? "complete" as const : progress >= 75 ? "current" as const : "upcoming" as const },
+  const personalComplete = [f.contactNumber, f.country, f.city].every((value) => value.trim());
+  const educationComplete = Boolean(f.institutionName.trim() && f.program.trim() && isValidGraduationYear(f.graduationYear));
+  const stages = [
+    { id: "personal", label: "Personal" },
+    { id: "education", label: "Education" },
+    { id: "links", label: "Links" },
+    { id: "about", label: "About" },
   ];
+  const currentStage = !personalComplete ? 0 : !educationComplete ? 1 : !githubVerified ? 2 : 3;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background via-background to-secondary/40 px-4 py-10">
-      <div className="mx-auto max-w-2xl">
-        <h1 className="text-2xl font-semibold tracking-tight">Complete your profile</h1>
-        <p className="mt-1 text-sm text-muted-foreground mb-6">
-          Finish your professional learner profile before accessing the dashboard.
-        </p>
-
-        <div className="mb-6 space-y-4">
-          <PipelineStepper stages={stepperStages} />
-          <div className="space-y-2">
-            <div className="flex items-center justify-between text-xs text-muted-foreground">
-              <span>Profile progress</span>
-              <span>{progress}%</span>
-            </div>
-            <Progress value={progress} className="h-2" />
+    <main className="scp-page">
+      <div className="scp-container">
+        <header className="scp-header">
+          <span className="scp-icon scp-header-icon"><User /></span>
+          <div>
+            <h1>Complete Your Profile</h1>
+            <p>Finish your professional learner profile before accessing the dashboard.</p>
           </div>
+          <div className="scp-header-art" aria-hidden="true">
+            <ClipboardCheck className="scp-clipboard" />
+            <UserRoundCheck className="scp-art-user" />
+          </div>
+        </header>
+        <nav aria-label="Profile sections">
+          <ol className="scp-steps">
+            {stages.map((stage, index) => (
+              <li key={stage.id}>
+                <a href={stage.id === "links" ? "#profile-links" : "#" + stage.id}
+                  aria-current={index === currentStage ? "step" : undefined}
+                  data-reached={index <= currentStage}>
+                  <span>{index + 1}</span>
+                  {stage.label}
+                </a>
+              </li>
+            ))}
+          </ol>
+        </nav>
+        <div className="scp-progress">
+          <div><span>Profile progress</span><span>{progress}%</span></div>
+          <progress aria-label="Profile progress" value={progress} max={100} />
         </div>
-
-        <form onSubmit={finish} className="space-y-6">
-          <section className="space-y-4 rounded-xl border border-border/60 bg-card/50 p-5">
-            <div className="flex items-center gap-2 text-sm font-medium">
-              <User className="h-4 w-4 text-primary" /> Personal details
-            </div>
-
-            <Field label="Profile picture" hint="Optional">
-              {avatarFile ? (
-                <div className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm">
-                  <span className="flex-1 truncate">{avatarFile.name}</span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setAvatarFile(null);
-                      if (fileRef.current) fileRef.current.value = "";
-                    }}
-                  >
-                    <X className="h-4 w-4 text-muted-foreground hover:text-destructive" />
+        <form onSubmit={finish} className="scp-form">
+          <section className="scp-card" id="personal">
+            <ProfileSectionHeading icon={User} title="Personal details" description="Basic information about you." />
+            <div className="scp-personal">
+              <Field label="Profile picture">
+                <div className="scp-upload">
+                  <button type="button" className="scp-upload-button" onClick={() => fileRef.current?.click()}>
+                    {existingAvatarUrl && !avatarFile
+                      ? <img src={existingAvatarUrl} alt="" className="scp-avatar" />
+                      : <span className="scp-upload-icon"><Image /></span>}
+                    <strong>{avatarFile?.name ?? (existingAvatarUrl ? "Change profile picture" : "Upload profile picture")}</strong>
+                    <span>JPG, PNG or WebP</span>
                   </button>
+                  {avatarFile && <button type="button" className="scp-remove-avatar" aria-label="Remove selected photo"
+                    onClick={() => { setAvatarFile(null); if (fileRef.current) fileRef.current.value = ""; }}><X /></button>}
+                  <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden"
+                    onChange={(event) => setAvatarFile(event.target.files?.[0] ?? null)} />
                 </div>
-              ) : existingAvatarUrl ? (
-                <div className="flex items-center gap-3">
-                  <img
-                    src={existingAvatarUrl}
-                    alt="Profile"
-                    className="h-14 w-14 rounded-full object-cover border"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => fileRef.current?.click()}
-                    className="text-sm text-primary hover:underline"
-                  >
-                    Change photo
-                  </button>
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => fileRef.current?.click()}
-                  className="w-full rounded-md border-2 border-dashed px-4 py-5 flex flex-col items-center gap-1.5 text-sm text-muted-foreground hover:border-primary/50"
-                >
-                  <UploadCloud className="h-6 w-6" />
-                  Upload profile picture
-                </button>
-              )}
-              <input
-                ref={fileRef}
-                type="file"
-                accept="image/png,image/jpeg,image/webp"
-                className="hidden"
-                onChange={(e) => setAvatarFile(e.target.files?.[0] ?? null)}
-              />
-            </Field>
-
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Phone number" required>
-                <Input
-                  value={f.contactNumber}
-                  onChange={set("contactNumber")}
-                  placeholder="+92 300 1234567"
-                />
               </Field>
-              <Field label="Date of birth">
-                <Input type="date" value={f.dateOfBirth} onChange={set("dateOfBirth")} />
-              </Field>
-              <Field label="Gender">
-                <Select value={f.gender || undefined} onValueChange={(v) => setF((p) => ({ ...p, gender: v }))}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select gender" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {GENDER_OPTIONS.map((o) => (
-                      <SelectItem key={o.value} value={o.value}>
-                        {o.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </Field>
+              <div className="scp-fields">
+                <Field label="Phone number" required>
+                  <ProfileInputIcon icon={Phone}><Input aria-label="Phone number" aria-required="true" type="tel"
+                    value={f.contactNumber} onChange={set("contactNumber")} placeholder="+92 300 1234567" /></ProfileInputIcon>
+                </Field>
+                <Field label="Date of birth">
+                  <ProfileInputIcon icon={CalendarDays}><Input aria-label="Date of birth" type="date"
+                    value={f.dateOfBirth} onChange={set("dateOfBirth")} /></ProfileInputIcon>
+                </Field>
+                <Field label="Gender">
+                  <ProfileInputIcon icon={User}>
+                    <Select value={f.gender || undefined} onValueChange={(value) => setF((prev) => ({ ...prev, gender: value }))}>
+                      <SelectTrigger aria-label="Gender"><SelectValue placeholder="Select gender" /></SelectTrigger>
+                      <SelectContent>{GENDER_OPTIONS.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
+                    </Select>
+                  </ProfileInputIcon>
+                </Field>
+                <div className="scp-field-break" />
+                <Field label="Country" required>
+                  <ProfileInputIcon icon={MapPin}><Input aria-label="Country" aria-required="true"
+                    value={f.country} onChange={set("country")} placeholder="Pakistan" /></ProfileInputIcon>
+                </Field>
+                <Field label="City" required>
+                  <ProfileInputIcon icon={School}><Input aria-label="City" aria-required="true"
+                    value={f.city} onChange={set("city")} placeholder="Islamabad" /></ProfileInputIcon>
+                </Field>
+              </div>
             </div>
+          </section>
 
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Country" required>
-                <Input value={f.country} onChange={set("country")} placeholder="Pakistan" />
+          <section className="scp-card" id="education">
+            <ProfileSectionHeading icon={GraduationCap} title="Education" description="Your current academic information." />
+            <div className="scp-fields">
+              <Field label="Current institution" required>
+                <ProfileInputIcon icon={School}><Input aria-label="Current institution" aria-required="true"
+                  value={f.institutionName} onChange={set("institutionName")} placeholder="University or school" /></ProfileInputIcon>
               </Field>
-              <Field label="City" required>
-                <Input value={f.city} onChange={set("city")} placeholder="Islamabad" />
+              <Field label="Program / degree" required>
+                <ProfileInputIcon icon={BookOpen}><Input aria-label="Program / degree" aria-required="true"
+                  value={f.program} onChange={set("program")} placeholder="BSc Computer Science" /></ProfileInputIcon>
+              </Field>
+              <Field label="Graduation year" required>
+                <ProfileInputIcon icon={CalendarDays}><Input aria-label="Graduation year" aria-required="true"
+                  inputMode="numeric" maxLength={4} value={f.graduationYear} onChange={set("graduationYear")} placeholder="2026" /></ProfileInputIcon>
               </Field>
             </div>
           </section>
 
-          <section className="space-y-4 rounded-xl border border-border/60 bg-card/50 p-5">
-            <div className="flex items-center gap-2 text-sm font-medium">
-              <GraduationCap className="h-4 w-4 text-primary" /> Education{" "}
-              <span className="text-xs font-normal text-muted-foreground">(optional)</span>
+          {user && (
+            <div id="profile-links">
+              <VerifiedProfessionalAccounts compact userId={user.id} returnTo={RETURN_PATH} linkedinUrl={f.linkedinUrl}
+                onLinkedInUrlChange={(value) => setF((prev) => ({ ...prev, linkedinUrl: value }))}
+                onBeforeConnect={persistDraft} onGitHubVerifiedChange={setGithubVerified} />
             </div>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Current institution">
-                <Input
-                  value={f.institutionName}
-                  onChange={set("institutionName")}
-                  placeholder="University or school"
-                />
+          )}
+
+          <section className="scp-card" id="about">
+            <ProfileSectionHeading icon={User} title="About you" optional description="Tell us about yourself, your skills and your goals." />
+            <div className="scp-fields scp-about-fields">
+              <Field label="Bio / about me">
+                <Textarea aria-label="Bio / about me" value={f.bio} onChange={set("bio")} rows={3} placeholder="Write a short bio about yourself..." />
               </Field>
-              <Field label="Program / degree">
-                <Input value={f.program} onChange={set("program")} placeholder="BSc Computer Science" />
+              <Field label="Skills summary">
+                <Textarea aria-label="Skills summary" value={f.skillsSummary} onChange={set("skillsSummary")} rows={3}
+                  placeholder="e.g., Problem solving, Web development, Data analysis..." />
               </Field>
-              <Field label="Graduation year">
-                <Input
-                  type="number"
-                  value={f.graduationYear}
-                  onChange={set("graduationYear")}
-                  placeholder="2026"
-                  min={1950}
-                  max={2100}
-                />
+              <Field label="Career goal">
+                <Textarea aria-label="Career goal" value={f.careerGoal} onChange={set("careerGoal")} rows={3}
+                  placeholder="e.g., Become a software engineer..." />
               </Field>
             </div>
           </section>
 
-          {user ? (
-            <VerifiedProfessionalAccounts
-              userId={user.id}
-              returnTo={RETURN_PATH}
-              linkedinUrl={f.linkedinUrl}
-              onLinkedInUrlChange={(value) => setF((prev) => ({ ...prev, linkedinUrl: value }))}
-              onBeforeConnect={persistDraft}
-              onGitHubVerifiedChange={setGithubVerified}
-            />
-          ) : null}
-
-          <section className="space-y-4 rounded-xl border border-border/60 bg-card/50 p-5">
-            <div className="flex items-center gap-2 text-sm font-medium">
-              <Sparkles className="h-4 w-4 text-primary" /> About you
-            </div>
-            <Field label="Bio / about me" required>
-              <Textarea value={f.bio} onChange={set("bio")} rows={3} className="resize-none" />
-            </Field>
-            <Field label="Skills summary" required>
-              <Textarea value={f.skillsSummary} onChange={set("skillsSummary")} rows={3} className="resize-none" />
-            </Field>
-            <Field label="Career goal" required>
-              <Textarea value={f.careerGoal} onChange={set("careerGoal")} rows={2} className="resize-none" />
-            </Field>
-          </section>
-
-          <div className="flex items-start gap-2 rounded-lg border border-border/60 bg-muted/30 p-3 text-xs text-muted-foreground">
-            <MapPin className="h-4 w-4 shrink-0 mt-0.5" />
-            Your progress is saved automatically. Form data is preserved when you connect GitHub.
-          </div>
-
-          <Button type="submit" disabled={busy} className="w-full">
-            {busy ? "Saving…" : <>Complete profile <ChevronRight className="ml-1 h-4 w-4 inline" /></>}
-          </Button>
+          <footer className="scp-footer">
+            <p><Info /> Your progress is saved automatically. Form data is preserved when you connect GitHub.</p>
+            <Button type="submit" disabled={busy} className="scp-submit">
+              {busy ? "Saving..." : <>Complete profile <ArrowRight /></>}
+            </Button>
+          </footer>
         </form>
+      </div>
+    </main>
+  );
+}
+
+function ProfileSectionHeading({ icon: Icon, title, description, optional }: {
+  icon: typeof User;
+  title: string;
+  description: string;
+  optional?: boolean;
+}) {
+  return (
+    <div className="scp-card-heading">
+      <span className="scp-icon"><Icon /></span>
+      <div>
+        <h2>{title}{optional && <small> (optional)</small>}</h2>
+        <p>{description}</p>
       </div>
     </div>
   );
+}
+
+function ProfileInputIcon({ icon: Icon, children }: { icon: typeof User; children: React.ReactNode }) {
+  return <div className="scp-input-icon"><Icon aria-hidden="true" />{children}</div>;
 }

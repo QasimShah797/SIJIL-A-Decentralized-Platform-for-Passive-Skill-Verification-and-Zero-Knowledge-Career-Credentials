@@ -183,15 +183,26 @@ export interface OwnerShareSummary {
   expiresAt: string | null;
 }
 
+export type EvidenceShareMode = "details" | "private" | "omit";
+
+export interface ShareEvidenceModes {
+  practical_task_result: EvidenceShareMode;
+  github_evidence: EvidenceShareMode;
+  lms_evidence: EvidenceShareMode;
+  peer_reviews: EvidenceShareMode;
+}
+
 export interface ShareWalletCompetencyInput {
   selectionMode: WalletShareSelectionMode;
   selectedFields: WalletShareFieldId[];
+  evidenceModes?: ShareEvidenceModes;
   shareScope?: WalletShareScope;
   expiresInDays?: number;
   recipientUserId?: string;
   shareAudience?: "all-recruiters";
   consentToAllRecruiters?: boolean;
   competencyVersionIds?: string[];
+  credentialId?: string;
 }
 
 export interface ShareWalletCompetencyResult {

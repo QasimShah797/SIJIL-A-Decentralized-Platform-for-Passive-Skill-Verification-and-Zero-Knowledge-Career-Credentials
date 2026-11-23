@@ -1,0 +1,16 @@
+{
+  "wasm": "3d0ecea2bfadd4b485b0cc80a9632a5ec3a59d40c106e3827357c989d480e773",
+  "zkey": "6f60d52fd6c39255e49990ea3e32f2a693c666c61d0e0c5f3363b474d4185809",
+  "verificationKey": "74b8eeb9b832feb19611d8670cb18a7e5a8d82be5a0519fb571ec6faddb84007",
+  "setup": "development-only",
+  "circuit": "moodle_completion",
+  "circomVersion": "2.1.9",
+  "circomPlatform": "win32",
+  "snarkjs": "0.7.5",
+  "circomlib": "2.0.5",
+  "publicSignals": [
+    "thresholdPercent",
+    "commitment"
+  ],
+  "note": "Single-contributor development setup. Not production-secure."
+}

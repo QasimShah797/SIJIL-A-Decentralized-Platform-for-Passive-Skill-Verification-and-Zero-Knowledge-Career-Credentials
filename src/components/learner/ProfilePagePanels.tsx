@@ -58,7 +58,7 @@ function CompletenessRing({ percent }: { percent: number }) {
         />
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <span className="text-lg font-bold text-[#023E8A]">{percent}%</span>
+        <span className="text-lg font-bold text-sijil-blue">{percent}%</span>
         <span className="text-[9px] uppercase tracking-wide text-[#64748b]">Complete</span>
       </div>
     </div>
@@ -71,7 +71,7 @@ export function ProfileCompletenessCard({ profile }: { profile: LearnerProfileVi
 
   return (
     <div className="learner-stat-card p-5">
-      <h3 className="text-sm font-semibold text-[#023E8A]">Profile Completeness</h3>
+      <h3 className="text-sm font-semibold text-sijil-blue">Profile Completeness</h3>
       <div className="mt-4 flex flex-col items-center">
         <CompletenessRing percent={percent} />
       </div>
@@ -136,7 +136,7 @@ export function ProfileQuickActionsCard() {
 
   return (
     <div className="learner-stat-card p-5">
-      <h3 className="text-sm font-semibold text-[#023E8A]">Quick Actions</h3>
+      <h3 className="text-sm font-semibold text-sijil-blue">Quick Actions</h3>
       <ul className="mt-4 space-y-1">
         {actions.map(({ label, icon: Icon, to, onClick }) => (
           <li key={label}>
@@ -145,7 +145,7 @@ export function ProfileQuickActionsCard() {
                 to={to}
                 className="flex items-center gap-3 rounded-xl px-2 py-2.5 text-sm text-[#334155] transition-colors hover:bg-[#f1f5f9]"
               >
-                <Icon className="h-4 w-4 shrink-0 text-[#023E8A]" />
+                <Icon className="h-4 w-4 shrink-0 text-sijil-blue" />
                 <span className="min-w-0 flex-1">{label}</span>
                 <ChevronRight className="h-4 w-4 shrink-0 text-[#94a3b8]" />
               </Link>
@@ -155,7 +155,7 @@ export function ProfileQuickActionsCard() {
                 onClick={onClick}
                 className="flex w-full items-center gap-3 rounded-xl px-2 py-2.5 text-left text-sm text-[#334155] transition-colors hover:bg-[#f1f5f9]"
               >
-                <Icon className="h-4 w-4 shrink-0 text-[#023E8A]" />
+                <Icon className="h-4 w-4 shrink-0 text-sijil-blue" />
                 <span className="min-w-0 flex-1">{label}</span>
                 <ChevronRight className="h-4 w-4 shrink-0 text-[#94a3b8]" />
               </button>

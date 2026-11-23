@@ -4,7 +4,6 @@
  * from the stored answer key.
  */
 
-export const WALLET_READY_PASS_PERCENT = 60;
 export const WALLET_READY_STAGE = "wallet_ready";
 export const IN_WALLET_STAGE = "in_wallet";
 
@@ -47,11 +46,10 @@ export function evaluateWalletReadyPromotion(
     return { promote: false, reason: "already_in_wallet" };
   }
   // Any scored sitting advances the skill — no pass/fail mark gate.
-  if (!Number.isFinite(input.scoredPercent)) {
+  if (!Number.isInteger(input.scoredPercent) || input.scoredPercent < 0 || input.scoredPercent > 100) {
     return { promote: false, reason: "assessment_not_scored" };
   }
   void input.scoredPassed;
-  void WALLET_READY_PASS_PERCENT;
   if (!input.hasQualifyingGitHubEvidence) {
     return { promote: false, reason: "missing_github_evidence" };
   }

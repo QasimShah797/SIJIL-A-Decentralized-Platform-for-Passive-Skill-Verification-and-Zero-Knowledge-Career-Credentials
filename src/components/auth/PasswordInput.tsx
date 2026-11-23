@@ -12,6 +12,7 @@ type PasswordInputProps = {
   className?: string;
   invalid?: boolean;
   disabled?: boolean;
+  describedBy?: string;
 };
 
 export function PasswordInput({
@@ -23,6 +24,7 @@ export function PasswordInput({
   className,
   invalid,
   disabled,
+  describedBy,
 }: PasswordInputProps) {
   const [visible, setVisible] = useState(false);
 
@@ -38,6 +40,7 @@ export function PasswordInput({
         placeholder={placeholder}
         autoComplete={autoComplete}
         aria-invalid={invalid}
+        aria-describedby={describedBy}
         disabled={disabled}
       />
       <button

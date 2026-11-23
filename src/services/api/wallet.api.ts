@@ -1,4 +1,5 @@
 import { apiRequest, isApiEnabled, tryApiRequest } from "./client";
+import { ZKP_UI_ENABLED } from "@/lib/zkp-ui";
 import type { WalletCompetencyRecordView } from "@/lib/db/wallet-competency-records";
 import type {
   WalletShareFieldId,
@@ -97,16 +98,27 @@ export async function listRegisteredRecruitersApi(query: string): Promise<Regist
   return apiRequest<RegisteredRecruiter[]>(`/wallet/recruiters${params}`);
 }
 
+export type EvidenceShareMode = "details" | "private" | "omit";
+
+export type ShareEvidenceModes = {
+  practical_task_result: EvidenceShareMode;
+  github_evidence: EvidenceShareMode;
+  lms_evidence: EvidenceShareMode;
+  peer_reviews: EvidenceShareMode;
+};
+
 export async function shareWalletCompetencyApi(input: {
   competencyId: string;
   selectionMode: WalletShareSelectionMode;
   selectedFields: WalletShareFieldId[];
+  evidenceModes?: ShareEvidenceModes;
   shareScope?: "all" | "selected" | "issued";
   expiresInDays?: number;
   recipientUserId?: string;
   shareAudience?: "all-recruiters";
   consentToAllRecruiters?: boolean;
   competencyVersionIds?: string[];
+  credentialId?: string;
 }): Promise<ShareWalletCompetencyResult> {
   return apiRequest<ShareWalletCompetencyResult>(
     `/wallet/competencies/${encodeURIComponent(input.competencyId)}/share`,
@@ -115,12 +127,16 @@ export async function shareWalletCompetencyApi(input: {
       body: JSON.stringify({
         selectionMode: input.selectionMode,
         selectedFields: input.selectedFields,
+        evidenceModes: input.evidenceModes && !ZKP_UI_ENABLED
+          ? Object.fromEntries(Object.entries(input.evidenceModes).map(([field, mode]) => [field, mode === "private" ? "omit" : mode]))
+          : input.evidenceModes,
         shareScope: input.shareScope,
         expiresInDays: input.expiresInDays,
         recipientUserId: input.recipientUserId,
         shareAudience: input.shareAudience,
         consentToAllRecruiters: input.consentToAllRecruiters,
         competencyVersionIds: input.competencyVersionIds,
+        credentialId: input.credentialId,
       }),
     },
   );

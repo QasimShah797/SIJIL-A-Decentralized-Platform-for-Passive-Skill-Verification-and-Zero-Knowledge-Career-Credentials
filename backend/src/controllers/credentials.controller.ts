@@ -41,6 +41,11 @@ export async function issueCredential(req: Request, res: Response): Promise<Resp
   return sendSuccess(res, credential, "Credential issued", 201);
 }
 
+export async function getCredentialReadiness(req: Request, res: Response): Promise<Response> {
+  const input = issueCredentialSchema.parse({ skillId: req.params.skillId });
+  return sendSuccess(res, await credentialsService.readiness(req.user!.id, input.skillId));
+}
+
 export async function exportCredentialDocument(req: Request, res: Response): Promise<Response> {
   const file = await exportOwnedCredential(req.user!.id, paramString(req.params.id, "id"));
   return sendSuccess(res, file);

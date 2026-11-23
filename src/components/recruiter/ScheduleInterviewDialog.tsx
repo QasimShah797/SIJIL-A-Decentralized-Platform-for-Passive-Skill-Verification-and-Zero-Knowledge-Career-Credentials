@@ -212,13 +212,14 @@ export function ScheduleInterviewDialog({
           </div>
           {mode === INTERVIEW_MODE.VIDEO_CALL ? (
             <div className="rounded-lg border border-border/70 bg-muted/30 px-3 py-3 text-sm text-muted-foreground">
-              <p className="font-medium text-foreground">Google Meet link</p>
-              <p className="mt-1">
-                SIJIL will create a Meet conference on the platform Calendar when you send the invitation.
-                You can leave an optional override below only if you need a different link.
+              <Label htmlFor="interview-location" className="text-foreground">Meeting link</Label>
+              <p id="interview-link-help" className="mt-1">
+                Leave this blank to generate a Google Meet link with SIJIL, or enter your own meeting link.
               </p>
               <Input
                 id="interview-location"
+                aria-describedby="interview-link-help"
+                type="url"
                 className="mt-3"
                 value={locationOrLink}
                 onChange={(event) => setLocationOrLink(event.target.value)}

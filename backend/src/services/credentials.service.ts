@@ -22,7 +22,8 @@ import { generateCredentialUri } from "../utils/generateHash";
 import { randomUUID } from "node:crypto";
 import { getEvaluateLedgerService } from "./ledger.factory";
 import { resolveWalletLedgerAnchorStatus, type WalletLedgerRow } from "./wallet-ledger-status";
-import { evaluateIssuanceEligibility } from "./issuance-gate";
+import { evaluateIssuanceEligibility, evidenceMeetsTrustTier, type IssuanceGateInput } from "./issuance-gate";
+import { GITHUB_EVIDENCE_SOURCE, normalizeGitHubRepoUrl, qualifyingGitHubTitle } from "../utils/github-supporting-record";
 import {
   assertTrustedOpening,
   readAssessmentCommitment,
@@ -30,7 +31,7 @@ import {
   type AssessmentAttemptRecord,
   type AssessmentCommitmentClaim,
 } from "./assessment-binding";
-import { isMissingColumnError, isMissingRelationError } from "../utils/supabase-errors";
+import { isMissingColumnError, isMissingRelationError, isUniqueViolation } from "../utils/supabase-errors";
 import { canReadLearnerData, type AuthCaller } from "./learner-access";
 import { shareListedForRecruiters } from "./share-directory";
 import { hashEvidenceMetadata, sortedEvidenceHashes } from "../utils/evidence-hash";
@@ -90,6 +91,7 @@ type CredentialsDb = {
 export type CredentialsServiceDeps = {
   db?: CredentialsDb;
   requireProvenHolderDid?: (userId: string) => Promise<string>;
+  approveIssuance?: typeof ssiService.approveCredentialIssuance;
   signHash?: (hashHex: string) => string;
 };
 
@@ -268,34 +270,37 @@ async function resolveAssessmentCommitment(
 export class CredentialsService {
   private readonly db: CredentialsDb;
   private readonly requireProvenHolderDid: (userId: string) => Promise<string>;
+  private readonly approveIssuance: typeof ssiService.approveCredentialIssuance;
   private readonly signHash: (hashHex: string) => string;
 
   constructor(deps: CredentialsServiceDeps = {}) {
     this.db = deps.db ?? (supabaseService.client as unknown as CredentialsDb);
     this.requireProvenHolderDid = deps.requireProvenHolderDid
       ?? ((id) => ssiService.requireProvenHolderDid(id));
+    this.approveIssuance = deps.approveIssuance ?? ssiService.approveCredentialIssuance.bind(ssiService);
     this.signHash = deps.signHash ?? signCredentialHash;
   }
 
-  async issue(userId: string, input: IssueCredentialInput): Promise<CredentialView> {
+  private async readIssuanceScope(userId: string, skillId: string) {
     const { data: skill, error: skillErr } = await this.db
       .from("declared_skills")
       .select("*")
-      .eq("id", input.skillId)
+      .eq("id", skillId)
       .maybeSingle();
 
     if (skillErr) throw new AppError(skillErr.message, 500);
     if (!skill) throw new AppError("Skill not found", 404);
+    if (skill.user_id !== userId) throw new AppError("Skill does not belong to the authenticated learner", 403);
 
     const { data: evidenceRows, error: evidenceErr } = await this.db
       .from("supporting_records")
       .select("source, title, url, content_hash")
       .eq("user_id", userId)
-      .eq("skill_id", input.skillId);
+      .eq("skill_id", skillId);
 
     if (evidenceErr) throw new AppError(evidenceErr.message, 500);
 
-    const gate = evaluateIssuanceEligibility({
+    const eligibility = {
       skillOwnerId: String(skill.user_id),
       requestUserId: userId,
       pipelineStage: String(skill.pipeline_stage ?? ""),
@@ -305,20 +310,70 @@ export class CredentialsService {
         url: typeof row.url === "string" ? row.url : null,
         contentHash: typeof row.content_hash === "string" ? row.content_hash : null,
       })),
-    });
+    };
+    return { skill, evidenceRows, eligibility };
+  }
+
+  async readiness(userId: string, skillId: string): Promise<{ ready: boolean; reason: string | null }> {
+    const { eligibility } = await this.readIssuanceScope(userId, skillId);
+    try {
+      await resolveAssessmentCommitment(this.db, userId, skillId);
+    } catch (error) {
+      if (!(error instanceof AppError) || error.statusCode !== 409) throw error;
+      return { ready: false, reason: error.message };
+    }
+    if (!evidenceMeetsTrustTier(eligibility.evidence)) {
+      return { ready: false, reason: "Link qualifying supporting evidence to this competency." };
+    }
+    const gate = await this.checkIssuanceEvidence(skillId, eligibility);
+    if (!gate.ok) return { ready: false, reason: gate.message };
+    try {
+      await this.requireProvenHolderDid(userId);
+    } catch (error) {
+      if (!(error instanceof AppError) || error.statusCode !== 409) throw error;
+      return { ready: false, reason: error.message };
+    }
+    return { ready: true, reason: null };
+  }
+
+  private async checkIssuanceEvidence(skillId: string, eligibility: IssuanceGateInput) {
+    const gate = evaluateIssuanceEligibility(eligibility);
+    if (gate.ok || eligibility.pipelineStage !== PIPELINE_STAGE.EVIDENCE_LINKED) return gate;
+
+    const supportingUrls = new Set(eligibility.evidence
+      .filter((row) => row.source.trim() === GITHUB_EVIDENCE_SOURCE && qualifyingGitHubTitle(row.title))
+      .map((row) => normalizeGitHubRepoUrl(row.url))
+      .filter(Boolean));
+    if (supportingUrls.size > 0) {
+      const userId = eligibility.requestUserId;
+      const [connection, repos] = await Promise.all([
+        this.db.from("github_connections").select("github_username").eq("user_id", userId).maybeSingle(),
+        this.db.from("github_repos").select("github_username, github_url, repo_name").eq("user_id", userId).eq("linked_skill_id", skillId),
+      ]);
+      if (connection.error || repos.error) throw new AppError("Could not check linked GitHub evidence", 503);
+
+      const username = String(connection.data?.github_username ?? "").trim().toLowerCase();
+      const matches = username && (repos.data ?? []).some((row: Record<string, unknown>) =>
+        String(row.github_username ?? "").trim().toLowerCase() === username
+        && Boolean(qualifyingGitHubTitle(typeof row.repo_name === "string" ? row.repo_name : null))
+        && supportingUrls.has(normalizeGitHubRepoUrl(typeof row.github_url === "string" ? row.github_url : null)),
+      );
+      if (matches) return { ok: true } as const;
+    }
+    return { ok: false, status: 409, message: "Link qualifying GitHub evidence from your connected account to this competency." } as const;
+  }
+
+  async issue(userId: string, input: IssueCredentialInput): Promise<CredentialView> {
+    const { skill, evidenceRows, eligibility } = await this.readIssuanceScope(userId, input.skillId);
+    const gate = await this.checkIssuanceEvidence(input.skillId, eligibility);
     if (!gate.ok) throw new AppError(gate.message, gate.status);
 
-    const { data: existing } = await this.db
-      .from("credentials")
-      .select("*")
-      .eq("user_id", userId)
-      .eq("skill_name", skill.name)
-      .maybeSingle();
-
-    if (existing) return rowToView(existing as CredentialRow);
+    const activeExisting = await this.findActiveCredentialForSkill(userId, String(skill.name));
+    if (activeExisting) return rowToView(activeExisting);
 
     const holderDid = await this.requireProvenHolderDid(userId);
     const assessmentCommitment = await resolveAssessmentCommitment(this.db, userId, input.skillId);
+    await this.approveIssuance(userId, input.skillId, holderDid, input.approval);
 
     const { data: profile } = await this.db
       .from("learner_profiles")
@@ -344,7 +399,7 @@ export class CredentialsService {
     );
 
     const validFrom = new Date().toISOString();
-    const { document, sha256Hash } = buildCredentialDocument({
+    const built = buildCredentialDocument({
       credentialUri,
       issuerDid,
       holderDid,
@@ -354,7 +409,32 @@ export class CredentialsService {
       validFrom,
       assessmentCommitment,
     });
-    assertIssuedDocumentMatchesHolderDid(document, holderDid);
+    // Issuer-bound SD digests for hideable claims (salts stored after insert when table exists).
+    let document: Record<string, unknown> = built.document as unknown as Record<string, unknown>;
+    let sha256Hash = built.sha256Hash;
+    let pendingSdClaims: Array<{ claimId: string; value: string; salt: string }> = [];
+    try {
+      const {
+        attachSelectiveDisclosureToDocument,
+        buildSelectiveDisclosureManifest,
+        createClaimSalt,
+      } = await import("./sd-claim-disclosure");
+      const { generateSha256Hash } = await import("../utils/generateHash");
+      const { canonicalizeJson } = await import("../utils/canonicalize");
+      pendingSdClaims = [
+        { claimId: "competency_name", value: String(skill.name), salt: createClaimSalt() },
+        { claimId: "holder_did", value: holderDid, salt: createClaimSalt() },
+        { claimId: "issue_date", value: validFrom, salt: createClaimSalt() },
+      ];
+      const manifest = buildSelectiveDisclosureManifest(pendingSdClaims);
+      document = attachSelectiveDisclosureToDocument(built.document, manifest) as unknown as Record<string, unknown>;
+      sha256Hash = generateSha256Hash(canonicalizeJson(document));
+    } catch {
+      document = built.document as unknown as Record<string, unknown>;
+      sha256Hash = built.sha256Hash;
+      pendingSdClaims = [];
+    }
+    assertIssuedDocumentMatchesHolderDid(document as unknown as typeof built.document, holderDid);
 
     const proofValue = this.signHash(sha256Hash);
     const proof = {
@@ -391,7 +471,30 @@ export class CredentialsService {
       .select("*")
       .single();
 
-    if (error) throw new AppError(error.message, 500);
+    if (error) {
+      // Concurrent issuance: return the winner instead of re-signing.
+      if (isUniqueViolation(error)) {
+        const raced = await this.findActiveCredentialForSkill(userId, String(skill.name));
+        if (raced) return rowToView(raced);
+      }
+      throw new AppError(error.message, 500);
+    }
+
+    if (pendingSdClaims.length > 0 && data?.id) {
+      try {
+        const { generateSha256Hash } = await import("../utils/generateHash");
+        for (const claim of pendingSdClaims) {
+          await this.db.from("credential_sd_claims").insert({
+            credential_id: data.id,
+            claim_id: claim.claimId,
+            salt: claim.salt,
+            value_fingerprint: generateSha256Hash(claim.value),
+          });
+        }
+      } catch {
+        // Salt table may be missing until migration; signed SD digests still remain on the credential.
+      }
+    }
 
     await this.db
       .from("declared_skills")
@@ -404,6 +507,24 @@ export class CredentialsService {
       .eq("id", input.skillId);
 
     return rowToView(data as CredentialRow);
+  }
+
+  private async findActiveCredentialForSkill(
+    userId: string,
+    skillName: string,
+  ): Promise<CredentialRow | null> {
+    const { data, error } = await this.db
+      .from("credentials")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("skill_name", skillName)
+      .is("revoked_at", null)
+      .order("valid_from", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) throw new AppError(error.message, 500);
+    return (data as CredentialRow | null) ?? null;
   }
 
   async getByUri(credentialUri: string, caller: AuthCaller): Promise<CredentialView | Partial<CredentialView>> {
