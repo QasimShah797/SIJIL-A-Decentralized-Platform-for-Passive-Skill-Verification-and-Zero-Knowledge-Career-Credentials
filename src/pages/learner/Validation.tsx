@@ -33,6 +33,7 @@ export default function Validation() {
 
   useEffect(() => {
     if (!user) {
+      setAllSummaries([]);
       setLoading(false);
       return;
     }
@@ -41,10 +42,16 @@ export default function Validation() {
       setLoading(false);
       return;
     }
+    let cancelled = false;
     setLoading(true);
-    buildAllValidationSummaries(user.id, skills)
-      .then(setAllSummaries)
-      .finally(() => setLoading(false));
+    buildAllValidationSummaries(user.id, skills, { includeAssessmentProgress: true })
+      .then((summaries) => {
+        if (!cancelled) setAllSummaries(summaries);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
   }, [user, skills]);
 
   const listSummaries = useMemo(

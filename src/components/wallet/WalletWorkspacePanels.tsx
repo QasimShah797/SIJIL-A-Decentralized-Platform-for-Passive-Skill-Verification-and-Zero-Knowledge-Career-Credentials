@@ -143,30 +143,31 @@ export function WalletWorkspaceHeader({
   return (
     <div className="learner-stat-card mb-4 flex flex-wrap items-center justify-between gap-3 px-4 py-3">
       <div className="flex min-w-0 flex-wrap items-center gap-3">
-        <p className="text-sm font-semibold text-[#023E8A]">My Secure Wallet</p>
+        <p className="text-sm font-semibold text-sijil-blue">My Secure Wallet</p>
         <span className="hidden h-4 w-px bg-[#e2e8f0] sm:block" />
-        {records.length > 1 ? (
-          <Select value={selectedId} onValueChange={onSelect}>
-            <SelectTrigger className="h-9 w-[240px] rounded-xl border-[#e2e8f0]">
-              <SelectValue placeholder={competencyName} />
-            </SelectTrigger>
-            <SelectContent>
-              {records.map((record) => {
-                const badge = anchorByCompetencyId?.[record.competencyId];
-                return (
-                  <SelectItem key={record.competencyId} value={record.competencyId}>
-                    {record.competencyName}
-                    {badge ? (
-                      <StatusBadge variant={badge.variant}>{badge.label}</StatusBadge>
-                    ) : null}
-                  </SelectItem>
-                );
-              })}
-            </SelectContent>
-          </Select>
-        ) : (
-          <p className="text-sm font-medium text-[#0f172a]">{competencyName}</p>
-        )}
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          {records.map((record) => {
+            const active = record.competencyId === selectedId;
+            const badge = anchorByCompetencyId?.[record.competencyId];
+            return (
+              <button
+                key={record.competencyId}
+                type="button"
+                className={cn(
+                  "inline-flex max-w-[220px] items-center gap-2 rounded-xl border px-3 py-1.5 text-sm font-semibold transition",
+                  active
+                    ? "border-[#c4b5fd] bg-[#f5f3ff] text-[#5b21b6]"
+                    : "border-[#e2e8f0] bg-white text-[#0f172a] hover:border-[#c4b5fd] hover:text-[#5b21b6]",
+                )}
+                onClick={() => onSelect(record.competencyId)}
+                title={`Open ${record.competencyName} competency`}
+              >
+                <span className="truncate">{record.competencyName}</span>
+                {badge ? <StatusBadge variant={badge.variant}>{badge.label}</StatusBadge> : null}
+              </button>
+            );
+          })}
+        </div>
         <span
           className={cn(
             "inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
@@ -225,11 +226,11 @@ export function ConnectedSourcesCard({
 
   return (
     <div className="learner-stat-card p-4">
-      <p className="text-sm font-semibold text-[#023E8A]">Verified Data Sources</p>
+      <p className="text-sm font-semibold text-sijil-blue">Verified Data Sources</p>
       {verifiedSources.length === 0 ? (
         <div className="mt-3">
           <p className="text-xs text-[#94a3b8]">No verified sources are linked to this competency yet.</p>
-          <Button className="mt-3 w-full rounded-xl bg-[#023E8A] hover:bg-[#012A5C]" onClick={onConnect}>
+          <Button className="mt-3 w-full rounded-xl bg-sijil-blue hover:bg-sijil-blue" onClick={onConnect}>
             Connect sources
           </Button>
         </div>
@@ -259,7 +260,7 @@ export function ConnectedSourcesCard({
 export function AuditLedgerCard({ events }: { events: LedgerEvent[] }) {
   return (
     <div className="learner-stat-card p-4">
-      <p className="text-sm font-semibold text-[#023E8A]">Audit & Chain Ledger</p>
+      <p className="text-sm font-semibold text-sijil-blue">Audit & Chain Ledger</p>
       <p className="mt-1 text-[11px] text-[#94a3b8]">Evidence anchors from synced platform data</p>
       {events.length === 0 ? (
         <p className="mt-4 text-xs text-[#94a3b8]">No ledger events yet for this competency.</p>
@@ -271,7 +272,7 @@ export function AuditLedgerCard({ events }: { events: LedgerEvent[] }) {
                 <span>{formatWhen(event.at)}</span>
                 <span className="uppercase">{event.source}</span>
               </div>
-              <p className="mt-0.5 break-all text-[#023E8A]">{shortHash(event.hash)}</p>
+              <p className="mt-0.5 break-all text-sijil-blue">{shortHash(event.hash)}</p>
             </li>
           ))}
         </ul>
@@ -314,7 +315,7 @@ function CommitActivityChart({ points }: { points: CommitChartPoint[] }) {
                 return (
                   <div className="rounded-lg border border-[#e2e8f0] bg-white px-2.5 py-1.5 text-xs shadow-sm">
                     <p className="text-[#64748b]">{point.label}</p>
-                    <p className="font-semibold text-[#023E8A]">{point.commits} commit{point.commits === 1 ? "" : "s"}</p>
+                    <p className="font-semibold text-sijil-blue">{point.commits} commit{point.commits === 1 ? "" : "s"}</p>
                   </div>
                 );
               }}
@@ -376,11 +377,11 @@ export function PracticalTaskProgress({ attempts }: { attempts: WalletAttemptHis
       <div className="grid grid-cols-3 gap-2">
         <div className="rounded-lg bg-[#f8fafc] px-2 py-2 ring-1 ring-[#e2e8f0]">
           <p className="text-[10px] font-semibold uppercase tracking-wide text-[#94a3b8]">Sittings</p>
-          <p className="text-lg font-bold text-[#023E8A]">{sittings.length}</p>
+          <p className="text-lg font-bold text-sijil-blue">{sittings.length}</p>
         </div>
         <div className="rounded-lg bg-[#f8fafc] px-2 py-2 ring-1 ring-[#e2e8f0]">
           <p className="text-[10px] font-semibold uppercase tracking-wide text-[#94a3b8]">Retakes</p>
-          <p className="text-lg font-bold text-[#023E8A]">{retakes}</p>
+          <p className="text-lg font-bold text-sijil-blue">{retakes}</p>
         </div>
         <div className="rounded-lg bg-[#f8fafc] px-2 py-2 ring-1 ring-[#e2e8f0]">
           <p className="text-[10px] font-semibold uppercase tracking-wide text-[#94a3b8]">Progress</p>
@@ -470,7 +471,7 @@ export function CompetencyPackageCard({
           <details className="rounded-xl border border-[#e2e8f0] p-3" open>
             <summary className="flex cursor-pointer list-none items-center justify-between gap-3">
               <div className="flex items-center gap-2">
-                <Github className="h-4 w-4 text-[#023E8A]" />
+                <Github className="h-4 w-4 text-sijil-blue" />
                 <span className="text-sm font-semibold text-[#0f172a]">GitHub</span>
                 <span className="learner-tag-linked">Verified</span>
               </div>
@@ -479,22 +480,22 @@ export function CompetencyPackageCard({
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
               <div>
                 <p className="text-[11px] text-[#94a3b8]">Repositories</p>
-                <p className="text-lg font-semibold text-[#023E8A]">{github.repos}</p>
+                <p className="text-lg font-semibold text-sijil-blue">{github.repos}</p>
               </div>
               <div>
                 <p className="text-[11px] text-[#94a3b8]">Commits</p>
-                <p className="text-lg font-semibold text-[#023E8A]">{github.commits == null ? "Not disclosed" : github.commits}</p>
+                <p className="text-lg font-semibold text-sijil-blue">{github.commits == null ? "Not disclosed" : github.commits}</p>
               </div>
               {github.activities > 0 ? (
                 <div>
                   <p className="text-[11px] text-[#94a3b8]">Activities</p>
-                  <p className="text-lg font-semibold text-[#023E8A]">{github.activities}</p>
+                  <p className="text-lg font-semibold text-sijil-blue">{github.activities}</p>
                 </div>
               ) : null}
               {github.pullRequests > 0 ? (
                 <div>
                   <p className="text-[11px] text-[#94a3b8]">Pull requests</p>
-                  <p className="text-lg font-semibold text-[#023E8A]">{github.pullRequests}</p>
+                  <p className="text-lg font-semibold text-sijil-blue">{github.pullRequests}</p>
                 </div>
               ) : null}
             </div>
@@ -583,7 +584,7 @@ export function CompetencyPackageCard({
             <div className="mt-3 space-y-3">
               {scoredAttempts.length > 0 ? <PracticalTaskProgress attempts={attempts} /> : null}
               {practicalSummary ? (
-                <PracticalThresholdSummary summary={practicalSummary} fallbackLabel={taskLabel} />
+                <DisclosedPracticalSummary summary={practicalSummary} fallbackLabel={taskLabel} />
               ) : taskLabel && scoredAttempts.length === 0 ? (
                 <p className="text-xs font-semibold text-[#023E8A]">{taskLabel}</p>
               ) : null}
@@ -638,17 +639,13 @@ export function CompetencyPackageCard({
   );
 }
 
-function PracticalThresholdSummary({
+function DisclosedPracticalSummary({
   summary,
   fallbackLabel,
 }: {
   summary: PracticalPackageSummary;
   fallbackLabel: string | null;
 }) {
-  const bandEntries = (["60", "70", "80"] as const)
-    .map((key) => ({ key, side: summary.bands[key] }))
-    .filter((item): item is { key: "60" | "70" | "80"; side: "above" | "below" } => Boolean(item.side));
-
   return (
     <div className="space-y-2">
       <div className="grid grid-cols-2 gap-2">
@@ -673,35 +670,6 @@ function PracticalThresholdSummary({
       ) : (
         <div className="rounded-lg border border-[#e2e8f0] bg-white px-3 py-2">
           <p className="text-[11px] font-semibold text-[#0f172a]">Exact score not disclosed</p>
-          {summary.latestVsReference ? (
-            <p className={cn(
-              "mt-1 text-xs font-semibold",
-              summary.latestVsReference === "above" ? "text-[#059669]" : "text-[#CA8A04]",
-            )}>
-              Latest result is {summary.latestVsReference} the {summary.referenceThreshold}% threshold
-            </p>
-          ) : (
-            <p className="mt-1 text-xs text-[#64748b]">
-              Threshold comparison is unavailable for this share.
-            </p>
-          )}
-          {bandEntries.length > 0 ? (
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {bandEntries.map((item) => (
-                <span
-                  key={item.key}
-                  className={cn(
-                    "rounded-full px-2 py-0.5 text-[10px] font-semibold",
-                    item.side === "above"
-                      ? "bg-emerald-50 text-emerald-700"
-                      : "bg-amber-50 text-amber-700",
-                  )}
-                >
-                  {item.key}% · {item.side}
-                </span>
-              ))}
-            </div>
-          ) : null}
         </div>
       )}
     </div>
@@ -741,7 +709,7 @@ export function EvidenceInspectorCard({
   return (
     <div className="learner-stat-card p-4">
       <div className="flex items-center justify-between gap-2">
-        <p className="text-sm font-semibold text-[#023E8A]">Evidence Inspector</p>
+        <p className="text-sm font-semibold text-sijil-blue">Evidence Inspector</p>
         {availableSources.length > 0 ? (
           <Select value={source} onValueChange={(value) => onSourceChange(value as InspectorSource)}>
             <SelectTrigger className="h-8 w-[160px] rounded-lg border-[#e2e8f0] text-xs">
@@ -902,7 +870,7 @@ export function OneClickShareCard({
 
   return (
     <div className="learner-stat-card p-4">
-      <p className="text-sm font-semibold text-[#023E8A]">One-Click Share & Link Management</p>
+      <p className="text-sm font-semibold text-sijil-blue">One-Click Share & Link Management</p>
       <p className="mt-0.5 text-xs text-[#64748b]">
         Choose the competency scope and the fields recruiters can see.
       </p>
@@ -914,7 +882,7 @@ export function OneClickShareCard({
           className={cn(
             "rounded-xl border px-3 py-2.5 text-left",
             shareScope === "all"
-              ? "border-[#023E8A] bg-[#eff6ff] text-[#023E8A]"
+              ? "border-sijil-blue bg-[hsl(var(--sijil-blue)/0.04)] text-sijil-blue"
               : "border-[#e2e8f0] bg-white text-[#334155]",
           )}
         >
@@ -931,7 +899,7 @@ export function OneClickShareCard({
           className={cn(
             "rounded-xl border px-3 py-2.5 text-left",
             shareScope === "selected"
-              ? "border-[#023E8A] bg-[#eff6ff] text-[#023E8A]"
+              ? "border-sijil-blue bg-[hsl(var(--sijil-blue)/0.04)] text-sijil-blue"
               : "border-[#e2e8f0] bg-white text-[#334155]",
           )}
         >
@@ -946,7 +914,7 @@ export function OneClickShareCard({
           className={cn(
             "rounded-xl border px-3 py-2.5 text-left",
             shareScope === "issued"
-              ? "border-[#023E8A] bg-[#eff6ff] text-[#023E8A]"
+              ? "border-sijil-blue bg-[hsl(var(--sijil-blue)/0.04)] text-sijil-blue"
               : "border-[#e2e8f0] bg-white text-[#334155]",
           )}
         >
@@ -1006,7 +974,7 @@ export function OneClickShareCard({
 
       <div className="mt-4 rounded-xl border border-[#e2e8f0] bg-[#f8fafc] p-3">
         <p className="text-[11px] font-medium text-[#64748b]">Shareable link preview</p>
-        <p className="mt-1 break-all font-mono text-[11px] text-[#023E8A]">
+        <p className="mt-1 break-all font-mono text-[11px] text-sijil-blue">
           {shareUrl ?? (tokenHint ? `Active share · hint ${tokenHint}` : "Generate a link to preview it here.")}
         </p>
         {expiresAt ? (
@@ -1015,7 +983,7 @@ export function OneClickShareCard({
       </div>
 
       <div className="mt-3 grid gap-2">
-        <Button className="rounded-xl bg-[#023E8A] hover:bg-[#012A5C]" onClick={onGenerate} disabled={submitting}>
+        <Button className="rounded-xl bg-sijil-blue hover:bg-sijil-blue" onClick={onGenerate} disabled={submitting}>
           <Link2 className="mr-1.5 h-4 w-4" />
           Share with recruiters on SIJIL
         </Button>
@@ -1047,7 +1015,7 @@ export function WalletEmptyState({ onGoTask, onGoIntegrations }: { onGoTask: () 
         Declare a competency, connect GitHub or Moodle, and submit a practical task to build a shareable wallet package.
       </p>
       <div className="mt-5 flex flex-wrap justify-center gap-2">
-        <Button className="rounded-xl bg-[#023E8A] hover:bg-[#012A5C]" onClick={onGoIntegrations}>
+        <Button className="rounded-xl bg-sijil-blue hover:bg-sijil-blue" onClick={onGoIntegrations}>
           Connect sources
         </Button>
         <Button variant="outline" className="rounded-xl" onClick={onGoTask}>
@@ -1066,8 +1034,8 @@ export function WalletRefreshBar({
   loading: boolean;
 }) {
   return (
-    <div className="mb-4 flex items-center justify-between">
-      <Link to="/learner/profile" className="text-xs font-medium text-[#023E8A] hover:underline">
+    <div className="wallet-refresh-bar mb-4 flex items-center justify-between">
+      <Link to="/learner/profile" className="text-xs font-medium text-sijil-blue hover:underline">
         Back to dashboard
       </Link>
       <Button variant="outline" size="sm" className="rounded-xl" onClick={onRefresh} disabled={loading}>

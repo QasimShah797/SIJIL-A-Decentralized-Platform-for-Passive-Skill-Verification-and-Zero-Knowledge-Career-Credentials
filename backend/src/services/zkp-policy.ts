@@ -4,15 +4,36 @@
  */
 export const ASSESSMENT_ZKP_TYPE = "score-threshold-v1" as const;
 export const GITHUB_ZKP_TYPE = "github-contributions-v1" as const;
+export const MOODLE_ZKP_TYPE = "moodle-completion-v1" as const;
+export const PEER_REVIEW_ZKP_TYPE = "peer-review-count-v1" as const;
 
 export const ASSESSMENT_POLICY_VERSION = "assess-60-v1" as const;
 export const GITHUB_POLICY_VERSION = "github-70-repo-v1" as const;
+export const SHARE_GITHUB_POLICY_VERSION = "share-github-50-repo-v1" as const;
+export const SHARE_GITHUB_THRESHOLD = 50;
+/** Share-flow private result: score ≥ 50% (does not affect credential issuance). */
+export const SHARE_ASSESSMENT_POLICY_VERSION = "share-assess-50-v1" as const;
+export const SHARE_MOODLE_POLICY_VERSION = "share-moodle-50-v1" as const;
+/**
+ * Share-flow peer policy: at least one eligible peer review.
+ * Derived from existing SIJIL copy ("at least one review"); change only via versioned policy.
+ */
+export const SHARE_PEER_POLICY_VERSION = "share-peer-1-v1" as const;
 
-/** Fixed assessment pass bar (percent). */
+/** Fixed assessment pass bar (percent) for recruiter automation. */
 export const ASSESSMENT_POLICY_THRESHOLD = 60;
+
+/** Share-with-recruiter / public-link private practical claim (percent). */
+export const SHARE_ASSESSMENT_THRESHOLD = 50;
 
 /** Fixed GitHub unique verified authored commit SHA threshold (per repository). */
 export const GITHUB_POLICY_THRESHOLD = 70;
+
+/** Share Moodle claim: completed*100 >= required*thresholdPercent. */
+export const SHARE_MOODLE_THRESHOLD_PERCENT = 50;
+
+/** Eligible peer reviews required for share private claim. */
+export const SHARE_PEER_REVIEW_THRESHOLD = 1;
 
 /** A verified GitHub outcome is reused without re-fetching GitHub inside this window. */
 export const GITHUB_REUSE_WINDOW_MS = 24 * 60 * 60 * 1000;

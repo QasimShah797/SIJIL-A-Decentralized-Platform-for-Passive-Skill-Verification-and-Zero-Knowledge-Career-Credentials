@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { redactExactValues } from "../utils/exact-value-redaction";
+import { enforcePrivateGithubDisclosure, redactExactValues } from "../utils/exact-value-redaction";
 import { buildAtsResume, buildEvidenceLedger } from "../utils/public-credential-map";
 import { DEFAULT_DISCLOSURE_PREFERENCES } from "./disclosure-preferences.service";
 import { disclosurePreferencesPatchSchema } from "../validators/disclosure-preferences.validator";
@@ -43,6 +43,40 @@ function payload(): Record<string, unknown> {
   };
 }
 
+describe("GitHub exact counts in wallet shares", () => {
+  for (const mode of ["details", "private", "omit"]) {
+    for (const complete of [false, true]) {
+      for (const globalExact of [false, true]) {
+        it(`enforces ${mode} with complete package=${complete} and global exact=${globalExact}`, () => {
+          const github = {
+            repos: [{ commit_count: 83, contributionCount: 83 }],
+            activities: [{ activity_type: "commit", commit_hash: "test-sha" }],
+          };
+          const share = {
+            evidenceModes: { github_evidence: mode },
+            evidence: complete ? { completeEvidencePackage: { github, practicalTask: { score: 97 } } } : { github },
+            privateResults: [{ claimType: "github_activity", threshold: "50" }],
+          };
+          const stored = enforcePrivateGithubDisclosure(share);
+          const read = redactExactValues(share, {
+            ...DEFAULT_DISCLOSURE_PREFERENCES, shareExactGithubCommitCount: globalExact, shareExactAssessmentMarks: true,
+          }, "test");
+          assert.equal(JSON.stringify(stored).includes('"commit_count"'), mode !== "private");
+          assert.equal(JSON.stringify(read).includes('"commit_count"'), mode !== "private" && globalExact);
+          assert.equal(JSON.stringify(read).includes("test-sha"), mode !== "private" && globalExact);
+          if (mode === "private") {
+            for (const view of [stored, read]) {
+              assert.doesNotMatch(JSON.stringify(view), /contributionCount|test-sha|commit_count/);
+              assert.deepEqual(view.privateResults, share.privateResults);
+            }
+            if (complete) assert.match(JSON.stringify(read), /"score":97/);
+          }
+        });
+      }
+    }
+  }
+});
+
 const FIELDS = ["github_evidence", "lms_evidence", "practical_task_result"];
 
 describe("exact value disclosure", () => {
@@ -63,32 +97,19 @@ describe("exact value disclosure", () => {
   });
 
   it("withholds marks, grades, commit counts and commit rows when OFF", () => {
-    const out = redactExactValues(payload(), DEFAULT_DISCLOSURE_PREFERENCES, "2026-10-31T00:00:00.000Z");
+    const out = redactExactValues({ ...payload(), scoreThresholdSignals: { latestVsReference: "above" } }, DEFAULT_DISCLOSURE_PREFERENCES, "2026-10-31T00:00:00.000Z");
     const text = JSON.stringify(out);
     for (const leak of ["83", "91", "47", "grade", "scorePercent", "commit_count", "abc"]) {
       assert.equal(text.includes(leak), false, `leaked ${leak}`);
     }
     assert.match(text, /Add parser/);
-    assert.deepEqual(out.exactValueDisclosure, {
-      assessmentMarks: "withheld",
-      githubCommitCount: "withheld",
-      source: "sijil_backend_records",
-      asOf: "2026-10-31T00:00:00.000Z",
-    });
-    const complete = (out.evidence as {
-      completeEvidencePackage?: {
-        practicalTask?: { scoreThresholdSignals?: { latestVsReference?: string; bands?: Record<string, string> } };
-      };
-    })?.completeEvidencePackage;
-    const practical = complete?.practicalTask;
-    assert.equal(practical?.scoreThresholdSignals?.latestVsReference, "above");
-    assert.equal(practical?.scoreThresholdSignals?.bands?.["70"], "above");
-    assert.equal(practical?.scoreThresholdSignals?.bands?.["80"], "above");
+    assert.equal("exactValueDisclosure" in out, false);
     const ledger = JSON.stringify(buildEvidenceLedger(out, SKILL, FIELDS));
     assert.equal(ledger.includes("91%"), false);
     assert.equal(ledger.includes("83 commits"), false);
     assert.equal(/Grade \d/.test(ledger), false);
-    assert.match(ledger, /above 70% threshold/);
+    assert.doesNotMatch(ledger, /threshold/i);
+    assert.equal("scoreThresholdSignals" in out, false);
     const resume = JSON.stringify(buildAtsResume(out, "tok", SKILL, FIELDS));
     assert.equal(resume.includes("83 commits"), false);
   });
@@ -99,6 +120,7 @@ describe("exact value disclosure", () => {
     assert.match(marksText, /"scorePercent":91/);
     assert.match(marksText, /"grade":47/);
     assert.equal(marksText.includes("commit_count"), false);
+    assert.equal("exactValueDisclosure" in marksOnly, false);
 
     const both = redactExactValues(payload(), {
       shareExactAssessmentMarks: true,
@@ -107,13 +129,14 @@ describe("exact value disclosure", () => {
     }, "t");
     assert.match(JSON.stringify(both), /"commit_count":83/);
     assert.match(JSON.stringify(buildAtsResume(both, "tok", SKILL, FIELDS)), /83 commits/);
-    assert.equal((both.exactValueDisclosure as { githubCommitCount: string }).githubCommitCount, "disclosed");
+    assert.equal("exactValueDisclosure" in both, false);
   });
 
   it("ignores a client-forged disclosure marker", () => {
     const forged = { ...payload(), exactValueDisclosure: { assessmentMarks: "disclosed" } };
     const out = redactExactValues(forged, DEFAULT_DISCLOSURE_PREFERENCES, "t");
-    assert.equal((out.exactValueDisclosure as { assessmentMarks: string }).assessmentMarks, "withheld");
+    assert.equal("exactValueDisclosure" in out, false);
+    assert.equal(JSON.stringify(out).includes("83"), false);
   });
 
   it("accepts only the two boolean permissions from learners", () => {

@@ -24,7 +24,7 @@ export function DualAudienceSection() {
             <div className="mt-8 grid gap-x-8 gap-y-2 sm:grid-cols-2">
               {sources.flat().map((item) => (
                 <div key={item} className="flex items-center gap-2 text-sm text-gray-700">
-                  <span className="h-1.5 w-1.5 rounded-full bg-[#023E8A]" />
+                  <span className="h-1.5 w-1.5 rounded-full bg-sijil-blue" />
                   {item}
                 </div>
               ))}

@@ -9,8 +9,8 @@ export type CertificatesPanelProps = {
 export function CertificatesPanel({ onUpload }: CertificatesPanelProps) {
   return (
     <div className="space-y-4">
-      <h2 className="text-base font-semibold text-[#023E8A]">Imported Certificates</h2>
-      <div className="overflow-hidden rounded-2xl bg-[#023E8A] text-white shadow-lg">
+      <h2 className="text-base font-semibold text-sijil-blue">Imported Certificates</h2>
+      <div className="overflow-hidden rounded-2xl bg-sijil-blue text-white shadow-lg">
         <div className="grid gap-6 p-6 lg:grid-cols-2 lg:items-center lg:p-8">
           <div>
             <h3 className="text-lg font-semibold">No external certificates uploaded</h3>
@@ -21,7 +21,7 @@ export function CertificatesPanel({ onUpload }: CertificatesPanelProps) {
             <div className="mt-5 flex flex-wrap items-center gap-3">
               <Button
                 variant="secondary"
-                className="rounded-xl bg-white text-[#023E8A] hover:bg-white/90"
+                className="rounded-xl bg-white text-sijil-blue hover:bg-white/90"
                 onClick={onUpload}
               >
                 <FileUp className="mr-1.5 h-4 w-4" />

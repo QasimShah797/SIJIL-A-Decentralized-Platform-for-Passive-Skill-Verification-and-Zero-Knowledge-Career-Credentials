@@ -24,10 +24,10 @@ export function IdentitySetupReminder({
   return (
     <aside className="learner-stat-card flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
       <div>
-        <p className="text-sm font-semibold text-[#023E8A]">Set up your secure identity</p>
+        <p className="text-sm font-semibold text-sijil-blue">Set up your secure identity</p>
         <p className="text-sm text-[#475569]">{copy}</p>
       </div>
-      <Link to="/learner/secure-identity" className="inline-flex h-9 items-center justify-center rounded-md bg-[#023E8A] px-3 text-sm font-medium text-white">
+      <Link to="/learner/secure-identity" className="inline-flex h-9 items-center justify-center rounded-md bg-sijil-blue px-3 text-sm font-medium text-white">
         {action}
       </Link>
     </aside>

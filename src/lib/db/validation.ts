@@ -4,6 +4,8 @@ import type { DeclaredSkill } from "@/lib/sijil-data";
 import { rowToReview } from "@/lib/db/peer-reviews";
 import {
   attemptTaskLabel,
+  fetchAttempt,
+  fetchLatestCompletedMcqAttemptResult,
   isAttemptSubmitted,
   resolveAttempt,
 } from "@/lib/db/practical-attempts";
@@ -40,6 +42,9 @@ export type ValidationSummary = {
   supportingRecords: number;
   latestActivity: string;
   task: string;
+  assessmentCompleted?: boolean;
+  assessmentScore?: number | null;
+  hasEligiblePeerReview?: boolean;
   rows: { name: string; type: string; date: string; role: string }[];
   evidencePackageSent: boolean;
   institutionFeedback?: string;
@@ -209,8 +214,7 @@ async function fetchPeerReviewsForSkill(
       if (seen.has(id)) return false;
       seen.add(id);
       return reviewMatchesSkill(row as Record<string, unknown>, skillId, skillName);
-    })
-    .map((row) => rowToReview(row as Record<string, unknown>));
+    });
 }
 
 function pushEvidenceRow(
@@ -247,6 +251,7 @@ export function createFallbackValidationSummary(skill: DeclaredSkill): Validatio
     supportingRecords: 0,
     latestActivity: "—",
     task: "—",
+    assessmentCompleted: false,
     rows: [],
     evidencePackageSent: false,
   };
@@ -255,6 +260,7 @@ export function createFallbackValidationSummary(skill: DeclaredSkill): Validatio
 export async function buildValidationSummary(
   userId: string,
   skill: DeclaredSkill,
+  options?: { includeAssessmentProgress: boolean },
 ): Promise<ValidationSummary> {
   const [
     ghActs,
@@ -262,8 +268,9 @@ export async function buildValidationSummary(
     ghRepos,
     supportingRecords,
     evidenceLinks,
-    skillReviews,
+    reviewRows,
     attempt,
+    completedMcq,
     credentials,
   ] = await Promise.all([
     supabase
@@ -298,10 +305,22 @@ export async function buildValidationSummary(
       () => fetchPeerReviewsForSkill(userId, skill.id, skill.name),
       [],
     ),
-    safeQuery(() => resolveAttempt(userId, skill.id), null),
+    safeQuery(() => options?.includeAssessmentProgress ? fetchAttempt(userId, skill.id) : resolveAttempt(userId, skill.id), null),
+    options?.includeAssessmentProgress ? safeQuery(() => fetchLatestCompletedMcqAttemptResult(userId, skill.id), null) : null,
     safeQuery(() => fetchCredentials(userId), []),
   ]);
 
+  const skillReviews = reviewRows.map((row: Record<string, unknown>) => rowToReview(row));
+  const hasEligiblePeerReview = reviewRows.some((row: Record<string, unknown>) =>
+    row.learner_user_id === userId &&
+    row.skill_id === skill.id &&
+    row.context_status === "Context Verified" &&
+    row.contributor_verification === "Contributor Verified" &&
+    Boolean(row.reviewed_at) &&
+    ![row.status, row.review_status].some((status) =>
+      status != null && !["completed", "reviewed", "submitted", "approved", "accepted", "verified"].includes(String(status).trim().toLowerCase()),
+    ),
+  );
   const rows: ValidationSummary["rows"] = [];
   const inWallet = credentials.some(
     (c) => c.skill.trim().toLowerCase() === skill.name.trim().toLowerCase(),
@@ -393,11 +412,15 @@ export async function buildValidationSummary(
     attemptPassed: attempt?.passed === true || attempt?.status === "passed",
     attemptInProgress: !!attempt && ["in_progress", "submitted", "auto_submitted"].includes(attempt.status),
     inWallet,
-    peerReviewCount: skillReviews.length,
+    peerReviewCount: options?.includeAssessmentProgress ? undefined : skillReviews.length,
   });
 
   const currentStageLabel = pipelineStageLabel(pipelineStage);
   const attemptSubmitted = isAttemptSubmitted(attempt);
+  const submittedPractical = attempt?.skillId === skill.id &&
+    ["submitted", "auto_submitted", "passed"].includes(attempt.status);
+  const assessmentCompleted = completedMcq !== null || submittedPractical;
+  const assessmentScore = completedMcq ? completedMcq.percentage ?? null : submittedPractical ? attempt.score ?? null : null;
 
   return {
     skillId: skill.id,
@@ -415,6 +438,7 @@ export async function buildValidationSummary(
     supportingRecords: supportingRecordCount,
     latestActivity: dates[0] ?? "—",
     task: attemptTaskLabel(attempt),
+    ...(options?.includeAssessmentProgress ? { assessmentCompleted, assessmentScore, hasEligiblePeerReview } : {}),
     rows,
     evidencePackageSent: false,
   };
@@ -505,11 +529,12 @@ export function buildValidationSummaryFromAttestation(
 export async function buildAllValidationSummaries(
   userId: string,
   skills: DeclaredSkill[],
+  options?: { includeAssessmentProgress: boolean },
 ): Promise<ValidationSummary[]> {
   const summaries = await Promise.all(
     skills.map(async (skill) => {
       try {
-        return await buildValidationSummary(userId, skill);
+        return await buildValidationSummary(userId, skill, options);
       } catch (error) {
         console.error("Validation summary failed for skill", skill.id, error);
         return createFallbackValidationSummary(skill);

@@ -1,17 +1,17 @@
 /** Shared GitHub OAuth env — Vite loads .env.local over .env; keep both in sync. */
 export function getGitHubOAuthConfig() {
-  const clientId = import.meta.env.VITE_GITHUB_CLIENT_ID as string | undefined;
+  const clientId = (import.meta.env.VITE_GITHUB_CLIENT_ID as string | undefined)?.trim();
   const redirectUri =
     (import.meta.env.VITE_GITHUB_REDIRECT_URI as string | undefined)?.trim() ||
     `${window.location.origin}/auth/github/callback`;
 
-  if (!clientId?.trim()) {
+  if (!clientId || /^(your|replace|paste)[_-]/i.test(clientId)) {
     throw new Error(
-      "VITE_GITHUB_CLIENT_ID is missing. Add it to .env (must match GITHUB_OAUTH_CLIENT_ID in Supabase secrets).",
+      "GitHub OAuth is not configured. Set VITE_GITHUB_CLIENT_ID in .env.local to the Client ID of your GitHub OAuth app, then restart Vite.",
     );
   }
 
-  return { clientId: clientId.trim(), redirectUri: redirectUri.replace(/\/$/, "") };
+  return { clientId, redirectUri: redirectUri.replace(/\/$/, "") };
 }
 
 const OAUTH_CTX_KEY = "sijil_github_oauth_ctx";

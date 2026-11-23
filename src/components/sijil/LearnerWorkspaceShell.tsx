@@ -1,3 +1,4 @@
+import { ZKP_UI_ENABLED } from "@/lib/zkp-ui";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { VerificationBell } from "@/components/zkp/VerificationBell";
 import { useEffect, useState, type ReactNode } from "react";
@@ -250,14 +251,14 @@ function SidebarContent({
               "inline-flex shrink-0 overflow-hidden rounded-full ring-2 ring-offset-2",
               collapsed ? "h-10 w-10" : "h-[4.25rem] w-[4.25rem]",
               isDark
-                ? "ring-white/80 ring-offset-[#023E8A] shadow-[0_8px_20px_rgba(0,0,0,0.18)]"
-                : "ring-[#023E8A] ring-offset-white shadow-[0_8px_18px_rgba(2,62,138,0.18)]",
+                ? "ring-white/80 ring-offset-[hsl(var(--sijil-blue))] shadow-[0_8px_20px_rgba(0,0,0,0.18)]"
+                : "ring-sijil-blue ring-offset-white shadow-[0_8px_18px_rgba(2,62,138,0.18)]",
             )}
           >
             {profileAvatarUrl ? (
               <img src={profileAvatarUrl} alt="" className="h-full w-full object-cover" />
             ) : (
-              <span className="flex h-full w-full items-center justify-center bg-[#012A5C] text-sm font-semibold text-white">
+              <span className="flex h-full w-full items-center justify-center bg-sijil-blue text-sm font-semibold text-white">
                 {profileAvatar}
               </span>
             )}
@@ -465,7 +466,7 @@ export function LearnerWorkspaceShell({
               <span className={cn(
                 "truncate text-xl font-bold tracking-tight",
                 sidebarCollapsed && "md:hidden",
-                isDark ? "text-[#023E8A]" : "text-[#0f172a]",
+                isDark ? "text-sijil-blue" : "text-[#0f172a]",
               )}>
                 SIJIL
               </span>
@@ -475,25 +476,25 @@ export function LearnerWorkspaceShell({
           <div className="flex min-w-0 flex-1 items-center gap-3 pl-3 pr-4 sm:pl-6 sm:pr-6">
           <div className="ml-auto flex items-center gap-2">
             <ThemeToggle />
-            <VerificationBell role="learner" />
+            {ZKP_UI_ENABLED && <VerificationBell role="learner" />}
 
             {isDark && profile && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button
                     type="button"
-                    className="hidden items-center gap-2 rounded-xl border border-[#e2e8f0] bg-white py-1 pl-1 pr-2 sm:flex focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#023E8A]"
+                    className="hidden items-center gap-2 rounded-xl border border-[#e2e8f0] bg-white py-1 pl-1 pr-2 sm:flex focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sijil-blue"
                     aria-label="Account menu"
                   >
                     {profile.avatarUrl ? (
                       <img src={profile.avatarUrl} alt="" className="h-8 w-8 rounded-full object-cover" />
                     ) : (
-                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#023E8A] text-xs font-semibold text-white">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-sijil-blue text-xs font-semibold text-white">
                         {profile.avatar}
                       </div>
                     )}
                     <div className="min-w-0 text-left">
-                      <p className="truncate text-xs font-semibold text-[#023E8A]">{profile.name}</p>
+                      <p className="truncate text-xs font-semibold text-sijil-blue">{profile.name}</p>
                       <p className="text-[10px] text-[#64748b]">Learner</p>
                     </div>
                     <ChevronDown className="h-4 w-4 shrink-0 text-[#64748b]" />
@@ -521,7 +522,7 @@ export function LearnerWorkspaceShell({
                 <DropdownMenuTrigger asChild>
                   <button
                     type="button"
-                    className="flex items-center gap-1 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#023E8A]"
+                    className="flex items-center gap-1 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sijil-blue"
                     aria-label="Account menu"
                   >
                     {profile?.avatarUrl ? (
@@ -531,7 +532,7 @@ export function LearnerWorkspaceShell({
                         className="h-9 w-9 rounded-full border border-[#e2e8f0] object-cover"
                       />
                     ) : (
-                      <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#023E8A] text-xs font-semibold text-white">
+                      <div className="flex h-9 w-9 items-center justify-center rounded-full bg-sijil-blue text-xs font-semibold text-white">
                         {profile?.avatar ?? user?.email?.slice(0, 2).toUpperCase() ?? "?"}
                       </div>
                     )}

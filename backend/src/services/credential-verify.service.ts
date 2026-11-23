@@ -49,10 +49,7 @@ export async function loadCredentialByIdOrUri(idOrUri: string): Promise<Credenti
 
   if (primary.error) throw new AppError(primary.error.message, 500);
   if (primary.data) return asCredentialRow(primary.data as Record<string, unknown>);
-
-  const fallback = await client.from("credentials").select("*").eq("id", idOrUri).maybeSingle();
-  if (fallback.error) throw new AppError(fallback.error.message, 500);
-  if (fallback.data) return asCredentialRow(fallback.data as Record<string, unknown>);
+  if (!byUuid.success) return null;
 
   const byUri = await client.from("credentials").select("*").eq("credential_uri", idOrUri).maybeSingle();
   if (byUri.error) throw new AppError(byUri.error.message, 500);

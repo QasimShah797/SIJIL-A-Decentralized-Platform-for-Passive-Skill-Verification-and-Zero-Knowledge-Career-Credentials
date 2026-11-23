@@ -5,7 +5,6 @@ import {
   buildEvidenceLedger,
   extractAtsHeadings,
   inspectorViewFromLedger,
-  practicalSummaryFromPayload,
   publicCompetencyPath,
 } from "@/lib/public-credential";
 
@@ -142,7 +141,7 @@ describe("public evidence ledger", () => {
     expect(inspector.availableSources).toContain("github");
   });
 
-  it("surfaces practical threshold signals and peer reviews in the package summary", () => {
+  it("shows disclosed practical status and peer reviews while ignoring legacy score bands", () => {
     const withheld = {
       ...payload,
       exactValueDisclosure: {
@@ -167,12 +166,6 @@ describe("public evidence ledger", () => {
       },
     };
 
-    const summary = practicalSummaryFromPayload(withheld, competencyId);
-    expect(summary?.exactScorePercent).toBeNull();
-    expect(summary?.scoreWithheld).toBe(true);
-    expect(summary?.latestVsReference).toBe("above");
-    expect(summary?.bands["70"]).toBe("above");
-
     const ledger = buildEvidenceLedger(withheld, competencyId, [
       "practical_task_result",
       "peer_reviews",
@@ -182,6 +175,7 @@ describe("public evidence ledger", () => {
 
     const inspector = inspectorViewFromLedger(ledger);
     expect(inspector.reviews[0]?.reviewer).toBe("Grace Hopper");
-    expect(inspector.practicalSummary?.latestVsReference).toBe("above");
+    expect(inspector.practicalSummary).toEqual({ sittings: 1, latestStatus: "Passed", exactScorePercent: null });
+    expect(JSON.stringify(ledger)).not.toMatch(/threshold/i);
   });
 });

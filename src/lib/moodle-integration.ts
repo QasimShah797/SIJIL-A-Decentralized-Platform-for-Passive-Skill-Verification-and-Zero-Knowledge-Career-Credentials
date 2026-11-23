@@ -628,13 +628,13 @@ async function fetchActivitiesFromImportedEvidence(
   currentSite: string | null,
 ): Promise<MoodleCourseActivity[]> {
   const columns = "id,moodle_course_id,moodle_assignment_id,course_name,activity_name,activity_type,grade,grade_max,submission_status,feedback_preview,imported_at,moodle_site_url";
-  let result = await supabase.from("imported_lms_evidence").select(columns).eq("user_id", userId);
-  if (result.error && isMissingColumnError(result.error)) {
-    result = await supabase
+  const resultWithSite = await supabase.from("imported_lms_evidence").select(columns).eq("user_id", userId);
+  const result = resultWithSite.error && isMissingColumnError(resultWithSite.error)
+    ? await supabase
       .from("imported_lms_evidence")
       .select("id,moodle_course_id,moodle_assignment_id,course_name,activity_name,activity_type,grade,grade_max,submission_status,feedback_preview,imported_at")
-      .eq("user_id", userId);
-  }
+      .eq("user_id", userId)
+    : resultWithSite;
   if (result.error) {
     if (isMissingRelationError(result.error)) return [];
     throw result.error;

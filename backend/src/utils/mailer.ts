@@ -6,7 +6,6 @@ import nodemailer from "nodemailer";
 import type { Transporter } from "nodemailer";
 import { env } from "../config/env";
 import { escapeHtml, wrapSijilEmail } from "./emailHtml";
-import { safeSmtpFailure, smtpResponseCode } from "./invite-email-delivery";
 
 export { escapeHtml, wrapSijilEmail };
 
@@ -37,9 +36,6 @@ function getTransporter(): Transporter {
         user: env.SMTP_USER,
         pass: env.SMTP_PASS,
       },
-      connectionTimeout: 15_000,
-      greetingTimeout: 15_000,
-      socketTimeout: 20_000,
     });
     transporterKey = nextKey;
   }
@@ -57,8 +53,9 @@ export async function sendSijilMail(params: {
 
   if (!isSmtpConfigured()) {
     console.warn(
-      `[${params.logLabel}] SMTP not configured — message was not sent.`,
+      `[${params.logLabel}] SMTP not configured — set SMTP_USER and SMTP_PASS in backend/.env to send real emails.`,
     );
+    console.log(`\n[${params.logLabel} — console fallback]\nTo: ${to}\nSubject: ${params.subject}\n\n${params.text}\n`);
     return { delivered: false };
   }
 
@@ -74,11 +71,12 @@ export async function sendSijilMail(params: {
       html: params.html,
     });
     console.log(
-      `[${params.logLabel}] accepted code=${smtpResponseCode(info.response)}`,
+      `[${params.logLabel}] Sent to ${to}: ${params.subject} (${info.response ?? "ok"})`,
     );
     return { delivered: true };
   } catch (err) {
-    console.error(`[${params.logLabel}] not accepted category=${safeSmtpFailure(err)}`);
-    throw new Error("Failed to send email");
+    const message = err instanceof Error ? err.message : "Unknown SMTP error";
+    console.error(`[${params.logLabel}] Failed to send to ${to}:`, message);
+    throw new Error(`Failed to send email: ${message}`);
   }
 }

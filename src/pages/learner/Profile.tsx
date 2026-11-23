@@ -257,7 +257,7 @@ export default function LearnerProfile() {
         {notifPanelOpen && decaying.length > 0 && (
           <div id="notifications" className="learner-stat-card space-y-2 border-amber-200/80 p-4">
             <div className="flex items-center justify-between">
-              <p className="text-sm font-semibold text-[#023E8A]">Notifications</p>
+              <p className="text-sm font-semibold text-sijil-blue">Notifications</p>
               <Button variant="ghost" size="sm" onClick={() => navigate(location.pathname, { replace: true })}>
                 Close
               </Button>
@@ -318,20 +318,20 @@ export default function LearnerProfile() {
 
         <div className="grid gap-4 lg:grid-cols-2">
           <div className="learner-stat-card p-6">
-            <h2 className="text-base font-semibold text-[#023E8A]">Competency Progress</h2>
+            <h2 className="text-base font-semibold text-sijil-blue">Competency Progress</h2>
             <p className="text-xs text-[#64748b]">Verified · In Progress · Not Started</p>
             <div className="mt-4 flex flex-col items-center gap-4 sm:flex-row">
               <DonutChart {...buckets} />
               <ul className="space-y-2 text-sm">
                 {[
                   { label: "Verified", count: buckets.verified, color: "bg-[#14b8a6]" },
-                  { label: "In Progress", count: buckets.progress, color: "bg-[#023E8A]" },
+                  { label: "In Progress", count: buckets.progress, color: "bg-sijil-blue" },
                   { label: "Not Started", count: buckets.idle, color: "bg-[#cbd5e1]" },
                 ].map(({ label, count, color }) => (
                   <li key={label} className="flex items-center gap-2">
                     <span className={cn("h-2.5 w-2.5 rounded-full", color)} />
                     <span className="text-[#334155]">{label}</span>
-                    <span className="ml-auto font-semibold text-[#023E8A]">{count}</span>
+                    <span className="ml-auto font-semibold text-sijil-blue">{count}</span>
                   </li>
                 ))}
               </ul>
@@ -340,11 +340,11 @@ export default function LearnerProfile() {
 
           <div className="learner-stat-card p-6">
             <div className="flex items-center justify-between">
-              <h2 className="text-base font-semibold text-[#023E8A]">Declared Competencies</h2>
+              <h2 className="text-base font-semibold text-sijil-blue">Declared Competencies</h2>
               <button
                 type="button"
                 onClick={() => openAddDialog()}
-                className="text-xs font-medium text-[#023E8A] hover:underline"
+                className="text-xs font-medium text-sijil-blue hover:underline"
               >
                 + Add new
               </button>
@@ -355,7 +355,7 @@ export default function LearnerProfile() {
                   No competencies yet.{" "}
                   <button
                     type="button"
-                    className="font-medium text-[#023E8A] hover:underline"
+                    className="font-medium text-sijil-blue hover:underline"
                     onClick={() => openAddDialog()}
                   >
                     Declare your first
@@ -379,10 +379,10 @@ export default function LearnerProfile() {
         <div className="learner-declare-banner p-6">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center">
             <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white shadow-sm">
-              <Sparkles className="h-6 w-6 text-[#023E8A]" />
+              <Sparkles className="h-6 w-6 text-sijil-blue" />
             </div>
             <div className="flex-1">
-              <h2 className="text-lg font-semibold text-[#023E8A]">Declare a New Competency</h2>
+              <h2 className="text-lg font-semibold text-sijil-blue">Declare a New Competency</h2>
               <p className="text-sm text-[#64748b]">
                 Enter a competency name to begin collecting evidence from connected platforms.
               </p>
@@ -398,7 +398,7 @@ export default function LearnerProfile() {
                 }}
               />
               <Button
-                className="h-11 shrink-0 rounded-xl bg-[#023E8A] px-6 hover:bg-[#012A5C]"
+                className="h-11 shrink-0 rounded-xl bg-sijil-blue px-6 hover:bg-sijil-blue"
                 onClick={() => openAddDialog(declareQuery)}
               >
                 <Plus className="mr-1.5 h-4 w-4" />
@@ -410,7 +410,7 @@ export default function LearnerProfile() {
 
         <div className="grid gap-4 lg:grid-cols-2">
           <div className="learner-stat-card p-6">
-            <h2 className="text-base font-semibold text-[#023E8A]">Recent Evidence</h2>
+            <h2 className="text-base font-semibold text-sijil-blue">Recent Evidence</h2>
             <ul className="mt-4 space-y-3">
               {recentSkills.length === 0 ? (
                 <li className="text-sm text-[#64748b]">No evidence linked yet.</li>
@@ -426,10 +426,10 @@ export default function LearnerProfile() {
                   return (
                     <li key={skill.id} className="flex items-center gap-3">
                       <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#f1f5f9]">
-                        <Icon className="h-4 w-4 text-[#023E8A]" />
+                        <Icon className="h-4 w-4 text-sijil-blue" />
                       </div>
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-medium text-[#023E8A]">{skill.name}</p>
+                        <p className="truncate text-sm font-medium text-sijil-blue">{skill.name}</p>
                         <p className="text-xs text-[#64748b]">{skill.status}</p>
                       </div>
                       <span className="learner-tag-linked">{statusLabel}</span>
@@ -446,7 +446,7 @@ export default function LearnerProfile() {
           </div>
 
           <div className="learner-stat-card p-6">
-            <h2 className="text-base font-semibold text-[#023E8A]">Recent Activity</h2>
+            <h2 className="text-base font-semibold text-sijil-blue">Recent Activity</h2>
             <ul className="mt-4 space-y-3">
               {activities.length === 0 ? (
                 <li className="text-sm text-[#64748b]">No recent activity.</li>
@@ -457,7 +457,7 @@ export default function LearnerProfile() {
                       <BadgeCheck className="h-3 w-3 text-[#0f766e]" />
                     </div>
                     <div>
-                      <p className="text-sm text-[#023E8A]">{item.label}</p>
+                      <p className="text-sm text-sijil-blue">{item.label}</p>
                       <p className="text-xs text-[#64748b]">{item.time}</p>
                     </div>
                   </li>
@@ -466,7 +466,7 @@ export default function LearnerProfile() {
             </ul>
             <Link
               to="/learner/validation"
-              className="mt-4 inline-flex items-center text-xs font-medium text-[#023E8A] hover:underline"
+              className="mt-4 inline-flex items-center text-xs font-medium text-sijil-blue hover:underline"
             >
               View competency progress
               <ChevronRight className="ml-0.5 h-3.5 w-3.5" />
@@ -502,7 +502,7 @@ export default function LearnerProfile() {
               Cancel
             </Button>
             <Button
-              className="rounded-xl bg-[#023E8A] hover:bg-[#012A5C]"
+              className="rounded-xl bg-sijil-blue hover:bg-sijil-blue"
               onClick={() => void handleSaveCompetency()}
               disabled={!canSubmit || saving}
             >

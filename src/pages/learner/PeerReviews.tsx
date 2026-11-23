@@ -869,7 +869,7 @@ export default function PeerReviewsPage() {
             Start the backend with FABRIC_ENABLED=false, then refresh this page.
           </p>
           <Button
-            className="mt-4 rounded-xl bg-[#023E8A] hover:bg-[#012A5C]"
+            className="mt-4 rounded-xl bg-sijil-blue hover:bg-sijil-blue"
             onClick={() => void reload().catch(() => undefined)}
           >
             Retry
@@ -983,8 +983,8 @@ export default function PeerReviewsPage() {
                 : "Try a different search or filter."}
               header={(
                 <div className="flex flex-col gap-3 border-b border-[#e2e8f0] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-                  <h2 className="flex items-center gap-3 text-base font-semibold text-[#023E8A]">
-                    <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#e8eef7] text-[#023E8A]">
+                  <h2 className="flex items-center gap-3 text-base font-semibold text-sijil-blue">
+                    <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[hsl(var(--sijil-blue)/0.08)] text-sijil-blue">
                       <MessageSquare className="h-4 w-4" />
                     </span>
                     Reviews
@@ -1024,7 +1024,7 @@ export default function PeerReviewsPage() {
       <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
         <DialogContent className="pr-invite-dialog gap-0 p-0 sm:rounded-2xl">
           <DialogHeader className="border-b border-[#e2e8f0] px-6 py-4">
-            <DialogTitle className="text-[#023E8A]">
+            <DialogTitle className="text-sijil-blue">
               {inviteResend ? "Resend invite" : "Invite reviewer"}
             </DialogTitle>
           </DialogHeader>
@@ -1106,7 +1106,7 @@ export default function PeerReviewsPage() {
             <Button variant="outline" className="rounded-xl border-[#e2e8f0]" onClick={() => setInviteOpen(false)}>Close</Button>
             {!generatedLink && (
               <Button
-                className="rounded-xl bg-[#023E8A] hover:bg-[#012A5C]"
+                className="rounded-xl bg-sijil-blue hover:bg-sijil-blue"
                 onClick={() => void sendInvite()}
                 disabled={
                   Boolean(sendingInviteId)

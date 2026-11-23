@@ -56,7 +56,7 @@ export function WalletPrivacySettingsCard() {
   return (
     <div className="learner-stat-card space-y-3 p-4">
       <div>
-        <p className="text-sm font-semibold text-[#023E8A]">Privacy settings</p>
+        <p className="text-sm font-semibold text-sijil-blue">Privacy settings</p>
         <p className="mt-1 text-xs text-[#64748b]">
           SIJIL verifies your evidence automatically. These settings only decide whether recruiters see exact values.
         </p>
@@ -66,7 +66,7 @@ export function WalletPrivacySettingsCard() {
         return (
           <div key={setting.key} className="flex items-start justify-between gap-3 rounded-lg border p-3">
             <div>
-              <Label htmlFor={setting.id} className="text-sm text-[#023E8A]">{setting.label}</Label>
+              <Label htmlFor={setting.id} className="text-sm text-sijil-blue">{setting.label}</Label>
               <p className="text-xs text-[#64748b]">{checked ? setting.on : setting.off}</p>
             </div>
             <Switch

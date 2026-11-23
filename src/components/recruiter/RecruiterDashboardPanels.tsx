@@ -112,7 +112,7 @@ function PipelineDonut({
             r={radius}
             fill="none"
             strokeWidth="14"
-            stroke="#023E8A"
+            stroke="hsl(var(--sijil-blue))"
             strokeDasharray={`${scheduledLen} ${circumference}`}
             strokeDashoffset={-verifiedLen}
           />
@@ -130,7 +130,7 @@ function PipelineDonut({
         )}
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <span className="text-2xl font-bold text-[#023E8A]">{verified + scheduled + open}</span>
+        <span className="text-2xl font-bold text-sijil-blue">{verified + scheduled + open}</span>
         <span className="text-[10px] uppercase tracking-wider text-[#64748b]">Directory</span>
       </div>
     </div>
@@ -147,13 +147,13 @@ export function RecruiterPipelineCard({
   const buckets = pipelineBuckets(candidates, interviews);
   const rows = [
     { label: "Verified shares", count: buckets.verified, color: "bg-[#14b8a6]" },
-    { label: "Interview scheduled", count: buckets.scheduled, color: "bg-[#023E8A]" },
+    { label: "Interview scheduled", count: buckets.scheduled, color: "bg-sijil-blue" },
     { label: "Not reviewed", count: buckets.open, color: "bg-[#cbd5e1]" },
   ];
 
   return (
     <div className="learner-stat-card p-6">
-      <h2 className="text-base font-semibold text-[#023E8A]">Hiring pipeline</h2>
+      <h2 className="text-base font-semibold text-sijil-blue">Hiring pipeline</h2>
       <p className="text-xs text-[#64748b]">Verified shares · Interview scheduled · Not reviewed</p>
       <div className="mt-4 flex flex-col items-center gap-4 sm:flex-row">
         <PipelineDonut {...buckets} />
@@ -162,7 +162,7 @@ export function RecruiterPipelineCard({
             <li key={row.label} className="flex items-center gap-2">
               <span className={cn("h-2.5 w-2.5 rounded-full", row.color)} />
               <span className="text-[#334155]">{row.label}</span>
-              <span className="ml-auto font-semibold text-[#023E8A]">{row.count}</span>
+              <span className="ml-auto font-semibold text-sijil-blue">{row.count}</span>
             </li>
           ))}
         </ul>
@@ -192,9 +192,9 @@ export function RecruiterShortlistCard({
   return (
     <div className="learner-stat-card p-6">
       <div className="flex items-center justify-between gap-2">
-        <h2 className="text-base font-semibold text-[#023E8A]">Shortlist</h2>
+        <h2 className="text-base font-semibold text-sijil-blue">Shortlist</h2>
         {selected.length >= 2 ? (
-          <button type="button" onClick={onCompare} className="text-xs font-medium text-[#023E8A] hover:underline">
+          <button type="button" onClick={onCompare} className="text-xs font-medium text-sijil-blue hover:underline">
             Compare
           </button>
         ) : null}
@@ -216,7 +216,7 @@ export function RecruiterShortlistCard({
                 <div className="min-w-0 flex-1">
                   <div className="flex items-start justify-between gap-2">
                     <button type="button" onClick={() => onOpen(candidate.id)} className="min-w-0 text-left">
-                      <p className="truncate text-sm font-semibold text-[#023E8A]">{candidate.name}</p>
+                      <p className="truncate text-sm font-semibold text-sijil-blue">{candidate.name}</p>
                       {candidate.topSkill && candidate.topSkill !== "—" ? (
                         <p className="truncate text-xs text-[#64748b]">{candidate.topSkill}</p>
                       ) : null}
@@ -260,8 +260,8 @@ export function RecruiterUpcomingInterviews({
   return (
     <div className="learner-stat-card p-6">
       <div className="flex items-center justify-between gap-2">
-        <h2 className="text-base font-semibold text-[#023E8A]">Upcoming interviews</h2>
-        <Link to="/recruiter/interviews" className="text-xs font-medium text-[#023E8A] hover:underline">
+        <h2 className="text-base font-semibold text-sijil-blue">Upcoming interviews</h2>
+        <Link to="/recruiter/interviews" className="text-xs font-medium text-sijil-blue hover:underline">
           View all
         </Link>
       </div>
@@ -283,10 +283,10 @@ export function RecruiterUpcomingInterviews({
                 className="flex w-full items-center gap-3 rounded-xl text-left hover:bg-[#f8fafc]"
               >
                 <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#f1f5f9]">
-                  <CalendarClock className="h-4 w-4 text-[#023E8A]" />
+                  <CalendarClock className="h-4 w-4 text-sijil-blue" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-[#023E8A]">{row.candidateName}</p>
+                  <p className="truncate text-sm font-medium text-sijil-blue">{row.candidateName}</p>
                   <p className="text-xs text-[#64748b]">
                     {formatInterviewDateTime(row.scheduledAt, row.timeZone)} · {INTERVIEW_MODE_LABELS[row.mode]}
                   </p>
@@ -313,7 +313,7 @@ export function RecruiterRecentlyShared({
 
   return (
     <div className="learner-stat-card p-6">
-      <h2 className="text-base font-semibold text-[#023E8A]">Recently shared</h2>
+      <h2 className="text-base font-semibold text-sijil-blue">Recently shared</h2>
       <ul className="mt-4 space-y-3">
         {recent.length === 0 ? (
           <li className="text-sm text-[#64748b]">No shared credentials yet. A learner must choose your recruiter account. A public verification link does not add a learner here.</li>
@@ -327,7 +327,7 @@ export function RecruiterRecentlyShared({
               >
                 <CandidateAvatar name={candidate.name} avatarUrl={candidate.avatarUrl} className="h-9 w-9" />
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-[#023E8A]">{candidate.name}</p>
+                  <p className="truncate text-sm font-medium text-sijil-blue">{candidate.name}</p>
                   <p className="truncate text-xs text-[#64748b]">
                     {candidate.topSkill !== "—" ? candidate.topSkill : "Shared profile"}
                   </p>
@@ -509,11 +509,11 @@ export function RecruiterDashboardRail({
               onClick={onClick}
               className="flex w-full items-center gap-3 rounded-xl border border-[#e2e8f0] bg-white p-3 text-left transition-colors hover:border-[#0ea5e9]/40"
             >
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#f1f5f9] text-[#023E8A]">
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#f1f5f9] text-sijil-blue">
                 <Icon className="h-4 w-4" />
               </div>
               <div className="min-w-0">
-                <p className="text-sm font-medium text-[#023E8A]">{label}</p>
+                <p className="text-sm font-medium text-sijil-blue">{label}</p>
                 <p className="text-[11px] text-[#64748b]">{sub}</p>
               </div>
             </button>
@@ -523,8 +523,8 @@ export function RecruiterDashboardRail({
 
       <div className="learner-stat-card p-5">
         <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-[#023E8A]">My Profile</h3>
-          <Link to="/recruiter/profile" className="text-xs font-medium text-[#023E8A] hover:underline">
+          <h3 className="text-sm font-semibold text-sijil-blue">My Profile</h3>
+          <Link to="/recruiter/profile" className="text-xs font-medium text-sijil-blue hover:underline">
             Edit
           </Link>
         </div>
@@ -534,7 +534,7 @@ export function RecruiterDashboardRail({
               {profile.avatarUrl ? (
                 <img src={profile.avatarUrl} alt="" className="h-12 w-12 rounded-full object-cover" />
               ) : (
-                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[#023E8A] text-sm font-semibold text-white">
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-sijil-blue text-sm font-semibold text-white">
                   {profile.initials}
                 </div>
               )}
@@ -558,7 +558,7 @@ export function RecruiterDashboardRail({
             <div className="mt-4">
               <div className="mb-1 flex justify-between text-xs">
                 <span className="text-[#64748b]">Profile complete</span>
-                <span className="font-semibold text-[#023E8A]">{completion}%</span>
+                <span className="font-semibold text-sijil-blue">{completion}%</span>
               </div>
               <div className="h-2 overflow-hidden rounded-full bg-[#e2e8f0]">
                 <div className="h-full rounded-full bg-[#14b8a6] transition-all" style={{ width: `${completion}%` }} />

@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { generateKeyPairSync } from "node:crypto";
+import { generateKeyPairSync, sign } from "node:crypto";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { PIPELINE_STAGE } from "../constants/status";
@@ -8,8 +8,10 @@ import { encodeDidKeyFromRawPublicKey } from "../utils/did-key";
 import { signSha256Hash, verifySha256Hash } from "../utils/ed25519";
 import { AppError } from "../utils/AppError";
 import { CredentialsService } from "./credentials.service";
+import { SsiService } from "./ssi.service";
+import { SsiChallengeStore } from "./ssi-challenge.store";
 import { issueCredentialSchema } from "../validators/credentials.validator";
-import { SSI_IDENTITY_REQUIRED_MESSAGE } from "./ssi-holder-did";
+import { provenHolderDidFromIdentityRow, SSI_IDENTITY_REQUIRED_MESSAGE } from "./ssi-holder-did";
 import { evaluateCredentialVerification } from "./credential-verify";
 import { buildCredentialDocument } from "./credential-document.service";
 function holderDidFromUserId(userId: string): string {
@@ -36,6 +38,8 @@ function issuerKeys() {
 }
 
 class MemoryIssueDb {
+  githubConnections: Record<string, unknown>[] = [];
+  githubRepos: Record<string, unknown>[] = [];
   skills: Record<string, unknown>[] = [];
   evidence: Record<string, unknown>[] = [];
   credentials: Record<string, unknown>[] = [];
@@ -47,9 +51,14 @@ class MemoryIssueDb {
 
   from(table: string) {
     const filters: Record<string, string> = {};
+    const nullFilters = new Set<string>();
     const self = this;
     let pendingInsert: Record<string, unknown> | null = null;
     let pendingUpdate: Record<string, unknown> | null = null;
+    let rowLimit: number | null = null;
+    const matches = (row: Record<string, unknown>) =>
+      Object.entries(filters).every(([column, value]) => String(row[column]) === value)
+      && [...nullFilters].every((column) => row[column] == null);
     const builder = {
       select() {
         return builder;
@@ -58,7 +67,15 @@ class MemoryIssueDb {
         filters[column] = value;
         return builder;
       },
+      is(column: string, value: null) {
+        if (value === null) nullFilters.add(column);
+        return builder;
+      },
       order() {
+        return builder;
+      },
+      limit(count: number) {
+        rowLimit = count;
         return builder;
       },
       insert(row: Record<string, unknown>) {
@@ -70,9 +87,8 @@ class MemoryIssueDb {
         return builder;
       },
       async maybeSingle() {
-        const rows = self.rowsFor(table).filter((row) =>
-          Object.entries(filters).every(([column, value]) => String((row as Record<string, unknown>)[column]) === value),
-        );
+        let rows = self.rowsFor(table).filter((row) => matches(row as Record<string, unknown>));
+        if (rowLimit != null) rows = rows.slice(0, rowLimit);
         return { data: rows[0] ?? null, error: null };
       },
       async single() {
@@ -94,9 +110,8 @@ class MemoryIssueDb {
           self.skillUpdates.push({ ...pendingUpdate, ...filters });
           return Promise.resolve({ data: null, error: null }).then(onFulfilled, onRejected);
         }
-        const rows = self.rowsFor(table).filter((row) =>
-          Object.entries(filters).every(([column, value]) => String((row as Record<string, unknown>)[column]) === value),
-        );
+        let rows = self.rowsFor(table).filter((row) => matches(row as Record<string, unknown>));
+        if (rowLimit != null) rows = rows.slice(0, rowLimit);
         return Promise.resolve({ data: rows, error: null }).then(onFulfilled, onRejected);
       },
     };
@@ -106,6 +121,8 @@ class MemoryIssueDb {
   private rowsFor(table: string): Record<string, unknown>[] {
     if (table === "declared_skills") return this.skills;
     if (table === "supporting_records") return this.evidence;
+    if (table === "github_connections") return this.githubConnections;
+    if (table === "github_repos") return this.githubRepos;
     if (table === "credentials") return this.credentials;
     if (table === "learner_profiles") return this.profiles;
     if (table === "mcq_task_attempts") return this.attempts;
@@ -114,7 +131,7 @@ class MemoryIssueDb {
   }
 }
 
-async function seedTrustedAssessment(db: MemoryIssueDb, learnerId: string) {
+async function seedTrustedAssessment(db: MemoryIssueDb, learnerId: string, score = 73) {
   const attemptId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
   const commitmentModule = await import(
     pathToFileURL(path.resolve(__dirname, "../zkp/commitment.mjs")).href
@@ -131,7 +148,7 @@ async function seedTrustedAssessment(db: MemoryIssueDb, learnerId: string) {
     }>;
   };
   const created = await createAssessmentCommitment({
-    score: 73,
+    score,
     blinding: "42",
     learnerId,
     attemptId,
@@ -141,8 +158,8 @@ async function seedTrustedAssessment(db: MemoryIssueDb, learnerId: string) {
     learner_user_id: learnerId,
     skill_id: SKILL_ID,
     status: "completed",
-    passed: true,
-    percentage: 73,
+    passed: score >= 60,
+    percentage: score,
     commitment: created.publicCommitment.commitment,
     commitment_scheme: created.publicCommitment.scheme,
     commitment_circuit_id: created.publicCommitment.circuitId,
@@ -153,7 +170,7 @@ async function seedTrustedAssessment(db: MemoryIssueDb, learnerId: string) {
   db.openings.push({
     attempt_id: attemptId,
     learner_user_id: learnerId,
-    score: 73,
+    score,
     blinding: created.opening.blinding,
   });
 }
@@ -180,6 +197,19 @@ function seedEligible(db: MemoryIssueDb, ownerId = LEARNER) {
   });
 }
 
+function seedLinkedGitHub(db: MemoryIssueDb) {
+  db.skills[0].pipeline_stage = PIPELINE_STAGE.EVIDENCE_LINKED;
+  db.evidence[0] = {
+    user_id: LEARNER, skill_id: SKILL_ID, source: "GitHub", title: "typescript",
+    url: "https://github.com/learner/typescript",
+  };
+  db.githubConnections.push({ user_id: LEARNER, github_username: "learner" });
+  db.githubRepos.push({
+    user_id: LEARNER, linked_skill_id: SKILL_ID, github_username: "learner",
+    repo_name: "typescript", github_url: "https://github.com/learner/typescript",
+  });
+}
+
 describe("DID-bound credential issuance", () => {
   it("does not accept a client-supplied DID on the issue body", () => {
     const parsed = issueCredentialSchema.safeParse({
@@ -192,42 +222,145 @@ describe("DID-bound credential issuance", () => {
     assert.equal(issueCredentialSchema.parse({ skillId: SKILL_ID }).skillId, SKILL_ID);
   });
 
-  it("binds a new credential to the proven learner did:key and signs with the issuer key", async () => {
+  for (const score of [0, 10, 30, 50, 100]) {
+    it(`binds and signs the actual ${score}% assessment for the proven holder DID`, async () => {
+      const db = new MemoryIssueDb();
+      seedEligible(db);
+      if (score === 10) seedLinkedGitHub(db);
+      await seedTrustedAssessment(db, LEARNER, score);
+      const holder = generateKeyPairSync("ed25519");
+      const der = holder.publicKey.export({ type: "spki", format: "der" });
+      const did = encodeDidKeyFromRawPublicKey(new Uint8Array(der.subarray(-32)));
+      const ssi = new SsiService(new SsiChallengeStore());
+      const keys = issuerKeys();
+      const service = new CredentialsService({
+        db: db as never,
+        requireProvenHolderDid: async (userId) => {
+          assert.equal(userId, LEARNER);
+          return did;
+        },
+        approveIssuance: ssi.approveCredentialIssuance.bind(ssi),
+        signHash: (hash) => signSha256Hash(hash, keys.privatePem),
+      });
+
+      assert.deepEqual(await service.readiness(LEARNER, SKILL_ID), { ready: true, reason: null });
+      assert.equal(db.inserted.length, 0);
+      await assert.rejects(() => service.issue(LEARNER, { skillId: SKILL_ID }), /Unlock your identity/);
+      assert.equal(db.inserted.length, 0);
+      const challenge = await ssi.issueChallenge(LEARNER);
+      const issuePayload = `SIJIL-CREDENTIAL-ISSUE-v1\nskillId=${SKILL_ID}\n${challenge.payload}`;
+      const signature = sign(null, Buffer.from(`${issuePayload}\ndid=${did}`), holder.privateKey).toString("base64url");
+      const approval = { challengeId: challenge.challengeId, signature };
+      if (score === 10) {
+        await assert.rejects(() => ssi.approveCredentialIssuance(LEARNER, OTHER, did, approval), /could not be verified/);
+        await assert.rejects(() => ssi.approveCredentialIssuance(OTHER, SKILL_ID, did, approval), /invalid or expired/);
+        const bindSignature = sign(null, Buffer.from(`${challenge.payload}\ndid=${did}`), holder.privateKey).toString("base64url");
+        await assert.rejects(() => ssi.approveCredentialIssuance(LEARNER, SKILL_ID, did, { ...approval, signature: bindSignature }), /could not be verified/);
+        assert.equal(db.inserted.length, 0);
+      }
+      const issued = await service.issue(LEARNER, { skillId: SKILL_ID, approval });
+      await assert.rejects(() => ssi.approveCredentialIssuance(LEARNER, SKILL_ID, did, approval), /invalid or expired/);
+      const stored = db.inserted[0];
+      const document = stored?.credential_document as {
+        credentialSubject: {
+          id: string;
+          assessmentCommitment?: { commitment: string; circuitId: string };
+        };
+      };
+
+      assert.equal(issued.holderDid, did);
+      assert.equal(stored?.holder_did, did);
+      assert.equal(document.credentialSubject.id, did);
+      assert.equal(document.credentialSubject.assessmentCommitment?.circuitId, "score-threshold-v1");
+      assert.equal(typeof document.credentialSubject.assessmentCommitment?.commitment, "string");
+      assert.equal(document.credentialSubject.assessmentCommitment?.commitment, db.attempts[0]?.commitment);
+      assert.equal(db.openings[0]?.score, score);
+      assert.equal(document.credentialSubject.id, stored?.holder_did);
+      assert.notEqual(issued.holderDid, db.profiles[0]?.holder_did);
+      assert.equal(verifySha256Hash(String(stored?.credential_hash), String((stored?.proof as { proofValue: string }).proofValue), keys.publicPem), true);
+      assert.equal(db.skillUpdates[0]?.pipeline_stage, PIPELINE_STAGE.IN_WALLET);
+      const serialized = JSON.stringify({ issued, stored });
+      assert.equal(/BEGIN (PRIVATE|RSA) KEY|pkcs8|privateKey/i.test(serialized), false);
+      assert.equal(serialized.includes(keys.privatePem), false);
+    });
+  }
+
+  for (const reason of ["incomplete", "wrong learner", "tampered score"] as const) {
+    it(`blocks signing for an assessment with ${reason}`, async () => {
+      const db = new MemoryIssueDb();
+      seedEligible(db);
+      await seedTrustedAssessment(db, LEARNER, 10);
+      if (reason === "incomplete") db.attempts[0].status = "in_progress";
+      if (reason === "wrong learner") db.attempts[0].learner_user_id = "another-learner";
+      if (reason === "tampered score") db.attempts[0].percentage = 100;
+      const service = new CredentialsService({
+        db: db as never,
+        requireProvenHolderDid: async () => realDid(),
+        signHash: () => assert.fail("Ineligible assessment reached signing"),
+      });
+      await assert.rejects(() => service.issue(LEARNER, { skillId: SKILL_ID }), /Assessment|assessment/);
+      assert.equal(db.inserted.length, 0);
+    });
+  }
+
+  it("explains missing assessment, unrelated evidence, pending verification and an invalid DID", async () => {
     const db = new MemoryIssueDb();
     seedEligible(db);
-    await seedTrustedAssessment(db, LEARNER);
-    const did = realDid();
-    const keys = issuerKeys();
     const service = new CredentialsService({
       db: db as never,
-      requireProvenHolderDid: async (userId) => {
-        assert.equal(userId, LEARNER);
-        return did;
-      },
-      signHash: (hash) => signSha256Hash(hash, keys.privatePem),
+      requireProvenHolderDid: async (id) => provenHolderDidFromIdentityRow({
+        requestUserId: id,
+        row: { user_id: id, did: "did:key:invalid" },
+        tableReady: true,
+      }),
+      signHash: () => assert.fail("Readiness must never sign"),
     });
+    const reason = async () => (await service.readiness(LEARNER, SKILL_ID)).reason ?? "";
 
-    const issued = await service.issue(LEARNER, { skillId: SKILL_ID });
-    const stored = db.inserted[0];
-    const document = stored?.credential_document as {
-      credentialSubject: {
-        id: string;
-        assessmentCommitment?: { commitment: string; circuitId: string };
-      };
-    };
+    assert.match(await reason(), /assessment/i);
+    await seedTrustedAssessment(db, OTHER, 10);
+    await assert.rejects(() => service.readiness(OTHER, SKILL_ID), /does not belong/);
+    assert.match(await reason(), /assessment/i);
+    db.attempts.length = 0;
+    await seedTrustedAssessment(db, LEARNER, 10);
+    db.attempts[0].skill_id = OTHER;
+    assert.match(await reason(), /assessment/i);
+    db.attempts[0].skill_id = SKILL_ID;
+    db.evidence[0].skill_id = OTHER;
+    assert.match(await reason(), /supporting evidence/i);
+    db.evidence[0].skill_id = SKILL_ID;
+    db.skills[0].pipeline_stage = "evidence_linked";
+    assert.match(await reason(), /qualifying GitHub evidence/i);
+    db.skills[0].pipeline_stage = PIPELINE_STAGE.WALLET_READY;
+    assert.match(await reason(), /identity/i);
+    assert.equal(db.inserted.length, 0);
+    assert.equal(db.skillUpdates.length, 0);
+  });
 
-    assert.equal(issued.holderDid, did);
-    assert.equal(stored?.holder_did, did);
-    assert.equal(document.credentialSubject.id, did);
-    assert.equal(document.credentialSubject.assessmentCommitment?.circuitId, "score-threshold-v1");
-    assert.equal(typeof document.credentialSubject.assessmentCommitment?.commitment, "string");
-    assert.equal(document.credentialSubject.id, stored?.holder_did);
-    assert.notEqual(issued.holderDid, db.profiles[0]?.holder_did);
-    assert.equal(verifySha256Hash(String(stored?.credential_hash), String((stored?.proof as { proofValue: string }).proofValue), keys.publicPem), true);
-    assert.equal(db.skillUpdates[0]?.pipeline_stage, PIPELINE_STAGE.IN_WALLET);
-    const serialized = JSON.stringify({ issued, stored });
-    assert.equal(/BEGIN (PRIVATE|RSA) KEY|pkcs8|privateKey/i.test(serialized), false);
-    assert.equal(serialized.includes(keys.privatePem), false);
+  it("requires exact GitHub linkage and preserves institution decisions", async () => {
+    const db = new MemoryIssueDb();
+    seedEligible(db);
+    seedLinkedGitHub(db);
+    await seedTrustedAssessment(db, LEARNER, 10);
+    const service = new CredentialsService({
+      db: db as never,
+      requireProvenHolderDid: async () => realDid(),
+      signHash: () => assert.fail("Ineligible competency reached signing"),
+    });
+    for (const change of [{ linked_skill_id: OTHER }, { user_id: OTHER }, { github_username: "unrelated" }, { github_url: "https://github.com/learner/unrelated" }]) {
+      const repo = db.githubRepos[0];
+      db.githubRepos[0] = { ...repo, ...change };
+      assert.equal((await service.readiness(LEARNER, SKILL_ID)).ready, false);
+      await assert.rejects(() => service.issue(LEARNER, { skillId: SKILL_ID }), /qualifying GitHub evidence/i);
+      db.githubRepos[0] = repo;
+    }
+    for (const stage of ["institution_attestation_pending", "institution_rejected"]) {
+      db.skills[0].pipeline_stage = stage;
+      assert.equal((await service.readiness(LEARNER, SKILL_ID)).ready, false);
+      await assert.rejects(() => service.issue(LEARNER, { skillId: SKILL_ID }), /not verified or attested/i);
+    }
+    assert.equal(db.skillUpdates.length, 0);
+    assert.equal(db.inserted.length, 0);
   });
 
   it("rejects new issuance when the learner has no SSI identity", async () => {

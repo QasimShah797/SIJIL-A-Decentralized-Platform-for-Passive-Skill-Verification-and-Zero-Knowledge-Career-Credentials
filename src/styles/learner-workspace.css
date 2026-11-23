@@ -1,15 +1,15 @@
-/* SIJIL — Brand blue #023E8A */
+/* SIJIL — Brand blue hsl(var(--sijil-blue)) */
 
 .learner-shell-dashboard {
   --dash-bg: #f8fafc;
-  --dash-brand: #023e8a;
-  --dash-brand-dark: #012a5c;
-  --dash-brand-light: #e8eef7;
-  --dash-sidebar: #023e8a;
+  --dash-brand: hsl(var(--sijil-blue));
+  --dash-brand-dark: hsl(var(--sijil-blue));
+  --dash-brand-light: hsl(var(--sijil-blue)/0.08);
+  --dash-sidebar: hsl(var(--sijil-blue));
   --dash-card: #ffffff;
   --dash-border: #e2e8f0;
   --dash-muted: #64748b;
-  --dash-text: #023e8a;
+  --dash-text: hsl(var(--sijil-blue));
   --dash-teal: #14b8a6;
   background: var(--dash-bg) !important;
   color: #334155;
@@ -18,7 +18,7 @@
 }
 
 .learner-shell-profile {
-  --ws-page-bg: 214 40% 97%;
+  --ws-page-bg: var(--sijil-blue) / .04;
   background: hsl(var(--ws-page-bg));
 }
 
@@ -37,7 +37,7 @@
   color: var(--dash-brand);
   font-weight: 600;
   border-radius: 0.75rem;
-  box-shadow: 0 1px 3px rgba(2, 62, 138, 0.2);
+  box-shadow: 0 1px 3px hsl(var(--sijil-blue)/0.2);
 }
 
 .learner-nav-link-dark {
@@ -62,31 +62,31 @@
   background: var(--dash-card, #ffffff);
   border-radius: 12px;
   border: 1px solid var(--dash-border, #e2e8f0);
-  box-shadow: 0 1px 2px rgba(2, 62, 138, 0.06);
+  box-shadow: 0 1px 2px hsl(var(--sijil-blue)/0.06);
 }
 
 .learner-profile-card {
   background: #fff;
   border-radius: 12px;
   border: 1px solid #e2e8f0;
-  box-shadow: 0 1px 4px rgba(2, 62, 138, 0.06);
+  box-shadow: 0 1px 4px hsl(var(--sijil-blue)/0.06);
 }
 
 .learner-declare-banner {
-  background: linear-gradient(135deg, #e8eef7 0%, #f0f4fa 45%, #e8eef7 100%);
-  border: 1px solid #c5d4eb;
+  background: linear-gradient(135deg, hsl(var(--sijil-blue)/0.08) 0%, hsl(var(--sijil-blue)/0.05) 45%, hsl(var(--sijil-blue)/0.08) 100%);
+  border: 1px solid hsl(var(--sijil-blue)/0.21);
   border-radius: 12px;
 }
 
 .learner-dashboard-cta {
-  background: #023e8a;
+  background: hsl(var(--sijil-blue));
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 16px;
-  box-shadow: 0 4px 14px rgba(2, 62, 138, 0.2);
+  box-shadow: 0 4px 14px hsl(var(--sijil-blue)/0.2);
 }
 
 .learner-sidebar-promo {
-  background: #023e8a;
+  background: hsl(var(--sijil-blue));
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 16px;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
@@ -105,16 +105,16 @@
 }
 
 .learner-competency-icon {
-  background: linear-gradient(135deg, #e8eef7 0%, #c5d4eb 100%);
-  color: #023e8a;
+  background: linear-gradient(135deg, hsl(var(--sijil-blue)/0.08) 0%, hsl(var(--sijil-blue)/0.21) 100%);
+  color: hsl(var(--sijil-blue));
   font-weight: 700;
   font-size: 11px;
   border-radius: 10px;
 }
 
 .learner-tag-progress {
-  background: #e8eef7;
-  color: #023e8a;
+  background: hsl(var(--sijil-blue)/0.08);
+  color: hsl(var(--sijil-blue));
   font-size: 11px;
   font-weight: 500;
   padding: 2px 10px;
@@ -122,8 +122,8 @@
 }
 
 .learner-tag-evidence {
-  background: #dce8f5;
-  color: #012a5c;
+  background: hsl(var(--sijil-blue)/0.12);
+  color: hsl(var(--sijil-blue));
   font-size: 11px;
   font-weight: 500;
   padding: 2px 10px;
@@ -140,8 +140,8 @@
 }
 
 .learner-skill-tag {
-  background: #e8eef7;
-  color: #023e8a;
+  background: hsl(var(--sijil-blue)/0.08);
+  color: hsl(var(--sijil-blue));
   border-radius: 9999px;
   padding: 0.35rem 0.85rem;
   font-size: 0.8125rem;
@@ -149,7 +149,7 @@
 }
 
 .learner-profile-map {
-  background: linear-gradient(180deg, #e8eef7 0%, #c5d4eb 100%);
+  background: linear-gradient(180deg, hsl(var(--sijil-blue)/0.08) 0%, hsl(var(--sijil-blue)/0.21) 100%);
   border-radius: 0.75rem;
   min-height: 140px;
   position: relative;
@@ -159,27 +159,27 @@
   content: "";
   position: absolute;
   inset: 0;
-  background-image: radial-gradient(circle at 20% 60%, #90b4e0 1px, transparent 1px),
-    radial-gradient(circle at 60% 30%, #90b4e0 1px, transparent 1px);
+  background-image: radial-gradient(circle at 20% 60%, hsl(var(--sijil-blue)) 1px, transparent 1px),
+    radial-gradient(circle at 60% 30%, hsl(var(--sijil-blue)) 1px, transparent 1px);
   background-size: 24px 24px;
   opacity: 0.5;
 }
 
 .learner-btn-brand {
-  background: #023e8a;
+  background: hsl(var(--sijil-blue));
   color: #fff;
 }
 
 .learner-btn-brand:hover {
-  background: #012a5c;
+  background: hsl(var(--sijil-blue));
 }
 
 .learner-text-brand {
-  color: #023e8a;
+  color: hsl(var(--sijil-blue));
 }
 
 .learner-heading {
-  color: #023e8a;
+  color: hsl(var(--sijil-blue));
 }
 
 /* Sidebar collapse transition */
@@ -221,7 +221,7 @@
 /* Main / light panels */
 .learner-main-scroll {
   scrollbar-width: thin;
-  scrollbar-color: rgba(2, 62, 138, 0.18) transparent;
+  scrollbar-color: hsl(var(--sijil-blue)/0.18) transparent;
 }
 
 .learner-main-scroll::-webkit-scrollbar {
@@ -234,12 +234,12 @@
 }
 
 .learner-main-scroll::-webkit-scrollbar-thumb {
-  background: rgba(2, 62, 138, 0.14);
+  background: hsl(var(--sijil-blue)/0.14);
   border-radius: 9999px;
 }
 
 .learner-main-scroll::-webkit-scrollbar-thumb:hover {
-  background: rgba(2, 62, 138, 0.28);
+  background: hsl(var(--sijil-blue)/0.28);
 }
 
 .learner-main-scroll::-webkit-scrollbar-button {
@@ -249,19 +249,19 @@
 }
 
 .learner-sidebar-light.learner-sidebar-scroll {
-  scrollbar-color: rgba(2, 62, 138, 0.15) transparent;
+  scrollbar-color: hsl(var(--sijil-blue)/0.15) transparent;
 }
 
 .learner-sidebar-scroll-light {
-  scrollbar-color: rgba(2, 62, 138, 0.15) transparent;
+  scrollbar-color: hsl(var(--sijil-blue)/0.15) transparent;
 }
 
 .learner-sidebar-scroll-light::-webkit-scrollbar-thumb {
-  background: rgba(2, 62, 138, 0.12);
+  background: hsl(var(--sijil-blue)/0.12);
 }
 
 .learner-sidebar-scroll-light::-webkit-scrollbar-thumb:hover {
-  background: rgba(2, 62, 138, 0.22);
+  background: hsl(var(--sijil-blue)/0.22);
 }
 
 .wallet-stepper {

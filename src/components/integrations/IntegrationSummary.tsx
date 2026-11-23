@@ -89,7 +89,7 @@ export function IntegrationSummary({
           <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[#64748b]">{label}</p>
           <p
             className={cn(
-              "mt-1.5 font-bold text-[#023E8A]",
+              "mt-1.5 font-bold text-sijil-blue",
               typeof value === "number"
                 ? embedded
                   ? "text-2xl tabular-nums"

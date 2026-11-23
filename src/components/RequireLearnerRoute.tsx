@@ -5,6 +5,8 @@ import { useAuth } from "@/hooks/useAuth";
 import { isDeniedAccess } from "@/lib/auth-helpers";
 import { isEmailVerifiedUser, rememberPendingSignupEmail } from "@/lib/email-verification";
 import { verifyLearnerAccess } from "@/lib/learner-auth";
+import { IDENTITY_SETUP_PATH } from "@/lib/ssi/onboarding";
+import { getSsiIdentityApi } from "@/services/api/ssi.api";
 import sijilLogo from "@/assets/sijil-logo.png";
 
 function AuthLoading() {
@@ -63,15 +65,19 @@ function LearnerAccessDenied({
 export function RequireLearnerRoute({
   children,
   requireCompleteProfile = true,
+  requireSsiIdentity = true,
 }: {
   children: ReactNode;
   requireCompleteProfile?: boolean;
+  /** When true, learners without a bound DID are sent to Privacy & Security. */
+  requireSsiIdentity?: boolean;
 }) {
   const { user, loading, rolesReady } = useAuth();
   const userId = user?.id;
   const loc = useLocation();
+  const onIdentitySetup = loc.pathname.startsWith(IDENTITY_SETUP_PATH);
   const [access, setAccess] = useState<
-    "pending" | "allowed" | "unverified_email" | "wrong_role" | "no_profile" | "incomplete_profile"
+    "pending" | "allowed" | "unverified_email" | "wrong_role" | "no_profile" | "incomplete_profile" | "incomplete_ssi"
   >("pending");
 
   useEffect(() => {
@@ -89,7 +95,7 @@ export function RequireLearnerRoute({
     }
 
     let cancelled = false;
-    verifyLearnerAccess(userId).then((result) => {
+    verifyLearnerAccess(userId).then(async (result) => {
       if (cancelled) return;
       if (isDeniedAccess(result)) {
         setAccess(result.reason);
@@ -99,13 +105,28 @@ export function RequireLearnerRoute({
         setAccess("incomplete_profile");
         return;
       }
+      if (!requireSsiIdentity || onIdentitySetup) {
+        setAccess("allowed");
+        return;
+      }
+      try {
+        const identity = await getSsiIdentityApi();
+        if (cancelled) return;
+        // Only gate on a definitive empty DID. API outages must not lock learners out.
+        if (identity && identity.tableReady && !identity.did) {
+          setAccess("incomplete_ssi");
+          return;
+        }
+      } catch {
+        if (cancelled) return;
+      }
       setAccess("allowed");
     });
 
     return () => {
       cancelled = true;
     };
-  }, [user, userId, loading, rolesReady, requireCompleteProfile]);
+  }, [user, userId, loading, rolesReady, requireCompleteProfile, requireSsiIdentity, onIdentitySetup]);
 
   if (loading || (user && access === "pending")) {
     return <AuthLoading />;
@@ -146,6 +167,10 @@ export function RequireLearnerRoute({
 
   if (access === "incomplete_profile") {
     return <Navigate to="/learner/complete-profile" replace />;
+  }
+
+  if (access === "incomplete_ssi") {
+    return <Navigate to={IDENTITY_SETUP_PATH} replace />;
   }
 
   return <>{children}</>;

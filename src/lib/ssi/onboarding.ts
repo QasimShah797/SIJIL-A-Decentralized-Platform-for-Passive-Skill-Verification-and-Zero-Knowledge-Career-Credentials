@@ -2,9 +2,12 @@ import type { SsiUiStatus } from "./ownership";
 import { SSI_PASSPHRASE_MIN } from "./vault";
 
 export const IDENTITY_SETUP_PATH = "/learner/secure-identity";
+export const SSI_IDENTITY_LOOKUP_ERROR =
+  "SIJIL could not check the learning identity on your account. Please try again before continuing setup.";
 
 export type IdentitySetupView =
   | "loading"
+  | "lookup_failed"
   | "intro"
   | "ready"
   | "finish"
@@ -16,9 +19,11 @@ export function identitySetupView(input: {
   loading: boolean;
   status: SsiUiStatus;
   serverDid: string | null;
+  serverLookupFailed?: boolean;
 }): IdentitySetupView {
   if (input.loading) return "loading";
   if (input.status === "unsupported") return "unsupported";
+  if (input.serverLookupFailed) return "lookup_failed";
   if (input.status === "locked") return "unlock";
   if (input.status === "key_unavailable") return "restore";
   if (input.status === "active" && input.serverDid) return "ready";
@@ -28,6 +33,7 @@ export function identitySetupView(input: {
 
 export function learnerIdentityError(error: unknown): string {
   const message = error instanceof Error ? error.message : "Something went wrong. Please try again.";
+  if (message === SSI_IDENTITY_LOOKUP_ERROR) return message;
   if (/Incorrect passphrase/i.test(message)) {
     return "That recovery password is incorrect, or this recovery file is corrupted. SIJIL cannot reset the password.";
   }

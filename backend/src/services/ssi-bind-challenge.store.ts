@@ -5,6 +5,7 @@
  * Rows store the signed payload only. Private keys are never written.
  */
 import { supabaseService } from "./supabase.service";
+import { AppError } from "../utils/AppError";
 import { isMissingRelationError } from "../utils/supabase-errors";
 import {
   SsiChallengeStore,
@@ -53,7 +54,7 @@ export type BindChallengeDb = {
 };
 
 function fail(message: string, statusCode: number): never {
-  throw Object.assign(new Error(message), { statusCode });
+  throw new AppError(message, statusCode);
 }
 
 export function bindChallengeFromRow(row: BindChallengeRow): SsiChallengeRecord {

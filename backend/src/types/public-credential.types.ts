@@ -107,6 +107,18 @@ export interface PublicCredentialResponse {
   ledger?: PublicCredentialLedger | null;
 }
 
+export interface PublicPrivateResultView {
+  claimType: string;
+  status: string;
+  label: string;
+  detailHidden: string;
+  policyId?: string | null;
+  circuitId?: string | null;
+  verifiedBy?: string | null;
+  threshold?: string | null;
+  proofType?: string | null;
+}
+
 export interface PublicCompetencyResponse {
   status: PublicShareStatus;
   verified: boolean;
@@ -120,4 +132,6 @@ export interface PublicCompetencyResponse {
   ledger: EvidenceLedgerItem[] | null;
   ledgerStatus?: string | null;
   ledgerDetail?: string | null;
+  /** SIJIL-verified private ZKP outcomes (exact values remain hidden). */
+  privateResults?: PublicPrivateResultView[];
 }

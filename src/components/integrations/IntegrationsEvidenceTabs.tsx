@@ -115,14 +115,14 @@ export function IntegrationsEvidenceTabs({
           <TabsList className="h-auto gap-6 rounded-none bg-transparent p-0">
             <TabsTrigger
               value="learning"
-              className="rounded-none border-b-2 border-transparent bg-transparent px-0 pb-3 pt-1 text-sm font-semibold text-[#64748b] shadow-none data-[state=active]:border-[#023E8A] data-[state=active]:bg-transparent data-[state=active]:text-[#023E8A] data-[state=active]:shadow-none"
+              className="rounded-none border-b-2 border-transparent bg-transparent px-0 pb-3 pt-1 text-sm font-semibold text-[#64748b] shadow-none data-[state=active]:border-sijil-blue data-[state=active]:bg-transparent data-[state=active]:text-sijil-blue data-[state=active]:shadow-none"
             >
               <BookOpen className="mr-1.5 h-4 w-4" aria-hidden />
               Learning Records
             </TabsTrigger>
             <TabsTrigger
               value="repos"
-              className="rounded-none border-b-2 border-transparent bg-transparent px-0 pb-3 pt-1 text-sm font-semibold text-[#64748b] shadow-none data-[state=active]:border-[#023E8A] data-[state=active]:bg-transparent data-[state=active]:text-[#023E8A] data-[state=active]:shadow-none"
+              className="rounded-none border-b-2 border-transparent bg-transparent px-0 pb-3 pt-1 text-sm font-semibold text-[#64748b] shadow-none data-[state=active]:border-sijil-blue data-[state=active]:bg-transparent data-[state=active]:text-sijil-blue data-[state=active]:shadow-none"
             >
               <Code2 className="mr-1.5 h-4 w-4" aria-hidden />
               Code Repositories
@@ -180,7 +180,7 @@ export function IntegrationsEvidenceTabs({
                       <td className="px-5 py-4 text-[#64748b]">{row.date}</td>
                       <td className="px-5 py-4">
                         {row.competency ? (
-                          <span className="inline-flex items-center gap-1.5 rounded-full bg-[#eef2ff] px-2.5 py-1 text-xs font-semibold text-[#4338ca]">
+                          <span className="inline-flex items-center gap-1.5 rounded-full bg-[hsl(var(--sijil-blue)/0.04)] px-2.5 py-1 text-xs font-semibold text-[#4338ca]">
                             <Layers className="h-3.5 w-3.5" aria-hidden />
                             {row.competency}
                           </span>
@@ -254,7 +254,7 @@ export function IntegrationsEvidenceTabs({
                             <button
                               type="button"
                               onClick={() => onOpenSkill(link.skillId)}
-                              className="inline-flex items-center gap-1.5 rounded-full bg-[#eef2ff] px-2.5 py-1 text-xs font-semibold text-[#4338ca] hover:bg-[#e0e7ff]"
+                              className="inline-flex items-center gap-1.5 rounded-full bg-[hsl(var(--sijil-blue)/0.04)] px-2.5 py-1 text-xs font-semibold text-[#4338ca] hover:bg-[hsl(var(--sijil-blue)/0.08)]"
                             >
                               <Layers className="h-3.5 w-3.5" aria-hidden />
                               {link.skillName}

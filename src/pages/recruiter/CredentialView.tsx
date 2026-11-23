@@ -1,3 +1,4 @@
+import { ZKP_UI_ENABLED } from "@/lib/zkp-ui";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { RecruiterWorkspaceShell } from "@/components/sijil/RecruiterWorkspaceShell";
@@ -62,15 +63,15 @@ export default function RecruiterCredentialView() {
   const ledgerBadge = !ledgerResult
     ? null
     : ledgerResult.checks?.zkp === "not_checked"
-      ? { variant: "warning" as const, label: "record matches, privacy proof not checked" }
+      ? { variant: "warning" as const, label: ZKP_UI_ENABLED ? "record matches, privacy proof not checked" : "Verification incomplete" }
       : ledgerResult.checks?.zkp === "invalid"
-        ? { variant: "destructive" as const, label: "privacy proof failed" }
+        ? { variant: "destructive" as const, label: ZKP_UI_ENABLED ? "privacy proof failed" : "Verification failed" }
         : mapLedgerStatusToBadge(ledgerResult.status, ledgerResult.detail);
   const checks = recruiterVerificationLines({
     access,
     ledgerStatus: ledgerResult?.status ?? null,
     checks: ledgerResult?.checks ?? null,
-  });
+  }).filter((check) => ZKP_UI_ENABLED || check.label !== "Privacy proof");
 
   const runIntegrityCheck = async () => {
     setVerifying(true);
@@ -79,15 +80,15 @@ export default function RecruiterCredentialView() {
       setLedgerResult(next);
       const zkp = next.checks?.zkp;
       const badge = zkp === "not_checked"
-        ? { variant: "warning" as const, label: "record matches, privacy proof not checked" }
+        ? { variant: "warning" as const, label: ZKP_UI_ENABLED ? "record matches, privacy proof not checked" : "Verification incomplete" }
         : zkp === "invalid"
-          ? { variant: "destructive" as const, label: "privacy proof failed" }
+          ? { variant: "destructive" as const, label: ZKP_UI_ENABLED ? "privacy proof failed" : "Verification failed" }
           : mapLedgerStatusToBadge(next.status, next.detail);
       const shown = shareShowsVerified({
         ledgerStatus: next.status,
         detail: next.detail,
         reason: next.reason,
-        zkp: next.checks?.zkp,
+        zkp,
       });
       toast({
         title: badge.label,

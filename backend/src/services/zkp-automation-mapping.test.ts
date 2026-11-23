@@ -251,7 +251,7 @@ describe("assessment policy proofs (threshold 60)", () => {
       uuidToField: (v: string) => bigint;
     };
     const created = await mod.createAssessmentCommitment({ score, learnerId: LEARNER, attemptId: ATTEMPT });
-    const result = await generateScoreThresholdProof({
+    const untrustedInput = {
       score,
       blinding: created.opening.blinding,
       learnerId: mod.decimal(mod.uuidToField(LEARNER)),
@@ -259,8 +259,8 @@ describe("assessment policy proofs (threshold 60)", () => {
       commitment: created.publicCommitment.commitment,
       variant,
       threshold: 1,
-    });
-    return result;
+    };
+    return generateScoreThresholdProof(untrustedInput);
   }
 
   it("proves 60 meets under the meets key", async () => {

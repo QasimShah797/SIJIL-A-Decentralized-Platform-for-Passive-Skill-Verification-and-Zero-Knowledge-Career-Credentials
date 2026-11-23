@@ -1,3 +1,4 @@
+import { ZKP_UI_ENABLED } from "@/lib/zkp-ui";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { RecruiterWorkspaceShell } from "@/components/sijil/RecruiterWorkspaceShell";
 import { StatusBadge } from "@/components/sijil/StatusBadge";
@@ -389,10 +390,10 @@ export default function CandidateSummary() {
             </dl>
           </div>
 
-          <SidebarProofRequestsCard
+          {ZKP_UI_ENABLED && <SidebarProofRequestsCard
             skills={skillCards}
             learnerUserId={candidate.id}
-          />
+          />}
         </aside>
       </div>
 

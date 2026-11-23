@@ -54,7 +54,7 @@
 }
 
 .pt-mcq-header {
-  background: var(--sijil-brand, #023e8a);
+  background: var(--sijil-brand, hsl(var(--sijil-blue)));
   color: #fff;
   padding: 1.25rem 1.5rem 1.125rem;
 }
@@ -93,7 +93,7 @@
 }
 
 .pt-mcq-segment--done {
-  background: var(--sijil-brand, #023e8a);
+  background: var(--sijil-brand, hsl(var(--sijil-blue)));
 }
 
 .pt-mcq-segment--done-pass {
@@ -118,8 +118,8 @@
 }
 
 .pt-mcq-option--selected {
-  border-color: var(--sijil-brand, #023e8a);
-  background: #eff6ff;
+  border-color: var(--sijil-brand, hsl(var(--sijil-blue)));
+  background: hsl(var(--sijil-blue)/0.04);
 }
 
 .pt-mcq-option-letter {
@@ -137,7 +137,7 @@
 }
 
 .pt-mcq-option--selected .pt-mcq-option-letter {
-  background: var(--sijil-brand, #023e8a);
+  background: var(--sijil-brand, hsl(var(--sijil-blue)));
   color: #fff;
 }
 
@@ -545,12 +545,40 @@
   height: 2rem;
 }
 
-.pt-task-mini-bar {
-  width: 6px;
-  border-radius: 2px 2px 0 0;
-  background: #cbd5e1;
+.pt-page {
+  container-type: inline-size;
+  width: 100%;
+  max-width: 78rem;
+  margin-inline: auto;
 }
 
-.pt-task-mini-bar--active {
-  background: var(--sijil-brand, #023e8a);
+.pt-lab-hero {
+  padding: clamp(1rem, 3vw, 2rem);
+  border-radius: 1rem;
+  background: linear-gradient(115deg, hsl(var(--sijil-blue)), #28216c);
+  color: white;
+}
+
+.pt-page-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1.25rem;
+}
+
+.pt-task-card {
+  min-width: 0;
+  border-color: hsl(var(--sijil-blue)/0.12);
+  background: white;
+}
+
+.pt-task-actions > button {
+  min-height: 2.5rem;
+}
+
+@container (min-width: 54rem) {
+  .pt-page-grid { grid-template-columns: minmax(0, 1fr) minmax(15rem, 27%); }
+}
+
+@container (max-width: 28rem) {
+  .pt-task-actions > button { flex: 1 1 8rem; }
 }

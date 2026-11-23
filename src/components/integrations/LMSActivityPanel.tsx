@@ -47,7 +47,7 @@ export function LMSActivityPanel({
     <div className="learner-stat-card overflow-hidden">
       <div className="flex flex-col gap-3 border-b border-[#e2e8f0] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="flex items-center gap-2 text-base font-semibold text-[#023E8A]">
+          <h2 className="flex items-center gap-2 text-base font-semibold text-sijil-blue">
             <BookOpen className="h-4 w-4" aria-hidden />
             Recent LMS Activity
           </h2>
@@ -78,7 +78,7 @@ export function LMSActivityPanel({
             title="Connect Moodle to import recent activity"
             hint="Sync enrolled courses to import assignments and grades."
             action={
-              <Button size="sm" className="rounded-xl bg-[#023E8A] hover:bg-[#012A5C]" onClick={onConnect} disabled={syncing}>
+              <Button size="sm" className="rounded-xl bg-sijil-blue hover:bg-sijil-blue" onClick={onConnect} disabled={syncing}>
                 <Link2 className="mr-1.5 h-4 w-4" />
                 Connect Moodle
               </Button>
@@ -120,7 +120,7 @@ export function LMSActivityPanel({
                     ? [
                         <div key={`empty-${course.courseId}`} className="learner-stat-card border border-[#e2e8f0] p-5 lg:col-span-2">
                           <div className="flex items-center justify-between gap-2">
-                            <p className="font-semibold text-[#023E8A]">{course.courseName}</p>
+                            <p className="font-semibold text-sijil-blue">{course.courseName}</p>
                           </div>
                           <p className="mt-2 text-sm text-[#64748b]">
                             No assignments are currently available for this course.
@@ -147,7 +147,7 @@ export function LMSActivityPanel({
             {otherRecords.length > 0 ? (
               <div className="overflow-hidden rounded-xl border border-[#e2e8f0]">
                 <div className="border-b border-[#e2e8f0] bg-[#f8fafc] px-4 py-2.5">
-                  <p className="text-sm font-semibold text-[#023E8A]">Other LMS evidence</p>
+                  <p className="text-sm font-semibold text-sijil-blue">Other LMS evidence</p>
                 </div>
                 <div className="divide-y divide-[#e2e8f0]">
                   {otherRecords.map((r) => (

@@ -1,6 +1,8 @@
 import { useEffect, useState, type ReactNode } from "react";
 import {
+  BadgeCheck,
   ChevronDown,
+  Clock,
   Download,
   ExternalLink,
   FolderGit2,
@@ -29,13 +31,14 @@ import type {
   CoverageStats,
   NextAction,
   ReviewSort,
+  TrustFilter,
 } from "@/lib/peer-review-insights";
 
 export type ReviewFeedFilter = "all" | "imported" | "sijil";
 
 const STATUS_PILL: Record<string, string> = {
   verified: "bg-[#ecfdf5] text-[#059669] border-[#bbf7d0]",
-  progress: "bg-[#eff6ff] text-[#023E8A] border-[#bfdbfe]",
+  progress: "bg-[hsl(var(--sijil-blue)/0.04)] text-sijil-blue border-[hsl(var(--sijil-blue)/0.17)]",
   attention: "bg-[#fef9c3] text-[#CA8A04] border-[#fde68a]",
   muted: "bg-[#f1f5f9] text-[#64748b] border-[#e2e8f0]",
   danger: "bg-[#fef2f2] text-[#dc2626] border-[#fecaca]",
@@ -88,11 +91,11 @@ export function PeerReviewsHero({
   return (
     <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
       <div>
-        <h1 className="text-2xl font-bold text-[#023E8A] sm:text-[1.65rem]">Peer Reviews</h1>
+        <h1 className="text-2xl font-bold text-sijil-blue sm:text-[1.65rem]">Peer Reviews</h1>
         <p className="mt-1 text-sm text-[#64748b]">
           Reviews, invites, and contributor replies for your linked projects.
         </p>
-        {syncing && <p className="mt-1 text-[11px] font-medium text-[#023E8A]">Syncing GitHub…</p>}
+        {syncing && <p className="mt-1 text-[11px] font-medium text-sijil-blue">Syncing GitHub…</p>}
       </div>
       <Button
         variant="outline"
@@ -103,6 +106,90 @@ export function PeerReviewsHero({
         <Download className="mr-1.5 h-4 w-4" />
         Import
       </Button>
+    </div>
+  );
+}
+
+export function PeerReviewsStatsGrid({
+  total,
+  verifiedContext,
+  highTrust,
+  pending,
+  activeTrust,
+  onSelectTrust,
+  onFocusInvites,
+}: {
+  total: number;
+  verifiedContext: number;
+  highTrust: number;
+  pending: number;
+  activeTrust: TrustFilter;
+  onSelectTrust: (trust: TrustFilter) => void;
+  onFocusInvites: () => void;
+}) {
+  const items = [
+    {
+      id: "total",
+      label: "Reviews",
+      value: String(total),
+      icon: MessageSquare,
+      iconClass: "bg-[hsl(var(--sijil-blue)/0.08)] text-sijil-blue",
+      active: false,
+      onClick: () => onSelectTrust("all"),
+    },
+    {
+      id: "verified",
+      label: "Verified",
+      value: String(verifiedContext),
+      icon: ShieldCheck,
+      iconClass: "bg-[#ccfbf1] text-[#0f766e]",
+      active: false,
+      onClick: () => onSelectTrust("all"),
+    },
+    {
+      id: "high",
+      label: "High trust",
+      value: String(highTrust),
+      icon: BadgeCheck,
+      iconClass: "bg-[#ecfdf5] text-[#059669]",
+      active: activeTrust === "high",
+      onClick: () => onSelectTrust(activeTrust === "high" ? "all" : "high"),
+    },
+    {
+      id: "pending",
+      label: "Pending",
+      value: String(pending),
+      icon: Clock,
+      iconClass: "bg-[#fef9c3] text-[#CA8A04]",
+      active: false,
+      onClick: onFocusInvites,
+    },
+  ];
+
+  return (
+    <div className="mb-6 grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-[#e2e8f0] bg-[#e2e8f0] shadow-[0_1px_2px_rgba(2,62,138,0.06)] sm:grid-cols-4">
+      {items.map((item) => {
+        const Icon = item.icon;
+        return (
+          <button
+            key={item.id}
+            type="button"
+            onClick={item.onClick}
+            className={cn(
+              "pr-stat-card flex items-center gap-3 bg-white px-5 py-4 text-left transition-colors hover:bg-[#f8fafc]",
+              item.active && "bg-[hsl(var(--sijil-blue)/0.04)]",
+            )}
+          >
+            <span className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-xl", item.iconClass)}>
+              <Icon className="h-4 w-4" />
+            </span>
+            <span className="min-w-0">
+              <span className="block text-2xl font-bold leading-none text-sijil-blue">{item.value}</span>
+              <span className="mt-1 block text-xs text-[#64748b]">{item.label}</span>
+            </span>
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -125,7 +212,7 @@ export function PeerReviewNextAction({
   const tone =
     action.kind === "resend"
       ? "border-[#fde68a] bg-[#fffbeb]"
-      : "border-[#bfdbfe] bg-[#eff6ff]";
+      : "border-[hsl(var(--sijil-blue)/0.17)] bg-[hsl(var(--sijil-blue)/0.04)]";
 
   const run =
     action.kind === "invite"
@@ -136,9 +223,9 @@ export function PeerReviewNextAction({
 
   return (
     <div className={cn("mb-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3 shadow-sm", tone)}>
-      <p className="text-sm font-semibold text-[#023E8A]">{action.title}</p>
+      <p className="text-sm font-semibold text-sijil-blue">{action.title}</p>
       <Button
-        className="rounded-xl bg-[#023E8A] hover:bg-[#012A5C]"
+        className="rounded-xl bg-sijil-blue hover:bg-sijil-blue"
         onClick={run}
         disabled={busy}
       >
@@ -156,7 +243,7 @@ export function PeerReviewsEmptySkills({ onGoProfile }: { onGoProfile: () => voi
       <p className="mt-1 max-w-sm text-sm text-[#64748b]">
         Add one on My Profile, then come back to request reviews.
       </p>
-      <Button className="mt-4 rounded-xl bg-[#023E8A] hover:bg-[#012A5C]" onClick={onGoProfile}>
+      <Button className="mt-4 rounded-xl bg-sijil-blue hover:bg-sijil-blue" onClick={onGoProfile}>
         Go to profile
       </Button>
     </div>
@@ -171,7 +258,7 @@ export function PeerReviewsEmptyProjects({ onGoIntegrations }: { onGoIntegration
       <p className="mt-1 max-w-sm text-sm text-[#64748b]">
         Connect GitHub on Integrations, then sync a repository.
       </p>
-      <Button className="mt-4 rounded-xl bg-[#023E8A] hover:bg-[#012A5C]" onClick={onGoIntegrations}>
+      <Button className="mt-4 rounded-xl bg-sijil-blue hover:bg-sijil-blue" onClick={onGoIntegrations}>
         Open integrations
       </Button>
     </div>
@@ -200,10 +287,10 @@ export function PeerReviewProjectToolbar({
   return (
     <div className="learner-stat-card mb-6 overflow-hidden">
       <div className="flex items-center gap-3 border-b border-[#e2e8f0] px-5 py-4">
-        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#e8eef7] text-[#023E8A]">
+        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[hsl(var(--sijil-blue)/0.08)] text-sijil-blue">
           <FolderGit2 className="h-4 w-4" />
         </span>
-        <p className="text-base font-semibold text-[#023E8A]">Project</p>
+        <p className="text-base font-semibold text-sijil-blue">Project</p>
       </div>
       <div className="grid gap-4 p-5 sm:grid-cols-2">
         <div>
@@ -257,7 +344,7 @@ export function PeerReviewProjectToolbar({
             <span className="text-xs text-[#94a3b8]">{selectedProject.evidenceLabel}</span>
             {selectedProject.url && (
               <a
-                className="inline-flex items-center gap-1 text-xs font-medium text-[#023E8A] hover:underline"
+                className="inline-flex items-center gap-1 text-xs font-medium text-sijil-blue hover:underline"
                 href={selectedProject.url}
                 target="_blank"
                 rel="noreferrer"
@@ -426,14 +513,14 @@ export function PeerReviewCard({
         onClick={() => comment && setOpen((value) => !value)}
         className="flex w-full items-center gap-3 px-5 py-3.5 text-left hover:bg-[#f8fafc]"
       >
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#e8eef7] text-[11px] font-bold text-[#023E8A]">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[hsl(var(--sijil-blue)/0.08)] text-[11px] font-bold text-sijil-blue">
           {peerReviewInitials(String(reviewerName))}
         </div>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold text-[#023E8A]">{reviewerName}</p>
+          <p className="truncate text-sm font-semibold text-sijil-blue">{reviewerName}</p>
           <p className="mt-0.5 flex min-w-0 items-center gap-1.5">
             {skillLabel ? (
-              <span className="shrink-0 rounded-full bg-[#e8eef7] px-2 py-0.5 text-[10px] font-semibold text-[#023E8A]">
+              <span className="shrink-0 rounded-full bg-[hsl(var(--sijil-blue)/0.08)] px-2 py-0.5 text-[10px] font-semibold text-sijil-blue">
                 {skillLabel}
               </span>
             ) : null}
@@ -450,7 +537,7 @@ export function PeerReviewCard({
           </PeerReviewStatusPill>
         </span>
         {rating != null && (
-          <span className="shrink-0 text-xs font-semibold tabular-nums text-[#023E8A]">{rating}/5</span>
+          <span className="shrink-0 text-xs font-semibold tabular-nums text-sijil-blue">{rating}/5</span>
         )}
         {recommendation && (
           <span className="hidden lg:inline-flex">
@@ -518,7 +605,7 @@ export function PeerReviewFeed({
           {reviews.length > 6 && (
             <button
               type="button"
-              className="w-full border-t border-[#e2e8f0] py-2.5 text-xs font-medium text-[#023E8A] hover:bg-[#f8fafc]"
+              className="w-full border-t border-[#e2e8f0] py-2.5 text-xs font-medium text-sijil-blue hover:bg-[#f8fafc]"
               onClick={() => setShowAll((value) => !value)}
             >
               {showAll ? "Show less" : `Show all ${reviews.length}`}

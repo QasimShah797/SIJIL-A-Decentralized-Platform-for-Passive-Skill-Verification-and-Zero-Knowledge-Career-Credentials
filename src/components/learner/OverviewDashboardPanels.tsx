@@ -86,7 +86,7 @@ export function DonutChart({
             r={r}
             fill="none"
             strokeWidth="14"
-            stroke="#023E8A"
+            stroke="hsl(var(--sijil-blue))"
             strokeDasharray={`${pLen} ${c}`}
             strokeDashoffset={-vLen}
           />
@@ -104,7 +104,7 @@ export function DonutChart({
         )}
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <span className="text-2xl font-bold text-[#023E8A]">{active}</span>
+        <span className="text-2xl font-bold text-sijil-blue">{active}</span>
         <span className="text-[10px] uppercase tracking-wider text-[#64748b]">Active</span>
       </div>
     </div>
@@ -112,7 +112,7 @@ export function DonutChart({
 }
 
 const statIconTints = [
-  "bg-[#e8eef7] text-[#023E8A]",
+  "bg-[hsl(var(--sijil-blue)/0.08)] text-sijil-blue",
   "bg-[#ecfdf5] text-[#059669]",
   "bg-[#ecfeff] text-[#0891b2]",
   "bg-[#fef9c3] text-[#ca8a04]",
@@ -184,7 +184,7 @@ export function StatCard({
       <div className={cn("flex h-10 w-10 items-center justify-center rounded-xl", statIconTints[tint % statIconTints.length])}>
         <Icon className="h-5 w-5" />
       </div>
-      <p className="mt-4 text-2xl font-bold text-[#023E8A]">{value}</p>
+      <p className="mt-4 text-2xl font-bold text-sijil-blue">{value}</p>
       <p className="text-sm font-medium text-[#334155]">{label}</p>
       {hint ? <p className="mt-0.5 text-xs text-[#64748b]">{hint}</p> : null}
       <SparklineArea tint={tint} />
@@ -227,7 +227,7 @@ export function CompetencySkillRow({
       <div className="min-w-0 flex-1">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
-            <p className="text-sm font-semibold text-[#023E8A]">{skill.name}</p>
+            <p className="text-sm font-semibold text-sijil-blue">{skill.name}</p>
           </div>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -283,12 +283,12 @@ export function OverviewRightRail({
   return (
     <>
       <div className="learner-stat-card p-5">
-        <h3 className="text-sm font-semibold text-[#023E8A]">Quick Actions</h3>
+        <h3 className="text-sm font-semibold text-sijil-blue">Quick Actions</h3>
         <div className="mt-4 space-y-2">
           <Button
             type="button"
             onClick={onDeclare}
-            className="h-auto min-h-11 w-full !whitespace-normal justify-start rounded-xl px-3 py-2.5 text-left text-sm leading-snug bg-[#023E8A] text-white hover:bg-[#012A5C]"
+            className="h-auto min-h-11 w-full !whitespace-normal justify-start rounded-xl px-3 py-2.5 text-left text-sm leading-snug bg-sijil-blue text-white hover:bg-sijil-blue"
           >
             <Plus className="mr-2 h-4 w-4 shrink-0" />
             <span className="min-w-0 flex-1">Declare New Competency</span>
@@ -301,13 +301,13 @@ export function OverviewRightRail({
             <Link
               key={to}
               to={to}
-              className="flex items-center gap-3 rounded-xl border border-[#e2e8f0] bg-white p-3 transition-colors hover:border-[#0ea5e9]/40"
+              className="flex items-center gap-3 rounded-xl border border-[#e2e8f0] bg-white p-3 transition-colors hover:border-sijil-blue/40"
             >
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#f1f5f9] text-[#023E8A]">
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#f1f5f9] text-sijil-blue">
                 <Icon className="h-4 w-4" />
               </div>
               <div className="min-w-0">
-                <p className="text-sm font-medium text-[#023E8A]">{label}</p>
+                <p className="text-sm font-medium text-sijil-blue">{label}</p>
                 <p className="text-[11px] text-[#64748b]">{sub}</p>
               </div>
             </Link>
@@ -317,8 +317,8 @@ export function OverviewRightRail({
 
       <div className="learner-stat-card p-5">
         <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-[#023E8A]">My Profile</h3>
-          <Link to="/learner/my-profile" className="text-xs font-medium text-[#023E8A] hover:underline">
+          <h3 className="text-sm font-semibold text-sijil-blue">My Profile</h3>
+          <Link to="/learner/my-profile" className="text-xs font-medium text-sijil-blue hover:underline">
             Edit
           </Link>
         </div>
@@ -326,7 +326,7 @@ export function OverviewRightRail({
           {profile.avatarUrl ? (
             <img src={profile.avatarUrl} alt="" className="h-12 w-12 rounded-full object-cover" />
           ) : (
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[#023E8A] text-sm font-semibold text-white">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-sijil-blue text-sm font-semibold text-white">
               {profile.avatar}
             </div>
           )}
@@ -339,7 +339,7 @@ export function OverviewRightRail({
           <button
             type="button"
             onClick={copyDid}
-            className="mono mt-1 flex w-full items-center gap-1 truncate text-left text-[10px] text-[#64748b] hover:text-[#023E8A]"
+            className="mono mt-1 flex w-full items-center gap-1 truncate text-left text-[10px] text-[#64748b] hover:text-sijil-blue"
           >
             <span className="truncate">{profile.did}</span>
             <Copy className="h-3 w-3 shrink-0" />
@@ -352,7 +352,7 @@ export function OverviewRightRail({
             { label: "Reviews", value: reviews.length },
           ].map(({ label, value }) => (
             <div key={label}>
-              <p className="text-lg font-bold text-[#023E8A]">{value}</p>
+              <p className="text-lg font-bold text-sijil-blue">{value}</p>
               <p className="text-[10px] text-[#64748b]">{label}</p>
             </div>
           ))}
@@ -360,7 +360,7 @@ export function OverviewRightRail({
         <div className="mt-4">
           <div className="mb-1 flex justify-between text-xs">
             <span className="text-[#64748b]">Profile complete</span>
-            <span className="font-semibold text-[#023E8A]">{completion}%</span>
+            <span className="font-semibold text-sijil-blue">{completion}%</span>
           </div>
           <div className="h-2 overflow-hidden rounded-full bg-[#e2e8f0]">
             <div className="h-full rounded-full bg-[#14b8a6] transition-all" style={{ width: `${completion}%` }} />

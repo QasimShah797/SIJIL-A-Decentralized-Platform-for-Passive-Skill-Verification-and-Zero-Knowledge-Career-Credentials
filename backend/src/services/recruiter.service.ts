@@ -19,15 +19,15 @@ import {
   loadCredentialByIdOrUri,
 } from "./credential-verify.service";
 import { canReadLearnerData, type AuthCaller } from "./learner-access";
-import { directRecipientId, isAllRecruiterShare, shareVisibleToRecruiter } from "./share-directory";
+import { DIRECT_RECRUITER_SHARE, directRecipientId, isAllRecruiterShare, shareVisibleToRecruiter } from "./share-directory";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { redactExactValues } from "../utils/exact-value-redaction";
+import { hasValidSharedPayloadSignature } from "./shared-zkp-verification";
 import {
   DEFAULT_DISCLOSURE_PREFERENCES,
   disclosurePreferencesStore,
   type DisclosurePreferencesStore,
 } from "./disclosure-preferences.service";
-import { enrichSharePayloadForRecruiter } from "./wallet.service";
 
 type ShareRow = Record<string, unknown>;
 type ProfileRow = {
@@ -89,6 +89,8 @@ export interface CandidateView {
     practicalTask: "Submitted" | "Auto-Submitted" | "—";
   }[];
   sharedAt?: string | null;
+  /** Count of privateResults with status confirmed across active shares. */
+  confirmedPrivateResults?: number;
 }
 
 export interface CandidateDetailView extends CandidateView {
@@ -286,6 +288,18 @@ function attestationFromShared(credentials: SharedCredentialView[]): CandidateVi
   if (approved === statuses.length) return "Approved";
   if (approved > 0) return "Partial";
   return "Pending";
+}
+
+function countConfirmedPrivateResults(credentials: SharedCredentialView[]): number {
+  return credentials.reduce((total, credential) => {
+    const raw = Array.isArray(credential.disclosedPayload.privateResults)
+      ? credential.disclosedPayload.privateResults
+      : [];
+    return total + raw.filter((item) => {
+      const record = asRecord(item);
+      return record && record.status === "confirmed" && record.proofType === "Groth16";
+    }).length;
+  }, 0);
 }
 
 /** Recruiter directory reads bypass learner RLS — route is auth-gated in middleware. */
@@ -637,6 +651,9 @@ async function redactShareRows<T extends Record<string, unknown>>(
   const asOf = new Date().toISOString();
   const out: T[] = [];
   for (const row of rows) {
+    const payload = asRecord(row.disclosed_payload);
+    if ((row.proof_value || payload?.shareKind === DIRECT_RECRUITER_SHARE || isAllRecruiterShare(payload))
+      && !hasValidSharedPayloadSignature(row)) continue;
     const learnerId = learnerIdOf(row) ?? "";
     let prefs = prefsByLearner.get(learnerId);
     if (!prefs) {
@@ -645,8 +662,12 @@ async function redactShareRows<T extends Record<string, unknown>>(
         : { ...DEFAULT_DISCLOSURE_PREFERENCES };
       prefsByLearner.set(learnerId, prefs);
     }
-    const payload = asRecord(row.disclosed_payload);
-    out.push(payload ? { ...row, disclosed_payload: redactExactValues(payload, prefs, asOf) } : row);
+    if (!payload) {
+      out.push(row);
+      continue;
+    }
+    const { privateResults: _privateResults, ...disclosedFields } = payload;
+    out.push({ ...row, disclosed_payload: redactExactValues(disclosedFields, prefs, asOf) });
   }
   return out;
 }
@@ -654,7 +675,7 @@ async function redactShareRows<T extends Record<string, unknown>>(
 async function fetchActiveShareRows(db: SupabaseClient, recruiterUserId: string): Promise<ShareRow[]> {
   const { data, error } = await db
     .from("selective_disclosure_presentations")
-    .select("id, learner_id, selected_fields, selection_mode, disclosed_payload, proof_type, expires_at, revoked_at, created_at")
+    .select("id, learner_id, competency_id, selected_fields, selection_mode, disclosed_payload, payload_hash, proof_type, proof_value, verification_method, expires_at, revoked_at, created_at")
     .is("revoked_at", null)
     .order("created_at", { ascending: false })
     .limit(500);
@@ -725,6 +746,7 @@ function buildCandidateFromShares(
       if (!latest) return item.createdAt;
       return new Date(item.createdAt).getTime() > new Date(latest).getTime() ? item.createdAt : latest;
     }, null),
+    confirmedPrivateResults: countConfirmedPrivateResults(shares),
   };
 }
 
@@ -736,7 +758,7 @@ async function listActiveSharedCredentials(
   const db = recruiterDb(accessToken);
   const { data: walletRows, error: walletError } = await db
     .from("selective_disclosure_presentations")
-    .select("id, competency_id, selected_fields, selection_mode, disclosed_payload, proof_type, expires_at, revoked_at, created_at")
+    .select("id, learner_id, competency_id, selected_fields, selection_mode, disclosed_payload, payload_hash, proof_type, proof_value, verification_method, expires_at, revoked_at, created_at")
     .eq("learner_id", candidateId)
     .is("revoked_at", null);
 
@@ -752,43 +774,12 @@ async function listActiveSharedCredentials(
       recruiterUserId,
     }),
   );
-  const enrichedRows = await Promise.all(listedRows.map(async (row) => {
-    const competencyId = asText(row.competency_id)
-      ?? asText(asRecord(asRecord(row.disclosed_payload)?.competency)?.competencyId);
-    const selectedFields = Array.isArray(row.selected_fields)
-      ? row.selected_fields.filter((item): item is string => typeof item === "string")
-      : [];
-    const payload = asRecord(row.disclosed_payload) ?? {};
-    try {
-      const enriched = await enrichSharePayloadForRecruiter({
-        learnerId: candidateId,
-        competencyId,
-        selectedFields,
-        disclosedPayload: payload,
-      });
-      return {
-        ...row,
-        selected_fields: enriched.selectedFields,
-        disclosed_payload: enriched.disclosedPayload,
-      };
-    } catch {
-      return row;
-    }
-  }));
-  const redactedWalletRows = await redactShareRows(enrichedRows, () => candidateId);
+  const redactedWalletRows = await redactShareRows(listedRows, () => candidateId);
   const shared = (await Promise.all(redactedWalletRows.map(async (row) => {
-    const competencyId = asText(row.competency_id)
-      ?? asText(asRecord(asRecord(row.disclosed_payload)?.competency)?.competencyId);
-    let credentialId: string | null = null;
-    if (competencyId) {
-      try {
-        const issued = await findCredentialForLearnerCompetency(candidateId, competencyId);
-        credentialId = issued && !issued.revoked_at ? issued.id : null;
-      } catch {
-        credentialId = null;
-      }
-    }
-    return mapWalletShare(row, credentialId);
+    const competencyId = asText(row.competency_id);
+    if (!competencyId) return mapWalletShare(row);
+    const issued = await findCredentialForLearnerCompetency(candidateId, competencyId).catch(() => null);
+    return mapWalletShare(row, issued && !issued.revoked_at ? issued.id : null);
   }))).filter((item): item is SharedCredentialView => item !== null);
 
   return dedupeSharedCredentials(
@@ -920,6 +911,7 @@ export class RecruiterService {
       attestation: attestationFromShared(sharedCredentials),
       institution,
       credentialCount: sharedCredentials.length,
+      confirmedPrivateResults: countConfirmedPrivateResults(sharedCredentials),
       sharedCredentials,
     };
   }

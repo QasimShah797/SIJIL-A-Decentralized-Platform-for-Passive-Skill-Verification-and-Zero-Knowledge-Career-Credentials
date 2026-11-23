@@ -67,23 +67,34 @@ function hasRequiredInstitutionLearnerFields(row: LearnerProfileDbRow | null): b
   );
 }
 
-function hasRequiredSelfSignupLearnerFields(row: LearnerProfileDbRow | null): boolean {
+export function isValidGraduationYear(year: string | number | null | undefined): boolean {
+  if (typeof year === "string" && !/^\d{4}$/.test(year.trim())) return false;
+  const value = Number(year);
+  return Number.isInteger(value) && value >= 1950 && value <= 2100;
+}
+
+function hasRequiredSelfSignupLearnerFields(
+  row: LearnerProfileDbRow | null,
+  graduationYear?: string | number,
+): boolean {
   if (!row || row.institution_id) return false;
   const location = parseCityCountry(row.city_country);
   return (
     !!row.contact_number?.trim() &&
     !!location.city.trim() &&
     !!location.country.trim() &&
-    !!row.bio?.trim() &&
-    !!row.skills_summary?.trim() &&
-    !!row.career_goal?.trim()
+    (row.profile_completed === true || (
+      !!row.institution_name?.trim() &&
+      !!row.program?.trim() &&
+      isValidGraduationYear(graduationYear)
+    ))
   );
 }
 
-function hasRequiredLearnerFields(row: LearnerProfileDbRow | null): boolean {
+function hasRequiredLearnerFields(row: LearnerProfileDbRow | null, graduationYear?: string): boolean {
   if (!row) return false;
   if (row.institution_id) return hasRequiredInstitutionLearnerFields(row);
-  return hasRequiredSelfSignupLearnerFields(row);
+  return hasRequiredSelfSignupLearnerFields(row, graduationYear);
 }
 
 export function isInstitutionProvisionedProfile(row: LearnerProfileDbRow | null): boolean {
@@ -231,7 +242,7 @@ function rowToOnboardingForm(
 
 export async function isLearnerProfileComplete(userId: string): Promise<boolean> {
   const data = await fetchLearnerProfileRow(userId);
-  if (!hasRequiredLearnerFields(data)) return false;
+  if (!hasRequiredLearnerFields(data, loadProfileUiFields(userId).graduationYear)) return false;
   const oauth = await meetsOAuthCompletionRequirements(userId);
   return oauth.ok;
 }
@@ -311,10 +322,10 @@ export function selfSignupProfileProgress(
     form.contactNumber.trim(),
     form.country.trim(),
     form.city.trim(),
-    form.bio.trim(),
+    form.institutionName.trim(),
+    form.program.trim(),
+    isValidGraduationYear(form.graduationYear),
     opts?.githubVerified ? "github" : "",
-    form.skillsSummary.trim(),
-    form.careerGoal.trim(),
   ];
   const filled = checks.filter(Boolean).length;
   return Math.round((filled / checks.length) * 100);
@@ -355,7 +366,9 @@ export async function saveSelfSignupProfileProgress(
     career_goal: (payload.career_goal as string | undefined) ?? existing.career_goal,
   };
   const oauth = await meetsOAuthCompletionRequirements(userId);
-  payload.profile_completed = hasRequiredSelfSignupLearnerFields(merged) && oauth.ok;
+  payload.profile_completed = hasRequiredSelfSignupLearnerFields(
+    merged, data.graduationYear ?? loadProfileUiFields(userId).graduationYear,
+  ) && oauth.ok;
 
   const { error } = await supabase
     .from("learner_profiles")
@@ -371,6 +384,9 @@ export async function saveSelfSignupOnboarding(
   const existing = await fetchLearnerProfileRow(userId);
   if (!existing || existing.institution_id) {
     throw new Error("Only self-registered learners can complete this profile.");
+  }
+  if (!data.institutionName?.trim() || !data.program?.trim() || !isValidGraduationYear(data.graduationYear)) {
+    throw new Error("Enter your institution, program, and a valid graduation year.");
   }
 
   persistUiOnlyFields(userId, data);
@@ -604,7 +620,7 @@ export async function updateLearnerEditableProfile(
       career_goal: payload.career_goal as string,
     };
     const oauth = await meetsOAuthCompletionRequirements(userId);
-    payload.profile_completed = hasRequiredSelfSignupLearnerFields(merged) && oauth.ok;
+    payload.profile_completed = hasRequiredSelfSignupLearnerFields(merged, loadProfileUiFields(userId).graduationYear) && oauth.ok;
   }
 
   const { error } = await supabase

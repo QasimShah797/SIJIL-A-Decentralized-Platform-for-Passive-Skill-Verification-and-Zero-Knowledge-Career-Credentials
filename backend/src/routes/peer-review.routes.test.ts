@@ -140,28 +140,24 @@ describe("peer-review routes", () => {
   });
 
   it("requires a learner role on authenticated learner routes", () => {
-    assert.throws(
-      () => requireLearner({} as Request, mockResponse() as unknown as Response, () => undefined),
-      (error: unknown) => error instanceof AppError && error.statusCode === 401,
-    );
-    assert.throws(
-      () => requireLearner(
-        { user: { id: "recruiter-1" }, userRoles: [ROLES.RECRUITER] } as unknown as Request,
-        mockResponse() as unknown as Response,
-        () => undefined,
-      ),
-      (error: unknown) => error instanceof AppError && error.statusCode === 403,
-    );
+    const runGuard = (request: Partial<Request>) => {
+      const outcomes: unknown[] = [];
+      requireLearner(request as Request, mockResponse() as unknown as Response, (error?: unknown) => {
+        outcomes.push(error);
+      });
+      assert.equal(outcomes.length, 1);
+      return outcomes[0];
+    };
+    const anonymous = runGuard({});
+    assert.ok(anonymous instanceof AppError);
+    assert.equal(anonymous.statusCode, 401);
 
-    let continued = false;
-    requireLearner(
-      { user: { id: "learner-1" }, userRoles: [ROLES.LEARNER] } as unknown as Request,
-      mockResponse() as unknown as Response,
-      () => {
-        continued = true;
-      },
-    );
-    assert.equal(continued, true);
+    const recruiter = runGuard({ user: { id: "recruiter-1" } as Request["user"], userRoles: [ROLES.RECRUITER] });
+    assert.ok(recruiter instanceof AppError);
+    assert.equal(recruiter.statusCode, 403);
+
+    const learner = { id: "learner-1", email_confirmed_at: "2026-11-20T00:00:00Z" } as Request["user"];
+    assert.equal(runGuard({ user: learner, userRoles: [ROLES.LEARNER] }), undefined);
   });
 
   it("reads reviews for the authenticated learner rather than a requested user id", async () => {

@@ -93,7 +93,7 @@ function ProfileFieldRow({
 }) {
   return (
     <div className="flex gap-3">
-      <Icon className="mt-0.5 h-4 w-4 shrink-0 text-[#023E8A]" aria-hidden />
+      <Icon className="mt-0.5 h-4 w-4 shrink-0 text-sijil-blue" aria-hidden />
       <div className="min-w-0">
         <dt className="text-xs text-[#64748b]">{label}</dt>
         <dd className="mt-0.5 text-sm font-medium text-[#334155] break-words">{value || "—"}</dd>
@@ -128,7 +128,7 @@ function SectionEditButton({ onClick }: { onClick: () => void }) {
     <button
       type="button"
       onClick={onClick}
-      className="flex items-center gap-1 text-xs font-medium text-[#023E8A] hover:underline"
+      className="flex items-center gap-1 text-xs font-medium text-sijil-blue hover:underline"
     >
       <Pencil className="h-3 w-3" /> Edit
     </button>
@@ -344,7 +344,7 @@ export default function MyProfile() {
       <div id="profile-top" className="space-y-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-[#023E8A] sm:text-[1.65rem]">My Profile</h1>
+            <h1 className="text-2xl font-bold text-sijil-blue sm:text-[1.65rem]">My Profile</h1>
             <p className="mt-1 text-sm text-[#64748b]">
               Manage your personal, academic and professional information.
             </p>
@@ -354,7 +354,7 @@ export default function MyProfile() {
               <button
                 type="button"
                 onClick={copyDid}
-                className="mono flex items-center gap-1.5 rounded-lg border border-[#e2e8f0] bg-white px-3 py-1.5 text-xs text-[#64748b] hover:text-[#023E8A]"
+                className="mono flex items-center gap-1.5 rounded-lg border border-[#e2e8f0] bg-white px-3 py-1.5 text-xs text-[#64748b] hover:text-sijil-blue"
                 title={resolvedDid}
               >
                 DID: {shortDid(resolvedDid)}
@@ -363,7 +363,7 @@ export default function MyProfile() {
             ) : (
               <Link
                 to="/learner/secure-identity"
-                className="flex items-center gap-1.5 rounded-lg border border-[#e2e8f0] bg-white px-3 py-1.5 text-xs text-[#64748b] hover:text-[#023E8A]"
+                className="flex items-center gap-1.5 rounded-lg border border-[#e2e8f0] bg-white px-3 py-1.5 text-xs text-[#64748b] hover:text-sijil-blue"
               >
                 DID: not set up
               </Link>
@@ -374,7 +374,7 @@ export default function MyProfile() {
                   Cancel
                 </Button>
                 <Button
-                  className="rounded-xl bg-[#023E8A] hover:bg-[#012A5C]"
+                  className="rounded-xl bg-sijil-blue hover:bg-sijil-blue"
                   onClick={() => void save()}
                   disabled={busy}
                 >
@@ -393,17 +393,17 @@ export default function MyProfile() {
                   <img
                     src={avatarPreviewUrl}
                     alt={profile.name}
-                    className="h-28 w-28 rounded-full object-cover ring-4 ring-[#e8eef7]"
+                    className="h-28 w-28 rounded-full object-cover ring-4 ring-[hsl(var(--sijil-blue)/0.08)]"
                   />
                 ) : profile.avatarUrl ? (
                   <img
                     key={profile.avatarUrl}
                     src={profile.avatarUrl}
                     alt={profile.name}
-                    className="h-28 w-28 rounded-full object-cover ring-4 ring-[#e8eef7]"
+                    className="h-28 w-28 rounded-full object-cover ring-4 ring-[hsl(var(--sijil-blue)/0.08)]"
                   />
                 ) : (
-                  <div className="flex h-28 w-28 items-center justify-center rounded-full bg-[#023E8A] text-3xl font-semibold text-white ring-4 ring-[#e8eef7]">
+                  <div className="flex h-28 w-28 items-center justify-center rounded-full bg-sijil-blue text-3xl font-semibold text-white ring-4 ring-[hsl(var(--sijil-blue)/0.08)]">
                     {profile.avatar}
                   </div>
                 )}
@@ -413,7 +413,7 @@ export default function MyProfile() {
                     if (!editing) startEdit();
                     fileRef.current?.click();
                   }}
-                  className="absolute bottom-1 right-1 flex h-9 w-9 items-center justify-center rounded-full bg-[#023E8A] text-white shadow-md ring-2 ring-white"
+                  className="absolute bottom-1 right-1 flex h-9 w-9 items-center justify-center rounded-full bg-sijil-blue text-white shadow-md ring-2 ring-white"
                   aria-label="Change profile picture"
                 >
                   <Camera className="h-4 w-4" />
@@ -431,8 +431,8 @@ export default function MyProfile() {
               </div>
               <div className="min-w-0 text-center sm:text-left">
                 <div className="flex flex-wrap items-center justify-center gap-2 sm:justify-start">
-                  <h2 className="text-xl font-bold capitalize text-[#023E8A]">{profile.name}</h2>
-                  <span className="inline-flex items-center gap-1 rounded-full bg-[#e8eef7] px-2 py-0.5 text-xs font-medium text-[#023E8A]">
+                  <h2 className="text-xl font-bold capitalize text-sijil-blue">{profile.name}</h2>
+                  <span className="inline-flex items-center gap-1 rounded-full bg-[hsl(var(--sijil-blue)/0.08)] px-2 py-0.5 text-xs font-medium text-sijil-blue">
                     <BadgeCheck className="h-3 w-3" />
                     Learner
                   </span>
@@ -445,7 +445,7 @@ export default function MyProfile() {
                   <button
                     type="button"
                     onClick={copyDid}
-                    className="mono mt-2 flex max-w-full items-center justify-center gap-1.5 truncate text-left text-xs text-[#64748b] hover:text-[#023E8A] sm:justify-start"
+                    className="mono mt-2 flex max-w-full items-center justify-center gap-1.5 truncate text-left text-xs text-[#64748b] hover:text-sijil-blue sm:justify-start"
                     title={resolvedDid}
                   >
                     <span className="truncate">{resolvedDid}</span>
@@ -454,7 +454,7 @@ export default function MyProfile() {
                 ) : (
                   <Link
                     to="/learner/secure-identity"
-                    className="mt-2 inline-flex text-xs font-medium text-[#023E8A] hover:underline"
+                    className="mt-2 inline-flex text-xs font-medium text-sijil-blue hover:underline"
                   >
                     Set up DID in Privacy &amp; Security
                   </Link>
@@ -469,7 +469,7 @@ export default function MyProfile() {
                 { label: "Peer Reviews", value: reviews.length },
               ].map(({ label, value }) => (
                 <div key={label} className="text-center lg:border-l lg:border-[#e2e8f0] lg:pl-4 first:lg:border-l-0">
-                  <p className="text-2xl font-bold text-[#023E8A]">{value}</p>
+                  <p className="text-2xl font-bold text-sijil-blue">{value}</p>
                   <p className="text-xs text-[#64748b]">{label}</p>
                 </div>
               ))}
@@ -481,7 +481,7 @@ export default function MyProfile() {
           <div className="grid gap-6 md:grid-cols-3">
             <div className="learner-stat-card p-6 md:col-span-2">
             <div className="mb-5 flex items-center justify-between gap-2">
-              <h3 className="flex items-center gap-2 text-base font-semibold text-[#023E8A]">
+              <h3 className="flex items-center gap-2 text-base font-semibold text-sijil-blue">
                 <User className="h-4 w-4" />
                 Personal Information
               </h3>
@@ -555,7 +555,7 @@ export default function MyProfile() {
           </div>
 
           <div className="learner-stat-card p-6">
-            <h3 className="flex items-center gap-2 text-base font-semibold text-[#023E8A]">
+            <h3 className="flex items-center gap-2 text-base font-semibold text-sijil-blue">
               <Link2 className="h-4 w-4" />
               Professional Links
             </h3>
@@ -579,7 +579,7 @@ export default function MyProfile() {
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
             <div className="learner-stat-card min-w-0 p-6">
             <div className="mb-5 flex items-center justify-between">
-              <h3 className="flex items-center gap-2 text-base font-semibold text-[#023E8A]">
+              <h3 className="flex items-center gap-2 text-base font-semibold text-sijil-blue">
                 <GraduationCap className="h-4 w-4" />
                 Education
               </h3>
@@ -617,7 +617,7 @@ export default function MyProfile() {
 
             <div className="learner-stat-card min-w-0 p-6">
             <div className="mb-5 flex items-center justify-between">
-              <h3 className="flex items-center gap-2 text-base font-semibold text-[#023E8A]">
+              <h3 className="flex items-center gap-2 text-base font-semibold text-sijil-blue">
                 <Sparkles className="h-4 w-4" />
                 Career Information
               </h3>
@@ -643,12 +643,12 @@ export default function MyProfile() {
 
           <div className="learner-stat-card p-6">
             <div className="mb-4 flex items-center justify-between">
-              <h3 className="text-base font-semibold text-[#023E8A]">Skills Summary</h3>
+              <h3 className="text-base font-semibold text-sijil-blue">Skills Summary</h3>
               {!editing && (
                 <button
                   type="button"
                   onClick={startEdit}
-                  className="flex items-center gap-1 text-xs font-medium text-[#023E8A] hover:underline"
+                  className="flex items-center gap-1 text-xs font-medium text-sijil-blue hover:underline"
                 >
                   <Pencil className="h-3 w-3" /> Edit Skills
                 </button>

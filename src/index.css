@@ -8,37 +8,40 @@
 
   :root {
 
-    /* SIJIL — Brand blue #023E8A */
+    /* SIJIL — Brand blue hsl(var(--sijil-blue)) */
 
-    --background: 214 42% 96%;
+    /* Exact sRGB #023E8A, expressed as HSL channels for alpha utilities. */
+    --sijil-blue: 213.5294117647 97.1428571429% 27.4509803922%;
 
-    --foreground: 214 80% 18%;
+    --background: var(--sijil-blue) / 0.05;
+
+    --foreground: var(--sijil-blue);
 
 
 
     --card: 0 0% 100%;
 
-    --card-foreground: 214 80% 18%;
+    --card-foreground: var(--sijil-blue);
 
 
 
     --popover: 40 38% 98%;
 
-    --popover-foreground: 214 80% 18%;
+    --popover-foreground: var(--sijil-blue);
 
 
 
-    --primary: 214 97% 27%;
+    --primary: var(--sijil-blue);
 
     --primary-foreground: 0 0% 100%;
 
-    --primary-glow: 214 90% 35%;
+    --primary-glow: var(--sijil-blue);
 
 
 
-    --secondary: 214 40% 92%;
+    --secondary: var(--sijil-blue) / 0.11;
 
-    --secondary-foreground: 214 97% 22%;
+    --secondary-foreground: var(--sijil-blue);
 
 
 
@@ -48,9 +51,9 @@
 
 
 
-    --accent: 214 45% 92%;
+    --accent: var(--sijil-blue) / 0.11;
 
-    --accent-foreground: 214 97% 22%;
+    --accent-foreground: var(--sijil-blue);
 
 
 
@@ -76,11 +79,11 @@
 
 
 
-    --info: 214 97% 27%;
+    --info: var(--sijil-blue);
 
     --info-foreground: 0 0% 100%;
 
-    --info-soft: 214 50% 95%;
+    --info-soft: var(--sijil-blue) / 0.07;
 
     --violet: 262 52% 40%;
 
@@ -92,7 +95,7 @@
 
     --input: 38 20% 86%;
 
-    --ring: 214 97% 27%;
+    --ring: var(--sijil-blue);
 
 
 
@@ -104,27 +107,27 @@
 
       135deg,
 
-      hsl(214 97% 24%) 0%,
+      hsl(var(--sijil-blue)) 0%,
 
-      hsl(214 97% 30%) 50%,
+      hsl(var(--sijil-blue)) 50%,
 
       hsl(162 45% 38%) 100%
 
     );
 
-    --gradient-subtle: linear-gradient(180deg, hsl(214 45% 97%) 0%, hsl(214 40% 93%) 100%);
+    --gradient-subtle: linear-gradient(180deg, hsl(var(--sijil-blue)/0.04) 0%, hsl(var(--sijil-blue)/0.09) 100%);
 
-    --sidebar-gradient: linear-gradient(180deg, hsl(214 97% 32%) 0%, hsl(214 97% 22%) 100%);
+    --sidebar-gradient: linear-gradient(180deg, hsl(var(--sijil-blue)) 0%, hsl(var(--sijil-blue)) 100%);
 
-    --shadow-glow: 0 0 0 4px hsl(214 97% 27% / 0.16), 0 10px 28px -12px hsl(214 97% 27% / 0.35);
+    --shadow-glow: 0 0 0 4px hsl(var(--sijil-blue)/0.16), 0 10px 28px -12px hsl(var(--sijil-blue)/0.35);
 
     --gradient-credential: linear-gradient(
 
       135deg,
 
-      hsl(214 97% 26%) 0%,
+      hsl(var(--sijil-blue)) 0%,
 
-      hsl(214 90% 34%) 45%,
+      hsl(var(--sijil-blue)) 45%,
 
       hsl(162 50% 36%) 100%
 
@@ -136,9 +139,9 @@
 
       145deg,
 
-      hsl(214 97% 22%) 0%,
+      hsl(var(--sijil-blue)) 0%,
 
-      hsl(214 97% 30%) 55%,
+      hsl(var(--sijil-blue)) 55%,
 
       hsl(162 45% 32%) 100%
 
@@ -146,29 +149,29 @@
 
 
 
-    --shadow-sm: 0 1px 2px hsl(214 80% 18% / 0.05);
+    --shadow-sm: 0 1px 2px hsl(var(--sijil-blue)/0.05);
 
-    --shadow-md: 0 4px 14px -2px hsl(214 80% 18% / 0.08);
+    --shadow-md: 0 4px 14px -2px hsl(var(--sijil-blue)/0.08);
 
-    --shadow-lg: 0 16px 40px -12px hsl(214 80% 18% / 0.14);
+    --shadow-lg: 0 16px 40px -12px hsl(var(--sijil-blue)/0.14);
 
-    --shadow-credential: 0 24px 56px -16px hsl(214 97% 22% / 0.38);
+    --shadow-credential: 0 24px 56px -16px hsl(var(--sijil-blue)/0.38);
 
 
 
-    --sidebar-background: 214 97% 27%;
+    --sidebar-background: var(--sijil-blue);
 
     --sidebar-foreground: 0 0% 100%;
 
     --sidebar-primary: 0 0% 100%;
 
-    --sidebar-primary-foreground: 214 97% 27%;
+    --sidebar-primary-foreground: var(--sijil-blue);
 
-    --sidebar-accent: 214 90% 32%;
+    --sidebar-accent: var(--sijil-blue);
 
     --sidebar-accent-foreground: 0 0% 100%;
 
-    --sidebar-border: 214 80% 35%;
+    --sidebar-border: var(--sijil-blue);
 
     --sidebar-ring: 0 0% 100%;
 
@@ -178,7 +181,7 @@
 
     --neutral-muted-foreground: 214 15% 44%;
 
-    --public-accent-from: 214 97% 27%;
+    --public-accent-from: var(--sijil-blue);
 
     --public-accent-to: 38 32% 93%;
 
@@ -202,11 +205,11 @@
 
 
 
-    --primary: 214 85% 52%;
+    --primary: var(--sijil-blue);
 
-    --primary-foreground: 214 97% 10%;
+    --primary-foreground: 0 0% 100%;
 
-    --primary-glow: 214 90% 58%;
+    --primary-glow: var(--sijil-blue);
 
 
 
@@ -246,7 +249,7 @@
 
     --input: 265 22% 18%;
 
-    --ring: 214 85% 52%;
+    --ring: var(--sijil-blue);
 
 
 
@@ -254,9 +257,9 @@
 
       135deg,
 
-      hsl(214 80% 22%) 0%,
+      hsl(var(--sijil-blue)) 0%,
 
-      hsl(214 85% 32%) 50%,
+      hsl(var(--sijil-blue)) 50%,
 
       hsl(162 40% 30%) 100%
 
@@ -266,9 +269,9 @@
 
       135deg,
 
-      hsl(214 80% 24%) 0%,
+      hsl(var(--sijil-blue)) 0%,
 
-      hsl(214 75% 34%) 50%,
+      hsl(var(--sijil-blue)) 50%,
 
       hsl(162 40% 32%) 100%
 
@@ -278,37 +281,37 @@
 
       145deg,
 
-      hsl(214 80% 20%) 0%,
+      hsl(var(--sijil-blue)) 0%,
 
-      hsl(214 85% 28%) 55%,
+      hsl(var(--sijil-blue)) 55%,
 
       hsl(162 35% 24%) 100%
 
     );
 
-    --gradient-subtle: linear-gradient(180deg, hsl(265 30% 9%) 0%, hsl(214 40% 12%) 100%);
+    --gradient-subtle: linear-gradient(180deg, hsl(265 30% 9%) 0%, hsl(var(--sijil-blue)) 100%);
 
-    --sidebar-gradient: linear-gradient(180deg, hsl(214 80% 28%) 0%, hsl(214 97% 16%) 100%);
+    --sidebar-gradient: linear-gradient(180deg, hsl(var(--sijil-blue)) 0%, hsl(var(--sijil-blue)) 100%);
 
-    --shadow-glow: 0 0 0 4px hsl(214 85% 52% / 0.28), 0 10px 28px -12px hsl(214 85% 52% / 0.4);
+    --shadow-glow: 0 0 0 4px hsl(var(--sijil-blue)/0.28), 0 10px 28px -12px hsl(var(--sijil-blue)/0.4);
 
 
 
-    --sidebar-background: 214 97% 22%;
+    --sidebar-background: var(--sijil-blue);
 
     --sidebar-foreground: 0 0% 95%;
 
-    --sidebar-primary: 214 85% 52%;
+    --sidebar-primary: var(--sijil-blue);
 
-    --sidebar-primary-foreground: 214 97% 10%;
+    --sidebar-primary-foreground: 0 0% 100%;
 
-    --sidebar-accent: 214 80% 28%;
+    --sidebar-accent: var(--sijil-blue);
 
     --sidebar-accent-foreground: 0 0% 98%;
 
-    --sidebar-border: 214 70% 30%;
+    --sidebar-border: var(--sijil-blue);
 
-    --sidebar-ring: 214 85% 52%;
+    --sidebar-ring: var(--sijil-blue);
 
 
 
@@ -316,7 +319,7 @@
 
     --neutral-muted-foreground: 214 15% 58%;
 
-    --public-accent-from: 214 97% 40%;
+    --public-accent-from: var(--sijil-blue);
 
     --public-accent-to: 265 28% 12%;
 
@@ -434,7 +437,7 @@
 
       hsl(var(--primary) / 0.08) 0%,
 
-      hsl(var(--secondary) / 0.5) 50%,
+      color-mix(in srgb, hsl(var(--secondary)) 50%, transparent) 50%,
 
       hsl(var(--background)) 100%
 

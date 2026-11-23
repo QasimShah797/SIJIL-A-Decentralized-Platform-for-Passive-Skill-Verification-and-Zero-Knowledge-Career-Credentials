@@ -10,6 +10,8 @@ import {
 } from "./ssi-bind-challenge.store";
 import { encodeDidKeyFromRawPublicKey } from "../utils/did-key";
 import { SsiService } from "./ssi.service";
+import { errorMiddleware } from "../middleware/error.middleware";
+import type { Request, Response } from "express";
 
 type Row = {
   id: string;
@@ -236,6 +238,25 @@ describe("durable SSI bind challenges", () => {
       () => store(down, () => Date.now(), false).peek("11111111-1111-4111-8111-111111111111", "11111111-1111-4111-8111-111111111111"),
       (err: unknown) => statusOf(err) === 503,
     );
+  });
+
+  it("returns HTTP 503 when the challenge cannot be issued", async () => {
+    const db = new FakeBindDb();
+    db.down = true;
+    const service = new SsiService(store(db, Date.now, true));
+    let status: number | undefined;
+    let body: unknown;
+    const response = {
+      status(code: number) { status = code; return this; },
+      json(result: unknown) { body = result; return this; },
+    };
+    await assert.rejects(() => service.issueChallenge("11111111-1111-4111-8111-111111111111"), (error: Error) => {
+      errorMiddleware(error, {} as Request, response as unknown as Response, () => undefined);
+      return true;
+    });
+    assert.equal(status, 503);
+    assert.match((body as { message: string }).message, /temporarily unavailable/);
+    assert.equal(db.rows.length, 0);
   });
 
   it("uses process memory only outside production when the table is absent", async () => {

@@ -107,6 +107,25 @@ export class SsiService {
     };
   }
 
+  async approveCredentialIssuance(
+    userId: string, skillId: string, holderDid: string,
+    approval?: { challengeId: string; signature: string },
+  ): Promise<void> {
+    if (!approval) throw new AppError("Unlock your identity to issue this credential.", 403);
+    try {
+      const challenge = await this.challenges.peek(approval.challengeId, userId);
+      const binding = canonicalSsiBindingFromDid(holderDid);
+      const payload = `SIJIL-CREDENTIAL-ISSUE-v1\nskillId=${skillId}\n${challenge.payload}`;
+      if (!verifyEd25519Utf8(binding.publicKey, ownershipMessage(payload, binding.did), approval.signature)) {
+        throw new AppError("Credential issuance approval could not be verified.", 403);
+      }
+      await this.challenges.consume(approval.challengeId, userId);
+    } catch (error) {
+      if (error instanceof AppError) throw error;
+      throw new AppError("Credential issuance approval is invalid or expired.", 403);
+    }
+  }
+
   resolvePublic(did: string): SsiResolveView {
     try {
       const binding = canonicalSsiBindingFromDid(did);
