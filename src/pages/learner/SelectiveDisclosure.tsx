@@ -22,7 +22,7 @@ import {
 const LINK_FIELDS: Array<{ id: WalletShareFieldId; label: string }> = [
   { id: "competency_name", label: "Achievement name" },
   { id: "competency_domain", label: "Subject area" },
-  { id: "verification_status", label: "Verification summary" },
+  { id: "verification_status", label: "Skill confirmation summary" },
   { id: "learner_name", label: "Your name" },
   { id: "learner_institution", label: "Institution" },
   { id: "learner_contact", label: "Contact details" },

@@ -1298,7 +1298,9 @@ export async function runTaskGenerationPipeline(params: {
   evidenceMeta: { repo: string | null; fileCount: number };
 }> {
   const { skill, taskModel, variationSeed } = params;
-  const { classification, evidenceMeta } = await collectSkillEvidence(params);
+  const collected = await collectSkillEvidence(params);
+  let classification = collected.classification;
+  const evidenceMeta = collected.evidenceMeta;
 
   let generated: GeneratedTask;
   try {

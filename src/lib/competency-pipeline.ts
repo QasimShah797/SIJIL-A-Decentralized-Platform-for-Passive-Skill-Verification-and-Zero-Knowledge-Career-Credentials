@@ -1,3 +1,5 @@
+import { UNDER_REVIEW_LABEL } from "@/lib/skill-confirmation-copy";
+
 export type PipelineStage =
   | "declared"
   | "evidence_linked"
@@ -21,7 +23,7 @@ export const PIPELINE_STAGES: { key: string; label: string }[] = [
 ];
 
 export const VERIFICATION_STAGE_TOOLTIP =
-  "Verified automatically once your evidence and assessment score meet SIJIL's threshold.";
+  "Confirmed automatically once your evidence and assessment score meet SIJIL's threshold.";
 
 export function pipelineStageLabel(stage: string): string {
   const map: Record<string, string> = {
@@ -81,7 +83,7 @@ export function evidenceLabelForStage(stage: string): string {
     case "verification_failed":
     case "institution_attestation_rejected":
     case "institution_rejected":
-      return "Verification requirements not met";
+      return "Skill confirmation requirements not met";
     case "peer_review":
       return "Peer reviews collected";
     default:

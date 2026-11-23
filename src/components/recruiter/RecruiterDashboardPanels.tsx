@@ -146,7 +146,7 @@ export function RecruiterPipelineCard({
 }) {
   const buckets = pipelineBuckets(candidates, interviews);
   const rows = [
-    { label: "Verified shares", count: buckets.verified, color: "bg-[#14b8a6]" },
+    { label: "Confirmed shares", count: buckets.verified, color: "bg-[#14b8a6]" },
     { label: "Interview scheduled", count: buckets.scheduled, color: "bg-sijil-blue" },
     { label: "Not reviewed", count: buckets.open, color: "bg-[#cbd5e1]" },
   ];
@@ -154,7 +154,7 @@ export function RecruiterPipelineCard({
   return (
     <div className="learner-stat-card p-6">
       <h2 className="text-base font-semibold text-sijil-blue">Hiring pipeline</h2>
-      <p className="text-xs text-[#64748b]">Verified shares · Interview scheduled · Not reviewed</p>
+      <p className="text-xs text-[#64748b]">Confirmed shares · Interview scheduled · Not reviewed</p>
       <div className="mt-4 flex flex-col items-center gap-4 sm:flex-row">
         <PipelineDonut {...buckets} />
         <ul className="w-full space-y-2 text-sm">

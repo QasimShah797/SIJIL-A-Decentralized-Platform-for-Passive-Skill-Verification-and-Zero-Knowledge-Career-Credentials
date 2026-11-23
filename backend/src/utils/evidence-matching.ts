@@ -2,6 +2,13 @@
  * Project evidence ↔ declared skill matching.
  * Repositories are project evidence — one repo may support multiple skill claims.
  */
+import {
+  isProgrammingLanguageSkill,
+  matchesCompetencyToken,
+  skillReferencedInText,
+  skillRelatesToRepositoryLanguage,
+} from "./competency-matching";
+
 export type MatchConfidence = "high" | "medium" | "low";
 
 export type LanguageBreakdown = Record<string, number>;
@@ -29,29 +36,12 @@ export interface SkillMatchResult {
   signals: Record<string, unknown>;
 }
 
-const SKILL_LANGUAGE_ALIASES: Record<string, string[]> = {
-  postgresql: ["sql", "postgres", "plpgsql"],
-  postgres: ["sql", "postgresql", "plpgsql"],
-  sql: ["postgresql", "postgres", "plpgsql", "mysql"],
-  mysql: ["sql"],
-  react: ["javascript", "typescript", "jsx", "tsx"],
-  "react.js": ["javascript", "typescript", "react", "jsx"],
-  "reactjs": ["javascript", "typescript", "react"],
-  node: ["javascript", "typescript"],
-  "node.js": ["javascript", "typescript"],
-  express: ["javascript", "typescript", "node"],
-  vue: ["javascript", "typescript"],
-  angular: ["javascript", "typescript"],
-  typescript: ["javascript"],
-  javascript: ["typescript"],
-  java: ["kotlin", "gradle"],
-  python: ["django", "flask"],
-  css: ["scss", "sass", "less"],
-  html: ["css"],
-};
-
 function normalizeTokens(name: string): string[] {
   return name.toLowerCase().split(/[\s.+&/_-]+/).filter((t) => t.length >= 2);
+}
+
+function skillRelatesToLanguage(skillName: string, language: string): boolean {
+  return skillRelatesToRepositoryLanguage(skillName, language);
 }
 
 function topicsFromEvidence(evidence: ProjectEvidenceInput): string[] {
@@ -73,26 +63,6 @@ function languageBreakdownFromEvidence(evidence: ProjectEvidenceInput): Language
     return raw as LanguageBreakdown;
   }
   return {};
-}
-
-function skillRelatesToLanguage(skillName: string, language: string): boolean {
-  const skillLower = skillName.trim().toLowerCase();
-  const langLower = language.trim().toLowerCase();
-  if (!skillLower || !langLower) return false;
-  if (skillLower === langLower) return true;
-  if (skillLower.includes(langLower) || langLower.includes(skillLower)) return true;
-
-  const skillTokens = normalizeTokens(skillName);
-  if (skillTokens.some((t) => t === langLower || langLower.includes(t))) return true;
-
-  for (const token of skillTokens) {
-    const aliases = SKILL_LANGUAGE_ALIASES[token] ?? [];
-    if (aliases.some((a) => a === langLower || langLower.includes(a))) return true;
-    if (SKILL_LANGUAGE_ALIASES[langLower]?.includes(token)) return true;
-  }
-
-  const skillAliases = SKILL_LANGUAGE_ALIASES[skillLower] ?? [];
-  return skillAliases.some((a) => a === langLower || langLower.includes(a));
 }
 
 function skillRelatesToDependency(skillName: string, dependency: string): boolean {
@@ -132,9 +102,17 @@ export function evaluateSkillProjectMatch(
   const domainNorm = skill.domain.trim().toLowerCase();
   const repoNameLower = evidence.repositoryName.toLowerCase();
 
-  const matchedLangEntries = Object.entries(breakdown)
+  let matchedLangEntries = Object.entries(breakdown)
     .filter(([lang, pct]) => pct > 0 && skillRelatesToLanguage(skill.name, lang))
     .sort((a, b) => b[1] - a[1]);
+
+  if (
+    !matchedLangEntries.length
+    && evidence.primaryLanguage
+    && skillRelatesToLanguage(skill.name, evidence.primaryLanguage)
+  ) {
+    matchedLangEntries = [[evidence.primaryLanguage, 100]];
+  }
 
   if (matchedLangEntries.length) {
     const [lang, pct] = matchedLangEntries[0];
@@ -149,6 +127,9 @@ export function evaluateSkillProjectMatch(
   }
 
   const matchedTopics = topics.filter((topic) => {
+    if (isProgrammingLanguageSkill(skill.name)) {
+      return matchesCompetencyToken(topic, skill.name);
+    }
     const tl = topic.toLowerCase();
     return nameTokens.some((t) => tl.includes(t)) || tl.includes(skillNameLower);
   });
@@ -157,13 +138,17 @@ export function evaluateSkillProjectMatch(
     signals.topicMatch = matchedTopics.slice(0, 5);
   }
 
-  const nameInRepo =
-    nameTokens.some((t) => t.length >= 3 && repoNameLower.includes(t))
-    || repoNameLower.includes(skillNameLower.replace(/\s+/g, "-"));
+  const nameInRepo = isProgrammingLanguageSkill(skill.name)
+    ? skillReferencedInText(skill.name, evidence.repositoryName)
+      || skillReferencedInText(skill.name, evidence.repoFullName)
+    : (
+      nameTokens.some((t) => t.length >= 3 && repoNameLower.includes(t))
+      || repoNameLower.includes(skillNameLower.replace(/\s+/g, "-"))
+    );
 
-  const descriptionMatch = nameTokens.some((t) =>
-    (evidence.description ?? "").toLowerCase().includes(t),
-  );
+  const descriptionMatch = isProgrammingLanguageSkill(skill.name)
+    ? skillReferencedInText(skill.name, evidence.description)
+    : nameTokens.some((t) => (evidence.description ?? "").toLowerCase().includes(t));
 
   if (nameInRepo && !reasons.length) {
     reasons.push(`Matched because repository name references ${skill.name}.`);

@@ -14,7 +14,7 @@ export default function LearnerVerificationRequests() {
     <LearnerWorkspaceShell variant="dashboard">
       <section className="mx-auto max-w-3xl space-y-4">
         <div>
-          <h1 className="text-2xl font-semibold text-[#0f172a]">Verification notifications</h1>
+          <h1 className="text-2xl font-semibold text-[#0f172a]">Skill confirmation notifications</h1>
           <p className="mt-1 text-sm text-[#475569]">
             These notices tell you that a recruiter sent a verification request. Review, approve, reject, and proof generation stay in your Wallet.
           </p>
