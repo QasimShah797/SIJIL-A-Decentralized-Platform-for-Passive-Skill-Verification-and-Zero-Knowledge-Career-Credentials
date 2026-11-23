@@ -130,6 +130,21 @@ export function jobsUseBrowserStorage() {
   return browserOnly;
 }
 
+/** Open roles visible to every authenticated learner (package-matching / share prompt). */
+export async function listOpenJobsForLearners(): Promise<RecruiterJob[]> {
+  const { data, error } = await supabase
+    .from(TABLE)
+    .select("id, title, seats, skills, status, decisions, created_at")
+    .eq("status", "open")
+    .order("created_at", { ascending: false })
+    .limit(50);
+  if (error) {
+    if (isMissingRelationError(error)) return [];
+    throw new Error(formatSupabaseError(error));
+  }
+  return (data ?? []).map((row) => mapRow(row as Record<string, unknown>));
+}
+
 export async function listRecruiterJobs(userId: string) {
   if (browserOnly) return readBrowser(userId);
   const { data, error } = await supabase

@@ -337,7 +337,7 @@ export function buildEvidenceLedger(
       || Boolean(skillEvidence.peerReviews || packageEvidence.peerReviews)
     );
   const includeTeacher = hasSkillSnapshot
-    ? Boolean(skillEvidence.teacherFeedback)
+    ? Boolean(skillEvidence.teacherFeedback) || Boolean(packageEvidence.teacherFeedback)
     : isPrimary && (selectedFields.includes("teacher_feedback") || selectedFields.includes("complete_evidence_package"));
 
   if (includeLms) {
@@ -388,18 +388,24 @@ export function buildEvidenceLedger(
   }
 
   if (includeTask) {
-    const practical = isRecord(packageEvidence.practicalTask)
-      ? packageEvidence.practicalTask
-      : (isRecord(skillEvidence.practicalTask) ? skillEvidence.practicalTask : {});
+    const practical = isRecord(skillEvidence.practicalTask)
+      ? skillEvidence.practicalTask
+      : (isRecord(packageEvidence.practicalTask)
+        ? packageEvidence.practicalTask
+        : (isRecord(evidence.practicalTask) ? evidence.practicalTask : {}));
     const attempts = [
       ...(isRecord(practical.latestAttempt) ? [practical.latestAttempt] : []),
       ...asRecords(practical.attemptHistory),
     ];
+    if (attempts.length === 0 && (practical.scorePercent != null || practical.score != null || asText(practical.status))) {
+      attempts.push(practical);
+    }
     attempts.forEach((row, index) => {
+      const score = row.scorePercent != null ? `${row.scorePercent}%` : "";
       items.push(ledgerItem(
         "practical_task",
         asText(row.title) || "Practical task",
-        [row.scorePercent != null ? `${row.scorePercent}%` : "", asText(row.status)].filter(Boolean).join(" · ")
+        [score, asText(row.status)].filter(Boolean).join(" · ")
           || "Practical task result",
         asNullableText(row.status) ?? (row.passed === true ? "Passed" : "Submitted"),
         itemTimestamp(row, allowTimestamps || Boolean(row.submittedAt ?? row.submitted_at)),
@@ -409,15 +415,26 @@ export function buildEvidenceLedger(
   }
 
   if (includeReviews) {
-    [
+    const githubBundle = isRecord(packageEvidence.github)
+      ? packageEvidence.github
+      : (isRecord(skillEvidence.github) ? skillEvidence.github : (isRecord(evidence.github) ? evidence.github : {}));
+    const reviews = [
       ...asRecords(packageEvidence.peerReviews),
       ...asRecords(skillEvidence.peerReviews),
       ...asRecords(evidence.peerReviews),
-    ].forEach((row, index) => {
+      ...asRecords(githubBundle.reviews),
+    ];
+    const seenReviews = new Set<string>();
+    reviews.forEach((row, index) => {
+      const reviewer = asText(row.reviewer_name) || asText(row.reviewer) || "Peer review";
+      const text = asText(row.review_text) || asText(row.comment) || "Peer review submitted";
+      const key = `${reviewer}:${text}`;
+      if (seenReviews.has(key)) return;
+      seenReviews.add(key);
       items.push(ledgerItem(
         "peer_review",
-        asText(row.reviewer_name) || asText(row.reviewer) || "Peer review",
-        asText(row.review_text) || asText(row.comment) || "Peer review submitted",
+        reviewer,
+        text,
         asNullableText(row.status) ?? "Reviewed",
         itemTimestamp(row, allowTimestamps),
         index,

@@ -118,7 +118,7 @@ function headlineFor(query: MatchQuery, rows: Scored[], competency: CompetencyMa
   if (query.intent === "filter") {
     const full = rows.filter((row) => row.level === "full").length;
     const verb = full === 1 ? "has" : "have";
-    return `${full} of ${rows.length} candidates ${verb} both ${joinAnd(query.requiredSkills)}.`;
+    return `${full} of ${rows.length} learners ${verb} both ${joinAnd(query.requiredSkills)}.`;
   }
   const leader = rows.find((row) => row.level !== "none");
   if (!leader) return `No shared learner has evidence for ${competency.label}.`;
@@ -129,9 +129,9 @@ function headlineFor(query: MatchQuery, rows: Scored[], competency: CompetencyMa
 }
 
 const BASIC_EXAMPLES = [
-  "Which candidates have 2 or more skills",
+  "Which learners have 2 or more skills",
   "Who has more than 10 evidence",
-  "Show candidates with Java and Mobile App Development",
+  "Show learners with Java and Mobile App Development",
   "Who is best at backend?",
 ];
 
@@ -205,8 +205,8 @@ function buildCountAnswer(
   return {
     intent: "find",
     headline: passed === 0
-      ? `No candidates have ${phrase}.`
-      : `${passed} of ${rows.length} candidates ${passed === 1 ? "has" : "have"} ${phrase}.`,
+      ? `No learners have ${phrase}.`
+      : `${passed} of ${rows.length} learners ${passed === 1 ? "has" : "have"} ${phrase}.`,
     caution: passed === 0 ? "Try a lower number, or ask who has a named skill." : "",
     closeNote: "",
     candidates: rows.map((row) => ({
@@ -249,8 +249,8 @@ function buildUnsupportedSkillAnswer(
   return {
     intent: "gap",
     headline: passed === 0
-      ? "No candidates have skills without supporting evidence."
-      : `${passed} of ${rows.length} candidates ${passed === 1 ? "has" : "have"} skills without supporting evidence.`,
+      ? "No learners have skills without supporting evidence."
+      : `${passed} of ${rows.length} learners ${passed === 1 ? "has" : "have"} skills without supporting evidence.`,
     caution: passed === 0 ? "Every declared skill on these profiles has shared evidence." : "",
     closeNote: "",
     candidates: rows.map((row) => ({
@@ -286,11 +286,16 @@ export function buildFallbackMatchAnswer(
   if (query.intent === "gap" && !query.requiredSkills.length && !query.competencies.length) {
     return buildUnsupportedSkillAnswer(pool, candidateSkills);
   }
-  if (query.intent === "summary") return basicModeAnswer();
-  if (!query.requiredSkills.length && !query.competencies.length) return basicModeAnswer();
+  // Unknown / open chat stays in basic mode. Rank/filter/compare still score shared evidence.
+  if (query.intent === "summary" && !query.requiredSkills.length && !query.competencies.length) {
+    return basicModeAnswer();
+  }
+  const fromQuestion = competencyFromQuestion(question);
   const competency = query.requiredSkills.length
     ? { id: "explicit", label: query.requiredSkills.join(", "), skills: query.requiredSkills, preferVerified: query.verifiedOnly }
-    : competencyFromQuestion(question);
+    : fromQuestion.skills.length
+      ? fromQuestion
+      : { id: "shared-evidence", label: "shared evidence", skills: [], preferVerified: query.verifiedOnly };
   const order = { full: 0, partial: 1, rank: 2, count: 3, none: 4 };
   const ranked = pool
     .map((candidate) => scoreCandidate(candidate, candidateSkills[candidate.id] ?? [], question, query, competency))

@@ -51,13 +51,14 @@ import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import {
   createInitialMcqProgress,
-  MCQ_SITTING_SECONDS,
   evaluateSecureMcqAttempt,
   generateSecureMcqTask,
   buildMcqSubmissionAnswers,
   isMcqPassed,
   isResponsePresent,
+  MCQ_SECONDS_PER_QUESTION,
   secondsForQuestion,
+  totalMcqSeconds,
   type AssessmentAnswerValue,
   mcqResultLabel,
   parseMcqAnswers,
@@ -640,13 +641,19 @@ export default function PracticalTask() {
     advancingRef.current = true;
 
     try {
-      if (isLastQuestion) return;
+      if (isLastQuestion) {
+        if (timedOut) {
+          await submitMcqAttempt(answers);
+        }
+        return;
+      }
 
       const nextIndex = currentQuestionIndex + 1;
+      const nextQuestion = task.questions[nextIndex];
+      const nextEndsAt = new Date(Date.now() + secondsForQuestion(nextQuestion) * 1000).toISOString();
       setMaxVisitedIndex((visited) => Math.max(visited, nextIndex));
-      await persistProgress(attempt, task, answers, nextIndex, attempt.endsAt);
+      await persistProgress(attempt, task, answers, nextIndex, nextEndsAt);
       setNow(Date.now());
-      void timedOut;
     } finally {
       advancingRef.current = false;
     }
@@ -659,16 +666,11 @@ export default function PracticalTask() {
   }, [attempt?.attemptId, attempt?.status]);
 
   useEffect(() => {
-    if (!attempt || attempt.status !== "in_progress" || !attempt.endsAt) return;
-    const remaining = new Date(attempt.endsAt).getTime() - Date.now();
-    if (remaining <= MCQ_SITTING_SECONDS * 1000 + 1500) return;
-    const next = {
-      ...attempt,
-      endsAt: new Date(Date.now() + MCQ_SITTING_SECONDS * 1000).toISOString(),
-    };
-    setAttempt(next);
-    void saveAttempt(next);
-  }, [attempt, saveAttempt]);
+    if (!attempt || attempt.status !== "in_progress" || !task || !questionEndsAt) return;
+    if (quizView !== "question") return;
+    if (questionRemainingMs > 0) return;
+    void advanceQuestion(true);
+  }, [questionRemainingMs, attempt?.status, task, questionEndsAt, quizView, advanceQuestion]);
 
   const expireSubmitRef = useRef(false);
   useEffect(() => {
@@ -815,12 +817,10 @@ export default function PracticalTask() {
       setTask(generatedTask);
 
       const start = new Date();
-      const end = new Date(start.getTime() + MCQ_SITTING_SECONDS * 1000);
-      const sittingSeconds = MCQ_SITTING_SECONDS;
-      const progress = {
-        ...createInitialMcqProgress(sittingSeconds),
-        questionEndsAt: end.toISOString(),
-      };
+      const firstQuestionSeconds = secondsForQuestion(generatedTask.questions[0]);
+      const sittingSeconds = totalMcqSeconds(generatedTask.questions);
+      const end = new Date(start.getTime() + sittingSeconds * 1000);
+      const progress = createInitialMcqProgress(firstQuestionSeconds);
       const { attemptId, ...taskBody } = generatedTask;
 
       const rec: AttemptRecord = {
@@ -847,7 +847,7 @@ export default function PracticalTask() {
       setNow(Date.now());
       toast({
         title: "MCQ ready",
-        description: `${generatedTask.questions.length} closed-ended questions · ${MCQ_SITTING_SECONDS} second sitting.`,
+        description: `${generatedTask.questions.length} closed-ended questions · ${MCQ_SECONDS_PER_QUESTION}s per question.`,
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -864,14 +864,14 @@ export default function PracticalTask() {
     const nextAnswers = { ...answers };
     if (!isResponsePresent(value)) delete nextAnswers[questionId];
     else nextAnswers[questionId] = value as AssessmentAnswerValue;
-    void persistProgress(attempt, task, nextAnswers, currentQuestionIndex, attempt.endsAt);
+    void persistProgress(attempt, task, nextAnswers, currentQuestionIndex, questionEndsAt);
   };
 
   const selectAnswer = (questionId: string, optionId: McqOptionId) => {
     if (!attempt || attempt.status !== "in_progress" || !questionEndsAt || !task) return;
     const nextAnswers = { ...answers, [questionId]: optionId };
     setAnswers(nextAnswers);
-    void persistProgress(attempt, task, nextAnswers, currentQuestionIndex, attempt.endsAt);
+    void persistProgress(attempt, task, nextAnswers, currentQuestionIndex, questionEndsAt);
   };
 
   const goToQuestion = (index: number) => {
@@ -879,7 +879,7 @@ export default function PracticalTask() {
     if (index < 0 || index >= task.questions.length) return;
     if (index === currentQuestionIndex && quizView === "question") return;
     setMaxVisitedIndex((visited) => Math.max(visited, index));
-    const nextEndsAt = attempt.endsAt;
+    const nextEndsAt = new Date(Date.now() + secondsForQuestion(task.questions[index]) * 1000).toISOString();
     setQuizView("question");
     void persistProgress(attempt, task, answers, index, nextEndsAt);
     setNow(Date.now());

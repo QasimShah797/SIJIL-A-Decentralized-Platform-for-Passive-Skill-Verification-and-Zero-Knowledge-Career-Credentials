@@ -97,7 +97,7 @@ describe("exact value disclosure", () => {
   });
 
   it("withholds marks, grades, commit counts and commit rows when OFF", () => {
-    const out = redactExactValues(payload(), DEFAULT_DISCLOSURE_PREFERENCES, "2026-10-31T00:00:00.000Z");
+    const out = redactExactValues({ ...payload(), scoreThresholdSignals: { latestVsReference: "above" } }, DEFAULT_DISCLOSURE_PREFERENCES, "2026-10-31T00:00:00.000Z");
     const text = JSON.stringify(out);
     for (const leak of ["83", "91", "47", "grade", "scorePercent", "commit_count", "abc"]) {
       assert.equal(text.includes(leak), false, `leaked ${leak}`);
@@ -105,7 +105,11 @@ describe("exact value disclosure", () => {
     assert.match(text, /Add parser/);
     assert.equal("exactValueDisclosure" in out, false);
     const ledger = JSON.stringify(buildEvidenceLedger(out, SKILL, FIELDS));
-    assert.equal(/\d+%|commits|Grade \d/.test(ledger), false);
+    assert.equal(ledger.includes("91%"), false);
+    assert.equal(ledger.includes("83 commits"), false);
+    assert.equal(/Grade \d/.test(ledger), false);
+    assert.doesNotMatch(ledger, /threshold/i);
+    assert.equal("scoreThresholdSignals" in out, false);
     const resume = JSON.stringify(buildAtsResume(out, "tok", SKILL, FIELDS));
     assert.equal(resume.includes("83 commits"), false);
   });

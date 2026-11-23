@@ -434,7 +434,7 @@ export function AttemptTimelinePanel({ entries }: { entries: AttemptHistoryEntry
 export function AssessmentRulesPanel() {
   const rules = [
     ["Format", "Closed-ended only"],
-    ["Clock", "One sitting, not per question"],
+    ["Clock", "30 seconds per question"],
     ["Progression", "Any score advances the skill"],
     ["Retake", "Latest marks replace the previous score"],
     ["Before submit", "Flag, then review"],
@@ -749,7 +749,7 @@ export function RetakeIntroBanner() {
 
 export function TaskDetailsGrid() {
   const items = [
-    { icon: Clock3, title: "Time", detail: "One timed sitting" },
+    { icon: Clock3, title: "Time", detail: "30 seconds per question" },
     { icon: MousePointer2, title: "Navigation", detail: "Move between questions" },
     { icon: Keyboard, title: "Keyboard", detail: "A-D or 1–4 to choose, arrow keys to move" },
   ] as const;

@@ -68,9 +68,9 @@ export function RecruiterCandidateCard({
       className={cn(
         "group flex h-full w-full min-w-0 cursor-pointer flex-col overflow-hidden border p-5 transition duration-200",
         embedded
-          ? "rounded-xl border-border/60 bg-background hover:border-primary/40 hover:bg-primary/[0.03]"
-          : "rounded-2xl border-border/60 bg-card shadow-sm hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-lg",
-        selected && "border-primary bg-primary/5",
+          ? "rounded-xl border-[#e2e8f0] bg-white hover:border-[#c5d4eb] hover:bg-[#f8fafc]"
+          : "learner-stat-card hover:-translate-y-0.5 hover:border-[#c5d4eb]",
+        selected && "border-[#023E8A] bg-[#e8eef7]/40",
         className,
       )}
     >
@@ -133,9 +133,11 @@ export function RecruiterCandidateCard({
         </div>
       ) : null}
 
-      <p className={cn("mt-4 line-clamp-2 text-sm leading-relaxed", careerGoal ? "text-foreground/80" : "text-muted-foreground")}>
-        {careerGoal || "No career goal shared yet."}
-      </p>
+      {careerGoal ? (
+        <p className="mt-4 line-clamp-2 text-sm leading-relaxed text-foreground/80">
+          {careerGoal}
+        </p>
+      ) : null}
 
       <div className="mt-auto flex flex-col gap-3 border-t border-border/70 pt-4">
         <dl className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">

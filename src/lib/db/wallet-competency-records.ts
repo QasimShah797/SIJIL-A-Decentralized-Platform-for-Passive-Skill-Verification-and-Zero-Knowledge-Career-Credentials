@@ -464,9 +464,15 @@ async function fetchDerivedWalletCompetencyRecords(
     safeFetchRows("moodle_feedback", () =>
       client.from("moodle_feedback").select("moodle_assignment_id, feedback_text, synced_at").eq("user_id", userId),
     ),
-    safeFetchRows("peer_reviews", () =>
-      client.from("peer_reviews").select("id, skill_id, skill, competency_name, reviewer_name, reviewer_role, source, review_text, comment, recommendation, reviewed_at, review_date, created_at").eq("learner_user_id", userId),
-    ),
+    (async () => {
+      const byLearner = await safeFetchRows("peer_reviews", () =>
+        client.from("peer_reviews").select("id, skill_id, skill, competency_name, reviewer_name, reviewer_role, reviewer, source, review_text, comment, body, feedback, recommendation, reviewed_at, review_date, created_at, external_reference").eq("learner_user_id", userId),
+      );
+      if (byLearner.length > 0) return byLearner;
+      return safeFetchRows("peer_reviews", () =>
+        client.from("peer_reviews").select("id, skill_id, skill, competency_name, reviewer_name, reviewer_role, reviewer, source, review_text, comment, body, feedback, recommendation, reviewed_at, review_date, created_at, external_reference").eq("user_id", userId),
+      );
+    })(),
     safeFetchRows("practical_attempts", () =>
       client.from("practical_attempts").select("attempt_id, skill_id, status, score, passed, feedback, updated_at, created_at, submission").eq("user_id", userId),
     ),
@@ -531,15 +537,17 @@ async function fetchDerivedWalletCompetencyRecords(
       }),
       lmsFromRecords,
     );
-    const skillPeerReviews = peerReviews.filter((row) =>
-      asText(row.source) !== "LMS"
-      && !isLmsPeerReviewRow(row)
-      && (
-        asText(row.skill_id) === competencyId
-        || competencyMatches(row.skill, competencyName)
-        || competencyMatches(row.competency_name, competencyName)
-      ),
-    );
+    const skillPeerReviews = peerReviews.filter((row) => {
+      if (asText(row.source) === "LMS" || isLmsPeerReviewRow(row)) return false;
+      if (asText(row.skill_id) === competencyId) return true;
+      if (competencyMatches(row.skill, competencyName)) return true;
+      if (competencyMatches(row.competency_name, competencyName)) return true;
+      // Unscoped reviews still belong on the package when the learner has this competency.
+      const hasSkillBinding = Boolean(
+        asText(row.skill_id) || asText(row.skill) || asText(row.competency_name),
+      );
+      return !hasSkillBinding && skillRows.length === 1;
+    });
 
     const mcqHistory = sortByLatest(
       mcqAttempts.filter((row) => asText(row.skill_id) === competencyId),
@@ -586,7 +594,7 @@ async function fetchDerivedWalletCompetencyRecords(
         importedEvidence: sortByLatest(aggregatedLms.importedEvidence, ["imported_at"]),
       },
       practicalTasks: mcqHistory,
-      peerReviews: sortByLatest(skillPeerReviews, ["reviewed_at", "review_date", "created_at"]),
+      peerReviews: sortByLatest(skillPeerReviews, ["reviewed_at", "review_date", "created_at", "createdAt"]),
       teacherFeedback: sortByLatest(aggregatedLms.teacherFeedback, ["reviewed_at"]),
       externalEvidence: [],
       institutionReview: {

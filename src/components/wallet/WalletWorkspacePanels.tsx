@@ -32,6 +32,7 @@ import {
 import { cn } from "@/lib/utils";
 import type { WalletCompetencyRecordView } from "@/lib/db/wallet-competency-records";
 import type { WalletAttemptHistoryItem, WalletShareFieldId } from "@/lib/wallet-competency-shared";
+import type { PracticalPackageSummary } from "@/lib/public-credential";
 import type { WalletShareRecordView } from "@/services/api/wallet.api";
 import type { WalletAnchorBadge } from "@/lib/ledger-status";
 
@@ -436,27 +437,33 @@ export function CompetencyPackageCard({
   lmsRows,
   taskLabel,
   attempts = [],
+  practicalSummary = null,
+  reviews = [],
 }: {
   competencyName: string;
   github: GithubPackageStats;
   lmsRows: LmsCourseRow[];
   taskLabel: string | null;
   attempts?: WalletAttemptHistoryItem[];
+  practicalSummary?: PracticalPackageSummary | null;
+  reviews?: Array<{ reviewer: string; text: string }>;
 }) {
   const githubOpen = github.repos > 0 || github.activities > 0;
   const lmsOpen = lmsRows.length > 0;
   const scoredAttempts = scoredPracticalAttempts(attempts);
-  const hasVerifiedEvidence = githubOpen || lmsOpen || Boolean(taskLabel) || scoredAttempts.length > 0;
+  const hasPractical = Boolean(practicalSummary) || scoredAttempts.length > 0 || Boolean(taskLabel);
+  const hasReviews = reviews.length > 0;
+  const hasVerifiedEvidence = githubOpen || lmsOpen || hasPractical || hasReviews;
 
   return (
     <div className="learner-stat-card p-4">
-      <p className="text-sm font-semibold text-sijil-blue">Evidence Profile</p>
+      <p className="text-sm font-semibold text-[#023E8A]">Package summary</p>
       <p className="mt-0.5 text-xs text-[#64748b]">
-        Unified package anchored to {competencyName} source evidence.
+        GitHub, LMS, practical task, and peer reviews for {competencyName}.
       </p>
 
       {!hasVerifiedEvidence ? (
-        <p className="mt-4 text-xs text-[#94a3b8]">No verified GitHub, LMS, or practical-task evidence is linked yet.</p>
+        <p className="mt-4 text-xs text-[#94a3b8]">No verified evidence is linked yet for this competency.</p>
       ) : null}
 
       <div className="mt-4 space-y-3">
@@ -499,16 +506,22 @@ export function CompetencyPackageCard({
           </details>
         ) : null}
 
-        {lmsOpen ? (
-          <details className="rounded-xl border border-[#e2e8f0] p-3" open>
-            <summary className="flex cursor-pointer list-none items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <GraduationCap className="h-4 w-4 text-sijil-blue" />
-                <span className="text-sm font-semibold text-[#0f172a]">Moodle / LMS</span>
+        <details className="rounded-xl border border-[#e2e8f0] p-3" open>
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <GraduationCap className="h-4 w-4 text-[#023E8A]" />
+              <span className="text-sm font-semibold text-[#0f172a]">Moodle / LMS</span>
+              {lmsOpen ? (
                 <span className="learner-tag-linked">Verified</span>
-              </div>
-              <ChevronDown className="h-4 w-4 text-[#94a3b8]" />
-            </summary>
+              ) : (
+                <span className="rounded-full bg-[#f1f5f9] px-2 py-0.5 text-[10px] font-semibold text-[#64748b]">
+                  Not shared
+                </span>
+              )}
+            </div>
+            <ChevronDown className="h-4 w-4 text-[#94a3b8]" />
+          </summary>
+          {lmsOpen ? (
             <table className="mt-3 w-full text-left text-xs">
               <thead className="text-[#94a3b8]">
                 <tr>
@@ -524,46 +537,141 @@ export function CompetencyPackageCard({
                     <td className="py-2 text-[#64748b]">{row.assignments}</td>
                     <td className="py-2">
                       <div className="flex items-center gap-2">
-                        <span className="tabular-nums text-sijil-blue">{row.scoreLabel}</span>
-                        <div className="h-1.5 w-16 overflow-hidden rounded-full bg-[#e2e8f0]">
-                          <div
-                            className="h-full rounded-full bg-[#14b8a6]"
-                            style={{ width: `${Math.max(0, Math.min(100, row.scorePercent ?? 0))}%` }}
-                          />
-                        </div>
+                        <span className="font-semibold tabular-nums text-[#023E8A]">
+                          {row.scorePercent != null ? `${row.scorePercent}%` : row.scoreLabel}
+                        </span>
+                        {row.scorePercent != null ? (
+                          <div className="h-1.5 w-16 overflow-hidden rounded-full bg-[#e2e8f0]">
+                            <div
+                              className="h-full rounded-full bg-[#14b8a6]"
+                              style={{ width: `${Math.max(0, Math.min(100, row.scorePercent))}%` }}
+                            />
+                          </div>
+                        ) : null}
                       </div>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
-          </details>
-        ) : null}
+          ) : (
+            <div className="mt-3 rounded-xl border border-dashed border-[#e2e8f0] bg-[#f8fafc] px-3 py-4 text-center">
+              <GraduationCap className="mx-auto h-5 w-5 text-[#94a3b8]" />
+              <p className="mt-2 text-sm font-medium text-[#334155]">No LMS evidence shared</p>
+              <p className="mt-1 text-xs text-[#64748b]">
+                This learner has not disclosed Moodle or LMS course scores for this competency.
+              </p>
+            </div>
+          )}
+        </details>
 
-        {scoredAttempts.length > 0 ? (
-          <details className="rounded-xl border border-[#e2e8f0] p-3" open>
-            <summary className="flex cursor-pointer list-none items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <ClipboardList className="h-4 w-4 text-sijil-blue" />
-                <span className="text-sm font-semibold text-[#0f172a]">Practical task</span>
-                <span className="learner-tag-linked">Saved</span>
-              </div>
-              <ChevronDown className="h-4 w-4 text-[#94a3b8]" />
-            </summary>
-            <div className="mt-3">
-              <PracticalTaskProgress attempts={attempts} />
-            </div>
-          </details>
-        ) : taskLabel ? (
-          <div className="flex items-center justify-between rounded-xl border border-[#e2e8f0] px-3 py-2.5">
+        <details className="rounded-xl border border-[#e2e8f0] p-3" open>
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-3">
             <div className="flex items-center gap-2">
-              <ClipboardList className="h-4 w-4 text-sijil-blue" />
-              <span className="text-sm font-medium text-[#0f172a]">Practical task</span>
+              <ClipboardList className="h-4 w-4 text-[#023E8A]" />
+              <span className="text-sm font-semibold text-[#0f172a]">Practical task</span>
+              {hasPractical ? (
+                <span className="learner-tag-linked">Shared</span>
+              ) : (
+                <span className="rounded-full bg-[#f1f5f9] px-2 py-0.5 text-[10px] font-semibold text-[#64748b]">
+                  Not shared
+                </span>
+              )}
             </div>
-            <span className="text-xs font-semibold text-sijil-blue">{taskLabel}</span>
-          </div>
-        ) : null}
+            <ChevronDown className="h-4 w-4 text-[#94a3b8]" />
+          </summary>
+          {hasPractical ? (
+            <div className="mt-3 space-y-3">
+              {scoredAttempts.length > 0 ? <PracticalTaskProgress attempts={attempts} /> : null}
+              {practicalSummary ? (
+                <DisclosedPracticalSummary summary={practicalSummary} fallbackLabel={taskLabel} />
+              ) : taskLabel && scoredAttempts.length === 0 ? (
+                <p className="text-xs font-semibold text-[#023E8A]">{taskLabel}</p>
+              ) : null}
+            </div>
+          ) : (
+            <div className="mt-3 rounded-xl border border-dashed border-[#e2e8f0] bg-[#f8fafc] px-3 py-4 text-center">
+              <ClipboardList className="mx-auto h-5 w-5 text-[#94a3b8]" />
+              <p className="mt-2 text-sm font-medium text-[#334155]">No practical task shared</p>
+              <p className="mt-1 text-xs text-[#64748b]">
+                This learner has not disclosed a practical-task result for this competency.
+              </p>
+            </div>
+          )}
+        </details>
+
+        <details className="rounded-xl border border-[#e2e8f0] p-3" open>
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <MessageSquare className="h-4 w-4 text-[#023E8A]" />
+              <span className="text-sm font-semibold text-[#0f172a]">Peer reviews</span>
+              {hasReviews ? (
+                <span className="learner-tag-linked">{reviews.length}</span>
+              ) : (
+                <span className="rounded-full bg-[#f1f5f9] px-2 py-0.5 text-[10px] font-semibold text-[#64748b]">
+                  Not shared
+                </span>
+              )}
+            </div>
+            <ChevronDown className="h-4 w-4 text-[#94a3b8]" />
+          </summary>
+          {hasReviews ? (
+            <ul className="mt-3 space-y-2">
+              {reviews.map((review, index) => (
+                <li key={`${review.reviewer}-${index}`} className="rounded-lg bg-[#f8fafc] px-3 py-2 ring-1 ring-[#e2e8f0]">
+                  <p className="text-xs font-semibold text-[#0f172a]">{review.reviewer}</p>
+                  <p className="mt-1 text-xs leading-relaxed text-[#64748b]">{review.text}</p>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <div className="mt-3 rounded-xl border border-dashed border-[#e2e8f0] bg-[#f8fafc] px-3 py-4 text-center">
+              <MessageSquare className="mx-auto h-5 w-5 text-[#94a3b8]" />
+              <p className="mt-2 text-sm font-medium text-[#334155]">No peer reviews shared</p>
+              <p className="mt-1 text-xs text-[#64748b]">
+                Peer reviews linked to this competency on SIJIL will appear here when disclosed.
+              </p>
+            </div>
+          )}
+        </details>
       </div>
+    </div>
+  );
+}
+
+function DisclosedPracticalSummary({
+  summary,
+  fallbackLabel,
+}: {
+  summary: PracticalPackageSummary;
+  fallbackLabel: string | null;
+}) {
+  return (
+    <div className="space-y-2">
+      <div className="grid grid-cols-2 gap-2">
+        <div className="rounded-lg bg-[#f8fafc] px-2 py-2 ring-1 ring-[#e2e8f0]">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-[#94a3b8]">Sittings</p>
+          <p className="text-lg font-bold text-[#023E8A]">{summary.sittings}</p>
+        </div>
+        <div className="rounded-lg bg-[#f8fafc] px-2 py-2 ring-1 ring-[#e2e8f0]">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-[#94a3b8]">Latest</p>
+          <p className="text-sm font-bold text-[#023E8A]">
+            {summary.exactScorePercent != null
+              ? `${summary.exactScorePercent}%`
+              : (summary.latestStatus || fallbackLabel || "Submitted")}
+          </p>
+        </div>
+      </div>
+
+      {summary.exactScorePercent != null ? (
+        <p className="text-[11px] text-[#64748b]">
+          Exact latest score disclosed · {summary.latestStatus ?? "Completed"}
+        </p>
+      ) : (
+        <div className="rounded-lg border border-[#e2e8f0] bg-white px-3 py-2">
+          <p className="text-[11px] font-semibold text-[#0f172a]">Exact score not disclosed</p>
+        </div>
+      )}
     </div>
   );
 }
@@ -619,33 +727,57 @@ export function EvidenceInspectorCard({
       <div className="mt-3 max-h-80 space-y-2 overflow-y-auto">
         {source === "github" && (githubRepos.length === 0 ? (
           <p className="text-xs text-[#94a3b8]">No GitHub repositories are linked to this competency.</p>
-        ) : githubRepos.map((repo) => (
-          <a
-            key={repo.name}
-            href={repo.url ?? undefined}
-            target={repo.url ? "_blank" : undefined}
-            rel="noreferrer"
-            className="block rounded-lg border border-[#e2e8f0] px-3 py-2"
-          >
-            <div className="flex items-start justify-between gap-2">
-              <p className="truncate text-sm font-medium text-[#0f172a]">{repo.name}</p>
-              <TrustTierBadge trustTier="corroborating" trustTierLabel="Corroborating" />
+        ) : githubRepos.map((repo) => {
+          const href = repo.url && /^https?:\/\//i.test(repo.url) ? repo.url : null;
+          const body = (
+            <>
+              <div className="flex items-start justify-between gap-2">
+                <p className="truncate text-sm font-medium text-[#0f172a]">{repo.name}</p>
+                <TrustTierBadge trustTier="corroborating" trustTierLabel="Corroborating" />
+              </div>
+              <p className="text-[11px] text-[#64748b]">
+                {[repo.language, repo.commits != null ? `${repo.commits} commits` : "Commit count not disclosed"].filter(Boolean).join(" · ")}
+              </p>
+              {href ? (
+                <p className="mt-1 text-[11px] font-semibold text-[#023E8A]">Open on GitHub</p>
+              ) : null}
+            </>
+          );
+          return href ? (
+            <a
+              key={repo.name}
+              href={href}
+              target="_blank"
+              rel="noreferrer"
+              className="block rounded-lg border border-[#e2e8f0] px-3 py-2 transition hover:border-[#c5d4eb] hover:bg-[#f8fafc]"
+            >
+              {body}
+            </a>
+          ) : (
+            <div key={repo.name} className="rounded-lg border border-[#e2e8f0] px-3 py-2">
+              {body}
             </div>
-            <p className="text-[11px] text-[#64748b]">
-              {[repo.language, repo.commits != null ? `${repo.commits} commits` : "Commit count not disclosed"].filter(Boolean).join(" · ")}
-            </p>
-          </a>
-        )))}
+          );
+        }))}
 
         {source === "lms" && (lmsAssignments.length === 0 ? (
-          <p className="text-xs text-[#94a3b8]">No Moodle assignments are linked to this competency.</p>
+          <div className="rounded-xl border border-dashed border-[#e2e8f0] bg-[#f8fafc] px-3 py-5 text-center">
+            <GraduationCap className="mx-auto h-5 w-5 text-[#94a3b8]" />
+            <p className="mt-2 text-sm font-medium text-[#334155]">No LMS evidence available</p>
+            <p className="mt-1 text-xs leading-5 text-[#64748b]">
+              No Moodle or LMS assignments, grades, or course scores were shared for this competency.
+            </p>
+          </div>
         ) : lmsAssignments.map((item) => (
           <div key={`${item.course}-${item.name}`} className="rounded-lg border border-[#e2e8f0] px-3 py-2">
             <div className="flex items-start justify-between gap-2">
               <p className="text-sm font-medium text-[#0f172a]">{item.name}</p>
               <TrustTierBadge trustTier="lms_preverified" trustTierLabel="LMS pre-verified" />
             </div>
-            <p className="text-[11px] text-[#64748b]">{item.course} · {item.grade}</p>
+            <p className="mt-1 text-[11px] text-[#64748b]">{item.course}</p>
+            <p className="mt-1 text-xs font-semibold text-[#023E8A]">
+              Score · {item.grade && item.grade !== "—" ? item.grade : "Not disclosed"}
+            </p>
           </div>
         )))}
 

@@ -13,7 +13,6 @@ import {
   ClipboardCheck,
   ShieldCheck,
   Wallet,
-  KeyRound,
   BadgeCheck,
   MessageSquare,
   LogOut,

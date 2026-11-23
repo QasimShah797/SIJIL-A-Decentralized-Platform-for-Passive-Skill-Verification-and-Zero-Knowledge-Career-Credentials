@@ -1,19 +1,27 @@
 /**
  * Recruiter API — backend layer for credential verification and candidate search.
  */
-import { tryApiRequest } from "./client";
-import type { CredentialView } from "@/lib/db/credentials";
+import { apiRequest, tryApiRequest } from "./client";
 import type { CandidateView } from "@/lib/db/candidates";
 import type { CandidateDetailView } from "@/lib/shared-presentation";
+import type { LedgerVerifyResult } from "@/services/api/ledger.api";
 
-export interface VerifyCredentialResult {
-  credential: Partial<CredentialView>;
-  disclosedFields: { id: string; label: string; value: string }[];
-  presentationStatus: "Active" | "Expired" | "Revoked";
-  candidateId?: string;
+/** Same shape as GET /public/credentials/:id/verify and GET /recruiter/verify/:id. */
+export type VerifyCredentialResult = LedgerVerifyResult;
+
+/**
+ * Verify a credential that was shared with this recruiter.
+ * Uses the existing recruiter verify endpoint (share-authorized on the backend).
+ */
+export async function verifyCredentialApi(
+  credentialId: string,
+): Promise<VerifyCredentialResult> {
+  return apiRequest<VerifyCredentialResult>(
+    `/recruiter/verify/${encodeURIComponent(credentialId)}`,
+  );
 }
 
-export async function verifyCredentialApi(
+export async function tryVerifyCredentialApi(
   credentialId: string,
 ): Promise<VerifyCredentialResult | null> {
   return tryApiRequest<VerifyCredentialResult>(

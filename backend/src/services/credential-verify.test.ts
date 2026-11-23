@@ -147,6 +147,7 @@ describe("public credential verification outcomes", () => {
       },
     );
     assert.equal(result.status, "pending_anchor");
+    assert.equal(result.reason, "pending_anchor");
   });
 
   it("returns ledger_unavailable when Fabric is disabled after a local anchor", async () => {
@@ -193,6 +194,7 @@ describe("public credential verification outcomes", () => {
       },
     );
     assert.equal(result.status, "evidence_unavailable");
+    assert.equal(result.reason, "evidence_unavailable");
   });
 
   it("keeps the ledger result for legacy credentials without evidence hashes", async () => {

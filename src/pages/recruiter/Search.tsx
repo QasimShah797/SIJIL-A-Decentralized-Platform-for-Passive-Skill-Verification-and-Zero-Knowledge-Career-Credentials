@@ -1,10 +1,9 @@
-import { ZKP_UI_ENABLED } from "@/lib/zkp-ui";
-﻿import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
-import { AppShell } from "@/components/sijil/AppShell";
+import { RecruiterWorkspaceShell } from "@/components/sijil/RecruiterWorkspaceShell";
 import { PageSkeleton } from "@/components/sijil/SkeletonLoader";
-import { Button } from "@/components/ui/button";
-import { ChevronDown, GitCompare, Search, Sparkles, Users, X } from "lucide-react";
+import { ChevronDown, Filter, LayoutGrid, List, Search, Users } from "lucide-react";
+import { cn } from "@/lib/utils";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -14,40 +13,30 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { EmptyState } from "@/components/sijil/EmptyState";
 import { RecruiterCandidateCard } from "@/components/recruiter/RecruiterCandidateCard";
-import { RecruiterDashboardStats, type RecruiterStatFilter } from "@/components/recruiter/RecruiterDashboardStats";
+import type { RecruiterStatFilter } from "@/components/recruiter/RecruiterDashboardStats";
 import {
-  RecruiterDashboardRail,
   RecruiterRecentActivity,
-  RecruiterRecentlyShared,
   RecruiterUpcomingInterviews,
-  readRecruiterShortlist,
-  writeRecruiterShortlist,
 } from "@/components/recruiter/RecruiterDashboardPanels";
-import { SijilMatchBot } from "@/components/recruiter/SijilMatchBot";
 import { useCandidates } from "@/hooks/useCandidates";
 import { listInterviewsApi } from "@/services/api/interview.api";
-import { deleteShortlist, listShortlist, saveShortlist } from "@/services/api/recruiter-workspace.api";
 import type { ScheduledInterviewView } from "@/lib/interview";
+
 export default function RecruiterSearch() {
   const navigate = useNavigate();
-  const { candidates, candidateSkills, loading, error, refresh } = useCandidates();
-  const [selected, setSelected] = useState<string[]>(() => readRecruiterShortlist());
+  const { candidates, loading, error, refresh } = useCandidates();
   const [interviews, setInterviews] = useState<ScheduledInterviewView[]>([]);
-  const [focusIds, setFocusIds] = useState<string[] | null>(null);
   const [statFilter, setStatFilter] = useState<RecruiterStatFilter>("all");
   const [query, setQuery] = useState("");
   const [skill, setSkill] = useState("all");
   const [sort, setSort] = useState<"recent" | "name">("recent");
   const [layout, setLayout] = useState<"grid" | "list">("grid");
   const [page, setPage] = useState(1);
-  const [shortlistMode, setShortlistMode] = useState<"browser" | "account" | "unknown">("unknown");
 
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase();
     return candidates.filter((candidate) => {
-      if (focusIds && !focusIds.includes(candidate.id)) return false;
-      if (statFilter === "verified" && candidate.attestation !== "Approved" && !(ZKP_UI_ENABLED && (candidate.confirmedPrivateResults ?? 0))) return false;
-      if (statFilter === "zkp" && !(candidate.confirmedPrivateResults ?? 0)) return false;
+      if (statFilter === "verified" && candidate.attestation !== "Approved") return false;
       if (statFilter === "credentials" && (candidate.credentialCount ?? 0) <= 0) return false;
       if (skill !== "all") {
         const skills = [...(candidate.verifiedSkills ?? []), ...(candidate.searchableSkills ?? []), candidate.topSkill];
@@ -65,7 +54,7 @@ export default function RecruiterSearch() {
     }).sort((left, right) => sort === "name"
       ? left.name.localeCompare(right.name)
       : Date.parse(right.sharedAt ?? "") - Date.parse(left.sharedAt ?? ""));
-  }, [candidates, focusIds, statFilter, query, skill, sort]);
+  }, [candidates, statFilter, query, skill, sort]);
 
   const skills = useMemo(() => {
     const values = new Set<string>();
@@ -83,33 +72,6 @@ export default function RecruiterSearch() {
   const pageItems = visible.slice((safePage - 1) * pageSize, safePage * pageSize);
 
   useEffect(() => {
-    writeRecruiterShortlist(selected);
-  }, [selected]);
-
-  useEffect(() => {
-    if (loading) return;
-    const ids = new Set(candidates.map((candidate) => candidate.id));
-    setSelected((current) => {
-      const next = current.filter((id) => ids.has(id));
-      if (next.length === current.length && next.every((id, index) => id === current[index])) return current;
-      return next;
-    });
-  }, [candidates, loading]);
-
-  useEffect(() => {
-    let active = true;
-    listShortlist().then((result) => {
-      if (!active || !result?.available) {
-        if (active) setShortlistMode("browser");
-        return;
-      }
-      setShortlistMode("account");
-      setSelected(result.entries.map((entry) => entry.learnerUserId));
-    }).catch(() => { if (active) setShortlistMode("browser"); });
-    return () => { active = false; };
-  }, []);
-
-  useEffect(() => {
     let active = true;
     listInterviewsApi()
       .then((rows) => {
@@ -123,250 +85,174 @@ export default function RecruiterSearch() {
     };
   }, []);
 
-  const selectStat = (filter: RecruiterStatFilter) => {
-    setStatFilter(filter !== "all" && statFilter === filter ? "all" : filter);
-  };
-
-  const toggleSelect = (id: string) => {
-    setSelected((current) => {
-      const next = current.includes(id) ? current.filter((item) => item !== id) : current.length >= 4 ? current : [...current, id];
-      if (shortlistMode === "account" && next.length !== current.length) {
-        const action = current.includes(id) ? deleteShortlist(id) : saveShortlist(id);
-        void action.catch(() => setSelected(current));
-      }
-      return next;
-    });
-  };
-
-  const goCompare = () => {
-    if (selected.length < 2) return;
-    navigate(`/recruiter/compare?ids=${selected.join(",")}`);
-  };
-
   if (loading) {
     return (
-      <AppShell role="recruiter">
+      <RecruiterWorkspaceShell>
         <PageSkeleton rows={4} />
-      </AppShell>
+      </RecruiterWorkspaceShell>
     );
   }
 
   return (
-    <AppShell role="recruiter">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-[1.75rem]">Candidate directory</h1>
-        <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-          Review learners who shared credentials. Shortlists stay limited to disclosed evidence.
-        </p>
-      </div>
-
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_300px]">
-      <div className="min-w-0 space-y-6 pb-24">
-      <RecruiterDashboardStats candidates={candidates} active={statFilter} onSelect={selectStat} />
-
-      <section className="rounded-2xl border border-border/60 bg-card p-5 shadow-sm">
-        <div className="mb-4 flex items-center gap-3">
-          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
-            <Sparkles className="h-4 w-4" />
-          </span>
-          <div>
-            <h2 className="text-base font-semibold text-foreground">Ask SIJIL Match</h2>
-            <p className="text-xs text-muted-foreground">Rank and compare from disclosed evidence.</p>
-          </div>
-        </div>
-        <SijilMatchBot
-          candidates={candidates}
-          candidateSkills={candidateSkills}
-          selectedIds={selected}
-          onClearSelection={() => setSelected([])}
-          onResultIds={setFocusIds}
-          onOpenCandidate={(id) => navigate(`/recruiter/candidate/${id}`)}
-          onCompare={(leftId, rightId) => navigate(`/recruiter/compare?ids=${leftId},${rightId}`)}
-        />
-      </section>
-
-      <section id="recruiter-directory" className="min-w-0 rounded-2xl border border-border/60 bg-card p-5 shadow-sm">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex items-center gap-3">
-            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
-              <Users className="h-4 w-4" />
-            </span>
+    <RecruiterWorkspaceShell>
+      <div className="space-y-6 pb-8">
+        <section id="recruiter-directory" className="learner-stat-card min-w-0 p-6">
+          <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <h2 className="flex items-center gap-2 text-base font-semibold text-foreground">
-                Candidates
-                <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-semibold tabular-nums text-primary">
-                  {visible.length}
-                </span>
-              </h2>
-              <p className="text-xs text-muted-foreground">Open a profile or select people to compare.</p>
+              <h2 className="text-base font-semibold text-[#023E8A]">Learner Directory</h2>
+              <p className="text-xs text-[#64748b]">
+                Shared profiles · {visible.length} {visible.length === 1 ? "learner" : "learners"}
+              </p>
             </div>
-          </div>
-          <div className="relative min-w-0 lg:w-72">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search name or skill"
-              className="h-10 w-full rounded-xl border border-border/70 bg-background pl-9 pr-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            />
-          </div>
-        </div>
-
-        <div className="mt-4 flex flex-wrap items-center gap-2 rounded-xl border border-border/70 bg-muted/40 p-2">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
+            <div className="flex items-center rounded-xl border border-[#e2e8f0] bg-[#f8fafc] p-1">
               <button
                 type="button"
-                className="inline-flex h-9 items-center gap-2 rounded-lg border border-border/70 bg-background px-3 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                aria-label="Grid view"
+                aria-pressed={layout === "grid"}
+                onClick={() => setLayout("grid")}
+                className={cn(
+                  "inline-flex h-8 w-8 items-center justify-center rounded-lg transition",
+                  layout === "grid"
+                    ? "bg-white text-[#023E8A] shadow-sm"
+                    : "text-[#94a3b8] hover:text-[#023E8A]",
+                )}
               >
-                {statFilter === "verified"
-                  ? "Verified"
-                  : statFilter === "zkp"
-                    ? "Confirmed ZKP"
-                    : statFilter === "credentials"
-                      ? "With credentials"
-                      : "All"}
-                <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                <LayoutGrid className="h-4 w-4" />
               </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-48">
-              <DropdownMenuRadioGroup
-                value={["verified", "credentials", "zkp"].includes(statFilter) ? statFilter : "all"}
-                onValueChange={(value) => setStatFilter(value as RecruiterStatFilter)}
+              <button
+                type="button"
+                aria-label="List view"
+                aria-pressed={layout === "list"}
+                onClick={() => setLayout("list")}
+                className={cn(
+                  "inline-flex h-8 w-8 items-center justify-center rounded-lg transition",
+                  layout === "list"
+                    ? "bg-white text-[#023E8A] shadow-sm"
+                    : "text-[#94a3b8] hover:text-[#023E8A]",
+                )}
               >
-                <DropdownMenuRadioItem value="all">All</DropdownMenuRadioItem>
-                <DropdownMenuRadioItem value="verified">Verified</DropdownMenuRadioItem>
-                {ZKP_UI_ENABLED && <DropdownMenuRadioItem value="zkp">Confirmed ZKP</DropdownMenuRadioItem>}
-                <DropdownMenuRadioItem value="credentials">With credentials</DropdownMenuRadioItem>
-              </DropdownMenuRadioGroup>
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          <label className="text-xs text-[#334155]">
-            Skill
-            <select className="ml-2 h-9 rounded-lg border border-border/70 bg-background px-2" value={skill} onChange={(event) => { setSkill(event.target.value); setPage(1); }}>
-              <option value="all">All disclosed skills</option>
-              {skills.map((item) => <option key={item} value={item}>{item}</option>)}
-            </select>
-          </label>
-          <label className="text-xs text-[#334155]">
-            Sort
-            <select className="ml-2 h-9 rounded-lg border border-border/70 bg-background px-2" value={sort} onChange={(event) => setSort(event.target.value as "recent" | "name")}>
-              <option value="recent">Recent share</option>
-              <option value="name">Name</option>
-            </select>
-          </label>
-          <button type="button" className="h-9 rounded-lg border border-border/70 bg-background px-3 text-xs" onClick={() => setLayout((current) => current === "grid" ? "list" : "grid")}>
-            {layout === "grid" ? "List view" : "Grid view"}
-          </button>
-          {focusIds ? (
-            <button
-              type="button"
-              onClick={() => setFocusIds(null)}
-              className="ml-auto text-xs font-medium text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              Clear match filter
-            </button>
-          ) : null}
-        </div>
-
-        {shortlistMode === "browser" ? <p className="mt-3 text-xs text-[#64748b]">Shortlist is saved in this browser until the shortlist table is applied.</p> : null}
-        <div className={layout === "grid" ? "mt-4 grid w-full gap-3 md:grid-cols-2 xl:grid-cols-3" : "mt-4 space-y-3"}>
-          {error && (
-            <div className="md:col-span-2 xl:col-span-3">
-              <EmptyState
-                icon={Users}
-                title="Could not load candidates"
-                description={error}
-                action={{ label: "Try again", onClick: () => void refresh() }}
-              />
-            </div>
-          )}
-          {!error && visible.length === 0 && (
-            <div className="md:col-span-2 xl:col-span-3">
-              <EmptyState
-                icon={Users}
-                title={focusIds ? "No candidates in this answer" : candidates.length === 0 ? "No candidates yet" : "No matches"}
-                description={focusIds
-                  ? "Clear the answer filter to see every shared learner."
-                  : candidates.length === 0
-                    ? "Learners appear here after they share with your account or with all SIJIL recruiters. A public link does not add them."
-                    : "Try another filter or search."}
-                action={focusIds
-                  ? { label: "Show all", onClick: () => setFocusIds(null) }
-                  : candidates.length > 0
-                    ? { label: "Clear filters", onClick: () => { setStatFilter("all"); setQuery(""); } }
-                    : undefined}
-              />
-            </div>
-          )}
-          {pageItems.map((c) => (
-            <RecruiterCandidateCard
-              key={c.id}
-              candidate={c}
-              embedded
-              selected={selected.includes(c.id)}
-              onSelectedChange={() => toggleSelect(c.id)}
-              onOpenSummary={() => navigate(`/recruiter/candidate/${c.id}`)}
-            />
-          ))}
-        </div>
-        {pageCount > 1 ? (
-          <div className="mt-4 flex items-center justify-between text-xs text-[#334155]">
-            <span>Page {safePage} of {pageCount}</span>
-            <div className="flex gap-2">
-              <button type="button" className="rounded-lg border px-3 py-1" disabled={safePage === 1} onClick={() => setPage(safePage - 1)}>Previous</button>
-              <button type="button" className="rounded-lg border px-3 py-1" disabled={safePage === pageCount} onClick={() => setPage(safePage + 1)}>Next</button>
+                <List className="h-4 w-4" />
+              </button>
             </div>
           </div>
-        ) : null}
-      </section>
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <RecruiterUpcomingInterviews
-          interviews={interviews}
-          onOpen={(id) => navigate(`/recruiter/candidate/${id}`)}
-        />
-        <RecruiterRecentActivity candidates={candidates} interviews={interviews} />
-      </div>
+          <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+            <div className="relative min-w-0 flex-1">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#94a3b8]" />
+              <input
+                value={query}
+                onChange={(event) => { setQuery(event.target.value); setPage(1); }}
+                placeholder="Search name or skill"
+                className="h-10 w-full rounded-xl border border-[#e2e8f0] bg-white pl-9 pr-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-[#023E8A]"
+              />
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    className={cn(
+                      "inline-flex h-10 items-center gap-2 rounded-xl border bg-white px-3 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#023E8A]",
+                      statFilter !== "all"
+                        ? "border-[#023E8A]/40 text-[#023E8A]"
+                        : "border-[#e2e8f0] text-[#334155]",
+                    )}
+                  >
+                    <Filter className="h-3.5 w-3.5" />
+                    {statFilter === "verified" ? "Verified" : statFilter === "credentials" ? "Credentials" : "All"}
+                    <ChevronDown className="h-3.5 w-3.5 text-[#94a3b8]" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-44">
+                  <DropdownMenuRadioGroup
+                    value={statFilter === "verified" || statFilter === "credentials" ? statFilter : "all"}
+                    onValueChange={(value) => setStatFilter(value as RecruiterStatFilter)}
+                  >
+                    <DropdownMenuRadioItem value="all">All</DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="verified">Verified</DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="credentials">With credentials</DropdownMenuRadioItem>
+                  </DropdownMenuRadioGroup>
+                </DropdownMenuContent>
+              </DropdownMenu>
 
-      <RecruiterRecentlyShared
-        candidates={candidates}
-        onOpen={(id) => navigate(`/recruiter/candidate/${id}`)}
-      />
-      </div>
-      <aside className="space-y-4 xl:sticky xl:top-20 xl:self-start">
-        <RecruiterDashboardRail
-          selectedCount={selected.length}
-          onCompare={() => {
-            if (selected.length >= 2) goCompare();
-            else document.getElementById("recruiter-directory")?.scrollIntoView({ behavior: "smooth", block: "start" });
-          }}
-        />
-      </aside>
-      </div>
+              <label className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#e2e8f0] bg-white px-3 text-xs text-[#334155]">
+                Skill
+                <select
+                  className="bg-transparent text-xs font-medium text-[#023E8A] outline-none"
+                  value={skill}
+                  onChange={(event) => { setSkill(event.target.value); setPage(1); }}
+                >
+                  <option value="all">All</option>
+                  {skills.map((item) => <option key={item} value={item}>{item}</option>)}
+                </select>
+              </label>
+              <label className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#e2e8f0] bg-white px-3 text-xs text-[#334155]">
+                Sort
+                <select
+                  className="bg-transparent text-xs font-medium text-[#023E8A] outline-none"
+                  value={sort}
+                  onChange={(event) => setSort(event.target.value as "recent" | "name")}
+                >
+                  <option value="recent">Recent</option>
+                  <option value="name">Name</option>
+                </select>
+              </label>
+            </div>
+          </div>
 
-      {selected.length > 0 && (
-        <div className="fixed bottom-6 left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 rounded-2xl border border-border/70 bg-card/95 px-4 py-3 shadow-lg backdrop-blur-md">
-          <span className="text-sm text-muted-foreground">
-            {selected.length} selected {selected.length === 1 ? "candidate" : "candidates"}
-          </span>
-          <button
-            type="button"
-            onClick={() => setSelected([])}
-            className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <X className="h-3 w-3" aria-hidden />
-            Clear
-          </button>
-          {selected.length >= 2 && (
-            <Button size="sm" onClick={goCompare}>
-              <GitCompare className="h-4 w-4 mr-1.5" />
-              Compare ({selected.length})
-            </Button>
-          )}
+          <div className={layout === "grid" ? "mt-4 grid w-full gap-3 md:grid-cols-2 xl:grid-cols-3" : "mt-4 space-y-3"}>
+            {error && (
+              <div className="md:col-span-2 xl:col-span-3">
+                <EmptyState
+                  icon={Users}
+                  title="Could not load learners"
+                  description={error}
+                  action={{ label: "Try again", onClick: () => void refresh() }}
+                />
+              </div>
+            )}
+            {!error && visible.length === 0 && (
+              <div className="md:col-span-2 xl:col-span-3">
+                <EmptyState
+                  icon={Users}
+                  title={candidates.length === 0 ? "No learners yet" : "No matches"}
+                  description={candidates.length === 0
+                    ? "Learners appear here after they share with your account or with all SIJIL recruiters. A public link does not add them."
+                    : "Try another filter or search."}
+                  action={candidates.length > 0
+                    ? { label: "Clear filters", onClick: () => { setStatFilter("all"); setQuery(""); } }
+                    : undefined}
+                />
+              </div>
+            )}
+            {pageItems.map((learner) => (
+              <RecruiterCandidateCard
+                key={learner.id}
+                candidate={learner}
+                embedded
+                onOpenSummary={() => navigate(`/recruiter/candidate/${learner.id}`)}
+              />
+            ))}
+          </div>
+          {pageCount > 1 ? (
+            <div className="mt-4 flex items-center justify-between text-xs text-[#334155]">
+              <span>Page {safePage} of {pageCount}</span>
+              <div className="flex gap-2">
+                <button type="button" className="rounded-lg border px-3 py-1" disabled={safePage === 1} onClick={() => setPage(safePage - 1)}>Previous</button>
+                <button type="button" className="rounded-lg border px-3 py-1" disabled={safePage === pageCount} onClick={() => setPage(safePage + 1)}>Next</button>
+              </div>
+            </div>
+          ) : null}
+        </section>
+
+        <div className="grid gap-4 lg:grid-cols-2">
+          <RecruiterUpcomingInterviews
+            interviews={interviews}
+            onOpen={(id) => navigate(`/recruiter/candidate/${id}`)}
+          />
+          <RecruiterRecentActivity candidates={candidates} interviews={interviews} />
         </div>
-      )}
-    </AppShell>
+      </div>
+    </RecruiterWorkspaceShell>
   );
 }

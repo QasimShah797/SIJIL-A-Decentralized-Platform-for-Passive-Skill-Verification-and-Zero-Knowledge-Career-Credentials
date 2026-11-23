@@ -140,4 +140,42 @@ describe("public evidence ledger", () => {
     expect(inspector.githubRepos[0]?.language).toBe("SQL");
     expect(inspector.availableSources).toContain("github");
   });
+
+  it("shows disclosed practical status and peer reviews while ignoring legacy score bands", () => {
+    const withheld = {
+      ...payload,
+      exactValueDisclosure: {
+        assessmentMarks: "withheld",
+        githubCommitCount: "withheld",
+        source: "sijil_backend_records",
+        asOf: "2026-10-31T00:00:00.000Z",
+      },
+      evidence: {
+        ...payload.evidence,
+        practicalTask: {
+          latestAttempt: { title: "React practical", status: "Passed", submittedAt: "2026-09-01T00:00:00.000Z" },
+          scoreThresholdSignals: {
+            referenceThreshold: 70,
+            latestVsReference: "above",
+            bands: { "60": "above", "70": "above", "80": "above" },
+            sittings: 1,
+            status: "Passed",
+            passed: true,
+          },
+        },
+      },
+    };
+
+    const ledger = buildEvidenceLedger(withheld, competencyId, [
+      "practical_task_result",
+      "peer_reviews",
+    ]);
+    expect(ledger.some((item) => item.source === "practical_task")).toBe(true);
+    expect(ledger.some((item) => item.source === "peer_review")).toBe(true);
+
+    const inspector = inspectorViewFromLedger(ledger);
+    expect(inspector.reviews[0]?.reviewer).toBe("Grace Hopper");
+    expect(inspector.practicalSummary).toEqual({ sittings: 1, latestStatus: "Passed", exactScorePercent: null });
+    expect(JSON.stringify(ledger)).not.toMatch(/threshold/i);
+  });
 });

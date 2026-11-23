@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import type { PeerReview } from "@/lib/sijil-data";
@@ -103,8 +103,10 @@ describe("peer reviews without a linked project", () => {
     expect(await screen.findByText("Nida Khan")).toBeTruthy();
     expect(screen.getByText("Link a GitHub repository to request contributor reviews for a project.")).toBeTruthy();
     expect(screen.queryByText("No linked projects")).toBeNull();
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: /Reviews/ })).toHaveTextContent("1");
-    });
+    expect(screen.queryByRole("button", { name: /^Reviews$/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Verified$/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^High trust$/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Pending$/ })).toBeNull();
+    expect(screen.getAllByText("TypeScript").length).toBeGreaterThan(0);
   });
 });

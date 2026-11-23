@@ -692,7 +692,10 @@ function buildDisclosedPayload(
         importedEvidence: record.evidencePackage.lms.importedEvidence,
       },
       practicalTask: record.evidencePackage.practicalTask,
-      peerReviews: record.evidencePackage.peerReviews,
+      peerReviews: [
+        ...record.evidencePackage.peerReviews,
+        ...record.evidencePackage.github.reviews,
+      ],
       teacherFeedback: record.evidencePackage.teacherFeedback,
       externalEvidence: record.evidencePackage.externalEvidence,
     });
@@ -1235,16 +1238,17 @@ async function loadAggregatedWallet(userId: string): Promise<WalletCompetencyRec
     );
 
     const skillPeerReviews = dedupeByKey(
-      peerReviews.filter((row) =>
-        asText(row.source) !== "LMS"
-        && !isLmsPeerReviewRow(row)
-        && !githubReviews.some((review) => asText(review.id) === asText(row.id))
-        && (
-          asText(row.skill_id) === competencyId
-          || competencyMatches(row.skill, competencyName)
-          || competencyMatches(row.competency_name, competencyName)
-        ),
-      ),
+      peerReviews.filter((row) => {
+        if (asText(row.source) === "LMS" || isLmsPeerReviewRow(row)) return false;
+        if (githubReviews.some((review) => asText(review.id) === asText(row.id))) return false;
+        if (asText(row.skill_id) === competencyId) return true;
+        if (competencyMatches(row.skill, competencyName)) return true;
+        if (competencyMatches(row.competency_name, competencyName)) return true;
+        const hasSkillBinding = Boolean(
+          asText(row.skill_id) || asText(row.skill) || asText(row.competency_name),
+        );
+        return !hasSkillBinding && skillRows.length === 1;
+      }),
       (row) => asText(row.id) || asText(row.external_reference),
     );
 

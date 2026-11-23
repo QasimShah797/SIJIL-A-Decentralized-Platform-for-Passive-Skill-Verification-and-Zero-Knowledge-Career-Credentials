@@ -26,7 +26,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Plus, ChevronRight, AlertTriangle, Sparkles } from "lucide-react";
+import { Plus, ChevronRight, AlertTriangle, Sparkles, Briefcase } from "lucide-react";
 import { IdentitySetupReminder } from "@/components/identity/IdentitySetupReminder";
 import { useSsiIdentity } from "@/hooks/useSsiIdentity";
 import { useAuth } from "@/hooks/useAuth";
@@ -39,6 +39,8 @@ import {
 } from "@/hooks/useLearnerData";
 import { toast } from "@/hooks/use-toast";
 import { cn, formatSupabaseError } from "@/lib/utils";
+import { listOpenJobsForLearners, matchJobSkills, type RecruiterJob } from "@/lib/recruiter-jobs";
+import type { CandidateView } from "@/lib/db/candidates";
 
 export default function LearnerProfile() {
   const navigate = useNavigate();
@@ -57,8 +59,36 @@ export default function LearnerProfile() {
   const [saving, setSaving] = useState(false);
   const [removeTarget, setRemoveTarget] = useState<DeclaredSkill | null>(null);
   const [removing, setRemoving] = useState(false);
+  const [openJobs, setOpenJobs] = useState<RecruiterJob[]>([]);
 
   const canSubmit = Boolean(name.trim());
+
+  useEffect(() => {
+    let active = true;
+    void listOpenJobsForLearners()
+      .then((rows) => {
+        if (active) setOpenJobs(rows);
+      })
+      .catch(() => {
+        if (active) setOpenJobs([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const matchingOpenJobs = useMemo(() => {
+    const skillNames = skills.map((skill) => skill.name).filter(Boolean);
+    const proxy = {
+      verifiedSkills: skillNames,
+      searchableSkills: skillNames,
+      topSkill: skillNames[0] ?? "—",
+    } as CandidateView;
+    return openJobs
+      .map((job) => ({ job, hits: matchJobSkills(job.skills, proxy) }))
+      .filter((row) => row.hits.length > 0)
+      .slice(0, 6);
+  }, [openJobs, skills]);
 
   const skillSyncKey = useMemo(() => skills.map((s) => s.id).join("|"), [skills]);
   const decaying = useMemo(() => skills.filter((s) => isSkillDecaying(s)), [skills]);
@@ -255,11 +285,35 @@ export default function LearnerProfile() {
           </div>
         )}
 
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {matchingOpenJobs.length > 0 ? (
+          <div className="learner-stat-card space-y-3 border-[#c7d7f0] p-4">
+            <div className="flex items-center gap-2">
+              <Briefcase className="h-4 w-4 text-[#023E8A]" />
+              <p className="text-sm font-semibold text-[#023E8A]">Open roles matching your competencies</p>
+            </div>
+            <p className="text-xs text-[#64748b]">
+              Recruiters opened these seats on SIJIL. Share the related competency credentials from your wallet so they can review you.
+            </p>
+            <ul className="space-y-2">
+              {matchingOpenJobs.map(({ job, hits }) => (
+                <li key={job.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#e2e8f0] bg-white px-3 py-2">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-[#0f172a]">{job.title}</p>
+                    <p className="text-xs text-[#64748b]">Matches · {hits.join(", ")}</p>
+                  </div>
+                  <Button size="sm" variant="outline" className="rounded-xl" onClick={() => navigate("/learner/wallet")}>
+                    Share credentials
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           <StatCard icon={Award} label="Declared Competencies" value={skills.length} hint="Active skills" tint={0} />
           <StatCard icon={Layers} label="Evidence Items" value={evidenceCount} hint="Linked sources" tint={1} />
-          <StatCard icon={BadgeCheck} label="Verifications" value={credentials.length} hint="Wallet credentials" tint={2} />
-          <StatCard icon={Star} label="Peer Reviews" value={reviews.length} hint="Context reviews" tint={3} />
+          <StatCard icon={Star} label="Peer Reviews" value={reviews.length} hint="Context reviews" tint={2} />
         </div>
 
         <div className="grid gap-4 lg:grid-cols-2">
@@ -414,7 +468,7 @@ export default function LearnerProfile() {
               to="/learner/validation"
               className="mt-4 inline-flex items-center text-xs font-medium text-sijil-blue hover:underline"
             >
-              View validation trail
+              View competency progress
               <ChevronRight className="ml-0.5 h-3.5 w-3.5" />
             </Link>
           </div>

@@ -80,10 +80,17 @@ export type EvidenceLedgerItem = {
 
 export type PublicInspectorSource = "github" | "lms" | "task" | "reviews";
 
+export type PracticalPackageSummary = {
+  sittings: number;
+  latestStatus: string | null;
+  exactScorePercent: number | null;
+};
+
 export type PublicInspectorView = {
   githubRepos: Array<{ name: string; language: string | null; commits: number | null; url: string | null }>;
   lmsAssignments: Array<{ name: string; course: string; grade: string }>;
   taskDetail: string | null;
+  practicalSummary: PracticalPackageSummary | null;
   reviews: Array<{ reviewer: string; text: string }>;
   github: {
     repos: number;
@@ -507,7 +514,7 @@ export function buildEvidenceLedger(
     ? Boolean(skillEvidence.peerReviews)
     : isPrimary && (selectedFields.includes("peer_reviews") || selectedFields.includes("complete_evidence_package"));
   const includeTeacher = hasSkillSnapshot
-    ? Boolean(skillEvidence.teacherFeedback)
+    ? Boolean(skillEvidence.teacherFeedback) || Boolean(packageEvidence.teacherFeedback)
     : isPrimary && (selectedFields.includes("teacher_feedback") || selectedFields.includes("complete_evidence_package"));
 
   if (includeLms) {
@@ -516,10 +523,16 @@ export function buildEvidenceLedger(
       ...asRecords(lms.evidence),
       ...asRecords(lms.importedEvidence),
       ...asRecords(lms.grades),
+      ...asRecords(lms.courses),
     ];
     rows.forEach((row, index) => {
-      const title = asText(row.assignment_name) || asText(row.name) || asText(row.activity_name) || "LMS evidence";
-      const course = asText(row.course_name) || asText(row.fullname) || "LMS";
+      const title = asText(row.assignment_name)
+        || asText(row.activity_name)
+        || asText(row.name)
+        || asText(row.fullname)
+        || asText(row.course_name)
+        || "LMS evidence";
+      const course = asText(row.course_name) || asText(row.fullname) || asText(row.shortname) || "LMS";
       const grade = row.grade != null
         ? (row.grade_max != null ? `Grade ${row.grade} / ${row.grade_max}` : `Grade ${row.grade}`)
         : "";
@@ -547,6 +560,7 @@ export function buildEvidenceLedger(
         row.commit_count != null ? `${row.commit_count} commits` : "",
         asText(row.description),
       ].filter(Boolean).join(" · ");
+      const rawUrl = asNullableText(row.html_url ?? row.github_url ?? row.url ?? row.repo_url);
       items.push(ledgerItem(
         "github",
         title,
@@ -554,19 +568,24 @@ export function buildEvidenceLedger(
         asNullableText(row.status) ?? "Synced",
         itemTimestamp(row, allowTimestamps),
         index,
-        asNullableText(row.html_url ?? row.github_url ?? row.url ?? row.repo_url) ?? null,
+        normalizeGithubRepoUrl(rawUrl, title),
       ));
     });
   }
 
   if (includeTask) {
-    const practical = isRecord(packageEvidence.practicalTask)
-      ? packageEvidence.practicalTask
-      : (isRecord(skillEvidence.practicalTask) ? skillEvidence.practicalTask : {});
+    const practical = isRecord(skillEvidence.practicalTask)
+      ? skillEvidence.practicalTask
+      : (isRecord(packageEvidence.practicalTask)
+        ? packageEvidence.practicalTask
+        : (isRecord(evidence.practicalTask) ? evidence.practicalTask : {}));
     const attempts = [
       ...(isRecord(practical.latestAttempt) ? [practical.latestAttempt] : []),
       ...asRecords(practical.attemptHistory),
     ];
+    if (attempts.length === 0 && (practical.scorePercent != null || practical.score != null || asText(practical.status))) {
+      attempts.push(practical);
+    }
     attempts.forEach((row, index) => {
       const title = asText(row.title) || "Practical task";
       const score = row.scorePercent != null ? `${row.scorePercent}%` : "";
@@ -582,16 +601,26 @@ export function buildEvidenceLedger(
   }
 
   if (includeReviews) {
+    const githubBundle = isRecord(packageEvidence.github)
+      ? packageEvidence.github
+      : (isRecord(skillEvidence.github) ? skillEvidence.github : (isRecord(evidence.github) ? evidence.github : {}));
     const reviews = [
       ...asRecords(packageEvidence.peerReviews),
       ...asRecords(skillEvidence.peerReviews),
       ...asRecords(evidence.peerReviews),
+      ...asRecords(githubBundle.reviews),
     ];
+    const seenReviews = new Set<string>();
     reviews.forEach((row, index) => {
+      const reviewer = asText(row.reviewer_name) || asText(row.reviewer) || "Peer review";
+      const text = asText(row.review_text) || asText(row.comment) || "Peer review submitted";
+      const key = `${reviewer}:${text}`;
+      if (seenReviews.has(key)) return;
+      seenReviews.add(key);
       items.push(ledgerItem(
         "peer_review",
-        asText(row.reviewer_name) || asText(row.reviewer) || "Peer review",
-        asText(row.review_text) || asText(row.comment) || "Peer review submitted",
+        reviewer,
+        text,
         asNullableText(row.status) ?? "Reviewed",
         itemTimestamp(row, allowTimestamps),
         index,
@@ -626,6 +655,27 @@ export function buildEvidenceLedger(
   });
 }
 
+/** Build a clickable GitHub URL; never return a relative path that would 404 in the SPA. */
+export function normalizeGithubRepoUrl(
+  url: string | null | undefined,
+  repoName: string | null | undefined,
+): string | null {
+  const raw = (url ?? "").trim();
+  if (raw) {
+    if (/^https?:\/\//i.test(raw)) return raw;
+    if (/^github\.com\//i.test(raw)) return `https://${raw}`;
+    if (/^www\.github\.com\//i.test(raw)) return `https://${raw}`;
+    if (/^[\w.-]+\/[\w.-]+(?:\.git)?$/i.test(raw)) {
+      return `https://github.com/${raw.replace(/\.git$/i, "")}`;
+    }
+  }
+  const name = (repoName ?? "").trim();
+  if (/^[\w.-]+\/[\w.-]+$/i.test(name)) {
+    return `https://github.com/${name}`;
+  }
+  return null;
+}
+
 function parseGithubDetail(detail: string): { language: string | null; commits: number | null } {
   const commitsMatch = detail.match(/(\d+)\s+commits/i);
   const first = detail.split("·")[0]?.trim() ?? "";
@@ -651,6 +701,20 @@ function parseScore(value: string): number | null {
   return match ? Number(match[1]) : null;
 }
 
+function practicalSummaryFromTaskItems(taskItems: EvidenceLedgerItem[]): PracticalPackageSummary | null {
+  if (taskItems.length === 0) return null;
+
+  const latest = taskItems[0];
+  const detail = `${latest.detail ?? ""} ${latest.status ?? ""}`;
+  const exactMatch = detail.match(/^(\d+(?:\.\d+)?)%/);
+  const exactScorePercent = exactMatch ? Number(exactMatch[1]) : null;
+  return {
+    sittings: taskItems.length,
+    latestStatus: latest.status || null,
+    exactScorePercent,
+  };
+}
+
 export function inspectorViewFromLedger(items: EvidenceLedgerItem[]): PublicInspectorView {
   const githubItems = items.filter((item) => item.source === "github");
   const lmsItems = items.filter((item) => item.source === "lms");
@@ -663,7 +727,7 @@ export function inspectorViewFromLedger(items: EvidenceLedgerItem[]): PublicInsp
       name: item.title,
       language: parsed.language,
       commits: parsed.commits,
-      url: item.url ?? null,
+      url: normalizeGithubRepoUrl(item.url, item.title),
     };
   });
 
@@ -678,6 +742,7 @@ export function inspectorViewFromLedger(items: EvidenceLedgerItem[]): PublicInsp
 
   const task = taskItems[0];
   const taskDetail = task ? (task.detail || task.status) : null;
+  const practicalSummary = practicalSummaryFromTaskItems(taskItems);
 
   const reviews = reviewItems.map((item) => ({
     reviewer: item.title,
@@ -707,22 +772,23 @@ export function inspectorViewFromLedger(items: EvidenceLedgerItem[]): PublicInsp
       id,
       name: row.name,
       assignments: row.assignments,
-      scoreLabel: avg != null ? String(avg) : "Linked",
+      scoreLabel: avg != null ? `${avg}%` : "Score not disclosed",
       scorePercent: avg,
     };
   });
 
   const availableSources: PublicInspectorSource[] = [];
-  if (githubRepos.length > 0) availableSources.push("github");
-  if (lmsAssignments.length > 0) availableSources.push("lms");
-  if (taskDetail) availableSources.push("task");
+  // Always offer GitHub + LMS so recruiters can see an empty state when not shared.
+  availableSources.push("github");
+  availableSources.push("lms");
+  if (taskDetail || taskItems.length > 0) availableSources.push("task");
   if (reviews.length > 0) availableSources.push("reviews");
-  if (availableSources.length === 0) availableSources.push("github");
 
   return {
     githubRepos,
     lmsAssignments,
     taskDetail,
+    practicalSummary,
     reviews,
     github: {
       repos: githubRepos.length,

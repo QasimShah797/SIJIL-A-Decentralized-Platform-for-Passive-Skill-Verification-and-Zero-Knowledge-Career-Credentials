@@ -216,6 +216,8 @@ export default function PublicCompetencyPage() {
                 github={inspector.github}
                 lmsRows={inspector.lmsRows}
                 taskLabel={inspector.taskDetail}
+                practicalSummary={inspector.practicalSummary}
+                reviews={inspector.reviews}
               />
               <EvidenceInspectorCard
                 source={inspectorSource}

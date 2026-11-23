@@ -9,7 +9,11 @@ import { paramString } from "../utils/params";
 import { callerFromRequest } from "../services/learner-access";
 
 export async function verifyCredential(req: Request, res: Response): Promise<Response> {
-  const result = await recruiterService.verifyCredential(paramString(req.params.credentialId, "credentialId"));
+  const result = await recruiterService.verifyCredential(
+    paramString(req.params.credentialId, "credentialId"),
+    req.user!.id,
+    req.accessToken,
+  );
   return sendSuccess(res, result);
 }
 

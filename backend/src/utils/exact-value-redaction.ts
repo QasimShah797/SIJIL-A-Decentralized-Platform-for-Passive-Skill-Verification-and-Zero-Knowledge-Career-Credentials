@@ -26,6 +26,7 @@ const ASSESSMENT_MARK_KEYS = new Set([
 ]);
 
 const NEVER_DISCLOSE_KEYS = new Set([
+  "scoreThresholdSignals",
   "blinding",
   "opening",
   "privateKey",

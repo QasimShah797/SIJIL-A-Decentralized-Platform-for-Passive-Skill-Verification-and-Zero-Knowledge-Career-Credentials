@@ -29,7 +29,7 @@ export const EXAM_DURATION_MINUTES = 18;
 export const MCQ_CONCEPT_COUNT = 10;
 export const MCQ_CODE_COUNT = 4;
 export const MCQ_CONCEPT_SECONDS = 30;
-export const MCQ_CODE_SECONDS = 60;
+export const MCQ_CODE_SECONDS = 30;
 
 export type McqOption = {
   id: McqOptionId;

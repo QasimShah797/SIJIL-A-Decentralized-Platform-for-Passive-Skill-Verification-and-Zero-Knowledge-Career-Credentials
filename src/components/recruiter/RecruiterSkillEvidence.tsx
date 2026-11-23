@@ -1,4 +1,5 @@
 import { ZKP_UI_ENABLED } from "@/lib/zkp-ui";
+import { SharedPrivateVerificationPanel } from "@/components/recruiter/SharedPrivateVerificationPanel";
 import { useEffect, useMemo, useState } from "react";
 import {
   CompetencyPackageCard,
@@ -10,10 +11,7 @@ import {
   inspectorViewFromLedger,
 } from "@/lib/public-credential";
 import type { SharedCredentialView } from "@/lib/shared-presentation";
-import {
-  SharedPrivateVerificationPanel,
-  countConfirmedPrivateResults,
-} from "@/components/recruiter/SharedPrivateVerificationPanel";
+import { SsiVerifyCredentialCard } from "@/components/recruiter/SsiVerifyCredentialCard";
 
 export type RecruiterSkillCard = {
   id: string;
@@ -25,8 +23,9 @@ export type RecruiterSkillCard = {
   selectedFields: string[];
   payload: Record<string, unknown>;
   presentationId: string;
-  token: string | null;
-  proofType: string | null;
+  credentialId: string | null;
+  token?: string | null;
+  proofType?: string | null;
 };
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -74,6 +73,7 @@ export function recruiterSkillCards(credentials: SharedCredentialView[]): Recrui
         presentationId: credential.presentationId,
         token: credential.token,
         proofType: credential.proofType,
+        credentialId: asText(credential.credentialId) || null,
       });
     }
   }
@@ -87,19 +87,15 @@ export function displayRecruiterSkillName(name: string) {
   return trimmed.replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
-export function countSharedZkpConfirmations(credentials: SharedCredentialView[]): number {
-  return credentials.reduce((total, credential) => (
-    total + countConfirmedPrivateResults(credential.disclosedPayload ?? {})
-  ), 0);
-}
-
 export function RecruiterCompetencyDetail({
   card,
   section = "all",
+  credentialId = null,
 }: {
   card: RecruiterSkillCard;
-  learnerUserId?: string;
-  section?: "all" | "evidence" | "requests";
+  section?: "all" | "evidence" | "verify";
+  /** Issued credential id from shared competency versions (selective disclosure). */
+  credentialId?: string | null;
 }) {
   const [source, setSource] = useState<InspectorSource>("github");
   const inspector = useMemo(() => {
@@ -113,22 +109,21 @@ export function RecruiterCompetencyDetail({
     }
   }, [inspector.availableSources, source]);
 
-  const showEvidence = section !== "requests";
-  const showPrivate = ZKP_UI_ENABLED && section !== "evidence";
-  // Public share tokens are hashed server-side; recruiter-only shares verify in-panel.
-  const verifyHref = card.token
-    ? `/recruiter/verify/${encodeURIComponent(card.token)}`
-    : "#credential-verification";
+  const showEvidence = section === "all" || section === "evidence";
+  const showVerify = section === "all" || section === "verify";
+  const issuedCredentialId = credentialId || card.credentialId;
 
   return (
-    <div className="grid gap-4 xl:grid-cols-2">
+    <div className="space-y-4">
       {showEvidence ? (
-        <>
+        <div className="grid gap-4 xl:grid-cols-2">
           <CompetencyPackageCard
             competencyName={displayRecruiterSkillName(card.name)}
             github={inspector.github}
             lmsRows={inspector.lmsRows}
             taskLabel={inspector.taskDetail}
+            practicalSummary={inspector.practicalSummary}
+            reviews={inspector.reviews}
           />
           <EvidenceInspectorCard
             source={source}
@@ -140,23 +135,26 @@ export function RecruiterCompetencyDetail({
             reviews={inspector.reviews}
             verifyUrl={inspector.verifyUrl}
           />
-        </>
-      ) : null}
-      {showPrivate ? (
-        <div className="xl:col-span-2">
-          <SharedPrivateVerificationPanel
-            payload={card.payload}
-            competencyName={displayRecruiterSkillName(card.name)}
-            selectedFields={card.selectedFields}
-            createdAt={card.createdAt}
-            expiresAt={card.expiresAt}
-            proofType={card.proofType}
-            verifyHref={verifyHref}
-          />
-          <p className="mt-2 text-xs text-[#64748b]">
-            Shared means the learner permitted this achievement. A private result is verified only after SIJIL accepts the cryptographic check for evidence linked to this credential.
-          </p>
         </div>
+      ) : null}
+
+      {showVerify && ZKP_UI_ENABLED ? (
+        <SharedPrivateVerificationPanel
+          payload={card.payload}
+          competencyName={displayRecruiterSkillName(card.name)}
+          selectedFields={card.selectedFields}
+          createdAt={card.createdAt}
+          expiresAt={card.expiresAt}
+          proofType={card.proofType ?? null}
+          verifyHref={card.token ? `/recruiter/verify/${encodeURIComponent(card.token)}` : undefined}
+        />
+      ) : null}
+      {showVerify ? (
+        <SsiVerifyCredentialCard
+          payload={card.payload}
+          versionCredentialId={issuedCredentialId}
+          sharedAt={card.createdAt}
+        />
       ) : null}
     </div>
   );

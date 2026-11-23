@@ -25,10 +25,12 @@ export type VerificationReason =
   | "holder_mismatch"
   | "evidence_mismatch"
   | "missing_anchor"
+  | "pending_anchor"
   | "ledger_hash_mismatch"
   | "revoked"
   | "revocation_pending"
   | "ledger_unavailable"
+  | "evidence_unavailable"
   | "invalid_zkp"
   | "untrusted_issuer"
   | "incomplete"
@@ -138,7 +140,7 @@ export async function evaluateCredentialVerification(
   }
 
   if (snapshot.evidenceUnavailable) {
-    return baseResult(snapshot, verifiedAt, "evidence_unavailable", recomputedHash, undefined, "incomplete");
+    return baseResult(snapshot, verifiedAt, "evidence_unavailable", recomputedHash, undefined, "evidence_unavailable");
   }
 
   if (!snapshot.legacyUnverifiedEvidence && snapshot.evidenceHashMismatch) {
@@ -173,7 +175,7 @@ export async function evaluateCredentialVerification(
   const ledgerView = await readLedger(deps.ledger, snapshot.credentialId, recomputedHash);
   if (ledgerView === "unavailable") {
     if (snapshot.anchorStatus !== "anchored") {
-      return baseResult(snapshot, verifiedAt, "pending_anchor", recomputedHash, detail, "incomplete");
+      return baseResult(snapshot, verifiedAt, "pending_anchor", recomputedHash, detail, "pending_anchor");
     }
     return baseResult(snapshot, verifiedAt, "ledger_unavailable", recomputedHash, detail, "ledger_unavailable");
   }
@@ -183,7 +185,7 @@ export async function evaluateCredentialVerification(
     if (snapshot.anchorStatus === "anchored") {
       return baseResult(snapshot, verifiedAt, "ledger_missing", recomputedHash, detail, "missing_anchor");
     }
-    return baseResult(snapshot, verifiedAt, "pending_anchor", recomputedHash, detail, "incomplete");
+    return baseResult(snapshot, verifiedAt, "pending_anchor", recomputedHash, detail, "pending_anchor");
   }
 
   if (!ledgerView.hashMatches) {
@@ -281,7 +283,7 @@ function checksFor(snapshot: CredentialVerifySnapshot, reason: VerificationReaso
         ? "missing"
         : reason === "ledger_unavailable"
           ? "unavailable"
-          : reason === "incomplete"
+          : reason === "pending_anchor" || reason === "incomplete"
             ? "pending"
             : reason === "valid" || reason === "revoked" || reason === "revocation_pending"
               ? "match"
