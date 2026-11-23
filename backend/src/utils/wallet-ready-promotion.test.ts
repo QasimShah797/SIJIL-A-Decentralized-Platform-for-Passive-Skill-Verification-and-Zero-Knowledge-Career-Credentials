@@ -35,8 +35,11 @@ describe("wallet-ready promotion", () => {
   });
 
   it("advances a server-scored sitting and rejects unscored or already completed attempts", () => {
-    assert.equal(base({ scoredPassed: false, scoredPercent: 59 }).promote, true);
+    assert.equal(base({ scoredPassed: false, scoredPercent: 10 }).promote, true);
+    assert.equal(base({ scoredPassed: true, scoredPercent: 100 }).promote, true);
     assert.equal(base({ scoredPassed: false, scoredPercent: 0 }).promote, true);
+    assert.equal(base({ scoredPercent: 101 }).promote, false);
+    assert.equal(base({ attemptStatus: "abandoned", scoredPercent: 100 }).promote, false);
     assert.deepEqual(base({ scoredPercent: NaN }), { promote: false, reason: "assessment_not_scored" });
     assert.equal(base({ attemptStatus: "completed", scoredPassed: true, scoredPercent: 100 }).promote, false);
   });

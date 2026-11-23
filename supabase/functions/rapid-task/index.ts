@@ -757,7 +757,6 @@ Deno.serve(async (req) => {
         }
 
         let test = buildLocalFallbackMcqTest(skillName);
-        test.durationMinutes = 15;
         let fallback = true;
         try {
           const generated = await withTimeout(
@@ -817,11 +816,16 @@ Deno.serve(async (req) => {
           return json({ error: "Could not create MCQ attempt", details: attemptError?.message }, 500);
         }
 
+        const durationMinutes = test.durationMinutes || 18;
+        const startedAt = new Date();
+        const deadlineAt = new Date(startedAt.getTime() + 30 * 1000);
         return json({
           attemptId: attempt.id,
           title: test.title,
           type: "MCQ",
-          durationMinutes: test.durationMinutes || 15,
+          durationMinutes,
+          startedAt: startedAt.toISOString(),
+          deadlineAt: deadlineAt.toISOString(),
           questions: learnerQuestions,
           skill: skillName,
           classification,

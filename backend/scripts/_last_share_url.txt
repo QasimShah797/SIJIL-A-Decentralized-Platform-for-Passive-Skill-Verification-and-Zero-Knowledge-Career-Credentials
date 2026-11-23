@@ -1,2 +1,0 @@
-http://localhost:8080/credential/93c7ee48-aca9-47be-aafa-b221f21b8ef8
-93c7ee48-aca9-47be-aafa-b221f21b8ef8

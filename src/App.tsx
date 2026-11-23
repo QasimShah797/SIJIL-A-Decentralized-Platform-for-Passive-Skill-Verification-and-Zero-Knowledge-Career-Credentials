@@ -4,6 +4,7 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { RequireAdminRoute } from "@/components/RequireAdminRoute";
 import { RequireLearnerRoute } from "@/components/RequireLearnerRoute";
 import { RequireRecruiterRoute } from "@/components/RequireRecruiterRoute";
 import { AuthProvider } from "@/hooks/useAuth";
@@ -13,8 +14,11 @@ import Landing from "./pages/Landing";
 import NotFound from "./pages/NotFound";
 import ReviewInvite from "./pages/review/ReviewInvite";
 import ContextReviewRequest from "./pages/review/ContextReviewRequest";
+import AdminLogin from "./pages/login/AdminLogin";
+import AdminIntegrations from "./pages/admin/Integrations";
 import LearnerLogin from "./pages/login/LearnerLogin";
 import LearnerSignup from "./pages/signup/LearnerSignup";
+import LearnerVerifyEmail from "./pages/signup/LearnerVerifyEmail";
 import LearnerDashboard from "./pages/learner/Dashboard";
 import CompleteProfile from "./pages/learner/CompleteProfile";
 import LearnerProfile from "./pages/learner/Profile";
@@ -75,6 +79,10 @@ const LROnboarding = ({ children }: { children: React.ReactNode }) => (
   <RequireLearnerRoute requireCompleteProfile={false} requireSsiIdentity={false}>{children}</RequireLearnerRoute>
 );
 
+const AR = ({ children }: { children: React.ReactNode }) => (
+  <RequireAdminRoute>{children}</RequireAdminRoute>
+);
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <ThemeProvider>
@@ -89,7 +97,10 @@ const App = () => (
 
           <Route path="/login/learner" element={<LearnerLogin />} />
           <Route path="/signup/learner" element={<LearnerSignup />} />
+          <Route path="/signup/learner/verify-email" element={<LearnerVerifyEmail />} />
           <Route path="/login/recruiter" element={<RecruiterLogin />} />
+          <Route path="/login/admin" element={<AdminLogin />} />
+          <Route path="/admin/integrations" element={<AR><AdminIntegrations /></AR>} />
 
           <Route path="/review/invite/:token" element={<ReviewInvite />} />
           <Route path="/review/request/:token" element={<ContextReviewRequest />} />

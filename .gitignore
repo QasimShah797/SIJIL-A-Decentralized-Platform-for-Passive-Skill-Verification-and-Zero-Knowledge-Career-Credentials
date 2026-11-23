@@ -43,6 +43,7 @@ circuits/**/node_modules/
 circuits/**/.tools/
 
 node_modules_linux_backup/
+node_modules.windows-backup*/
 node_modules/
 .env
 .env.*

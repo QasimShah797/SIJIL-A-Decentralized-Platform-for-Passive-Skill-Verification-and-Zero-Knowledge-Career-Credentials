@@ -105,12 +105,14 @@ export function derivePracticalTaskState(
   attempt: AttemptRecord | null,
   mcqResult: McqAttemptResultRow | null,
 ): PracticalTaskState {
+  if (attempt?.status === "in_progress") return "IN_PROGRESS";
   if (mcqResult && isMcqRowCompleted(mcqResult)) return "COMPLETED";
   if (attempt && (attempt.status === "submitted" || attempt.status === "auto_submitted" || attempt.status === "passed")) {
     return "COMPLETED";
   }
+  // Quit / abandoned sittings must not stay resumable via a leftover server draft.
+  if (attempt?.status === "expired_no_submission") return "NOT_STARTED";
   if (mcqResult && isMcqRowInProgress(mcqResult)) return "IN_PROGRESS";
-  if (attempt?.status === "in_progress") return "IN_PROGRESS";
   return "NOT_STARTED";
 }
 
@@ -183,8 +185,20 @@ export async function loadAttemptsWithMcqResults(
 
   for (const skillId of skillIds) {
     const mcqResult = mcqResults[skillId] ?? null;
-    if (mcqResult && isMcqRowCompleted(mcqResult)) {
-      map[skillId] = mcqResultToAttemptRecord(skillId, mcqResult, map[skillId] ?? null);
+    const existing = map[skillId] ?? null;
+    const completed = mcqResult && isMcqRowCompleted(mcqResult) ? mcqResult : null;
+
+    if (existing?.status === "in_progress") {
+      const started = new Date(existing.startedAt).getTime();
+      const completedAt = completed?.submitted_at ?? completed?.created_at ?? null;
+      const completedTime = completedAt ? new Date(completedAt).getTime() : 0;
+      if (!completed || (Number.isFinite(started) && started >= completedTime)) {
+        continue;
+      }
+    }
+
+    if (completed) {
+      map[skillId] = mcqResultToAttemptRecord(skillId, completed, existing);
       continue;
     }
 

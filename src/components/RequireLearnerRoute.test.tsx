@@ -5,7 +5,11 @@ import { RequireLearnerRoute } from "./RequireLearnerRoute";
 import { getSsiIdentityApi } from "@/services/api/ssi.api";
 
 vi.mock("@/hooks/useAuth", () => ({
-  useAuth: () => ({ user: { id: "test-learner" }, loading: false, rolesReady: true }),
+  useAuth: () => ({
+    user: { id: "test-learner", email_confirmed_at: "2026-11-20T00:00:00Z" },
+    loading: false,
+    rolesReady: true,
+  }),
 }));
 
 vi.mock("@/lib/auth-helpers", () => ({

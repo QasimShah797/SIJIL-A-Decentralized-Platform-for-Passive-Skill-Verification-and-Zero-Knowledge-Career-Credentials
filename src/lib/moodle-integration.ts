@@ -24,7 +24,7 @@ export const LEGACY_MOODLE_SITE_HOST = "sijil.moodlecloud.com";
 export const RETIRED_MOODLE_CLOUD_HOST = "sijil-fyp.moodlecloud.com";
 
 /** Expected edge function version — mismatch means remote deploy is stale. */
-export const MOODLE_SYNC_FUNCTION_VERSION = "3.4.0";
+export const MOODLE_SYNC_FUNCTION_VERSION = "3.5.0";
 
 export function normalizeMoodleSiteUrl(url: string): string {
   return url.trim().replace(/\/+$/, "").toLowerCase();
@@ -515,31 +515,174 @@ export async function disconnectMoodle(): Promise<void> {
   if (error) throw error;
 }
 
-export async function fetchMoodleCourseActivities(): Promise<MoodleCourseActivity[]> {
-  const userId = await requireUserId();
-  const currentSite = moodleActivityQuerySite();
+function moodleRowMatchesCurrentSite(siteUrl: unknown, currentSite: string | null): boolean {
+  if (!currentSite) return true;
+  if (typeof siteUrl !== "string" || !siteUrl.trim()) return true;
+  return normalizeMoodleSiteUrl(siteUrl) === currentSite || isCurrentMoodleSiteUrl(siteUrl);
+}
 
-  const { data: courses, error: courseErr } = await supabase
-    .from("moodle_courses")
-    .select("moodle_course_id,fullname,shortname,raw,synced_at,moodle_site_url")
-    .eq("user_id", userId)
-    .eq("moodle_site_url", currentSite)
-    .order("synced_at", { ascending: false });
+async function loadMoodleCourseRows(userId: string, currentSite: string | null): Promise<{
+  courses: Record<string, unknown>[];
+  relaxedSite: boolean;
+}> {
+  const columns = "moodle_course_id,fullname,shortname,raw,synced_at,moodle_site_url";
+  const ordered = () =>
+    supabase.from("moodle_courses").select(columns).eq("user_id", userId).order("synced_at", { ascending: false });
 
-  if (courseErr) {
-    if (isMissingRelationError(courseErr)) {
-      console.warn("moodle_courses table missing — run migration 20260706120000_moodle_sync_tables.sql");
-      return [];
+  if (!currentSite) {
+    const { data, error } = await ordered();
+    if (error) {
+      if (isMissingRelationError(error)) return { courses: [], relaxedSite: false };
+      throw error;
     }
-    if (isMissingColumnError(courseErr)) {
-      // Never show legacy unfiltered Moodle rows — only current-site data after migration + sync.
-      console.warn("moodle_site_url column missing — run migration 20260714120000_moodle_site_url_isolation.sql then Refresh Moodle Data");
-      return [];
-    }
-    throw courseErr;
+    return { courses: (data ?? []) as Record<string, unknown>[], relaxedSite: false };
   }
 
-  return buildCourseActivitiesFromRows(userId, courses ?? [], currentSite);
+  const strict = await ordered().eq("moodle_site_url", currentSite);
+  if (strict.error) {
+    if (isMissingRelationError(strict.error)) {
+      console.warn("moodle_courses table missing — run migration 20260706120000_moodle_sync_tables.sql");
+      return { courses: [], relaxedSite: false };
+    }
+    if (!isMissingColumnError(strict.error)) throw strict.error;
+
+    // Site isolation column missing: fall back to learner rows and warn to run migration.
+    console.warn(
+      "moodle_site_url column missing — run migration 20260714120000_moodle_site_url_isolation.sql then Refresh Moodle Data",
+    );
+    const plain = await supabase
+      .from("moodle_courses")
+      .select("moodle_course_id,fullname,shortname,raw,synced_at")
+      .eq("user_id", userId)
+      .order("synced_at", { ascending: false });
+    if (plain.error) {
+      if (isMissingRelationError(plain.error)) return { courses: [], relaxedSite: false };
+      throw plain.error;
+    }
+    return { courses: (plain.data ?? []) as Record<string, unknown>[], relaxedSite: true };
+  }
+
+  if ((strict.data ?? []).length > 0) {
+    return { courses: strict.data as Record<string, unknown>[], relaxedSite: false };
+  }
+
+  const loose = await ordered();
+  if (loose.error || !loose.data?.length) {
+    return { courses: [], relaxedSite: false };
+  }
+  // A successful sync can store a site URL that is not the hardcoded host.
+  // These rows still belong to the signed-in learner and must be shown.
+  return { courses: loose.data as Record<string, unknown>[], relaxedSite: true };
+}
+
+function activitiesFromImportedEvidence(rows: Record<string, unknown>[]): MoodleCourseActivity[] {
+  const byCourse = new Map<number, MoodleCourseActivity>();
+  for (const row of rows) {
+    const courseId = Number(row.moodle_course_id);
+    if (!Number.isFinite(courseId) || courseId <= 1) continue;
+    let course = byCourse.get(courseId);
+    if (!course) {
+      course = {
+        courseId,
+        courseName: String(row.course_name || `Course ${courseId}`),
+        shortname: null,
+        completionStatus: null,
+        progress: null,
+        assignments: [],
+      };
+      byCourse.set(courseId, course);
+    }
+    const grade = row.grade == null || row.grade === "" ? null : String(row.grade);
+    const gradeMax = row.grade_max == null || row.grade_max === "" ? null : String(row.grade_max);
+    course.assignments.push({
+      id: String(row.id),
+      moodleAssignmentId: Number(row.moodle_assignment_id),
+      name: String(row.activity_name || "Assignment"),
+      moduleType: "assign",
+      activityType: String(row.activity_type || "Assignment"),
+      submissionStatus: grade
+        ? "Graded"
+        : formatSubmissionStatusLabel(String(row.submission_status || "Pending")),
+      grade,
+      gradeMax,
+      gradeFormatted: grade && gradeMax ? `${grade} / ${gradeMax}` : grade,
+      feedback: typeof row.feedback_preview === "string" && row.feedback_preview.trim()
+        ? row.feedback_preview.trim()
+        : null,
+      submissionText: null,
+      submissionFiles: null,
+      gradedAt: null,
+      submittedAt: null,
+      dueDate: null,
+      gradeReleased: grade !== null,
+      competencyTags: [],
+      importedAt: String(row.imported_at || new Date().toISOString()),
+      source: "LMS",
+    });
+  }
+  return [...byCourse.values()];
+}
+
+async function fetchActivitiesFromImportedEvidence(
+  userId: string,
+  currentSite: string | null,
+): Promise<MoodleCourseActivity[]> {
+  const columns = "id,moodle_course_id,moodle_assignment_id,course_name,activity_name,activity_type,grade,grade_max,submission_status,feedback_preview,imported_at,moodle_site_url";
+  const resultWithSite = await supabase.from("imported_lms_evidence").select(columns).eq("user_id", userId);
+  const result = resultWithSite.error && isMissingColumnError(resultWithSite.error)
+    ? await supabase
+      .from("imported_lms_evidence")
+      .select("id,moodle_course_id,moodle_assignment_id,course_name,activity_name,activity_type,grade,grade_max,submission_status,feedback_preview,imported_at")
+      .eq("user_id", userId)
+    : resultWithSite;
+  if (result.error) {
+    if (isMissingRelationError(result.error)) return [];
+    throw result.error;
+  }
+  const rows = (result.data ?? []) as Record<string, unknown>[];
+  const matched = rows.filter((row) => moodleRowMatchesCurrentSite(row.moodle_site_url, currentSite));
+  return activitiesFromImportedEvidence(matched.length > 0 ? matched : rows);
+}
+
+async function courseRowsFromAssignments(userId: string): Promise<Record<string, unknown>[]> {
+  const { data, error } = await supabase
+    .from("moodle_assignments")
+    .select("moodle_course_id")
+    .eq("user_id", userId);
+  if (error || !data?.length) return [];
+  const ids = [...new Set(data.map((row) => Number(row.moodle_course_id)).filter((id) => Number.isFinite(id) && id > 1))];
+  return ids.map((id) => ({
+    moodle_course_id: id,
+    fullname: `Course ${id}`,
+    shortname: null,
+    raw: null,
+  }));
+}
+
+export async function fetchMoodleCourseActivities(): Promise<MoodleCourseActivity[]> {
+  const userId = await requireUserId();
+  // Remote: canonical site key via moodleActivityQuerySite().
+  // Local: resilient loaders (relaxed site match, assignment/imported evidence fallbacks).
+  const currentSite = moodleActivityQuerySite();
+  let { courses, relaxedSite } = await loadMoodleCourseRows(userId, currentSite);
+  if (courses.length === 0) {
+    courses = await courseRowsFromAssignments(userId);
+    relaxedSite = true;
+  }
+
+  let activities = courses.length > 0
+    ? await buildCourseActivitiesFromRows(userId, courses, relaxedSite ? null : currentSite)
+    : [];
+  let assignmentCount = activities.reduce((count, course) => count + course.assignments.length, 0);
+  if (courses.length > 0 && assignmentCount === 0) {
+    activities = await buildCourseActivitiesFromRows(userId, courses, null);
+    assignmentCount = activities.reduce((count, course) => count + course.assignments.length, 0);
+  }
+  if (assignmentCount > 0) return activities;
+
+  const imported = await fetchActivitiesFromImportedEvidence(userId, currentSite);
+  if (imported.length > 0) return imported;
+  return activities;
 }
 
 function parseCourseMeta(raw: unknown): { completionStatus: string | null; progress: string | null } {
@@ -579,71 +722,67 @@ function parseNumericGrade(value: unknown): string | null {
   return String(n);
 }
 
+function applyMoodleGradeObject(
+  source: Record<string, unknown> | null | undefined,
+  current: { grade: string | null; gradeMax: string | null; gradeFormatted: string | null },
+) {
+  if (!source) return;
+  if (!current.grade) {
+    const formatted = String(source.gradeformatted ?? source.gradeFormatted ?? source.formatted ?? source.strgrade ?? "").trim();
+    current.grade = parseNumericGrade(
+      source.value ?? source.grade ?? source.graderaw ?? source.rawgrade ?? source.finalgrade,
+    );
+    if (!current.grade && formatted && !isMissingGradeDisplay(formatted)) {
+      const match = formatted.match(/^([\d.]+)\s*(?:\/\s*([\d.]+))?/);
+      if (match) {
+        current.grade = match[1];
+        if (match[2]) current.gradeMax = match[2];
+      }
+    }
+    if (isMissingGradeDisplay(current.gradeFormatted) && formatted && !isMissingGradeDisplay(formatted)) {
+      current.gradeFormatted = formatted;
+    }
+  }
+  if (!current.gradeMax) {
+    current.gradeMax = parseNumericGrade(
+      source.max ?? source.grademax ?? source.gradeMax ?? source.grademaxformatted,
+    );
+  }
+}
+
 function hydrateAssignmentGrade(row: Record<string, unknown>): {
   grade: string | null;
   gradeMax: string | null;
   gradeFormatted: string | null;
 } {
-  let grade = parseNumericGrade(row.grade);
-  let gradeMax = parseNumericGrade(row.grade_max);
-  let gradeFormatted = typeof row.grade_formatted === "string" ? row.grade_formatted : null;
+  const current = {
+    grade: parseNumericGrade(row.grade),
+    gradeMax: parseNumericGrade(row.grade_max),
+    gradeFormatted: typeof row.grade_formatted === "string" ? row.grade_formatted : null,
+  };
 
-  if (!grade && gradeFormatted && !isMissingGradeDisplay(gradeFormatted)) {
-    const match = gradeFormatted.match(/^([\d.]+)\s*(?:\/\s*([\d.]+))?/);
+  if (!current.grade && current.gradeFormatted && !isMissingGradeDisplay(current.gradeFormatted)) {
+    const match = current.gradeFormatted.match(/^([\d.]+)\s*(?:\/\s*([\d.]+))?/);
     if (match) {
-      grade = match[1];
-      if (match[2]) gradeMax = match[2];
+      current.grade = match[1];
+      if (match[2]) current.gradeMax = match[2];
     }
   }
 
   const raw = row.raw as Record<string, unknown> | undefined;
-  const report = raw?.gradeReport as Record<string, unknown> | undefined;
-  if (report) {
-    const reportFormatted = String(
-      report.gradeformatted ?? report.gradeFormatted ?? "",
-    ).trim();
-    if (!grade) {
-      grade = parseNumericGrade(report.grade ?? report.graderaw ?? report.finalgrade);
-    }
-    if (!gradeMax) {
-      gradeMax = parseNumericGrade(report.grademax ?? report.gradeMax);
-    }
-    if (!grade && reportFormatted && !isMissingGradeDisplay(reportFormatted)) {
-      const match = reportFormatted.match(/^([\d.]+)\s*(?:\/\s*([\d.]+))?/);
-      if (match) {
-        grade = match[1];
-        if (match[2]) gradeMax = match[2];
-      }
-    }
-    if (isMissingGradeDisplay(gradeFormatted) && reportFormatted && !isMissingGradeDisplay(reportFormatted)) {
-      gradeFormatted = reportFormatted;
-    }
-  }
-
-  const gradeRow = raw?.grade as Record<string, unknown> | undefined;
-  if (gradeRow) {
-    if (!grade) {
-      grade = parseNumericGrade(
-        gradeRow.value ?? gradeRow.grade ?? gradeRow.graderaw ?? gradeRow.rawgrade,
-      );
-    }
-    if (!gradeMax) {
-      gradeMax = parseNumericGrade(gradeRow.max ?? gradeRow.grademax);
-    }
-  }
+  applyMoodleGradeObject(raw?.gradeReport as Record<string, unknown> | undefined, current);
+  applyMoodleGradeObject(raw?.grade as Record<string, unknown> | undefined, current);
 
   const lastAttempt = raw?.lastAttempt as Record<string, unknown> | undefined;
-  const attemptGrade = lastAttempt?.grade as Record<string, unknown> | undefined;
-  if (attemptGrade) {
-    if (!grade) {
-      grade = parseNumericGrade(
-        attemptGrade.value ?? attemptGrade.grade ?? attemptGrade.graderaw,
-      );
-    }
-    if (!gradeMax) {
-      gradeMax = parseNumericGrade(attemptGrade.max ?? attemptGrade.grademax);
-    }
-  }
+  applyMoodleGradeObject(lastAttempt?.grade as Record<string, unknown> | undefined, current);
+
+  const submissionStatus = raw?.submissionStatus as Record<string, unknown> | undefined;
+  const feedback = submissionStatus?.feedback as Record<string, unknown> | undefined;
+  applyMoodleGradeObject(feedback?.grade as Record<string, unknown> | undefined, current);
+  const statusAttempt = submissionStatus?.lastattempt as Record<string, unknown> | undefined;
+  applyMoodleGradeObject(statusAttempt?.grade as Record<string, unknown> | undefined, current);
+
+  let { grade, gradeMax, gradeFormatted } = current;
 
   if (grade && gradeMax) {
     gradeFormatted = `${grade} / ${gradeMax}`;
@@ -751,6 +890,8 @@ async function buildCourseActivitiesFromRows(
         : null;
 
     const hydratedGrade = hydrateAssignmentGrade(row);
+    const storedStatus = formatSubmissionStatusLabel((row.submission_status as string) ?? "Pending");
+    const submissionStatus = hydratedGrade.grade ? "Graded" : storedStatus;
 
     list.push({
       id: row.id as string,
@@ -758,7 +899,7 @@ async function buildCourseActivitiesFromRows(
       name: row.name as string,
       moduleType: (row.module_type as string) ?? "assign",
       activityType: (row.module_type as string) === "assign" ? "Assignment" : (row.module_type as string),
-      submissionStatus: formatSubmissionStatusLabel((row.submission_status as string) ?? "Pending"),
+      submissionStatus: submissionStatus,
       grade: hydratedGrade.grade,
       gradeMax: hydratedGrade.gradeMax,
       gradeFormatted: hydratedGrade.gradeFormatted,
@@ -820,6 +961,7 @@ export function hasMoodleAccessControlWarning(warnings: string[]): boolean {
 
 export function formatSubmissionStatusLabel(status: string): string {
   const s = status.trim().toLowerCase();
+  if (s === "notgraded" || s === "not graded" || s === "ungraded") return "Not graded";
   if (s === "submitted" || s === "graded") return s === "graded" ? "Graded" : "Submitted";
   if (s === "not submitted" || s === "notstarted" || s === "not started") return "Not submitted";
   if (s === "pending" || s === "draft" || s === "new") return "Not submitted";

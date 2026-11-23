@@ -7,8 +7,7 @@ import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { assertProofInputs, generateScoreThresholdProof } from "./generate-score-proof";
 
-const root = path.resolve(__dirname, "../../../circuits/score-threshold-v1");
-const buildDir = path.join(root, "build");
+const buildDir = path.resolve(__dirname, "../../../zkp-artifacts/score-threshold-v1");
 const LEARNER = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const ATTEMPT = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const COMMITMENT = "4507768595048672970581706270570294537909576572913353501816464357845450185450";
@@ -18,7 +17,7 @@ const hashes = JSON.parse(readFileSync(path.join(buildDir, "hashes.json"), "utf8
   zkey: string;
   verificationKey: string;
 };
-const wasm = new Uint8Array(readFileSync(path.join(buildDir, "score_threshold_js/score_threshold.wasm")));
+const wasm = new Uint8Array(readFileSync(path.join(buildDir, "score_threshold.wasm")));
 const zkey = new Uint8Array(readFileSync(path.join(buildDir, "score_threshold_final.zkey")));
 const verificationKeyBytes = new Uint8Array(readFileSync(path.join(buildDir, "verification_key.json")));
 

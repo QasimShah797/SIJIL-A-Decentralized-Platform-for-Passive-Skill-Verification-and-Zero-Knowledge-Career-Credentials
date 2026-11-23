@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { AuthEntryLayout } from "@/components/auth/AuthEntryLayout";
 import { useFinishOAuthReturn } from "@/hooks/useFinishOAuthReturn";
-import { hasOAuthReturnInUrl } from "@/lib/oauth-signin";
+import { hasOAuthReturnInUrl, peekOAuthSignInIntent } from "@/lib/oauth-signin";
 
 export default function AuthCallback() {
   const navigate = useNavigate();
@@ -10,7 +10,9 @@ export default function AuthCallback() {
 
   useEffect(() => {
     if (!oauthReturn.active && !hasOAuthReturnInUrl()) {
-      navigate("/login/learner", { replace: true });
+      navigate(peekOAuthSignInIntent() === "admin" ? "/login/admin" : "/login/learner", {
+        replace: true,
+      });
     }
   }, [navigate, oauthReturn.active]);
 

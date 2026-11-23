@@ -89,7 +89,7 @@ export function ScheduleInterviewDialog({
       toast({ title: "Interview time must be in the future", variant: "destructive" });
       return;
     }
-    if (locationOrLink.trim().length < 3) {
+    if (mode !== INTERVIEW_MODE.VIDEO_CALL && locationOrLink.trim().length < 3) {
       toast({
         title: `${locationLabel} is required`,
         description: "Add a location, meeting link, or dial-in details.",
@@ -105,7 +105,10 @@ export function ScheduleInterviewDialog({
         scheduledAt: scheduledIso,
         durationMinutes: Number(durationMinutes),
         mode,
-        locationOrLink: locationOrLink.trim(),
+        locationOrLink:
+          mode === INTERVIEW_MODE.VIDEO_CALL
+            ? locationOrLink.trim() || undefined
+            : locationOrLink.trim(),
         notes: notes.trim() || undefined,
         timeZone: zone,
       });
@@ -146,7 +149,8 @@ export function ScheduleInterviewDialog({
         <DialogHeader>
           <DialogTitle>Schedule interview</DialogTitle>
           <DialogDescription>
-            Invite {candidateName} by email. They will receive the date, time, mode, and meeting details.
+            Invite {candidateName} by email. Video calls get a Google Meet link from SIJIL automatically —
+            recruiters do not need their own Google account.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={submit} className="space-y-4">
@@ -206,16 +210,34 @@ export function ScheduleInterviewDialog({
               The date and time above are read in this timezone. Example: Asia/Karachi or UTC.
             </p>
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="interview-location">{locationLabel}</Label>
-            <Input
-              id="interview-location"
-              value={locationOrLink}
-              onChange={(event) => setLocationOrLink(event.target.value)}
-              placeholder={INTERVIEW_LOCATION_PLACEHOLDERS[mode]}
-              required
-            />
-          </div>
+          {mode === INTERVIEW_MODE.VIDEO_CALL ? (
+            <div className="rounded-lg border border-border/70 bg-muted/30 px-3 py-3 text-sm text-muted-foreground">
+              <Label htmlFor="interview-location" className="text-foreground">Meeting link</Label>
+              <p id="interview-link-help" className="mt-1">
+                Leave this blank to generate a Google Meet link with SIJIL, or enter your own meeting link.
+              </p>
+              <Input
+                id="interview-location"
+                aria-describedby="interview-link-help"
+                type="url"
+                className="mt-3"
+                value={locationOrLink}
+                onChange={(event) => setLocationOrLink(event.target.value)}
+                placeholder="Optional override (leave blank for auto Meet)"
+              />
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <Label htmlFor="interview-location">{locationLabel}</Label>
+              <Input
+                id="interview-location"
+                value={locationOrLink}
+                onChange={(event) => setLocationOrLink(event.target.value)}
+                placeholder={INTERVIEW_LOCATION_PLACEHOLDERS[mode]}
+                required
+              />
+            </div>
+          )}
           <div className="space-y-2">
             <Label htmlFor="interview-notes">Notes (optional)</Label>
             <Textarea

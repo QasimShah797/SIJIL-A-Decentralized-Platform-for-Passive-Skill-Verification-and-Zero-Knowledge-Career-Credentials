@@ -10,13 +10,32 @@ import {
 import {
   emailPublicShareApi,
   getWalletCompetenciesApi,
+  listOwnerSharesApi,
   revokeWalletShareApi,
+  type OwnerShareSummary,
   shareWalletCompetencyApi,
 } from "@/services/api/wallet.api";
 import type { WalletCompetencyRecordView } from "@/lib/db/wallet-competency-records";
 import { walletShareRequest } from "@/lib/sharing/guide";
 import { apiRequest } from "@/services/api/client";
-import { GuidedShareFlow } from "./GuidedShareFlow";
+import { GuidedShareFlow, type ManagedShare } from "./GuidedShareFlow";
+
+function toManagedShare(row: OwnerShareSummary): ManagedShare {
+  const status = row.shareStatus === "Revoked" ? "revoked" : row.shareStatus === "Expired" ? "expired" : "active";
+  const detail = row.shareKind === "direct-recruiter"
+    ? [row.recipientName, row.recipientOrganization].filter(Boolean).join(" at ")
+    : row.expiresAt
+      ? `Until ${new Date(row.expiresAt).toLocaleDateString()}`
+      : "";
+  return {
+    id: row.id,
+    label: row.label,
+    kind: row.shareKind === "all-recruiters" ? "all-recruiters" : row.shareKind === "direct-recruiter" ? "direct" : "public",
+    detail,
+    status,
+    sharedAt: row.createdAt,
+  };
+}
 
 function statusLabel(credential: CredentialView): string {
   if (credential.ledgerAnchorStatus === "anchored" || credential.anchorStatus === "anchored") {
@@ -30,6 +49,21 @@ function statusLabel(credential: CredentialView): string {
 
 export function SignedPresentationCard({ onBack }: { onBack: () => void }) {
   const { credentials } = useCredentials();
+  const [managedShares, setManagedShares] = useState<ManagedShare[]>([]);
+
+  const loadShares = async () => {
+    try {
+      const rows = await listOwnerSharesApi();
+      setManagedShares(rows.map(toManagedShare));
+    } catch {
+      setManagedShares([]);
+    }
+  };
+
+  useEffect(() => {
+    void loadShares();
+  }, []);
+
   const { profile } = useLearnerProfile();
   const [walletRows, setWalletRows] = useState<WalletCompetencyRecordView[] | null>(null);
 
@@ -99,6 +133,7 @@ export function SignedPresentationCard({ onBack }: { onBack: () => void }) {
       recipientName = created.recipientName ?? recipientName;
       recipientOrganization = created.recipientOrganization ?? recipientOrganization;
     }
+    await loadShares();
     return { recipientName, recipientOrganization };
   };
 
@@ -152,6 +187,7 @@ export function SignedPresentationCard({ onBack }: { onBack: () => void }) {
     } catch {
       // ignore quota / private-mode failures
     }
+    await loadShares();
     toast({ title: "Public verification link created" });
     return {
       shareUrl: created.shareUrl,
@@ -159,6 +195,18 @@ export function SignedPresentationCard({ onBack }: { onBack: () => void }) {
       token: created.token,
       skillName: skill,
     };
+  };
+
+  const revokeManagedShare = async (shareId: string) => {
+    const confirmed = window.confirm(
+      "Stop this share? Access ends the next time someone opens SIJIL or the public link. A copy they already saved is not deleted.",
+    );
+    if (!confirmed) return false;
+    const stopped = await revokeWalletShareApi(shareId);
+    if (!stopped) throw new Error("The share could not be stopped.");
+    toast({ title: "Sharing stopped" });
+    await loadShares();
+    return true;
   };
 
   return (
@@ -181,15 +229,9 @@ export function SignedPresentationCard({ onBack }: { onBack: () => void }) {
       onEmailPublicLink={async (input) => {
         await emailPublicShareApi(input);
       }}
-      onStopPublicLink={async (shareId) => {
-        const confirmed = window.confirm(
-          "Stop this link? Access ends the next time someone opens it. A copy they already saved is not deleted.",
-        );
-        if (!confirmed) throw new Error("Stop cancelled.");
-        const stopped = await revokeWalletShareApi(shareId);
-        if (!stopped) throw new Error("The share could not be stopped.");
-        toast({ title: "Verification link stopped" });
-      }}
+      managedShares={managedShares}
+      onRevokeManagedShare={revokeManagedShare}
+      onStopPublicLink={revokeManagedShare}
     />
   );
 }

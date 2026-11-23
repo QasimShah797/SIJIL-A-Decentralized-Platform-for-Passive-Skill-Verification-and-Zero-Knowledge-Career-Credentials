@@ -10,6 +10,7 @@ import { resolveLearnerDisplayName } from "../utils/learnerDisplayName";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   INTERVIEW_EMAIL_STATUS,
+  INTERVIEW_MODE,
   INTERVIEW_STATUS,
   type InterviewMode,
   type InterviewStatus,
@@ -31,6 +32,10 @@ import {
   interviewSaveFailure,
   safeMailFailure,
 } from "./interview-delivery";
+import {
+  createGoogleMeetEvent,
+  deleteGoogleCalendarEventQuietly,
+} from "./google-calendar-events.service";
 
 type InterviewRow = Record<string, unknown>;
 
@@ -51,6 +56,7 @@ function rowToInterview(row: InterviewRow): ScheduledInterviewView {
     locationOrLink: row.location_or_link as string,
     notes: (row.notes as string | null) ?? null,
     timeZone: (row.time_zone as string | null) ?? null,
+    googleCalendarEventId: (row.google_calendar_event_id as string | null) ?? null,
     status: row.status as InterviewStatus,
     cancelledAt: (row.cancelled_at as string | null) ?? null,
     emailStatus: (row.email_status as string) ?? INTERVIEW_EMAIL_STATUS.NOT_SENT,
@@ -91,6 +97,7 @@ function interviewDb(accessToken?: string): SupabaseClient {
 
 function normalizeLocationOrLink(mode: InterviewMode, value: string): string {
   const trimmed = value.trim();
+  if (!trimmed) return trimmed;
   if (
     mode === "video_call"
     && !/^https?:\/\//i.test(trimmed)
@@ -218,41 +225,98 @@ export class InterviewService {
       throw new AppError("An interview with this learner is already scheduled at that time", 409);
     }
 
+    const timeZone = storedInterviewTimeZone(input.timeZone);
+    let locationOrLink = normalizeLocationOrLink(input.mode, input.locationOrLink ?? "");
+    let googleCalendarEventId: string | null = null;
+    const manualVideoOverride =
+      input.mode === INTERVIEW_MODE.VIDEO_CALL
+      && locationOrLink.length >= 3
+      && /^https?:\/\//i.test(locationOrLink);
+
+    // Video calls: create Meet on the SIJIL Calendar BEFORE insert/email (unless recruiter overrode).
+    if (input.mode === INTERVIEW_MODE.VIDEO_CALL && !manualVideoOverride) {
+      const meet = await createGoogleMeetEvent({
+        summary: `SIJIL interview: ${contact.name} / ${recruiter.name}`,
+        description: [
+          `Candidate: ${contact.name} <${contact.email}>`,
+          `Recruiter: ${recruiter.name}`,
+          recruiter.company ? `Company: ${recruiter.company}` : null,
+          notes ? `Notes: ${notes}` : null,
+        ]
+          .filter(Boolean)
+          .join("\n"),
+        startIso: scheduledAt.toISOString(),
+        durationMinutes: input.durationMinutes,
+        timeZone,
+        attendeeEmail: contact.email,
+      });
+      locationOrLink = meet.meetUrl;
+      googleCalendarEventId = meet.eventId;
+    } else if (!locationOrLink || locationOrLink.trim().length < 3) {
+      throw new AppError("Location or call details are required", 400);
+    }
+
+    const insertPayload: Record<string, unknown> = {
+      recruiter_user_id: recruiterId,
+      candidate_user_id: input.candidateId,
+      candidate_email: contact.email,
+      candidate_name: contact.name,
+      recruiter_name: recruiter.name,
+      recruiter_company: recruiter.company,
+      scheduled_at: scheduledAt.toISOString(),
+      duration_minutes: input.durationMinutes,
+      mode: input.mode,
+      location_or_link: locationOrLink,
+      notes,
+      status: INTERVIEW_STATUS.SCHEDULED,
+      email_status: INTERVIEW_EMAIL_STATUS.NOT_SENT,
+      time_zone: timeZone,
+    };
+    if (googleCalendarEventId) {
+      insertPayload.google_calendar_event_id = googleCalendarEventId;
+    }
+
     const { data, error } = await db
       .from("scheduled_interviews")
-      .insert({
-        recruiter_user_id: recruiterId,
-        candidate_user_id: input.candidateId,
-        candidate_email: contact.email,
-        candidate_name: contact.name,
-        recruiter_name: recruiter.name,
-        recruiter_company: recruiter.company,
-        scheduled_at: scheduledAt.toISOString(),
-        duration_minutes: input.durationMinutes,
-        mode: input.mode,
-        location_or_link: normalizeLocationOrLink(input.mode, input.locationOrLink),
-        notes,
-        status: INTERVIEW_STATUS.SCHEDULED,
-        email_status: INTERVIEW_EMAIL_STATUS.NOT_SENT,
-        time_zone: storedInterviewTimeZone(input.timeZone),
-      })
+      .insert(insertPayload)
       .select("*")
       .single();
 
     if (error || !data) {
+      if (googleCalendarEventId) {
+        await deleteGoogleCalendarEventQuietly(googleCalendarEventId);
+      }
       const code = error && "code" in error ? error.code ?? null : null;
       const missingZone = code === "42703" || /time_zone/i.test(error?.message ?? "");
+      const missingEventCol = code === "42703" || /google_calendar_event_id/i.test(error?.message ?? "");
       console.error("interview save failed", { code });
-      if (missingZone) {
+      if (missingZone && /time_zone/i.test(error?.message ?? "")) {
         throw new AppError(
           "Interview scheduling needs the scheduled_interviews time_zone column. Apply supabase/migrations/20261118120000_scheduled_interviews_time_zone.sql first.",
           503,
         );
       }
+      if (missingEventCol && googleCalendarEventId) {
+        // Column not applied yet: retry insert without event id; Meet URL still in location_or_link.
+        const { google_calendar_event_id: _omit, ...withoutEventId } = insertPayload;
+        void _omit;
+        const retry = await db.from("scheduled_interviews").insert(withoutEventId).select("*").single();
+        if (retry.error || !retry.data) {
+          await deleteGoogleCalendarEventQuietly(googleCalendarEventId);
+          throw interviewSaveFailure();
+        }
+        const interviewFallback = rowToInterview(retry.data as InterviewRow);
+        const emailStatusFallback = await finishInvitationDelivery({
+          send: () => sendInterviewInvitationEmail(toEmailDetails(interviewFallback, recruiter.title)),
+          mark: (status) => markEmailStatus(interviewFallback.id, status, accessToken),
+        });
+        return { ...interviewFallback, emailStatus: emailStatusFallback };
+      }
       throw interviewSaveFailure();
     }
 
     const interview = rowToInterview(data as InterviewRow);
+    // Meet URL is already persisted — only then send the invitation email.
     const emailStatus = await finishInvitationDelivery({
       send: () => sendInterviewInvitationEmail(toEmailDetails(interview, recruiter.title)),
       mark: (status) => markEmailStatus(interview.id, status, accessToken),
@@ -329,6 +393,10 @@ export class InterviewService {
 
     if (error || !data) {
       throw new AppError(error?.message ?? "Could not cancel the interview", 500);
+    }
+
+    if (current.googleCalendarEventId) {
+      await deleteGoogleCalendarEventQuietly(current.googleCalendarEventId);
     }
 
     const interview = rowToInterview(data as InterviewRow);

@@ -53,6 +53,16 @@ function renderFlow(overrides: Partial<Parameters<typeof GuidedShareFlow>[0]> = 
 }
 
 describe("wallet share flow", () => {
+  it("passes the selected share to the owner revocation handler", () => {
+    const onRevokeManagedShare = vi.fn(async () => true);
+    renderFlow({
+      managedShares: [{ id: "share-1", label: "TypeScript", kind: "all-recruiters", detail: "", status: "active", sharedAt: null }],
+      onRevokeManagedShare,
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Stop sharing" }));
+    expect(onRevokeManagedShare).toHaveBeenCalledWith("share-1");
+  });
+
   it("shows recruiter and public verification link options", () => {
     renderFlow();
     expect(screen.getByRole("heading", { name: "Share My Achievement" })).toBeTruthy();

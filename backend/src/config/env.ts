@@ -71,6 +71,13 @@ const envSchema = z.object({
   APPLE_PASS_KEY_PASSPHRASE: optionalNonEmptyString,
   GOOGLE_WALLET_ISSUER_ID: optionalNonEmptyString,
   GOOGLE_WALLET_SA_KEY: optionalNonEmptyString,
+  GOOGLE_CALENDAR_CLIENT_ID: optionalNonEmptyString,
+  GOOGLE_CALENDAR_CLIENT_SECRET: optionalNonEmptyString,
+  GOOGLE_CALENDAR_REDIRECT_URI: optionalNonEmptyString,
+  GOOGLE_CALENDAR_TOKEN_ENCRYPTION_KEY: z.preprocess(
+    emptyToUndefined,
+    z.string().min(32, "GOOGLE_CALENDAR_TOKEN_ENCRYPTION_KEY must be at least 32 characters").optional(),
+  ),
   FABRIC_ENABLED: booleanFromEnv,
   FABRIC_PEER_ENDPOINT: optionalNonEmptyString,
   FABRIC_MSP_ID: optionalNonEmptyString,

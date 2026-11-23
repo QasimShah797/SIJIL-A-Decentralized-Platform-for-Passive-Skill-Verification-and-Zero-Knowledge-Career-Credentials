@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthError, type User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
-import { confirmLearnerSignup, signupLearner } from "./learner-signup";
+import { verifySignupEmailOtp } from "./email-verification";
+import { signupLearner } from "./learner-signup";
 
 const user: User = { id: "test-learner", app_metadata: {}, user_metadata: {}, aud: "authenticated", created_at: "" };
 
@@ -21,7 +22,7 @@ describe("learner email confirmation", () => {
     });
     await expect(signupLearner({
       fullName: "Test Learner", email: "Test@Example.com", password: "fixture-password",
-    })).resolves.toEqual({ status: "confirmation_required", email: "test@example.com" });
+    })).resolves.toEqual({ userId: user.id, email: "test@example.com", needsEmailVerification: true });
     expect(supabase.from).not.toHaveBeenCalled();
   });
 
@@ -29,10 +30,10 @@ describe("learner email confirmation", () => {
     vi.mocked(supabase.auth.verifyOtp).mockResolvedValue({
       data: { user: null, session: null }, error: new AuthError("expired"),
     });
-    await expect(confirmLearnerSignup("test@example.com", "000000", "Test Learner"))
-      .rejects.toThrow("Could not verify that code");
+    await expect(verifySignupEmailOtp("test@example.com", "000000"))
+      .rejects.toThrow(/expired/i);
     expect(supabase.auth.verifyOtp).toHaveBeenCalledWith({
-      email: "test@example.com", token: "000000", type: "email",
+      email: "test@example.com", token: "000000", type: "signup",
     });
     expect(supabase.from).not.toHaveBeenCalled();
   });

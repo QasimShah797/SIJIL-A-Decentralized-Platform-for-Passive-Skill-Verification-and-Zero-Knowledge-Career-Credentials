@@ -1,5 +1,6 @@
 import type { Provider, Session, User } from "@supabase/supabase-js";
-import { ROLE_HOME, fetchUserRoles } from "@/lib/auth-helpers";
+import { verifyAdminAccess } from "@/lib/admin-auth";
+import { ROLE_HOME, fetchUserRoles, isDeniedAccess } from "@/lib/auth-helpers";
 import { startGitHubPageSignIn } from "@/lib/github-signin";
 import { verifyLearnerAccess } from "@/lib/learner-auth";
 import { provisionOAuthLearner } from "@/lib/learner-signup";
@@ -7,6 +8,36 @@ import { supabase } from "@/integrations/supabase/client";
 
 export const AUTH_CALLBACK_PATH = "/auth/callback";
 export type SocialAuthProvider = Extract<Provider, "google" | "github">;
+export type OAuthSignInIntent = "learner" | "admin";
+
+const OAUTH_SIGNIN_INTENT_KEY = "sijil.oauth.signin_intent";
+
+export function setOAuthSignInIntent(intent: OAuthSignInIntent): void {
+  try {
+    sessionStorage.setItem(OAUTH_SIGNIN_INTENT_KEY, intent);
+  } catch {
+    /* private mode / blocked storage */
+  }
+}
+
+export function peekOAuthSignInIntent(): OAuthSignInIntent {
+  try {
+    const value = sessionStorage.getItem(OAUTH_SIGNIN_INTENT_KEY);
+    return value === "admin" ? "admin" : "learner";
+  } catch {
+    return "learner";
+  }
+}
+
+export function consumeOAuthSignInIntent(): OAuthSignInIntent {
+  const intent = peekOAuthSignInIntent();
+  try {
+    sessionStorage.removeItem(OAUTH_SIGNIN_INTENT_KEY);
+  } catch {
+    /* ignore */
+  }
+  return intent;
+}
 
 /** Prefer the current origin root so Supabase Site URL fallbacks still land on the app. */
 export function getAuthCallbackUrl(): string {
@@ -310,4 +341,26 @@ export async function completeOAuthLearnerSignIn(user: User): Promise<string> {
   }
 
   return access.profileComplete ? ROLE_HOME.learner : "/learner/complete-profile";
+}
+
+/**
+ * Finish Google (or other) Auth for the admin portal.
+ * Does not create learner profiles or change roles.
+ */
+export async function completeOAuthAdminSignIn(user: User): Promise<string> {
+  const access = await verifyAdminAccess(user.id);
+  if (isDeniedAccess(access)) {
+    throw new Error("Admin access denied. This account is not a SIJIL administrator.");
+  }
+  return "/admin/integrations";
+}
+
+export async function completeOAuthSignInForIntent(
+  user: User,
+  intent: OAuthSignInIntent = peekOAuthSignInIntent(),
+): Promise<string> {
+  if (intent === "admin") {
+    return completeOAuthAdminSignIn(user);
+  }
+  return completeOAuthLearnerSignIn(user);
 }

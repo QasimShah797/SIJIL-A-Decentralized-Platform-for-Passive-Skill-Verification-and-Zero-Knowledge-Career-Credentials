@@ -77,6 +77,8 @@ export function GuidedShareFlow({
   onShareAll,
   onCreatePublicLink,
   onEmailPublicLink,
+  managedShares = [],
+  onRevokeManagedShare,
   onStopPublicLink,
 }: {
   credentials: GuidedShareCredential[];
@@ -98,7 +100,9 @@ export function GuidedShareFlow({
     token: string;
     recipientEmail: string;
   }) => Promise<void>;
-  onStopPublicLink?: (shareId: string) => Promise<void>;
+  managedShares?: ManagedShare[];
+  onRevokeManagedShare?: (shareId: string) => Promise<boolean>;
+  onStopPublicLink?: (shareId: string) => Promise<boolean>;
 }) {
   const [method, setMethod] = useState<Method | null>(null);
   const [step, setStep] = useState<Step>("method");
@@ -582,7 +586,7 @@ export function GuidedShareFlow({
                     setWorking(true);
                     setError(null);
                     try {
-                      await onStopPublicLink(publicShareId);
+                      if (!await onStopPublicLink(publicShareId)) return;
                       setMethod(null);
                       setStep("method");
                       resetSelection();
@@ -602,6 +606,37 @@ export function GuidedShareFlow({
         </div>
       ) : null}
 
+      <div className="space-y-2 rounded-[28px] border border-[#e2e8f0] bg-white p-5">
+        <h2 className="text-sm font-semibold text-[#0f172a]">Manage shared access</h2>
+        <p className="text-sm text-[#475569]">Stopping a share hides it from recruiters or public visitors the next time they open the page.</p>
+        {managedShares.length === 0 ? <p className="text-sm text-[#475569]">Nothing is shared yet.</p> : (
+          <ul className="space-y-2">
+            {managedShares.map((share) => (
+              <li key={share.id} className="flex flex-col gap-2 rounded-xl border border-[#e2e8f0] px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-sm font-medium text-[#0f172a]">{share.label}</p>
+                  <p className="text-xs text-[#64748b]">
+                    {share.status === "revoked"
+                      ? "Sharing stopped"
+                      : share.status === "expired"
+                        ? "Expired"
+                        : share.kind === "direct"
+                          ? "Shared with a specific recruiter"
+                          : share.kind === "public"
+                            ? "Public verification link active"
+                            : "Visible to all SIJIL recruiters"}
+                    {share.detail ? ` · ${share.detail}` : ""}
+                    {share.sharedAt ? ` · ${new Date(share.sharedAt).toLocaleDateString()}` : ""}
+                  </p>
+                </div>
+                {share.status === "active" ? (
+                  <Button type="button" variant="outline" size="sm" onClick={() => void onRevokeManagedShare?.(share.id).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : "Could not stop sharing."))}>Stop sharing</Button>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </section>
   );
 }

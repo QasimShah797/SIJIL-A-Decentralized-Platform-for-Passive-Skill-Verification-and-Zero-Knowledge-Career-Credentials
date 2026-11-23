@@ -15,6 +15,7 @@ import { LearnerCredentialWallet } from "@/components/wallet/LearnerCredentialWa
 import { SignedPresentationCard } from "@/components/wallet/SignedPresentationCard";
 import { WalletDashboardHub } from "@/components/wallet/WalletDashboardHub";
 import { VerifiedProofFlow } from "@/components/wallet/VerifiedProofFlow";
+import { WalletLearningRecords } from "@/components/wallet/WalletLearningRecords";
 import { WalletRefreshBar } from "@/components/wallet/WalletWorkspacePanels";
 
 export default function WalletPage() {
@@ -51,14 +52,10 @@ export default function WalletPage() {
     const target = skill.trim().toLowerCase();
     const match = records.find((record) => {
       const name = record.competencyName.trim().toLowerCase();
-      return name === target || name.includes(target) || target.includes(name);
+      return name === target;
     });
     if (match) {
       navigate(`/learner/wallet/competency/${encodeURIComponent(match.competencyId)}`);
-      return;
-    }
-    if (records[0]) {
-      navigate(`/learner/wallet/competency/${encodeURIComponent(records[0].competencyId)}`);
       return;
     }
     toast({
@@ -110,6 +107,7 @@ export default function WalletPage() {
     <LearnerWorkspaceShell variant="dashboard">
       {walletPanel !== "manage" ? <WalletRefreshBar onRefresh={() => void loadRecords()} loading={loading} /> : null}
       {walletPanel === "hub" ? (
+        <>
         <WalletDashboardHub
           credentials={credentials.map((credential) => ({ id: credential.id, name: credential.skill || credential.name }))}
           credentialsLoading={credentialsLoading}
@@ -118,6 +116,8 @@ export default function WalletPage() {
           onGetProof={() => setWalletPanel("proof")}
           onCredentialClick={(name) => openCompetency(name)}
         />
+        <WalletLearningRecords />
+        </>
       ) : (
         <section className="space-y-4" aria-label="Secure wallet">
           {walletPanel === "achievements" ? (
