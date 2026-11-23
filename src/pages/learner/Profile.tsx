@@ -325,7 +325,8 @@ export default function LearnerProfile() {
               <DonutChart {...buckets} />
               <ul className="space-y-2 text-sm">
                 {[
-                  { label: CONFIRMED_LABEL, count: buckets.verified, color: "bg-[#14b8a6]" },`n                  { label: "In Progress", count: buckets.progress, color: "bg-sijil-blue" },
+                  { label: CONFIRMED_LABEL, count: buckets.verified, color: "bg-[#14b8a6]" },
+                  { label: "In Progress", count: buckets.progress, color: "bg-sijil-blue" },
                   { label: "Not Started", count: buckets.idle, color: "bg-[#cbd5e1]" },
                 ].map(({ label, count, color }) => (
                   <li key={label} className="flex items-center gap-2">
