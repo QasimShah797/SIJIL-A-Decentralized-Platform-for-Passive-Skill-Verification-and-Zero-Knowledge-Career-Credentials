@@ -12,7 +12,7 @@ import {
 import { repairMoodleEvidenceRecords } from "./moodle-evidence-records.ts";
 
 /** Bump when deploying — exposed in test/sync responses so frontend can detect stale deploys. */
-const FUNCTION_VERSION = "3.5.0";
+const FUNCTION_VERSION = "3.6.1";
 
 const SUPPORTED_ACTIONS = [
   "test",
@@ -25,6 +25,22 @@ const SUPPORTED_ACTIONS = [
   "get_completion",
   "get_grades",
 ] as const;
+
+/** Debug actions that call Moodle with the shared token — require a signed-in user. */
+const AUTH_REQUIRED_DEBUG_ACTIONS = new Set([
+  "test",
+  "get_courses",
+  "find_user_by_email",
+  "get_user_courses",
+  "get_completion",
+  "get_grades",
+]);
+
+async function requireAuthenticatedUser(req: Request) {
+  const resolved = await resolveUser(req);
+  if ("error" in resolved && resolved.error) return resolved.error;
+  return resolved;
+}
 
 function normalizeAction(raw: unknown): string {
   const s = String(raw ?? "").trim().toLowerCase().replace(/-/g, "_");
@@ -151,6 +167,11 @@ Deno.serve(async (req) => {
       supportedActions: SUPPORTED_ACTIONS,
     });
 
+    if (AUTH_REQUIRED_DEBUG_ACTIONS.has(action)) {
+      const authGate = await requireAuthenticatedUser(req);
+      if (authGate instanceof Response) return authGate;
+    }
+
     if (action === "test") {
       const envConfig = logMoodleEnvConfig();
       const siteInfo = await callMoodle("core_webservice_get_site_info");
@@ -158,6 +179,7 @@ Deno.serve(async (req) => {
         success: true,
         siteInfo,
         moodleEnv: envConfig,
+        expectedMoodleSiteUrl: EXPECTED_MOODLE_SITE_URL,
         functionVersion: FUNCTION_VERSION,
         supportedActions: SUPPORTED_ACTIONS,
       });

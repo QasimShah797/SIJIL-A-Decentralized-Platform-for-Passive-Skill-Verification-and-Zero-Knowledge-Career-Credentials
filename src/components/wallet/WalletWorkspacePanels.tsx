@@ -225,7 +225,7 @@ export function ConnectedSourcesCard({
 
   return (
     <div className="learner-stat-card p-4">
-      <p className="text-sm font-semibold text-[#023E8A]">Verified Data Sources</p>
+      <p className="text-sm font-semibold text-[#023E8A]">Confirmed Data Sources</p>
       {verifiedSources.length === 0 ? (
         <div className="mt-3">
           <p className="text-xs text-[#94a3b8]">No verified sources are linked to this competency yet.</p>

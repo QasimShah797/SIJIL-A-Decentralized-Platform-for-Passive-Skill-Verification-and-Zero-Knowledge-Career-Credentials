@@ -14,7 +14,7 @@ const features = [
   { icon: Search, label: "Evidence-first search" },
   { icon: Share2, label: "Selective disclosure" },
   { icon: Users, label: "Competency records" },
-  { icon: Eye, label: "Verified presentations" },
+  { icon: Eye, label: "Confirmed skill presentations" },
 ] as const;
 
 export function RecruiterLeftPanel() {

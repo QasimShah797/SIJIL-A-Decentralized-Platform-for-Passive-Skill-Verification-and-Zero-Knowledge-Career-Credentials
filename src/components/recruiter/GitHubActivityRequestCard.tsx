@@ -17,7 +17,7 @@ function statusLabel(status: string): string {
     case "generating":
       return "Proof in progress";
     case "verified":
-      return "Verified";
+      return "Confirmed";
     case "unsatisfied":
       return "Not satisfied";
     case "failed":

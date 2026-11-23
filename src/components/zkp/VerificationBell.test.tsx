@@ -71,7 +71,7 @@ describe("verification bell", () => {
         <VerificationBell role="learner" />
       </MemoryRouter>,
     );
-    expect(await screen.findByRole("button", { name: "1 verification notifications" })).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "1 skill confirmation notifications" })).toBeTruthy();
     expect(screen.getByText("1")).toBeTruthy();
   });
 
@@ -83,7 +83,7 @@ describe("verification bell", () => {
         <VerificationBell role="learner" />
       </MemoryRouter>,
     );
-    const buttons = await screen.findAllByRole("button", { name: "Verification notifications" });
+    const buttons = await screen.findAllByRole("button", { name: "Skill confirmation notifications" });
     expect(buttons).toHaveLength(2);
     expect(channels.size).toBe(2);
   });

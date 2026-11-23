@@ -24,7 +24,7 @@ export const LEGACY_MOODLE_SITE_HOST = "sijil.moodlecloud.com";
 export const RETIRED_MOODLE_CLOUD_HOST = "sijil-fyp.moodlecloud.com";
 
 /** Expected edge function version — mismatch means remote deploy is stale. */
-export const MOODLE_SYNC_FUNCTION_VERSION = "3.5.0";
+export const MOODLE_SYNC_FUNCTION_VERSION = "3.6.1";
 
 export function normalizeMoodleSiteUrl(url: string): string {
   return url.trim().replace(/\/+$/, "").toLowerCase();

@@ -69,7 +69,7 @@ export function RecruiterDashboardStats({
     tint: number;
   }[] = [
     { id: "all", label: "Directory", value: candidates.length, hint: "Learners with shared profiles", icon: Users, tint: 0 },
-    { id: "verified", label: "Verified", value: verified, hint: "Learners with approved credentials", icon: ShieldCheck, tint: 1 },
+    { id: "verified", label: "Confirmed Skills", value: verified, hint: "Learners with approved credentials", icon: ShieldCheck, tint: 1 },
     { id: "credentials", label: "Credentials", value: credentials, hint: "Active shared competency packs", icon: Wallet, tint: 2 },
   ];
 

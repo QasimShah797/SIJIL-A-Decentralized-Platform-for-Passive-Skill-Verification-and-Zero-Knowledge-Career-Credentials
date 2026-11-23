@@ -193,10 +193,10 @@ function normalizedText(value: unknown): string {
 }
 
 function competencyMatches(left: unknown, right: string): boolean {
-  const a = normalizedText(left);
-  const b = normalizedText(right);
+  const a = normalizedText(left).replace(/\s+/g, " ");
+  const b = normalizedText(right).replace(/\s+/g, " ");
   if (!a || !b) return false;
-  return a === b || a.includes(b) || b.includes(a);
+  return a === b;
 }
 
 function uniqueStrings(list: Array<string | null | undefined>): string[] {

@@ -1,5 +1,9 @@
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.95.0";
 import { resolveGitHubUserEmail } from "./github-contributor-email.ts";
+import {
+  skillReferencedInText,
+  skillRelatesToRepositoryLanguage,
+} from "./competency-matching.ts";
 
 const GH = "https://api.github.com";
 
@@ -26,7 +30,6 @@ const SKILL_LANGUAGE_ALIASES: Record<string, string[]> = {
   typescript: ["javascript", "ts"],
   javascript: ["typescript", "js"],
   python: ["django", "flask", "py"],
-  postgresql: ["sql", "postgres"],
   sql: ["postgresql", "postgres", "mysql"],
 };
 
@@ -34,30 +37,29 @@ function matchSkill(
   repo: { language?: string | null; name?: string; full_name?: string; description?: string | null },
   declaredSkills: DeclaredSkillRef[],
 ): DeclaredSkillRef | null {
-  const haystack = [
-    repo.language,
-    repo.name,
-    repo.full_name,
-    repo.description,
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
-  if (!haystack) return null;
+  const repoText = [repo.name, repo.full_name, repo.description].filter(Boolean).join(" ");
+  const primaryLanguage = repo.language?.trim() ?? "";
 
   let best: { skill: DeclaredSkillRef; score: number } | null = null;
   for (const skill of declaredSkills) {
-    const n = skill.name.trim().toLowerCase();
-    if (!n) continue;
+    const name = skill.name.trim();
+    if (!name) continue;
+
     let score = 0;
-    if (haystack.includes(n) || n.split(/[ .&+/_-]/).filter(Boolean).some((token) => token.length >= 2 && haystack.includes(token))) {
+    if (primaryLanguage && skillRelatesToRepositoryLanguage(name, primaryLanguage)) {
+      score += 4;
+    }
+    if (skillReferencedInText(name, repoText)) {
       score += 3;
     }
-    const aliases = SKILL_LANGUAGE_ALIASES[n] ?? [];
-    if (aliases.some((alias) => haystack.includes(alias))) score += 2;
+    const aliases = SKILL_LANGUAGE_ALIASES[name.toLowerCase()] ?? [];
+    if (aliases.some((alias) => skillReferencedInText(alias, repoText))) {
+      score += 1;
+    }
+
     if (score > (best?.score ?? 0)) best = { skill, score };
   }
-  return best?.skill ?? null;
+  return best && best.score > 0 ? best.skill : null;
 }
 
 export async function runGitHubSync(
