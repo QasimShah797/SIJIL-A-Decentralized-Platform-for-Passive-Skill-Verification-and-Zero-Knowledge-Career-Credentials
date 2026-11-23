@@ -19,6 +19,7 @@ import { evaluateSkillProjectMatch } from "../utils/evidence-matching";
 import { cleanupCompetencyRelatedData, removeDeclaredSkillRow } from "./competency-cleanup.service";
 import { upsertLinkedGitHubReposForUser } from "./github-supporting-record.service";
 import { isMissingRelationError } from "../utils/supabase-errors";
+import { declaredCompetencyKey } from "../utils/competency-matching";
 
 function parseBreakdown(row: Record<string, unknown>): Record<string, number> {
   const direct = row.language_breakdown;
@@ -139,7 +140,7 @@ export class SkillsService {
   }
 
   async create(userId: string, input: CreateSkillInput): Promise<DeclaredSkillWithEvidenceView> {
-    const normalizedName = normalizeSkillKey(input.name);
+    const competencyKey = declaredCompetencyKey(input.name);
     const domain = input.domain || "General";
 
     const { data: existingSkills, error: existingErr } = await supabaseService.client
@@ -150,7 +151,7 @@ export class SkillsService {
     if (existingErr) throw new AppError(existingErr.message, 500);
 
     const existing = (existingSkills ?? []).find((row) =>
-      normalizeSkillKey(String(row.name ?? "")) === normalizedName,
+      declaredCompetencyKey(String(row.name ?? "")) === competencyKey,
     );
 
     let skill: SkillView;

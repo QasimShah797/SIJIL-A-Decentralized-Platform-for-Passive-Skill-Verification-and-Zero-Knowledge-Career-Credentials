@@ -135,7 +135,7 @@ export function IntegrationConnectionCard({
               <span className="font-medium text-[#334155]">Formats:</span> PDF, PNG, JPG
             </p>
             <p>
-              <span className="font-medium text-[#334155]">Verification:</span> Manual review
+              <span className="font-medium text-[#334155]">Skill confirmation:</span> Manual review
             </p>
           </div>
         ) : null}

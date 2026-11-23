@@ -5,6 +5,9 @@
 
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.95.0";
 import {
+  canCreateVerifiedMoodleEvidence,
+  extractMoodleAssignmentIntroText,
+  moodleHtmlToPlainText,
   repairMoodleEvidenceRecords,
   resolveCompetencyForMoodleAssignment,
   upsertMoodleAssignmentEvidenceRecord,
@@ -19,8 +22,8 @@ export const corsHeaders = {
 const MOODLE_BASE_URL = Deno.env.get("MOODLE_BASE_URL");
 const MOODLE_TOKEN = Deno.env.get("MOODLE_TOKEN");
 
-/** Canonical MoodleCloud site — only this instance is supported. */
-export const EXPECTED_MOODLE_SITE_URL = "https://sijil-fyp.moodlecloud.com";
+/** Live SIJIL Moodle instance (MoodleCloud hosts are retired). */
+export const EXPECTED_MOODLE_SITE_URL = "https://sijil-lms.duckdns.org";
 
 let moodleEnvLogged = false;
 
@@ -1586,31 +1589,6 @@ function evidenceHash(userId: string, courseId: number, assignmentId: number): s
   return `moodle:${userId}:${courseId}:${assignmentId}`;
 }
 
-function normalizedCompetencyText(value: unknown): string {
-  return String(value ?? "").trim().toLowerCase();
-}
-
-function matchesCompetency(value: unknown, competencyName: string): boolean {
-  const left = normalizedCompetencyText(value);
-  const right = normalizedCompetencyText(competencyName);
-  if (!left || !right) return false;
-  return left === right || left.includes(right) || right.includes(left);
-}
-
-function matchesCompetencyTags(tags: unknown, competencyName: string): boolean {
-  if (!Array.isArray(tags)) return false;
-  return tags.some((tag) => {
-    if (typeof tag === "string") return matchesCompetency(tag, competencyName);
-    if (tag && typeof tag === "object") {
-      const row = tag as Record<string, unknown>;
-      return matchesCompetency(row.name, competencyName)
-        || matchesCompetency(row.shortname, competencyName)
-        || matchesCompetency(row.label, competencyName);
-    }
-    return false;
-  });
-}
-
 function resolveLinkedSkillId(
   declaredSkills: Array<{ id: string; name: string }>,
   params: {
@@ -1618,19 +1596,12 @@ function resolveLinkedSkillId(
     courseShortname?: string | null;
     assignmentName?: string | null;
     competencyTags?: unknown;
+    assignmentIntro?: string | null;
+    submissionText?: string | null;
   },
 ): string | null {
-  for (const skill of declaredSkills) {
-    if (
-      matchesCompetency(params.courseName, skill.name)
-      || matchesCompetency(params.courseShortname, skill.name)
-      || matchesCompetency(params.assignmentName, skill.name)
-      || matchesCompetencyTags(params.competencyTags, skill.name)
-    ) {
-      return skill.id;
-    }
-  }
-  return null;
+  const match = resolveCompetencyForMoodleAssignment(declaredSkills, params);
+  return match?.skill.id ?? null;
 }
 
 async function linkUnmappedLmsEvidenceToSkills(
@@ -1828,7 +1799,12 @@ async function fetchCourseAssignments(
         name: a.name || existing.name,
         gradeMax: a.gradeMax ?? existing.gradeMax,
         source: "mod_assign_get_assignments",
-        raw: { ...existing.raw, modAssign: a.raw },
+        // Prefer mod_assign payload (includes intro). Keep course-module metadata under courseModule.
+        raw: {
+          ...a.raw,
+          courseModule: existing.raw,
+          modAssign: a.raw,
+        },
       }
       : a);
   }
@@ -2827,6 +2803,13 @@ export async function syncLearnerMoodleActivities(
         raw: {
           source: assign.source,
           assign: assign.raw,
+          // Plain-text intro for matching without a schema migration (Phase 1 Option B).
+          // extractMoodleAssignmentIntroText reads intro / modAssign.intro / assign.intro.
+          intro_text: extractMoodleAssignmentIntroText({
+            assign: assign.raw,
+            modAssign: assign.raw?.modAssign ?? assign.raw,
+            intro: typeof assign.raw?.intro === "string" ? assign.raw.intro : null,
+          }) || null,
           submission,
           submissionStatus: submissionStatusResponse,
           lastAttempt,
@@ -2878,11 +2861,19 @@ export async function syncLearnerMoodleActivities(
 
     const hash = evidenceHash(userId, courseId, assignmentId);
     syncedEvidenceHashes.add(hash);
+    const linkedIntro = extractMoodleAssignmentIntroText({
+      assign: assign.raw,
+      modAssign: assign.raw?.modAssign ?? null,
+      intro: typeof assign.raw.intro === "string" ? assign.raw.intro : null,
+    });
+    const linkedSubmission = moodleHtmlToPlainText(submissionText);
     const linkedSkillId = resolveLinkedSkillId(declaredSkills, {
       courseName,
       courseShortname,
       assignmentName: name,
       competencyTags: competencyTags.length ? competencyTags : null,
+      assignmentIntro: linkedIntro,
+      submissionText: linkedSubmission,
     });
     const textPreview = [
       `${name} (${moduleType})`,
@@ -2956,16 +2947,32 @@ export async function syncLearnerMoodleActivities(
       false,
     );
 
-    const matchedSkill = resolveCompetencyForMoodleAssignment(declaredSkills, {
+    const assignmentIntro = extractMoodleAssignmentIntroText({
+      assign: assign.raw,
+      modAssign: assign.raw?.modAssign ?? null,
+      intro: typeof assign.raw?.intro === "string" ? assign.raw.intro : null,
+    });
+    const plainSubmission = moodleHtmlToPlainText(submissionText);
+    const matched = resolveCompetencyForMoodleAssignment(declaredSkills, {
       courseName,
       courseShortname,
       assignmentName: name,
       competencyTags: competencyTags.length ? competencyTags : null,
+      assignmentIntro,
+      submissionText: plainSubmission,
     });
-    if (matchedSkill && grade !== null) {
+    if (
+      canCreateVerifiedMoodleEvidence({
+        match: matched,
+        grade,
+        submissionText: plainSubmission,
+        requireGrade: true,
+      })
+      && matched
+    ) {
       await upsertMoodleAssignmentEvidenceRecord(admin, {
         userId,
-        skill: matchedSkill,
+        skill: matched.skill,
         moodleSiteUrl,
         moodleCourseId: courseId,
         moodleAssignmentId: assignmentId,
@@ -2976,6 +2983,11 @@ export async function syncLearnerMoodleActivities(
         teacherFeedback: statusFeedback.text?.trim() || null,
         syncedAt: now,
         requireGrade: true,
+        matchBasis: matched.basis,
+        introOnlyRelevance: matched.introOnlyRelevance,
+        submissionText: plainSubmission,
+        submissionLanguageConflict: matched.submissionLanguageConflict,
+        matchScore: matched.score,
       });
     }
   }

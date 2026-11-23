@@ -3,9 +3,15 @@
  * A production process can then load it without the circuits working tree.
  */
 import { createHash } from "node:crypto";
-import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  BELOW_ARTIFACT_ENTRIES,
+  assessBelowBundle,
+  clearBelowDestination,
+  copyVerifiedBelowBundle,
+} from "./copy-zkp-below-bundle.mjs";
 
 const backendRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const source = path.resolve(backendRoot, "../zkp-artifacts/score-threshold-v1");
@@ -35,7 +41,9 @@ copyFileSync(
 );
 
 // Copy GitHub Contributions ZKP artifacts after verifying their pinned hashes.
-const githubSource = path.resolve(backendRoot, "../zkp-artifacts/github-contributions-v1");
+// Meets bundle: published public artifacts (matches GITHUB_ZKP_ARTIFACT_HASHES at runtime).
+const githubBundleSource = path.resolve(backendRoot, "../zkp-artifacts/github-contributions-v1");
+const githubCircuitRoot = path.resolve(backendRoot, "../circuits/github-contributions-v1");
 const githubDestination = path.join(backendRoot, "zkp-artifacts/github-contributions-v1");
 const githubFiles = [
   { source: "github_contributions.wasm", target: "github_contributions.wasm", hashKey: "wasm" },
@@ -43,11 +51,11 @@ const githubFiles = [
   { source: "verification_key.json", target: "verification_key.json", hashKey: "verificationKey" },
 ];
 
-const githubHashes = JSON.parse(readFileSync(path.join(githubSource, "hashes.json"), "utf8"));
+const githubHashes = JSON.parse(readFileSync(path.join(githubBundleSource, "hashes.json"), "utf8"));
 
 // Verify every source artifact before changing the destination.
 for (const artifact of githubFiles) {
-  const bytes = readFileSync(path.join(githubSource, artifact.source));
+  const bytes = readFileSync(path.join(githubBundleSource, artifact.source));
   const actualHash = createHash("sha256").update(bytes).digest("hex");
   if (actualHash !== githubHashes[artifact.hashKey]) {
     throw new Error(`GitHub ZKP artifact hash mismatch: ${artifact.source}`);
@@ -57,19 +65,19 @@ for (const artifact of githubFiles) {
 mkdirSync(githubDestination, { recursive: true });
 for (const artifact of githubFiles) {
   copyFileSync(
-    path.join(githubSource, artifact.source),
+    path.join(githubBundleSource, artifact.source),
     path.join(githubDestination, artifact.target),
   );
 }
 copyFileSync(
-  path.join(githubSource, "hashes.json"),
+  path.join(githubBundleSource, "hashes.json"),
   path.join(githubDestination, "hashes.json"),
 );
 
 mkdirSync(path.join(backendRoot, "dist/zkp"), { recursive: true });
 // Adapt the copied GitHub helper to the backend's installed circomlibjs.
 const githubHelperSource = readFileSync(
-  path.resolve(backendRoot, "../circuits/github-contributions-v1/src/commitment.mjs"),
+  path.join(githubCircuitRoot, "src/commitment.mjs"),
   "utf8",
 );
 const originalPoseidonImport =
@@ -89,26 +97,33 @@ writeFileSync(
 console.log("Copied verified GitHub Contributions ZKP artifacts");
 
 // Below-threshold companion circuits. The backend resolvers re-check source-pinned hashes at load time.
-for (const [folder, files] of [
-  ["score-threshold-v1-below", ["score_below.wasm", "score_below_final.zkey"]],
-  ["github-contributions-v1-below", ["github_contributions_below.wasm", "github_contributions_below_final.zkey"]],
-]) {
+let copiedBelowBundles = 0;
+for (const [folder, wasmName, zkeyName] of BELOW_ARTIFACT_ENTRIES) {
   const belowSource = path.resolve(backendRoot, "../zkp-artifacts", folder);
   const belowDestination = path.join(backendRoot, "zkp-artifacts", folder);
-  const belowHashes = JSON.parse(readFileSync(path.join(belowSource, "hashes.json"), "utf8"));
-  const belowNames = [[files[0], "wasm"], ["verification_key.json", "verificationKey"]];
-  if (existsSync(path.join(belowSource, files[1]))) {
-    belowNames.push([files[1], "zkey"]);
-  } else {
-    console.warn(`${folder}: copying public artifacts only; the original pinned proving key is unavailable`);
+  const assessment = assessBelowBundle(belowSource, folder, wasmName, zkeyName);
+
+  if (assessment.status === "missing") {
+    console.warn(
+      `Skipping ${folder}: below ZKP bundle incomplete (missing ${assessment.file}). Below-threshold proving remains unavailable.`,
+    );
+    clearBelowDestination(belowDestination);
+    continue;
   }
-  for (const [name, key] of belowNames) {
-    const digest = createHash("sha256").update(readFileSync(path.join(belowSource, name))).digest("hex");
-    if (digest !== belowHashes[key]) throw new Error(`${folder}/${name} does not match its hash manifest`);
+
+  if (assessment.status === "mismatch") {
+    throw new Error(
+      `${folder}/${assessment.file} does not match its hash manifest (expected ${assessment.expected}, got ${assessment.actual})`,
+    );
   }
-  mkdirSync(belowDestination, { recursive: true });
-  for (const [name] of [...belowNames, ["hashes.json"]]) {
-    copyFileSync(path.join(belowSource, name), path.join(belowDestination, name));
-  }
+
+  copyVerifiedBelowBundle(belowSource, belowDestination, assessment.belowNames);
+  copiedBelowBundles += 1;
 }
+if (copiedBelowBundles > 0) {
+  console.log(`Copied ${copiedBelowBundles} verified below-threshold ZKP bundle(s)`);
+} else {
+  console.log("No below-threshold ZKP bundles copied (source incomplete; resolvers will fail closed)");
+}
+
 console.log("Copied the verified ZKP bundle into backend/zkp-artifacts");

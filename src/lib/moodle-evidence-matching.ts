@@ -1,26 +1,30 @@
+import {
+  extractMoodleAssignmentIntroText,
+  matchesCompetencyTags as matchCompetencyTagsContent,
+  matchesCompetencyToken,
+  moodleHtmlToPlainText,
+  normalizedCompetencyText as normalizeContentText,
+  resolveCompetencyForMoodleAssignment,
+} from "@/lib/moodle-competency-content-matching";
+
+export {
+  canCreateVerifiedMoodleEvidence,
+  extractMoodleAssignmentIntroText,
+  moodleHtmlToPlainText,
+  resolveCompetencyForMoodleAssignment,
+} from "@/lib/moodle-competency-content-matching";
+
 export function normalizedCompetencyText(value: unknown): string {
-  return String(value ?? "").trim().toLowerCase();
+  return normalizeContentText(value);
 }
 
+/** Language-aware competency match (Java ≠ JavaScript). */
 export function matchesCompetency(value: unknown, competencyName: string): boolean {
-  const left = normalizedCompetencyText(value);
-  const right = normalizedCompetencyText(competencyName);
-  if (!left || !right) return false;
-  return left === right || left.includes(right) || right.includes(left);
+  return matchesCompetencyToken(value, competencyName);
 }
 
 export function matchesCompetencyTags(tags: unknown, competencyName: string): boolean {
-  if (!Array.isArray(tags)) return false;
-  return tags.some((tag) => {
-    if (typeof tag === "string") return matchesCompetency(tag, competencyName);
-    if (tag && typeof tag === "object") {
-      const row = tag as Record<string, unknown>;
-      return matchesCompetency(row.name, competencyName)
-        || matchesCompetency(row.shortname, competencyName)
-        || matchesCompetency(row.label, competencyName);
-    }
-    return false;
-  });
+  return matchCompetencyTagsContent(tags, competencyName);
 }
 
 export function lmsEvidenceMatchesSkill(
@@ -42,12 +46,30 @@ export function importedLmsMatchesSkill(
     || matchesCompetency(row.activity_name, skillName);
 }
 
+/**
+ * Assignment relevance: title, tags, intro/description, and learner online-text.
+ * File contents are Phase 2 and intentionally ignored here.
+ */
 export function moodleAssignmentMatchesSkill(
   row: Record<string, unknown>,
   skillName: string,
 ): boolean {
-  return matchesCompetencyTags(row.competency_tags, skillName)
-    || matchesCompetency(row.name, skillName);
+  const intro = extractMoodleAssignmentIntroText(row.raw)
+    || moodleHtmlToPlainText(row.intro)
+    || moodleHtmlToPlainText(row.intro_text);
+  const submissionText = typeof row.submission_text === "string"
+    ? moodleHtmlToPlainText(row.submission_text)
+    : "";
+  const match = resolveCompetencyForMoodleAssignment(
+    [{ id: "tmp", name: skillName }],
+    {
+      assignmentName: typeof row.name === "string" ? row.name : null,
+      competencyTags: row.competency_tags,
+      assignmentIntro: intro || null,
+      submissionText: submissionText || null,
+    },
+  );
+  return match != null;
 }
 
 export function moodleCourseMatchesSkill(

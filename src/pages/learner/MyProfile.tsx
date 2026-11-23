@@ -465,7 +465,7 @@ export default function MyProfile() {
               {[
                 { label: "Competencies", value: skills.length },
                 { label: "Evidence Items", value: evidenceCount },
-                { label: "Verifications", value: credentials.length },
+                { label: "Confirmed Skills", value: credentials.length },
                 { label: "Peer Reviews", value: reviews.length },
               ].map(({ label, value }) => (
                 <div key={label} className="text-center lg:border-l lg:border-[#e2e8f0] lg:pl-4 first:lg:border-l-0">
