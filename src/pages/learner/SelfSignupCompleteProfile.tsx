@@ -16,6 +16,7 @@ import {
   UserRoundCheck,
   X,
 } from "lucide-react";
+import { PakistanCitySelect } from "@/components/profile/PakistanCitySelect";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -33,7 +34,8 @@ import { PageSkeleton } from "@/components/sijil/SkeletonLoader";
 import { VerifiedProfessionalAccounts } from "@/components/profile/VerifiedProfessionalAccounts";
 import {
   fetchLearnerProfileRow,
-  isLearnerProfileComplete,
+  type LearnerProfileRow,
+  normalizeLearnerGender,
   isValidGraduationYear,
   rowToSelfSignupForm,
   saveSelfSignupOnboarding,
@@ -45,6 +47,7 @@ import {
 } from "@/lib/db/learner-profile";
 import {
   clearProfileFormDraft,
+  accessProfileAvatarDraft,
   loadProfileFormDraft,
   saveProfileFormDraft,
 } from "@/lib/profile-oauth-draft";
@@ -60,7 +63,7 @@ import "./SelfSignupCompleteProfile.css";
 const profileSchema = z.object({
   contactNumber: z.string().trim().min(1, "Phone number is required").max(40),
   dateOfBirth: z.string().trim().optional().or(z.literal("")),
-  gender: z.string().trim().optional().or(z.literal("")),
+  gender: z.enum(["", "male", "female"], { message: "Select Male or Female." }),
   country: z.string().trim().min(1, "Country is required").max(80),
   city: z.string().trim().min(1, "City is required").max(80),
   institutionName: z.string().trim().min(1, "Current institution is required").max(200),
@@ -83,16 +86,13 @@ const profileSchema = z.object({
 const GENDER_OPTIONS = [
   { value: "male", label: "Male" },
   { value: "female", label: "Female" },
-  { value: "non_binary", label: "Non-binary" },
-  { value: "prefer_not_to_say", label: "Prefer not to say" },
-  { value: "other", label: "Other" },
 ];
 
 const emptyForm = (): SelfSignupProfileForm => ({
   contactNumber: "",
   dateOfBirth: "",
   gender: "",
-  country: "",
+  country: "Pakistan",
   city: "",
   institutionName: "",
   program: "",
@@ -105,7 +105,7 @@ const emptyForm = (): SelfSignupProfileForm => ({
 
 const RETURN_PATH = "/learner/complete-profile";
 
-export default function SelfSignupCompleteProfile() {
+export default function SelfSignupCompleteProfile({ initialRow }: { initialRow?: LearnerProfileRow }) {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { user, loading: authLoading } = useAuth();
@@ -123,9 +123,15 @@ export default function SelfSignupCompleteProfile() {
     (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
       setF((prev) => ({ ...prev, [k]: e.target.value }));
 
-  const persistDraft = () => {
+  const updateAvatar = (file: File | null) => {
+    setAvatarFile(file);
+    if (user) void accessProfileAvatarDraft(user.id, file);
+  };
+
+  const persistDraft = async () => {
     if (!user) return;
     saveProfileFormDraft(user.id, "self_signup", f);
+    await accessProfileAvatarDraft(user.id, avatarFile);
   };
 
   useEffect(() => {
@@ -139,7 +145,7 @@ export default function SelfSignupCompleteProfile() {
 
     (async () => {
       try {
-        const row = await fetchLearnerProfileRow(user.id);
+        const row = initialRow ?? await fetchLearnerProfileRow(user.id);
         if (cancelled) return;
 
         if (!row) {
@@ -147,22 +153,26 @@ export default function SelfSignupCompleteProfile() {
           return;
         }
 
+        if (row.profile_completed) {
+          clearProfileFormDraft(user.id, "self_signup");
+          void accessProfileAvatarDraft(user.id, null);
+          navigate("/learner/profile", { replace: true });
+          return;
+        }
+
         const draft = loadProfileFormDraft<SelfSignupProfileForm>(user.id, "self_signup");
-        setF(draft ?? rowToSelfSignupForm(row, user.id));
+        const initial = draft ?? rowToSelfSignupForm(row, user.id);
+        setF({ ...initial, country: initial.country || "Pakistan", gender: normalizeLearnerGender(initial.gender) });
         setExistingAvatarUrl(row.avatar_url ?? null);
+        const draftAvatar = await accessProfileAvatarDraft(user.id);
+        if (cancelled) return;
+        setAvatarFile(draftAvatar);
         setFormReady(true);
         setChecking(false);
 
         const oauth = await meetsOAuthCompletionRequirements(user.id);
         if (cancelled) return;
         setGithubVerified(oauth.github);
-
-        const complete = await isLearnerProfileComplete(user.id);
-        if (cancelled) return;
-        if (complete) {
-          clearProfileFormDraft(user.id, "self_signup");
-          navigate("/learner/profile", { replace: true });
-        }
       } catch (err) {
         if (cancelled) return;
         toast({
@@ -177,7 +187,7 @@ export default function SelfSignupCompleteProfile() {
     return () => {
       cancelled = true;
     };
-  }, [user, authLoading, navigate]);
+  }, [user, authLoading, navigate, initialRow]);
 
   useEffect(() => {
     const github = searchParams.get("github");
@@ -187,16 +197,12 @@ export default function SelfSignupCompleteProfile() {
     next.delete("github");
     next.delete("code");
     setSearchParams(next, { replace: true });
-
-    if (user) {
-      void meetsOAuthCompletionRequirements(user.id).then((oauth) => {
-        setGithubVerified(oauth.github);
-      });
-    }
-  }, [searchParams, setSearchParams, user]);
+  }, [searchParams, setSearchParams]);
 
   useEffect(() => {
-    if (!user || !formReady) return;
+    if (!user || !formReady || busy) return;
+
+    saveProfileFormDraft(user.id, "self_signup", f);
 
     const timer = window.setTimeout(() => {
       const gradYear = f.graduationYear.trim();
@@ -217,13 +223,13 @@ export default function SelfSignupCompleteProfile() {
 
       void saveSelfSignupProfileProgress(user.id, {
         contactNumber: f.contactNumber,
-        dateOfBirth: f.dateOfBirth || undefined,
+        dateOfBirth: f.dateOfBirth,
         gender: f.gender,
         country: f.country,
         city: f.city,
-        institutionName: f.institutionName || undefined,
-        program: f.program || undefined,
-        graduationYear: gradYear ? Number.parseInt(gradYear, 10) : undefined,
+        institutionName: f.institutionName,
+        program: f.program,
+        graduationYear: isValidGraduationYear(gradYear) ? Number(gradYear) : undefined,
         bio: f.bio,
         skillsSummary: f.skillsSummary,
         careerGoal: f.careerGoal,
@@ -234,7 +240,7 @@ export default function SelfSignupCompleteProfile() {
     }, 1000);
 
     return () => window.clearTimeout(timer);
-  }, [f, user, formReady]);
+  }, [f, user, formReady, busy]);
 
   const progress = selfSignupProfileProgress(f, {
     githubVerified,
@@ -242,7 +248,7 @@ export default function SelfSignupCompleteProfile() {
 
   const finish = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user) return;
+    if (!user || busy) return;
 
     const parsed = profileSchema.safeParse(f);
     if (!parsed.success) {
@@ -254,8 +260,7 @@ export default function SelfSignupCompleteProfile() {
       return;
     }
 
-    const oauth = await meetsOAuthCompletionRequirements(user.id);
-    if (!oauth.github) {
+    if (!githubVerified) {
       toast({
         title: "GitHub verification required",
         description: "Connect and verify your GitHub account before completing your profile.",
@@ -294,6 +299,7 @@ export default function SelfSignupCompleteProfile() {
 
       const updated = await saveSelfSignupOnboarding(user.id, data);
       clearProfileFormDraft(user.id, "self_signup");
+      void accessProfileAvatarDraft(user.id, null);
       setF(rowToSelfSignupForm(updated, user.id));
       setExistingAvatarUrl(updated.avatar_url ?? null);
       setAvatarFile(null);
@@ -377,15 +383,15 @@ export default function SelfSignupCompleteProfile() {
                     <span>JPG, PNG or WebP</span>
                   </button>
                   {avatarFile && <button type="button" className="scp-remove-avatar" aria-label="Remove selected photo"
-                    onClick={() => { setAvatarFile(null); if (fileRef.current) fileRef.current.value = ""; }}><X /></button>}
+                    onClick={() => { updateAvatar(null); if (fileRef.current) fileRef.current.value = ""; }}><X /></button>}
                   <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden"
-                    onChange={(event) => setAvatarFile(event.target.files?.[0] ?? null)} />
+                    onChange={(event) => updateAvatar(event.target.files?.[0] ?? null)} />
                 </div>
               </Field>
               <div className="scp-fields">
                 <Field label="Phone number" required>
                   <ProfileInputIcon icon={Phone}><Input aria-label="Phone number" aria-required="true" type="tel"
-                    value={f.contactNumber} onChange={set("contactNumber")} placeholder="+92 300 1234567" /></ProfileInputIcon>
+                    value={f.contactNumber} onChange={set("contactNumber")} /></ProfileInputIcon>
                 </Field>
                 <Field label="Date of birth">
                   <ProfileInputIcon icon={CalendarDays}><Input aria-label="Date of birth" type="date"
@@ -394,7 +400,7 @@ export default function SelfSignupCompleteProfile() {
                 <Field label="Gender">
                   <ProfileInputIcon icon={User}>
                     <Select value={f.gender || undefined} onValueChange={(value) => setF((prev) => ({ ...prev, gender: value }))}>
-                      <SelectTrigger aria-label="Gender"><SelectValue placeholder="Select gender" /></SelectTrigger>
+                      <SelectTrigger aria-label="Gender"><SelectValue /></SelectTrigger>
                       <SelectContent>{GENDER_OPTIONS.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
                     </Select>
                   </ProfileInputIcon>
@@ -402,11 +408,12 @@ export default function SelfSignupCompleteProfile() {
                 <div className="scp-field-break" />
                 <Field label="Country" required>
                   <ProfileInputIcon icon={MapPin}><Input aria-label="Country" aria-required="true"
-                    value={f.country} onChange={set("country")} placeholder="Pakistan" /></ProfileInputIcon>
+                    value={f.country} readOnly /></ProfileInputIcon>
                 </Field>
                 <Field label="City" required>
-                  <ProfileInputIcon icon={School}><Input aria-label="City" aria-required="true"
-                    value={f.city} onChange={set("city")} placeholder="Islamabad" /></ProfileInputIcon>
+                  <ProfileInputIcon icon={School}>
+                    <PakistanCitySelect value={f.city} onChange={(city) => setF((prev) => ({ ...prev, city, country: "Pakistan" }))} />
+                  </ProfileInputIcon>
                 </Field>
               </div>
             </div>
@@ -417,15 +424,15 @@ export default function SelfSignupCompleteProfile() {
             <div className="scp-fields">
               <Field label="Current institution" required>
                 <ProfileInputIcon icon={School}><Input aria-label="Current institution" aria-required="true"
-                  value={f.institutionName} onChange={set("institutionName")} placeholder="University or school" /></ProfileInputIcon>
+                  value={f.institutionName} onChange={set("institutionName")} /></ProfileInputIcon>
               </Field>
               <Field label="Program / degree" required>
                 <ProfileInputIcon icon={BookOpen}><Input aria-label="Program / degree" aria-required="true"
-                  value={f.program} onChange={set("program")} placeholder="BSc Computer Science" /></ProfileInputIcon>
+                  value={f.program} onChange={set("program")} /></ProfileInputIcon>
               </Field>
               <Field label="Graduation year" required>
                 <ProfileInputIcon icon={CalendarDays}><Input aria-label="Graduation year" aria-required="true"
-                  inputMode="numeric" maxLength={4} value={f.graduationYear} onChange={set("graduationYear")} placeholder="2026" /></ProfileInputIcon>
+                  inputMode="numeric" maxLength={4} value={f.graduationYear} onChange={set("graduationYear")} /></ProfileInputIcon>
               </Field>
             </div>
           </section>
@@ -442,15 +449,13 @@ export default function SelfSignupCompleteProfile() {
             <ProfileSectionHeading icon={User} title="About you" optional description="Tell us about yourself, your skills and your goals." />
             <div className="scp-fields scp-about-fields">
               <Field label="Bio / about me">
-                <Textarea aria-label="Bio / about me" value={f.bio} onChange={set("bio")} rows={3} placeholder="Write a short bio about yourself..." />
+                <Textarea aria-label="Bio / about me" value={f.bio} onChange={set("bio")} rows={3} />
               </Field>
               <Field label="Skills summary">
-                <Textarea aria-label="Skills summary" value={f.skillsSummary} onChange={set("skillsSummary")} rows={3}
-                  placeholder="e.g., Problem solving, Web development, Data analysis..." />
+                <Textarea aria-label="Skills summary" value={f.skillsSummary} onChange={set("skillsSummary")} rows={3} />
               </Field>
               <Field label="Career goal">
-                <Textarea aria-label="Career goal" value={f.careerGoal} onChange={set("careerGoal")} rows={3}
-                  placeholder="e.g., Become a software engineer..." />
+                <Textarea aria-label="Career goal" value={f.careerGoal} onChange={set("careerGoal")} rows={3} />
               </Field>
             </div>
           </section>

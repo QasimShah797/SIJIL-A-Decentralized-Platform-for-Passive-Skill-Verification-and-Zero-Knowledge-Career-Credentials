@@ -34,7 +34,7 @@ export type TaskFilter = "all" | "in_progress" | "completed" | "locked";
 const SKILL_ICON_COLORS = ["hsl(var(--sijil-blue))", "#CA8A04", "#DC2626", "#059669", "#0891B2", "#7C3AED"];
 
 export function skillInitials(name: string): string {
-  const parts = name.trim().split(/\s+/);
+  const parts = name.trim().replace(/([a-z0-9])([A-Z])/g, "$1 $2").split(/\s+/);
   if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
   return name.slice(0, 2).toUpperCase();
 }
@@ -549,20 +549,20 @@ export function McqQuestionPalette({
   );
 }
 
-export function McqCodeStage({ code, language }: { code: string; language?: string }) {
+export function McqCodeStage({ code, language, label = "Find the bug" }: { code: string; language?: string; label?: string }) {
   const lines = code.replace(/\r\n/g, "\n").split("\n");
   return (
     <div className="pt-code-stage" aria-label="Code snippet">
       <div className="pt-code-stage-bar">
         <span className="font-mono uppercase tracking-wide">{language || "code"}</span>
-        <span>Find the bug</span>
+        <span>{label}</span>
       </div>
       <pre className="pt-code-stage-pre">
         {lines.map((line, index) => (
-          <div key={`${index}-${line}`} className="pt-code-line">
+          <span key={`${index}-${line}`} className="pt-code-line">
             <span className="pt-code-gutter">{index + 1}</span>
             <code>{line || " "}</code>
-          </div>
+          </span>
         ))}
       </pre>
     </div>
@@ -751,22 +751,23 @@ export function TaskDetailsGrid() {
   const items = [
     { icon: Clock3, title: "Time", detail: "30 seconds per question" },
     { icon: MousePointer2, title: "Navigation", detail: "Move between questions" },
-    { icon: Keyboard, title: "Keyboard", detail: "A-D or 1–4 to choose, arrow keys to move" },
+    { icon: Keyboard, title: "Keyboard", detail: "A?D or 1?4 to choose, arrow keys to move" },
   ] as const;
 
   return (
-    <div>
-      <p className="mb-3 text-sm font-semibold text-[#0f172a]">Task Details</p>
-      <div className="grid gap-3 sm:grid-cols-3">
-        {items.map(({ icon: Icon, title, detail }) => (
-          <div key={title} className="rounded-xl border border-[#e2e8f0] bg-white p-3">
-            <Icon className="mb-2 h-4 w-4 text-sijil-blue" aria-hidden />
-            <p className="text-xs font-semibold text-[#0f172a]">{title}</p>
-            <p className="mt-1 text-[11px] leading-relaxed text-[#64748b]">{detail}</p>
+    <ul aria-label="Task details" className="grid gap-3 md:grid-cols-3 md:gap-4">
+      {items.map(({ icon: Icon, title, detail }) => (
+        <li key={title} className="flex min-w-0 items-start gap-3 rounded-2xl border border-sijil-blue/15 bg-sijil-blue/[0.035] p-4 lg:gap-4 lg:p-5">
+          <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-sijil-blue/10 text-sijil-blue lg:size-12">
+            <Icon className="size-5 lg:size-6" aria-hidden="true" />
+          </span>
+          <div className="min-w-0">
+            <p className="text-base font-bold text-slate-900">{title}</p>
+            <p className="mt-1 text-sm leading-relaxed text-slate-600">{detail}</p>
           </div>
-        ))}
-      </div>
-    </div>
+        </li>
+      ))}
+    </ul>
   );
 }
 

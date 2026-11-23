@@ -7,16 +7,13 @@ import { PageSkeleton } from "@/components/sijil/SkeletonLoader";
 import { EmptyState } from "@/components/sijil/EmptyState";
 import { Button } from "@/components/ui/button";
 import { ShieldAlert } from "lucide-react";
-import { ShareAchievementFlow, type ShareRecord } from "@/components/sharing/ShareAchievementFlow";
+import { ShareAchievementFlow } from "@/components/sharing/ShareAchievementFlow";
 import { useCredentials } from "@/hooks/useLearnerData";
 import { walletShareRequest } from "@/lib/sharing/guide";
 import type { WalletShareFieldId } from "@/lib/wallet-competency-shared";
-import { apiRequest } from "@/services/api/client";
 import {
   getWalletCompetenciesApi,
-  revokeWalletShareApi,
   shareWalletCompetencyApi,
-  type WalletCompetencyDetailView,
 } from "@/services/api/wallet.api";
 
 const LINK_FIELDS: Array<{ id: WalletShareFieldId; label: string }> = [
@@ -46,9 +43,6 @@ export default function SelectiveDisclosure() {
   const { credentials, loading } = useCredentials();
   const credential = credentials.find((item) => item.id === decodeURIComponent(id || ""));
   const [competencyId, setCompetencyId] = useState<string | null>(null);
-  const [shares, setShares] = useState<ShareRecord[]>([]);
-  const [historyUnavailable, setHistoryUnavailable] = useState(false);
-  const [historyAttempt, setHistoryAttempt] = useState(0);
   const [working, setWorking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resultUrl, setResultUrl] = useState<string | null>(null);
@@ -71,40 +65,6 @@ export default function SelectiveDisclosure() {
     };
   }, [credential]);
 
-  useEffect(() => {
-    if (!competencyId) return;
-    let active = true;
-    setHistoryUnavailable(false);
-    apiRequest<WalletCompetencyDetailView>(`/wallet/competencies/${encodeURIComponent(competencyId)}`)
-      .then((detail) => {
-        if (!active) return;
-        setShares(detail.shares.map((share) => ({
-          token: share.id,
-          label: share.recipientName
-            ? `${credential?.skill ?? "Achievement"} · ${share.recipientName}`
-            : credential?.skill ?? "Achievement",
-          access: share.shareStatus === "Revoked"
-            ? "revoked" as const
-            : share.shareStatus === "Expired"
-              ? "expired" as const
-              : "active" as const,
-          kind: share.recipientName ? "direct" as const : "link" as const,
-          recipient: share.recipientOrganization
-            ? `${share.recipientName} at ${share.recipientOrganization}`
-            : share.recipientName,
-          sharedAt: share.createdAt,
-        })));
-      })
-      .catch(() => {
-        if (!active) return;
-        setHistoryUnavailable(true);
-        setShares([]);
-      });
-    return () => {
-      active = false;
-    };
-  }, [competencyId, credential?.skill, historyAttempt]);
-
   const createLink = async (input: { selectedFields: string[]; expiresInDays: number }) => {
     if (!competencyId) {
       setError("This achievement is not available for a field-limited link yet.");
@@ -124,13 +84,6 @@ export default function SelectiveDisclosure() {
         selectedFields: request.selectedFields as WalletShareFieldId[],
       });
       setResultUrl(created.shareUrl);
-      setShares((current) => [{
-        token: created.shareId,
-        label: credential?.skill ?? "Achievement",
-        access: "active",
-        kind: "link",
-        sharedAt: new Date().toISOString(),
-      }, ...current]);
     } catch (next) {
       setError(shareError(next));
     } finally {
@@ -152,39 +105,13 @@ export default function SelectiveDisclosure() {
         selectedFields: input.selectedFields,
         expiresInDays: input.expiresInDays,
       });
-      const created = await shareWalletCompetencyApi({
+      await shareWalletCompetencyApi({
         ...request,
         selectedFields: request.selectedFields as WalletShareFieldId[],
         shareAudience: "all-recruiters",
         consentToAllRecruiters: true,
       });
       setResultNote("Your achievements are now visible to all SIJIL recruiters.");
-      setShares((current) => [{
-        token: created.shareId,
-        label: credential?.skill ?? "Achievement",
-        access: "active",
-        kind: "direct",
-        recipient: "All SIJIL recruiters",
-        sharedAt: new Date().toISOString(),
-      }, ...current.filter((item) => item.token !== created.shareId)]);
-    } catch (next) {
-      setError(shareError(next));
-    } finally {
-      setWorking(false);
-    }
-  };
-
-  const revoke = async (share: ShareRecord) => {
-    setWorking(true);
-    setError(null);
-    try {
-      const stopped = await revokeWalletShareApi(share.token);
-      if (!stopped) throw new Error("The share could not be stopped.");
-      setShares((current) => current.map((item) => (
-        item.kind === share.kind && item.token === share.token
-          ? { ...item, access: "revoked" }
-          : item
-      )));
     } catch (next) {
       setError(shareError(next));
     } finally {
@@ -225,7 +152,6 @@ export default function SelectiveDisclosure() {
         fields={LINK_FIELDS}
         linkAvailable={Boolean(competencyId)}
         zkp={{ verified: false, fabric: null }}
-        shares={shares}
         working={working}
         error={error}
         resultUrl={resultUrl}
@@ -235,9 +161,6 @@ export default function SelectiveDisclosure() {
         onCreateSigned={() => {
           setError("Use Share with All SIJIL Recruiters or Create Public Verification Link.");
         }}
-        onRevoke={(share) => { void revoke(share); }}
-        historyUnavailable={historyUnavailable}
-        onRetryHistory={() => setHistoryAttempt((attempt) => attempt + 1)}
       />
     </AppShell>
   );

@@ -7,10 +7,11 @@ type VerifiedProfessionalAccountsProps = {
   returnTo?: string;
   linkedinUrl: string;
   onLinkedInUrlChange: (value: string) => void;
-  onBeforeConnect?: () => void;
+  onBeforeConnect?: () => void | Promise<void>;
   onGitHubVerifiedChange?: (verified: boolean) => void;
   linkedinReadOnly?: boolean;
   compact?: boolean;
+  hideLinkedInPlaceholder?: boolean;
 };
 
 export function VerifiedProfessionalAccounts({
@@ -22,6 +23,7 @@ export function VerifiedProfessionalAccounts({
   onGitHubVerifiedChange,
   linkedinReadOnly = false,
   compact = false,
+  hideLinkedInPlaceholder = compact,
 }: VerifiedProfessionalAccountsProps) {
   return (
     <section className={compact ? "scp-card" : "space-y-4 rounded-xl border border-border/60 bg-card/50 p-5"}>
@@ -50,6 +52,7 @@ export function VerifiedProfessionalAccounts({
           value={linkedinUrl}
           onChange={onLinkedInUrlChange}
           readOnly={linkedinReadOnly}
+          hidePlaceholder={hideLinkedInPlaceholder}
           compact={compact}
         />
       </div>

@@ -30,6 +30,8 @@ export const LEARNER_PROFILE_DB_COLUMNS = [
   "batch",
   "holder_did",
   "profile_completed",
+  "gender",
+  "graduation_year",
   "account_activated_at",
   "city_country",
   "status",

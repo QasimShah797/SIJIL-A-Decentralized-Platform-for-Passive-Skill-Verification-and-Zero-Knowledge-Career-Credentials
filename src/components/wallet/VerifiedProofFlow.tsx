@@ -13,6 +13,7 @@ import {
   Github,
   GraduationCap,
   Info,
+  Landmark,
   Laptop,
   Layers,
   Search,
@@ -168,7 +169,7 @@ export function VerifiedProofGuide({
   holderDid?: string | null;
   learnerName?: string | null;
   onBack: () => void;
-  onViewInWallet: () => void;
+  onViewInWallet: (skillId: string) => void;
   onIssue: (skillId: string) => Promise<CredentialView | null>;
   identityUnlocked: boolean;
   onUnlock?: (password: string) => Promise<void>;
@@ -182,7 +183,7 @@ export function VerifiedProofGuide({
   const [unlocking, setUnlocking] = useState(false);
   const [unlockError, setUnlockError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [issued, setIssued] = useState<CredentialView | null>(null);
+  const [issued, setIssued] = useState<{ name: string; issuer: string; skillId: string } | null>(null);
 
   const selected = items.find((item) => item.skillId === selectedId) ?? null;
   const progress = step === "success" ? 3 : step === "confirm" ? 2 : step === "review" ? 1 : 0;
@@ -204,7 +205,7 @@ export function VerifiedProofGuide({
         setError("SIJIL did not return a credential. Check your achievements before requesting it again.");
         return;
       }
-      setIssued(created);
+      setIssued({ name: selected.skill, issuer: created.issuer || "SIJIL", skillId: selected.skillId });
       setStep("success");
     } catch (issueError) {
       setError(issueError instanceof Error ? issueError.message : "Could not issue credential.");
@@ -454,7 +455,7 @@ export function VerifiedProofGuide({
               </button>
             ) : null}
             {selected.status === "issued" ? (
-              <button type="button" className="vpf-btn vpf-btn-primary" onClick={onViewInWallet}>
+              <button type="button" className="vpf-btn vpf-btn-primary" onClick={() => onViewInWallet(selected.skillId)}>
                 View in Wallet <ArrowRight className="h-4 w-4" />
               </button>
             ) : null}
@@ -535,19 +536,27 @@ export function VerifiedProofGuide({
       ) : null}
 
       {step === "success" && issued ? (
-        <article className="vpf-card vpf-success">
-          <div className="vpf-success-icon"><Check className="h-9 w-9" /></div>
-          <h1 className="vpf-hero-title">Signed credential issued</h1>
-          <p className="vpf-hero-sub" style={{ margin: "8px auto 0", maxWidth: "28rem" }}>
-            SIJIL added a signed record for {issued.name || selected?.skill} to your wallet.
-          </p>
-          <p className="mt-3 text-sm text-[#475569]">Issuer: SIJIL</p>
-          <div className="vpf-actions" style={{ justifyContent: "center" }}>
-            <button type="button" className="vpf-btn vpf-btn-primary" onClick={onViewInWallet}>
+        <div className="vpf-success-stage">
+          <article className="vpf-card vpf-success">
+            <div className="vpf-success-icon" aria-hidden="true">
+              <FileText className="size-11" />
+              <span className="vpf-success-check"><Check className="size-4" /></span>
+            </div>
+            <h1 className="vpf-hero-title">Signed Credential Issued</h1>
+            <p className="vpf-hero-sub vpf-success-copy">
+              SIJIL added a signed record for your {issued.name} competency to your wallet.
+            </p>
+            <dl className="vpf-success-meta">
+              <div><Layers aria-hidden="true" /><dt>Credential</dt><dd>{issued.name}</dd></div>
+              <div><Landmark aria-hidden="true" /><dt>Issuer</dt><dd>{issued.issuer}</dd></div>
+            </dl>
+            <button type="button" className="vpf-btn vpf-btn-primary" onClick={() => onViewInWallet(issued.skillId)}>
+              <Wallet className="size-4" aria-hidden="true" />
               View in Wallet
+              <ArrowRight className="size-4" aria-hidden="true" />
             </button>
-          </div>
-        </article>
+          </article>
+        </div>
       ) : null}
     </section>
   );
@@ -565,7 +574,7 @@ export function VerifiedProofFlow({
   credentials: CredentialView[];
   learnerName?: string | null;
   onBack: () => void;
-  onViewInWallet: () => void;
+  onViewInWallet: (skillId: string) => void;
   onIssued: () => void;
 }) {
   const { skills, loading: skillsLoading } = useDeclaredSkills();

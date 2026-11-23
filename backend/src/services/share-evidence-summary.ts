@@ -189,7 +189,7 @@ export function resolveShareFieldsForModes(
 }
 
 export function summarizePracticalDetails(record: WalletCompetencyRecordView): Record<string, unknown> | undefined {
-  const latest = record.evidencePackage.practicalTask.latestAttempt;
+  const latest = record.evidencePackage.practicalTask.latestAttempt ?? record.evidencePackage.practicalTask.attemptHistory[0];
   if (!latest) return undefined;
   return {
     status: latest.status,
@@ -204,10 +204,10 @@ export function summarizeGithubDetails(record: WalletCompetencyRecordView): Reco
   const repos = record.evidencePackage.github.repos ?? [];
   if (!Array.isArray(repos) || repos.length === 0) {
     const activities = record.evidencePackage.github.activities ?? [];
-    if (!Array.isArray(activities) || activities.length === 0) return undefined;
+    if (asList(activities).length === 0 && asList(record.evidencePackage.github.evidenceRecords).length === 0) return undefined;
     return {
       repositoryCount: 0,
-      activityCount: activities.length,
+      activityCount: asList(activities).length,
       activityRecordsShared: false,
       repos: [],
       summary: "GitHub activity on file",
@@ -238,7 +238,7 @@ export function summarizeGithubDetails(record: WalletCompetencyRecordView): Reco
 export function summarizeLmsDetails(record: WalletCompetencyRecordView): Record<string, unknown> | undefined {
   const courses = record.evidencePackage.lms.courses ?? [];
   const assignments = record.evidencePackage.lms.assignments ?? [];
-  if ((!Array.isArray(courses) || courses.length === 0) && (!Array.isArray(assignments) || assignments.length === 0)) {
+  if (asList(courses).length === 0 && asList(assignments).length === 0 && asList(record.evidencePackage.lms.evidence).length === 0) {
     return undefined;
   }
   return {
@@ -250,8 +250,7 @@ export function summarizeLmsDetails(record: WalletCompetencyRecordView): Record<
 }
 
 export function summarizePeerDetails(record: WalletCompetencyRecordView): Record<string, unknown> | undefined {
-  const reviews = record.evidencePackage.peerReviews;
-  const list = Array.isArray(reviews) ? reviews : [];
+  const list = peerReviewCandidates(record);
   if (list.length === 0) return undefined;
   return {
     reviewCountDisclosed: false,

@@ -11,11 +11,9 @@ import {
 import { toast } from "@/hooks/use-toast";
 import { getWalletCompetenciesApi } from "@/services/api/wallet.api";
 import { SsiIdentityCard } from "@/components/wallet/SsiIdentityCard";
-import { LearnerCredentialWallet } from "@/components/wallet/LearnerCredentialWallet";
 import { SignedPresentationCard } from "@/components/wallet/SignedPresentationCard";
 import { WalletDashboardHub } from "@/components/wallet/WalletDashboardHub";
 import { VerifiedProofFlow } from "@/components/wallet/VerifiedProofFlow";
-import { WalletLearningRecords } from "@/components/wallet/WalletLearningRecords";
 import { WalletRefreshBar } from "@/components/wallet/WalletWorkspacePanels";
 
 export default function WalletPage() {
@@ -25,8 +23,8 @@ export default function WalletPage() {
   const { user } = useAuth();
   const { profile, loading: profileLoading } = useLearnerProfile();
   const { credentials, loading: credentialsLoading, refresh: refreshCredentials } = useCredentials();
-  const [walletPanel, setWalletPanel] = useState<"hub" | "achievements" | "share" | "manage" | "proof">(
-    panelParam === "share" || panelParam === "achievements" || panelParam === "manage" || panelParam === "proof"
+  const [walletPanel, setWalletPanel] = useState<"hub" | "share" | "manage" | "proof">(
+    panelParam === "share" || panelParam === "manage" || panelParam === "proof"
       ? panelParam
       : "hub",
   );
@@ -34,7 +32,7 @@ export default function WalletPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (panelParam === "share" || panelParam === "achievements" || panelParam === "manage" || panelParam === "proof") {
+    if (panelParam === "share" || panelParam === "manage" || panelParam === "proof") {
       setWalletPanel(panelParam);
     }
   }, [panelParam]);
@@ -48,6 +46,10 @@ export default function WalletPage() {
     }
   };
 
+  const openCompetencyById = (skillId: string) => {
+    navigate("/learner/wallet/competency/" + encodeURIComponent(skillId));
+  };
+
   const openCompetency = (skill: string) => {
     const target = skill.trim().toLowerCase();
     const match = records.find((record) => {
@@ -55,7 +57,7 @@ export default function WalletPage() {
       return name === target;
     });
     if (match) {
-      navigate(`/learner/wallet/competency/${encodeURIComponent(match.competencyId)}`);
+      openCompetencyById(match.competencyId);
       return;
     }
     toast({
@@ -107,7 +109,6 @@ export default function WalletPage() {
     <LearnerWorkspaceShell variant="dashboard">
       {walletPanel !== "manage" ? <WalletRefreshBar onRefresh={() => void loadRecords()} loading={loading} /> : null}
       {walletPanel === "hub" ? (
-        <>
         <WalletDashboardHub
           credentials={credentials.map((credential) => ({ id: credential.id, name: credential.skill || credential.name }))}
           credentialsLoading={credentialsLoading}
@@ -116,22 +117,8 @@ export default function WalletPage() {
           onGetProof={() => setWalletPanel("proof")}
           onCredentialClick={(name) => openCompetency(name)}
         />
-        <WalletLearningRecords />
-        </>
       ) : (
         <section className="space-y-4" aria-label="Secure wallet">
-          {walletPanel === "achievements" ? (
-            <button type="button" className="text-sm font-semibold text-sijil-blue" onClick={openWalletHub}>
-              Back to My Secure Wallet
-            </button>
-          ) : null}
-          {walletPanel === "achievements" && user ? (
-            <LearnerCredentialWallet
-              userId={user.id}
-              credentials={credentials}
-              onOpenSkill={(skill) => openCompetency(skill)}
-            />
-          ) : null}
           {walletPanel === "share" ? <SignedPresentationCard onBack={openWalletHub} /> : null}
           {walletPanel === "manage" ? <SsiIdentityCard onBack={openWalletHub} /> : null}
           {walletPanel === "proof" && user ? (
@@ -140,7 +127,7 @@ export default function WalletPage() {
               credentials={credentials}
               learnerName={profile?.name ?? null}
               onBack={openWalletHub}
-              onViewInWallet={() => setWalletPanel("achievements")}
+              onViewInWallet={openCompetencyById}
               onIssued={() => void refreshCredentials()}
             />
           ) : null}

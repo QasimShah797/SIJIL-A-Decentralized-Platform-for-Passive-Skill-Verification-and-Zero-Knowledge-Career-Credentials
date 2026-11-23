@@ -401,6 +401,9 @@ export function buildAttemptHistoryItem(row: DbRow): WalletAttemptHistoryItem | 
   const correctCount = asNumber(row.resultCorrectCount) ?? evaluation.correctCount;
   const totalQuestions = asNumber(row.resultTotalQuestions) ?? evaluation.totalQuestions;
   // Any numeric score counts as a completed practical sitting (no fail threshold).
+  const rawStatus = normalizedText(row.status).replaceAll("-", "_").replaceAll(" ", "_");
+  if (["in_progress", "expired_no_submission", "not_started", "abandoned"].includes(rawStatus)) return null;
+  if (scorePercent == null && row.passed !== true && !["completed", "submitted", "auto_submitted", "passed", "failed"].includes(rawStatus)) return null;
   const passed = row.passed === true || (scorePercent != null && Number.isFinite(scorePercent));
   const submittedAt = asNullableText(row.submitted_at ?? row.updated_at ?? row.created_at);
 
@@ -608,11 +611,12 @@ function buildSkillEvidenceSlice(
   return Object.keys(evidence).length > 0 ? evidence : undefined;
 }
 
-function buildDisclosedPayload(
+export function buildDisclosedPayload(
   record: WalletCompetencyRecordView,
   selectedFields: WalletShareFieldId[],
   learnerContext?: LearnerDisclosureContext,
   siblingRecords: WalletCompetencyRecordView[] = [],
+  credentialIssueDate?: string | null,
 ): Record<string, unknown> {
   const hasField = (field: WalletShareFieldId) => selectedFields.includes(field);
   const payload: Record<string, unknown> = {};
@@ -704,7 +708,9 @@ function buildDisclosedPayload(
   if (Object.keys(evidence).length > 0) payload.evidence = evidence;
 
   if (hasField("timestamps")) {
-    const timestamps = sanitizeForDisclosure(record.evidencePackage.evidenceTimestamps);
+    const timestamps = credentialIssueDate === undefined
+      ? sanitizeForDisclosure(record.evidencePackage.evidenceTimestamps)
+      : credentialIssueDate ? { credentialIssuedAt: credentialIssueDate } : null;
     if (timestamps) payload.timestamps = timestamps;
   }
 
@@ -721,7 +727,7 @@ function buildDisclosedPayload(
     const primarySkill: Record<string, unknown> = {
       competencyId: record.competencyId,
       primary: true,
-      evidenceBacked: record.evidenceCount > 0,
+      ...(credentialIssueDate === undefined ? { evidenceBacked: record.evidenceCount > 0 } : {}),
     };
     if (hasField("competency_name")) primarySkill.name = record.competencyName;
     if (hasField("competency_domain")) primarySkill.domain = record.domain;
@@ -1225,14 +1231,16 @@ async function loadAggregatedWallet(userId: string): Promise<WalletCompetencyRec
     const skillMoodleGrades = sortByLatest(aggregatedLms.grades, ["synced_at"]);
     const skillTeacherFeedback = sortByLatest(aggregatedLms.teacherFeedback, ["reviewed_at"]);
 
+    const hasUniqueCompetencyName = skillRows.filter((row) => competencyMatches(row.name, competencyName)).length === 1;
+    const reviewMatches = (row: DbRow) => {
+      const binding = asText(row.skill_id);
+      return binding ? binding === competencyId : hasUniqueCompetencyName &&
+        competencyMatches(asText(row.competency_name) || row.skill, competencyName);
+    };
     const githubReviews = dedupeByKey(
       peerReviews.filter((row) =>
         (normalizedText(row.source).includes("github") || normalizedText(row.external_reference).startsWith("github:"))
-        && (
-          asText(row.skill_id) === competencyId
-          || competencyMatches(row.skill, competencyName)
-          || competencyMatches(row.competency_name, competencyName)
-        ),
+        && reviewMatches(row),
       ),
       (row) => asText(row.id) || asText(row.external_reference),
     );
@@ -1241,13 +1249,7 @@ async function loadAggregatedWallet(userId: string): Promise<WalletCompetencyRec
       peerReviews.filter((row) => {
         if (asText(row.source) === "LMS" || isLmsPeerReviewRow(row)) return false;
         if (githubReviews.some((review) => asText(review.id) === asText(row.id))) return false;
-        if (asText(row.skill_id) === competencyId) return true;
-        if (competencyMatches(row.skill, competencyName)) return true;
-        if (competencyMatches(row.competency_name, competencyName)) return true;
-        const hasSkillBinding = Boolean(
-          asText(row.skill_id) || asText(row.skill) || asText(row.competency_name),
-        );
-        return !hasSkillBinding && skillRows.length === 1;
+        return reviewMatches(row);
       }),
       (row) => asText(row.id) || asText(row.external_reference),
     );
@@ -1286,10 +1288,10 @@ async function loadAggregatedWallet(userId: string): Promise<WalletCompetencyRec
         attempt_id: practicalAttempt.attempt_id,
         title: competencyName ? `${competencyName} practical task` : "Practical task",
         status: practicalAttempt.status,
-        score: session?.resultPercentage,
+        score: session?.resultPercentage ?? practicalAttempt.score,
         resultCorrectCount: session?.resultCorrectCount,
         resultTotalQuestions: session?.resultTotalQuestions,
-        passed: session?.passed === true,
+        passed: session?.passed === true || practicalAttempt.passed === true,
         updated_at: practicalAttempt.updated_at,
         created_at: practicalAttempt.created_at,
       });
@@ -1799,7 +1801,7 @@ export class WalletService {
     }
     await persistWalletRecord(record);
     const learnerContext = await loadLearnerDisclosureContext(userId);
-    const shareScope: WalletShareScope = input.shareScope === "selected"
+    const shareScope: WalletShareScope = input.shareAudience === "all-recruiters" || input.shareScope === "selected"
       ? "selected"
       : input.shareScope === "issued"
         ? "issued"
@@ -1826,6 +1828,7 @@ export class WalletService {
       fieldsForPayload,
       learnerContext,
       recordsForShareScope(shareScope, record, records, issuedIds),
+      input.shareAudience === "all-recruiters" ? issuedCred?.valid_from ?? null : undefined,
     );
     disclosedPayload.shareScope = shareScope;
     disclosedPayload.evidenceModes = evidenceModes;
@@ -1833,7 +1836,10 @@ export class WalletService {
     if (input.competencyVersionIds && input.competencyVersionIds.length > 0) {
       const { listLearnerVersions } = await import("./competency-version.store");
       const owned = await listLearnerVersions(userId);
-      const allowed = input.competencyVersionIds.filter((id) => owned.some((row) => row.id === id && row.status === "issued" && row.credentialId));
+      const allowed = input.competencyVersionIds.filter((id) => owned.some((row) =>
+        row.id === id && row.status === "issued" && row.credentialId
+          && (input.shareAudience !== "all-recruiters" || row.credentialId === issuedCred?.id),
+      ));
       if (allowed.length !== input.competencyVersionIds.length) {
         throw new AppError("Only an issued credential version can be shared.", 409);
       }

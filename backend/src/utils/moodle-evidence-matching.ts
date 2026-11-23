@@ -110,7 +110,8 @@ export function matchesCompetency(value: unknown, competencyName: string): boole
   }
   if (skill === "r") return token("r").test(text);
 
-  return text === skill || text.includes(skill) || skill.includes(text);
+  const escapedSkill = skill.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(?:^|[^\\p{L}\\p{N}])${escapedSkill}(?=[^\\p{L}\\p{N}]|$)`, "u").test(text);
 }
 
 export function matchesCompetencyTags(tags: unknown, competencyName: string): boolean {
@@ -132,7 +133,8 @@ export function lmsEvidenceMatchesSkill(
   skillId: string,
   skillName: string,
 ): boolean {
-  if (String(row.linked_skill_id ?? "") === skillId) return true;
+  const linkedId = String(row.linked_skill_id ?? "").trim();
+  if (linkedId) return linkedId === skillId;
   return matchesCompetency(row.course_name, skillName)
     || matchesCompetency(row.course_code, skillName)
     || matchesCompetency(row.text_preview, skillName);
@@ -260,6 +262,9 @@ export function aggregateLmsEvidenceForCompetency(
   const matchingAssignments = dedupeByKey(
     params.moodleAssignments.filter((row) => {
       const course = coursesById.get(asText(row.moodle_course_id));
+      if (Array.isArray(row.competency_tags) && row.competency_tags.length) {
+        return matchesCompetencyTags(row.competency_tags, competencyName);
+      }
       return moodleAssignmentMatchesSkill(row, competencyName)
         || (course ? moodleCourseMatchesSkill(course, competencyName) : false);
     }),
@@ -305,7 +310,6 @@ export function aggregateLmsEvidenceForCompetency(
       isLmsEvidenceRecord(row)
       && (
         asText(row.mapped_skill_id) === competencyId
-        || asText(row.suggested_skill_id) === competencyId
       ),
     )
     .map((row) => {
@@ -393,8 +397,7 @@ export function aggregateLmsEvidenceForCompetency(
   const assignments = dedupeByKey(
     [
       ...params.moodleAssignments.filter((row) =>
-        assignmentIds.has(asText(row.moodle_assignment_id))
-        || courseIds.has(asText(row.moodle_course_id)),
+        assignmentIds.has(asText(row.moodle_assignment_id)),
       ),
       ...assignmentsFromRecords,
     ],

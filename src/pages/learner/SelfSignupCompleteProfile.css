@@ -41,15 +41,14 @@
 .scp-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 11px 23px; align-items: start; }
 .scp-about-fields { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 17px; }
 .scp-form label { margin-bottom: 4px; color: hsl(var(--sijil-blue)); font-size: .75rem; font-weight: 700; }
-.scp-form input:not([type="file"]), .scp-form textarea, .scp-form button[role="combobox"] {
-  width: 100%; min-height: 34px; height: 34px; border-color: hsl(var(--sijil-blue)/0.13); border-radius: 7px;
+.scp-form input:not([type="file"]), .scp-form textarea, .scp-form button[role="combobox"], .scp-form [data-city-trigger] {
+  width: 100%; min-height: 34px; height: 34px; border-width: 1px; border-color: hsl(var(--sijil-blue)/0.13); border-radius: 7px;
   background: hsl(var(--sijil-blue)/0.04); color: hsl(var(--sijil-blue)); font-size: .79rem;
 }
-.scp-form input::placeholder, .scp-form textarea::placeholder { color: #565d7c; }
 .scp-form textarea { min-height: 71px; height: auto; padding: 9px 11px; }
 .scp-input-icon { position: relative; }
 .scp-input-icon > svg { position: absolute; width: 15px; height: 15px; top: 50%; left: 12px; transform: translateY(-50%); pointer-events: none; color: #495580; }
-.scp-input-icon input, .scp-input-icon button[role="combobox"] { padding-left: 36px; }
+.scp-input-icon input, .scp-input-icon button[role="combobox"], .scp-input-icon [data-city-trigger] { padding-left: 36px; }
 .scp-upload { position: relative; }
 .scp-upload-button {
   width: 100%; min-height: 128px; display: flex; flex-direction: column; align-items: center; justify-content: center;

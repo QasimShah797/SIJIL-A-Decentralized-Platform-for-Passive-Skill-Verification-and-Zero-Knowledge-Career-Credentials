@@ -57,8 +57,10 @@ function toDeclaredSkill(s: SkillApiView | DeclaredSkill): DeclaredSkill {
 
 export async function createSkillApi(
   skill: Pick<DeclaredSkill, "name"> & Partial<Pick<DeclaredSkill, "domain" | "description">>,
+  deferEvidence = false,
 ): Promise<DeclaredSkillResultApiView | null> {
-  const result = await tryApiRequest<DeclaredSkillResultApiView>("/skills/declare", {
+  const path = deferEvidence ? "/skills/declare?deferEvidence=true" : "/skills/declare";
+  const result = await tryApiRequest<DeclaredSkillResultApiView>(path, {
     method: "POST",
     body: JSON.stringify({
       name: skill.name,

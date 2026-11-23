@@ -54,7 +54,8 @@ export function saveGitHubOAuthContext(
 }
 
 export function getGitHubOAuthReturnTo(): string {
-  return loadGitHubOAuthContext()?.returnTo ?? "/learner/integrations";
+  const path = loadGitHubOAuthContext()?.returnTo;
+  return path && /^\/learner(?:\/[a-z0-9-]+)+$/i.test(path) ? path : "/learner/integrations";
 }
 
 export function loadGitHubOAuthContext(): GitHubOAuthContext | null {

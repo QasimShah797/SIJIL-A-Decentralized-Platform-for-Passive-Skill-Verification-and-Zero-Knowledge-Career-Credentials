@@ -77,7 +77,7 @@ export function RequireLearnerRoute({
   const loc = useLocation();
   const onIdentitySetup = loc.pathname.startsWith(IDENTITY_SETUP_PATH);
   const [access, setAccess] = useState<
-    "pending" | "allowed" | "unverified_email" | "wrong_role" | "no_profile" | "incomplete_profile" | "incomplete_ssi"
+    "pending" | "allowed" | "unverified_email" | "wrong_role" | "no_profile" | "incomplete_profile" | "incomplete_ssi" | "lookup_failed"
   >("pending");
 
   useEffect(() => {
@@ -121,6 +121,8 @@ export function RequireLearnerRoute({
         if (cancelled) return;
       }
       setAccess("allowed");
+    }).catch(() => {
+      if (!cancelled) setAccess("lookup_failed");
     });
 
     return () => {
@@ -154,6 +156,10 @@ export function RequireLearnerRoute({
         showLearnerLogin
       />
     );
+  }
+
+  if (access === "lookup_failed") {
+    return <p role="alert" className="mx-auto max-w-md p-6">Could not check your learner profile. Refresh this page to try again.</p>;
   }
 
   if (access === "no_profile") {

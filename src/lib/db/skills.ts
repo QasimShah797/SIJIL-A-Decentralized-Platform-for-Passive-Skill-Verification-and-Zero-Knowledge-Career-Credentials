@@ -69,16 +69,18 @@ export async function fetchDeclaredSkillsForUsers(userIds: string[]): Promise<Re
 export async function insertDeclaredSkill(
   userId: string,
   skill: Pick<DeclaredSkill, "name"> & Partial<Pick<DeclaredSkill, "domain" | "description">>,
-  allDeclaredSkills?: DeclaredSkill[],
+  allDeclaredSkills: DeclaredSkill[],
+  onEvidenceSynced: () => Promise<void>,
 ): Promise<DeclaredSkill> {
-  const viaApi = await createSkillApi(skill);
-  if (viaApi) {
-    await syncGitHubAfterSkillDeclare(
-      (allDeclaredSkills?.length ? [...allDeclaredSkills, viaApi.skill] : [viaApi.skill])
-        .map((s) => ({ id: s.id, name: s.name, domain: s.domain })),
-    );
-    return viaApi.skill;
-  }
+  const viaApi = await createSkillApi(skill, true);
+  if (viaApi) return viaApi.skill;
+
+  const syncFallbackEvidence = (declared: DeclaredSkill) => {
+    const skills = [...allDeclaredSkills.filter((item) => item.id !== declared.id), declared];
+    void syncGitHubAfterSkillDeclare(skills)
+      .then(onEvidenceSynced)
+      .catch(() => undefined);
+  };
 
   const normalizedName = skill.name.trim().toLowerCase();
   const { data: existing, error: existingError } = await supabase
@@ -92,7 +94,7 @@ export async function insertDeclaredSkill(
   );
   if (existingSkill) {
     const declared = rowToSkill(existingSkill);
-    await syncGitHubAfterSkillDeclare([{ id: declared.id, name: declared.name, domain: declared.domain }]);
+    syncFallbackEvidence(declared);
     return declared;
   }
 
@@ -109,21 +111,8 @@ export async function insertDeclaredSkill(
     .single();
   if (error) throw error;
   const declared = rowToSkill(data);
-  const skillsForSync = allDeclaredSkills?.length
-    ? [...allDeclaredSkills, declared]
-    : [declared];
-  await syncGitHubAfterSkillDeclare(
-    skillsForSync.map((s) => ({ id: s.id, name: s.name, domain: s.domain })),
-  );
-  await syncDeclaredSkillEvidenceStatuses(userId);
-  const { data: refreshed, error: refreshError } = await supabase
-    .from("declared_skills")
-    .select("*")
-    .eq("user_id", userId)
-    .eq("id", declared.id)
-    .maybeSingle();
-  if (refreshError) throw refreshError;
-  return refreshed ? rowToSkill(refreshed) : declared;
+  syncFallbackEvidence(declared);
+  return declared;
 }
 
 export async function fetchSkillRelatedEvidence(

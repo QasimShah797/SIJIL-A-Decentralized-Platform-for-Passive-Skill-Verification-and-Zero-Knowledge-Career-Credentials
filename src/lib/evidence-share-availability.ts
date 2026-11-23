@@ -48,6 +48,14 @@ type EvidencePackageLike = {
   peerReviews?: unknown[];
 };
 
+/** Resolve legacy name-only credentials without guessing between similar or duplicate records. */
+export function findUniqueWalletSkill<T extends { competencyName: string }>(rows: readonly T[], skill: string): T | undefined {
+  const name = skill.trim().toLowerCase();
+  if (!name) return undefined;
+  const matches = rows.filter((row) => row.competencyName.trim().toLowerCase() === name);
+  return matches.length === 1 ? matches[0] : undefined;
+}
+
 function asList(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
 }

@@ -242,7 +242,8 @@ export function matchesCompetencyToken(haystack: unknown, competencyName: string
     return token("r").test(text);
   }
 
-  return text === skill || text.includes(skill) || skill.includes(text);
+  const escapedSkill = skill.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(?:^|[^\\p{L}\\p{N}])${escapedSkill}(?=[^\\p{L}\\p{N}]|$)`, "u").test(text);
 }
 
 export function matchesCompetencyTags(tags: unknown, competencyName: string): boolean {

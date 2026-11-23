@@ -148,7 +148,7 @@ export function useDeclaredSkills() {
     skill: Pick<DeclaredSkill, "name"> & Partial<Pick<DeclaredSkill, "domain" | "description">>,
   ) => {
     if (!userId) return;
-    const created = await insertDeclaredSkill(userId, skill, skills);
+    const created = await insertDeclaredSkill(userId, skill, skills, refresh);
     setSkills((s) => {
       const idx = s.findIndex((x) => x.id === created.id);
       const next =

@@ -18,6 +18,14 @@ describe("learner wallet assessment history", () => {
     }
   });
 
+  it("excludes unfinished or abandoned sittings from shareable results", () => {
+    for (const status of ["in_progress", "expired_no_submission", "abandoned"]) {
+      assert.equal(buildAttemptHistoryItem({
+        id: "attempt", status, percentage: null, created_at: "2026-10-16T00:00:00.000Z",
+      }), null);
+    }
+  });
+
   it("shows a completed assessment when the answer key is inaccessible", () => {
     const history = buildAttemptHistoryItem({
       id: "44444444-4444-4444-8444-444444444444",

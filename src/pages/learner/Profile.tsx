@@ -14,7 +14,6 @@ import {
   profileCompletion,
   skillBucket,
   StatCard,
-  Star,
 } from "@/components/learner/OverviewDashboardPanels";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,11 +21,12 @@ import { Label } from "@/components/ui/label";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Plus, ChevronRight, AlertTriangle, Sparkles, Briefcase } from "lucide-react";
+import { Plus, ChevronRight, AlertTriangle, Briefcase, ArrowRight, Clock3, Info, LoaderCircle, Paperclip, Target, UsersRound } from "lucide-react";
 import { IdentitySetupReminder } from "@/components/identity/IdentitySetupReminder";
 import { useSsiIdentity } from "@/hooks/useSsiIdentity";
 import { useAuth } from "@/hooks/useAuth";
@@ -102,7 +102,9 @@ export default function LearnerProfile() {
   }, [skillSyncKey, refreshReviews]);
 
   useEffect(() => {
-    void refreshSkills();
+    const refreshOnFocus = () => { void refreshSkills().catch(() => undefined); };
+    window.addEventListener("focus", refreshOnFocus);
+    return () => window.removeEventListener("focus", refreshOnFocus);
   }, [refreshSkills]);
 
   const buckets = useMemo(() => {
@@ -140,6 +142,8 @@ export default function LearnerProfile() {
     [skills],
   );
 
+  const recentEvidence = recentSkills.filter((s) => skillBucket(s.status) !== "idle");
+
   const activities = useMemo(() => {
     const items: { label: string; time: string }[] = [];
     for (const s of recentSkills) {
@@ -151,11 +155,11 @@ export default function LearnerProfile() {
     if (credentials.length > 0) {
       items.unshift({ label: "Credential issued to wallet", time: "Recent" });
     }
-    if (profile?.bio) {
+    if (profile) {
       items.push({ label: "Profile updated", time: "Recent" });
     }
     return items.slice(0, 5);
-  }, [recentSkills, credentials, profile?.bio]);
+  }, [recentSkills, credentials, profile]);
 
   const resetForm = () => {
     setEditingId(null);
@@ -163,6 +167,7 @@ export default function LearnerProfile() {
   };
 
   const handleDialogOpenChange = (next: boolean) => {
+    if (saving) return;
     setOpen(next);
     if (!next) resetForm();
   };
@@ -180,7 +185,7 @@ export default function LearnerProfile() {
   };
 
   const handleSaveCompetency = async () => {
-    if (!canSubmit || !user) return;
+    if (!canSubmit || !user || saving) return;
     setSaving(true);
     try {
       const payload = { name: name.trim() };
@@ -190,11 +195,11 @@ export default function LearnerProfile() {
       } else {
         const created = await addSkill(payload);
         toast({
-          title: "Competency claimed",
+          title: "Competency added",
           description:
             created?.status === "Evidence Linked"
               ? `${payload.name} added and linked to matching platform evidence.`
-              : `${payload.name} added.`,
+              : `${payload.name} saved. Matching evidence may appear shortly.`,
         });
       }
       resetForm();
@@ -249,7 +254,7 @@ export default function LearnerProfile() {
 
   return (
     <LearnerWorkspaceShell variant="dashboard" rightRail={rightRail}>
-      <div className="space-y-6">
+      <div className="space-y-5">
         <IdentitySetupReminder
           loading={identity.loading}
           status={identity.snapshot.status}
@@ -311,23 +316,23 @@ export default function LearnerProfile() {
           </div>
         ) : null}
 
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          <StatCard icon={Award} label="Declared Competencies" value={skills.length} hint="Active skills" tint={0} />
-          <StatCard icon={Layers} label="Evidence Items" value={evidenceCount} hint="Linked sources" tint={1} />
-          <StatCard icon={Star} label="Peer Reviews" value={reviews.length} hint="Context reviews" tint={2} />
+        <div className="grid gap-4 sm:grid-cols-3">
+          <StatCard icon={Award} label="Declared Competencies" value={skills.length} hint="Active skills" compact />
+          <StatCard icon={Layers} label="Evidence Items" value={evidenceCount} hint="Linked sources" compact />
+          <StatCard icon={UsersRound} label="Peer Reviews" value={reviews.length} hint="Context reviews" compact />
         </div>
 
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="grid gap-5 xl:grid-cols-2">
           <div className="learner-stat-card p-6">
             <h2 className="text-base font-semibold text-sijil-blue">Competency Progress</h2>
-            <p className="text-xs text-[#64748b]">{CONFIRMED_LABEL} · In Progress · Not Started</p>
-            <div className="mt-4 flex flex-col items-center gap-4 sm:flex-row">
+            <p className="text-sm text-slate-600">Track the status of your declared competencies.</p>
+            <div className="mt-4 grid items-center gap-3 min-[420px]:grid-cols-[1fr_minmax(112px,0.8fr)]">
               <DonutChart {...buckets} />
               <ul className="space-y-2 text-sm">
                 {[
-                  { label: CONFIRMED_LABEL, count: buckets.verified, color: "bg-[#14b8a6]" },
                   { label: "In Progress", count: buckets.progress, color: "bg-sijil-blue" },
                   { label: "Not Started", count: buckets.idle, color: "bg-[#cbd5e1]" },
+                  { label: CONFIRMED_LABEL, count: buckets.verified, color: "bg-[#14b8a6]" },
                 ].map(({ label, count, color }) => (
                   <li key={label} className="flex items-center gap-2">
                     <span className={cn("h-2.5 w-2.5 rounded-full", color)} />
@@ -352,14 +357,15 @@ export default function LearnerProfile() {
             </div>
             <ul className="mt-4 space-y-4">
               {skills.length === 0 ? (
-                <li className="py-6 text-center text-sm text-[#64748b]">
-                  No competencies yet.{" "}
+                <li className="flex min-h-40 flex-col items-center justify-center gap-3 text-center text-sm text-slate-600">
+                  <Layers className="mb-1 h-8 w-8 text-sijil-blue/50" aria-hidden="true" />
+                  <p>No competencies yet.</p>
                   <button
                     type="button"
                     className="font-medium text-sijil-blue hover:underline"
                     onClick={() => openAddDialog()}
                   >
-                    Declare your first
+                    Declare your first competency
                   </button>
                 </li>
               ) : (
@@ -377,22 +383,25 @@ export default function LearnerProfile() {
           </div>
         </div>
 
-        <div className="learner-declare-banner p-6">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-center">
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white shadow-sm">
-              <Sparkles className="h-6 w-6 text-sijil-blue" />
+        <div className="learner-declare-banner p-4 sm:px-5">
+          <div className="flex flex-col gap-4 2xl:flex-row 2xl:items-center">
+            <div className="flex min-w-0 flex-1 items-center gap-4">
+              <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-sijil-blue/10 text-sijil-blue">
+                <Target className="h-6 w-6" aria-hidden="true" />
+              </span>
+              <div>
+                <h2 className="text-base font-semibold text-sijil-blue">Declare a New Competency</h2>
+                <p className="text-sm text-slate-600">
+                  Enter a competency name to begin collecting evidence from connected platforms.
+                </p>
+              </div>
             </div>
-            <div className="flex-1">
-              <h2 className="text-lg font-semibold text-sijil-blue">Declare a New Competency</h2>
-              <p className="text-sm text-[#64748b]">
-                Enter a competency name to begin collecting evidence from connected platforms.
-              </p>
-            </div>
-            <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto lg:min-w-[420px]">
+            <div className="flex w-full flex-col gap-2 sm:flex-row 2xl:w-auto">
               <Input
+                aria-label="Competency name to declare"
                 value={declareQuery}
                 onChange={(e) => setDeclareQuery(e.target.value)}
-                placeholder="Enter a competency name…"
+                placeholder="Enter a competency name"
                 className="h-11 flex-1 rounded-xl border-[#e2e8f0] bg-white"
                 onKeyDown={(e) => {
                   if (e.key === "Enter") openAddDialog(declareQuery);
@@ -409,14 +418,14 @@ export default function LearnerProfile() {
           </div>
         </div>
 
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="grid gap-5 xl:grid-cols-2">
           <div className="learner-stat-card p-6">
-            <h2 className="text-base font-semibold text-sijil-blue">Recent Evidence</h2>
+            <h2 className="flex items-center gap-2.5 text-base font-semibold text-sijil-blue"><Paperclip className="h-5 w-5" aria-hidden="true" />Recent Evidence</h2>
             <ul className="mt-4 space-y-3">
-              {recentSkills.length === 0 ? (
+              {recentEvidence.length === 0 ? (
                 <li className="text-sm text-[#64748b]">No evidence linked yet.</li>
               ) : (
-                recentSkills.map((skill, index) => {
+                recentEvidence.map((skill, index) => {
                   const Icon = evidenceIconForIndex(index);
                   const statusLabel =
                     skill.status === "Evidence Linked"
@@ -447,7 +456,7 @@ export default function LearnerProfile() {
           </div>
 
           <div className="learner-stat-card p-6">
-            <h2 className="text-base font-semibold text-sijil-blue">Recent Activity</h2>
+            <h2 className="flex items-center gap-2.5 text-base font-semibold text-sijil-blue"><Clock3 className="h-5 w-5" aria-hidden="true" />Recent Activity</h2>
             <ul className="mt-4 space-y-3">
               {activities.length === 0 ? (
                 <li className="text-sm text-[#64748b]">No recent activity.</li>
@@ -477,39 +486,55 @@ export default function LearnerProfile() {
       </div>
 
       <Dialog open={open} onOpenChange={handleDialogOpenChange}>
-        <DialogContent className="rounded-2xl">
-          <DialogHeader>
-            <DialogTitle>{isEditing ? "Edit competency" : "Declare a new competency"}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label>Competency name</Label>
-              <Input
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. TypeScript"
-                className="mt-1.5 rounded-xl"
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && canSubmit && !saving) void handleSaveCompetency();
-                }}
-              />
-              <p className="mt-1.5 text-xs text-[#64748b]">
-                Only the name is required. Matching evidence is pulled from GitHub, LMS, and other connected platforms.
-              </p>
+        <DialogContent overlayClassName="bg-slate-950/55 backdrop-blur-sm" className="max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-2xl gap-0 overflow-y-auto rounded-2xl bg-card p-0 shadow-2xl sm:rounded-2xl [&>button]:right-5 [&>button]:top-5">
+          <DialogHeader className="flex-row items-center gap-4 space-y-0 border-b px-5 py-6 pr-12 text-left sm:px-8 sm:pr-14">
+            <span className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-sijil-blue/10 text-sijil-blue sm:h-14 sm:w-14">
+              <Layers className="h-7 w-7" aria-hidden="true" />
+            </span>
+            <div className="border-l pl-4">
+              <DialogTitle className="text-xl font-bold leading-tight text-sijil-blue sm:text-2xl">
+                {isEditing ? "Edit Competency" : "Declare a New Competency"}
+              </DialogTitle>
+              <DialogDescription className="mt-1 text-slate-600">
+                {isEditing ? "Update the name on your professional record." : "Add a skill to build your professional record."}
+              </DialogDescription>
             </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" className="rounded-xl" onClick={() => handleDialogOpenChange(false)}>
-              Cancel
-            </Button>
-            <Button
-              className="rounded-xl bg-sijil-blue hover:bg-sijil-blue"
-              onClick={() => void handleSaveCompetency()}
-              disabled={!canSubmit || saving}
-            >
-              {saving ? "Saving…" : isEditing ? "Save changes" : "Add competency"}
-            </Button>
-          </DialogFooter>
+          </DialogHeader>
+          <form onSubmit={(event) => { event.preventDefault(); void handleSaveCompetency(); }} aria-busy={saving}>
+            <div className="space-y-4 px-5 py-6 sm:px-8">
+              <div className="space-y-2">
+                <Label htmlFor="competency-name" className="font-semibold text-sijil-blue">
+                  Competency Name <span aria-hidden="true" className="text-destructive">*</span>
+                </Label>
+                <Input
+                  id="competency-name"
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                  required
+                  disabled={saving}
+                  aria-describedby={isEditing ? undefined : "competency-evidence-help"}
+                  className="h-12 rounded-xl border-sijil-blue/30 px-4 text-base focus-visible:ring-sijil-blue"
+                />
+              </div>
+              {!isEditing && (
+                <p id="competency-evidence-help" className="flex items-start gap-3 rounded-xl bg-sijil-blue/5 p-3.5 text-sm text-slate-600">
+                  <Info className="mt-0.5 h-5 w-5 shrink-0 text-sijil-blue" aria-hidden="true" />
+                  Only the name is required. You can link evidence from GitHub, LMS, and other connected platforms afterwards.
+                </p>
+              )}
+            </div>
+            <DialogFooter className="gap-2 border-t px-5 py-5 sm:space-x-0 sm:px-8">
+              <Button type="button" variant="outline" className="h-11 rounded-xl border-sijil-blue/50 px-6 text-sijil-blue"
+                disabled={saving} onClick={() => handleDialogOpenChange(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" className="h-11 gap-2 rounded-xl bg-sijil-blue px-6 text-white hover:bg-sijil-blue/90"
+                disabled={!canSubmit || saving}>
+                {saving ? "Saving?" : isEditing ? "Save Changes" : "Add Competency"}
+                {saving ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" /> : <ArrowRight className="h-4 w-4" aria-hidden="true" />}
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
 

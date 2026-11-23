@@ -49,7 +49,6 @@ export type McqTask = {
   type: "MCQ";
   durationMinutes: number;
   questions: McqQuestion[];
-  deadlineAt?: string;
 };
 
 export type McqAnswerMap = Record<string, AssessmentAnswerValue>;
@@ -76,25 +75,32 @@ export type McqProgress = {
   answers: McqAnswerMap;
   currentIndex: number;
   questionEndsAt: string;
+  remainingByQuestion?: Record<string, number>;
 };
 
 export type TaskMode = "MCQ" | "Coding";
 
 export const MCQ_SECONDS_PER_QUESTION = 30;
-export const MCQ_CODE_SECONDS = 30;
 export const MCQ_CONCEPT_COUNT = 10;
 export const MCQ_CODE_COUNT = 4;
 
-export function secondsForQuestion(question?: { kind?: string; seconds?: number } | null): number {
-  if (question?.kind === "code") return MCQ_CODE_SECONDS;
-  if (typeof question?.seconds === "number" && question.seconds > 0) {
-    return Math.min(question.seconds, MCQ_SECONDS_PER_QUESTION);
-  }
-  return MCQ_SECONDS_PER_QUESTION;
+export function totalMcqSeconds(questions: readonly unknown[]): number {
+  return questions.length * MCQ_SECONDS_PER_QUESTION;
 }
 
-export function totalMcqSeconds(questions: Array<{ kind?: string; seconds?: number }>): number {
-  return questions.reduce((total, question) => total + secondsForQuestion(question), 0);
+export function moveMcqQuestionTimer(
+  remaining: Record<string, number>,
+  currentId: string,
+  currentDeadline: string,
+  nextId: string,
+  now: number,
+) {
+  const remainingByQuestion = {
+    ...remaining,
+    [currentId]: Math.max(0, Math.min(MCQ_SECONDS_PER_QUESTION * 1000, Date.parse(currentDeadline) - now)),
+  };
+  const nextRemaining = remainingByQuestion[nextId] ?? MCQ_SECONDS_PER_QUESTION * 1000;
+  return { remainingByQuestion, questionEndsAt: new Date(now + nextRemaining).toISOString() };
 }
 
 export type McqSessionEnvelope = {
@@ -214,7 +220,7 @@ export function parseGenerateMcqResponse(data: Record<string, unknown>): McqTask
         difficulty: (kind === "code" ? "hard" : difficulty === "easy" || difficulty === "hard" ? difficulty : "medium") as McqDifficulty,
         kind,
         type,
-        seconds: secondsForQuestion({ kind, seconds: Number(row.seconds) }),
+        seconds: MCQ_SECONDS_PER_QUESTION,
         ...(code ? { code } : {}),
         ...(language ? { language } : {}),
         ...(String(row.scenario ?? "").trim() ? { scenario: String(row.scenario) } : {}),
@@ -239,7 +245,6 @@ export function parseGenerateMcqResponse(data: Record<string, unknown>): McqTask
     type: "MCQ",
     durationMinutes: Number(data.durationMinutes ?? 18),
     questions,
-    ...(typeof data.deadlineAt === "string" ? { deadlineAt: data.deadlineAt } : {}),
   };
 }
 

@@ -25,14 +25,12 @@ function renderFlow(onCreateLink = vi.fn()) {
       fields={fields}
       linkAvailable
       zkp={{ verified: true, fabric: "unavailable" }}
-      shares={[{ token: "share-1", label: "TypeScript", access: "active", kind: "link" }]}
       working={false}
       error={null}
       resultUrl={null}
       onCreateLink={onCreateLink}
       onCreateAll={vi.fn()}
       onCreateSigned={vi.fn()}
-      onRevoke={vi.fn()}
     />,
   );
   return { onCreateLink };
@@ -40,32 +38,23 @@ function renderFlow(onCreateLink = vi.fn()) {
 
 describe("share achievement flow", () => {
   it("shows all-recruiters and public verification link options", () => {
-    const onRetryHistory = vi.fn();
     render(
       <ShareAchievementFlow
         skill="TypeScript"
         fields={fields}
         linkAvailable
         zkp={{ verified: false, fabric: null }}
-        shares={[]}
         working={false}
         error={null}
         resultUrl={null}
-        historyUnavailable
-        onRetryHistory={onRetryHistory}
         onCreateLink={vi.fn()}
         onCreateAll={vi.fn()}
         onCreateSigned={vi.fn()}
-        onRevoke={vi.fn()}
       />,
     );
     expect(screen.getByRole("button", { name: "Share with All SIJIL Recruiters" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Create Public Verification Link" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Manage Shared Access" }));
-    expect(screen.getByText("Sharing history temporarily unavailable")).toBeTruthy();
-    expect(screen.queryByText("No saved shares for this achievement yet.")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
-    expect(onRetryHistory).toHaveBeenCalledOnce();
+    expect(screen.queryByText("Manage Shared Access")).not.toBeInTheDocument();
   });
 
   it("does not create a link before the learner confirms", () => {

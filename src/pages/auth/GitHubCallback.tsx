@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { DotProgress } from "@/components/sijil/DotProgress";
 import { PublicSurfaceLayout } from "@/components/sijil/PublicSurfaceLayout";
 import { toast } from "@/hooks/use-toast";
-import { getGitHubOAuthReturnTo, loadGitHubOAuthContext } from "@/lib/github-env";
+import { clearAllGitHubConnectionState, getGitHubOAuthReturnTo, loadGitHubOAuthContext } from "@/lib/github-env";
 import {
   buildSkillsForGitHubSync,
   completeGitHubOAuth,
@@ -26,7 +26,7 @@ export default function GitHubCallback() {
     ran.current = true;
 
     (async () => {
-      const returnTo = loadGitHubOAuthContext()?.returnTo ?? getGitHubOAuthReturnTo();
+      const returnTo = getGitHubOAuthReturnTo();
       const skipPortfolioSync = loadGitHubOAuthContext()?.skipPortfolioSync ?? false;
 
       try {
@@ -90,6 +90,7 @@ export default function GitHubCallback() {
           description: `@${result.github_username} verified.${syncNote}`,
         });
         navigate(`${returnTo}?github=connected`, { replace: true });
+        clearAllGitHubConnectionState();
       } catch (e) {
         const failedState = new URLSearchParams(window.location.search).get("state");
         const signInFailed = isGitHubSignInState(failedState);
@@ -102,6 +103,7 @@ export default function GitHubCallback() {
           signInFailed ? "/login/learner" : `${returnTo}?github=error`,
           { replace: true },
         );
+        if (!signInFailed) clearAllGitHubConnectionState();
       }
     })();
   }, [navigate]);

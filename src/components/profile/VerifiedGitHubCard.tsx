@@ -14,7 +14,7 @@ import {
 type VerifiedGitHubCardProps = {
   userId: string;
   returnTo?: string;
-  onBeforeConnect?: () => void;
+  onBeforeConnect?: () => void | Promise<void>;
   onConnectionChange?: (connected: boolean) => void;
   required?: boolean;
   compact?: boolean;
@@ -56,7 +56,7 @@ export function VerifiedGitHubCard({
   const connect = async () => {
     setBusy(true);
     try {
-      onBeforeConnect?.();
+      await onBeforeConnect?.();
       const path = returnTo ?? window.location.pathname;
       const prepareUrl = await startGitHubOAuth({ returnTo: path, skipPortfolioSync: true });
       window.location.assign(prepareUrl);

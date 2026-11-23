@@ -129,7 +129,7 @@ describe("verified proof guide", () => {
   it("issues only after the learner confirms an eligible achievement", async () => {
     const created = { id: "cred-1", name: "Java Programming", issuer: "SIJIL", verification: "signed" } as CredentialView;
     const onIssue = vi.fn(async () => created);
-    renderGuide([item({ status: "eligible", pipelineStage: "wallet_ready", stageLabel: "Wallet Ready" })], onIssue);
+    const { onViewInWallet } = renderGuide([item({ status: "eligible", pipelineStage: "wallet_ready", stageLabel: "Wallet Ready" })], onIssue);
     fireEvent.click(screen.getByRole("button", { name: /Java Programming/ }));
     fireEvent.click(screen.getByRole("button", { name: /Continue/ }));
     expect(screen.getByRole("heading", { name: "Java Programming" })).toBeTruthy();
@@ -138,7 +138,9 @@ describe("verified proof guide", () => {
     fireEvent.click(screen.getByRole("button", { name: /Confirm Issuance/ }));
     fireEvent.click(screen.getByRole("button", { name: /Confirm Issuance →/ }));
     expect(onIssue).toHaveBeenCalledWith("skill-1");
-    expect(await screen.findByRole("heading", { name: "Signed credential issued" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Signed Credential Issued" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "View in Wallet" }));
+    expect(onViewInWallet).toHaveBeenCalledWith("skill-1");
   });
 
   it("offers the wallet for an achievement that already has a credential", () => {
@@ -146,7 +148,7 @@ describe("verified proof guide", () => {
     fireEvent.click(screen.getByRole("button", { name: /Java Programming/ }));
     fireEvent.click(screen.getByRole("button", { name: /Continue/ }));
     fireEvent.click(screen.getByRole("button", { name: "View in Wallet" }));
-    expect(onViewInWallet).toHaveBeenCalled();
+    expect(onViewInWallet).toHaveBeenCalledWith("skill-1");
     expect(screen.queryByRole("button", { name: /Confirm Issuance →/ })).toBeNull();
     expect(onIssue).not.toHaveBeenCalled();
   });

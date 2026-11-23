@@ -13,6 +13,7 @@ type LinkedInProfileUrlFieldProps = {
   readOnly?: boolean;
   disabled?: boolean;
   compact?: boolean;
+  hidePlaceholder?: boolean;
   /** When read-only and no URL yet — opens edit mode */
   onAddClick?: () => void;
 };
@@ -33,6 +34,7 @@ export function LinkedInProfileUrlField({
   readOnly = false,
   disabled = false,
   compact = false,
+  hidePlaceholder = false,
   onAddClick,
 }: LinkedInProfileUrlFieldProps) {
   const trimmed = value.trim();
@@ -116,7 +118,7 @@ export function LinkedInProfileUrlField({
               aria-label="LinkedIn profile URL"
               value={value}
               onChange={(e) => onChange(e.target.value)}
-              placeholder="https://www.linkedin.com/in/username"
+              placeholder={hidePlaceholder ? undefined : "https://www.linkedin.com/in/username"}
               className="rounded-xl pl-9"
               disabled={disabled}
               inputMode="url"

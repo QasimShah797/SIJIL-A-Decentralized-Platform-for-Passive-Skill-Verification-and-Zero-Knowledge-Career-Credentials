@@ -3,9 +3,10 @@ import { Link } from "react-router-dom";
 import {
   ArrowLeft,
   ArrowRight,
-  Award,
+  CodeXml,
   Ban,
-  Briefcase,
+  Globe,
+  UsersRound,
   Check,
   Copy,
   Info,
@@ -58,17 +59,8 @@ export type DirectShareRecruiter = {
   title: string;
 };
 
-export type ManagedShare = {
-  id: string;
-  label: string;
-  kind: "all-recruiters" | "direct" | "public";
-  detail: string;
-  status: "active" | "expired" | "revoked";
-  sharedAt: string | null;
-};
-
 type Method = "all-recruiters" | "public";
-type Step = "method" | "choose" | "review" | "done";
+type Step = "method" | "choose" | "review" | "confirm" | "done";
 
 export function GuidedShareFlow({
   credentials,
@@ -77,17 +69,19 @@ export function GuidedShareFlow({
   onShareAll,
   onCreatePublicLink,
   onEmailPublicLink,
-  managedShares = [],
-  onRevokeManagedShare,
   onStopPublicLink,
+  evidenceStatus = "ready",
+  onRefreshEvidence,
 }: {
   credentials: GuidedShareCredential[];
   learnerName?: string;
   onBack: () => void;
+  evidenceStatus?: "loading" | "ready" | "error";
+  onRefreshEvidence?: () => void;
   onShareAll?: (input: {
     credentialIds: string[];
     selectedFields: string[];
-    evidenceModes: EvidenceModes;
+    evidenceModesByCredential: Record<string, EvidenceModes>;
   }) => Promise<void>;
   onCreatePublicLink?: (input: {
     credentialId: string;
@@ -100,8 +94,6 @@ export function GuidedShareFlow({
     token: string;
     recipientEmail: string;
   }) => Promise<void>;
-  managedShares?: ManagedShare[];
-  onRevokeManagedShare?: (shareId: string) => Promise<boolean>;
   onStopPublicLink?: (shareId: string) => Promise<boolean>;
 }) {
   const [method, setMethod] = useState<Method | null>(null);
@@ -109,6 +101,8 @@ export function GuidedShareFlow({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [selectedFields, setSelectedFields] = useState<string[]>([...DEFAULT_RECRUITER_FIELDS]);
   const [evidenceModes, setEvidenceModes] = useState<EvidenceModes>({ ...DEFAULT_EVIDENCE_MODES });
+  const [reviewId, setReviewId] = useState<string | null>(null);
+  const [recruiterModes, setRecruiterModes] = useState<Record<string, EvidenceModes>>({});
   const [expiresInDays, setExpiresInDays] = useState<(typeof SHARE_EXPIRY_DAYS)[number]>(7);
   const [accessCodeOn, setAccessCodeOn] = useState(false);
   const [working, setWorking] = useState(false);
@@ -124,6 +118,19 @@ export function GuidedShareFlow({
 
   const selected = credentials.filter((credential) => selectedIds.has(credential.id));
   const primary = selected[0] ?? null;
+  const activeCredential = selected.find((credential) => credential.id === reviewId) ?? primary;
+  const recruiterModesFor = (credential: GuidedShareCredential): EvidenceModes => {
+    const modes = { ...OMIT_EVIDENCE_MODES };
+    for (const field of Object.keys(modes) as Array<keyof EvidenceModes>) {
+      if (evidenceStatus === "ready" && credential.evidenceAvailability?.[field].present) {
+        modes[field] = recruiterModes[credential.id]?.[field] ?? "omit";
+      }
+    }
+    return modes;
+  };
+  const hasRecruiterDisclosure = selectedFields.length > 0 || selected.every((credential) =>
+    Object.values(recruiterModesFor(credential)).some((mode) => mode !== "omit"),
+  );
 
   const activeAvailability = useMemo<UiEvidenceAvailability>(() => {
     const avail = primary?.evidenceAvailability;
@@ -146,6 +153,8 @@ export function GuidedShareFlow({
 
   const resetSelection = () => {
     setSelectedIds(new Set());
+    setReviewId(null);
+    setRecruiterModes({});
     setSelectedFields([...DEFAULT_RECRUITER_FIELDS]);
     setEvidenceModes({ ...OMIT_EVIDENCE_MODES });
     setExpiresInDays(7);
@@ -182,7 +191,7 @@ export function GuidedShareFlow({
   };
 
   const shareAll = async () => {
-    if (selected.length === 0 || selectedFields.length === 0 || working) return;
+    if (selected.length === 0 || !hasRecruiterDisclosure || working || evidenceStatus !== "ready") return;
     if (!onShareAll) {
       setError("Sharing is not available right now.");
       return;
@@ -193,7 +202,7 @@ export function GuidedShareFlow({
       await onShareAll({
         credentialIds: selected.map((credential) => credential.id),
         selectedFields,
-        evidenceModes,
+        evidenceModesByCredential: Object.fromEntries(selected.map((credential) => [credential.id, recruiterModesFor(credential)])),
       });
       setStep("done");
     } catch (shareError) {
@@ -278,7 +287,7 @@ export function GuidedShareFlow({
   return (
     <section
       id="share-achievements"
-      className={`mx-auto w-full space-y-4 ${step === "review" || (step === "done" && method === "all-recruiters") ? "max-w-6xl" : "max-w-3xl"}`}
+      className={`mx-auto w-full space-y-4 ${step === "method" ? "max-w-[52rem]" : (step === "review" || step === "confirm") || (step === "done" && method === "all-recruiters") ? "max-w-6xl" : "max-w-3xl"}`}
       aria-label="Share my achievements"
     >
       {error ? <p role="alert" className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</p> : null}
@@ -292,47 +301,46 @@ export function GuidedShareFlow({
 
           <header className="sac-header">
             <div className="sac-header-icon" aria-hidden="true">
-              <Share2 className="h-7 w-7" />
+              <Share2 className="h-9 w-9" />
             </div>
             <div>
               <h1 className="sac-title">Share My Achievement</h1>
-              <p className="sac-subtitle">Choose how you want to share your verified credentials.</p>
+              <p className="sac-subtitle">Choose how you want to share your credentials.</p>
             </div>
           </header>
 
           <div className="sac-grid">
             <article className="sac-card sac-card-recruiter">
-              <div className="sac-art sac-art-recruiter" aria-hidden="true">
-                <UserRound className="h-10 w-10" />
-                <Briefcase className="h-6 w-6 sac-art-badge" />
+              <div className="sac-art" aria-hidden="true">
+                <UsersRound className="size-8" />
               </div>
-              <h2 className="sac-card-title">Share with a Recruiter</h2>
+              <h2 className="sac-card-title">Share with Recruiters on SIJIL</h2>
               <p className="sac-card-copy">
-                Send your verified credentials directly to a recruiter or organization (e.g., for a job or internship).
+                Make your credentials visible to recruiters within SIJIL.
               </p>
               <button
                 type="button"
-                className="sac-btn sac-btn-blue"
+                className="sac-btn"
                 onClick={() => startMethod("all-recruiters")}
               >
-                Share with Recruiter <ArrowRight className="h-4 w-4" />
+                Share with Recruiters on SIJIL <ArrowRight className="h-4 w-4" />
               </button>
             </article>
 
             <article className="sac-card sac-card-public">
-              <div className="sac-art sac-art-public" aria-hidden="true">
-                <Link2 className="h-10 w-10" />
+              <div className="sac-art" aria-hidden="true">
+                <Globe className="size-8" />
               </div>
-              <h2 className="sac-card-title">Create a Public Verification Link</h2>
+              <h2 className="sac-card-title">Make Public</h2>
               <p className="sac-card-copy">
-                Generate a link that anyone can open to verify your achievements (e.g., for your CV or portfolio).
+                Create a public page that anyone with the link can view.
               </p>
               <button
                 type="button"
-                className="sac-btn sac-btn-purple"
+                className="sac-btn"
                 onClick={() => startMethod("public")}
               >
-                Create Verification Link <ArrowRight className="h-4 w-4" />
+                Create Public Page <ArrowRight className="h-4 w-4" />
               </button>
             </article>
           </div>
@@ -340,74 +348,97 @@ export function GuidedShareFlow({
       ) : null}
 
       {step === "choose" && method ? (
-        <div className="space-y-5 rounded-[28px] border border-[hsl(var(--sijil-blue)/0.08)] bg-white p-5 shadow-sm sm:p-8">
-          <div>
-            <h1 className="text-2xl font-semibold text-[#0f172a]">
-              {method === "public" ? "Choose Credential" : "Choose Achievements"}
-            </h1>
-            <p className="mt-1 text-sm text-[#475569]">
-              {method === "public"
-                ? "Select one issued credential to continue to Create Public Link."
-                : "Select the achievements you want to share with SIJIL recruiters."}
-            </p>
-          </div>
-          {credentials.length === 0 ? (
-            <p className="rounded-2xl border border-dashed border-[hsl(var(--sijil-blue)/0.1)] bg-[#f8fafc] p-4 text-sm text-[#475569]">
-              No achievements are ready to share yet.
-            </p>
-          ) : (
-            <ul className="grid gap-3 sm:grid-cols-2">
-              {credentials.map((credential) => {
-                const checked = selectedIds.has(credential.id);
-                return (
-                  <li key={credential.id}>
-                    <button
-                      type="button"
-                      aria-pressed={checked}
-                      onClick={() => toggle(credential.id)}
-                      className={`flex h-full w-full items-start gap-3 rounded-2xl border p-4 text-left ${checked ? "border-sijil-blue bg-[hsl(var(--sijil-blue)/0.04)] ring-2 ring-[hsl(var(--sijil-blue)/0.17)]" : "border-[#e2e8f0] bg-white"}`}
-                    >
-                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[hsl(var(--sijil-blue)/0.04)] text-sijil-blue">
-                        <Award className="h-5 w-5" />
-                      </span>
-                      <span className="min-w-0">
-                        <span className="block font-semibold text-[#0f172a]">{credential.title}</span>
-                        <span className="block text-xs text-[#475569]">Issued by {credential.issuer || "SIJIL"}</span>
-                        <span className="block text-xs text-[#64748b]">Status: {credential.status}</span>
-                      </span>
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-between">
-            <Button type="button" variant="ghost" onClick={() => { setMethod(null); setStep("method"); resetSelection(); }}>Back</Button>
-            <Button
-              type="button"
-              className="rounded-xl bg-sijil-blue hover:bg-sijil-blue"
-              disabled={method === "public" ? selected.length !== 1 : selected.length === 0}
-              onClick={() => setStep("review")}
-            >
-              Continue
-            </Button>
+        <div className="sac-picker">
+          <header className="sac-header">
+            <div className="sac-header-icon" aria-hidden="true"><Share2 className="size-9" /></div>
+            <div>
+              <h1 className="sac-title">{method === "public" ? "Choose Credential" : "Choose Achievements"}</h1>
+              <p className="sac-subtitle">
+                {method === "public"
+                  ? "Select one issued credential for your public verification page."
+                  : "Select the achievements you want to share with SIJIL recruiters."}
+              </p>
+            </div>
+          </header>
+          <div className="sac-picker-panel">
+            <div className="sac-picker-body">
+              {credentials.length === 0 ? (
+                <p className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+                  No achievements are ready to share yet.
+                </p>
+              ) : (
+                <ul className="grid gap-3">
+                  {credentials.map((credential) => {
+                    const checked = selectedIds.has(credential.id);
+                    const verified = credential.status === "Verified" || credential.status === "Anchored";
+                    return (
+                      <li key={credential.id}>
+                        <button
+                          type="button"
+                          aria-pressed={checked}
+                          onClick={() => toggle(credential.id)}
+                          className="sac-picker-option"
+                        >
+                          <span className="sac-picker-mark" aria-hidden="true">{checked && <Check className="size-3.5" />}</span>
+                          <span className="sac-art" aria-hidden="true"><CodeXml className="size-7" /></span>
+                          <span className="min-w-0 break-words">
+                            <span className="block font-bold text-slate-900">{credential.title}</span>
+                            <span className="block text-sm text-slate-600">Issued by {credential.issuer || "SIJIL"}</span>
+                            <span className={verified
+                              ? "mt-1.5 inline-flex items-center gap-1 rounded-lg bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-900"
+                              : "mt-1.5 inline-flex rounded-lg bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-700"}>
+                              {verified && <Check className="size-3.5" aria-hidden="true" />}{credential.status}
+                            </span>
+                          </span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+            <footer className="sac-picker-footer">
+              <span className="rounded-xl bg-sijil-blue/5 px-3 py-2 text-sm font-semibold text-slate-600" aria-live="polite">
+                {selected.length} selected
+              </span>
+              <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                <Button type="button" variant="outline" className="rounded-xl border-sijil-blue/25 bg-white px-6 text-sijil-blue"
+                  onClick={() => { setMethod(null); setStep("method"); resetSelection(); }}>Back</Button>
+                <Button type="button" className="gap-2 rounded-xl bg-sijil-blue px-6 text-white hover:bg-sijil-blue/90"
+                  disabled={method === "public" ? selected.length !== 1 : selected.length === 0}
+                  onClick={() => {
+                    if (method === "all-recruiters") onRefreshEvidence?.();
+                    setStep("review");
+                  }}>
+                  Continue <ArrowRight className="size-4" aria-hidden="true" />
+                </Button>
+              </div>
+            </footer>
           </div>
         </div>
       ) : null}
 
-      {step === "review" && method === "all-recruiters" && primary ? (
+      {(step === "review" || step === "confirm") && method === "all-recruiters" && activeCredential ? (
         <RecruiterShareDisclosure
-          skillName={primary.title}
+          skillName={activeCredential.title}
           learnerName={learnerName}
-          issuedAt={primary.issuedAt}
+          issuer={activeCredential.issuer}
+          issuedAt={activeCredential.issuedAt}
           selectedFields={selectedFields}
           onChangeFields={setSelectedFields}
-          evidenceModes={evidenceModes}
-          onChangeEvidenceModes={setEvidenceModes}
-          evidenceAvailability={activeAvailability}
-          onCancel={() => setStep("choose")}
-          onConfirm={() => void shareAll()}
+          evidenceModes={recruiterModesFor(activeCredential)}
+          onChangeEvidenceModes={(next) => setRecruiterModes((current) => ({ ...current, [activeCredential.id]: next }))}
+          evidenceAvailability={activeCredential.evidenceAvailability}
+          evidenceStatus={evidenceStatus}
+          onRefreshEvidence={onRefreshEvidence}
+          credentials={selected}
+          activeId={activeCredential.id}
+          onChooseCredential={setReviewId}
+          onCancel={() => setStep(step === "confirm" ? "review" : "choose")}
+          onConfirm={() => step === "confirm" ? void shareAll() : setStep("confirm")}
           confirming={working}
+          canContinue={hasRecruiterDisclosure && evidenceStatus === "ready"}
+          step={step === "confirm" ? "preview" : "choose"}
         />
       ) : null}
 
@@ -606,37 +637,6 @@ export function GuidedShareFlow({
         </div>
       ) : null}
 
-      <div className="space-y-2 rounded-[28px] border border-[#e2e8f0] bg-white p-5">
-        <h2 className="text-sm font-semibold text-[#0f172a]">Manage shared access</h2>
-        <p className="text-sm text-[#475569]">Stopping a share hides it from recruiters or public visitors the next time they open the page.</p>
-        {managedShares.length === 0 ? <p className="text-sm text-[#475569]">Nothing is shared yet.</p> : (
-          <ul className="space-y-2">
-            {managedShares.map((share) => (
-              <li key={share.id} className="flex flex-col gap-2 rounded-xl border border-[#e2e8f0] px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <p className="text-sm font-medium text-[#0f172a]">{share.label}</p>
-                  <p className="text-xs text-[#64748b]">
-                    {share.status === "revoked"
-                      ? "Sharing stopped"
-                      : share.status === "expired"
-                        ? "Expired"
-                        : share.kind === "direct"
-                          ? "Shared with a specific recruiter"
-                          : share.kind === "public"
-                            ? "Public verification link active"
-                            : "Visible to all SIJIL recruiters"}
-                    {share.detail ? ` · ${share.detail}` : ""}
-                    {share.sharedAt ? ` · ${new Date(share.sharedAt).toLocaleDateString()}` : ""}
-                  </p>
-                </div>
-                {share.status === "active" ? (
-                  <Button type="button" variant="outline" size="sm" onClick={() => void onRevokeManagedShare?.(share.id).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : "Could not stop sharing."))}>Stop sharing</Button>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
     </section>
   );
 }

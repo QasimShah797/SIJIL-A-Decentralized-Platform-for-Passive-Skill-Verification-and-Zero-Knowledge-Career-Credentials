@@ -163,23 +163,16 @@ export async function completeGitHubOAuth(code: string, state: string): Promise<
 
   const { clientId, redirectUri } = ctx;
 
-  try {
-    const data = await invokeEdge<{
-      github_username?: string;
-      sync?: GitHubSyncStats;
-    }>("github-oauth-callback", {
-      code,
-      state,
-      redirect_uri: redirectUri,
-      client_id: clientId,
-    });
-    return {
-      github_username: data.github_username ?? "",
-      sync: data.sync,
-    };
-  } finally {
-    clearAllGitHubConnectionState();
-  }
+  const data = await invokeEdge<{
+    github_username?: string;
+    sync?: GitHubSyncStats;
+  }>("github-oauth-callback", {
+    code,
+    state,
+    redirect_uri: redirectUri,
+    client_id: clientId,
+  });
+  return { github_username: data.github_username ?? "", sync: data.sync };
 }
 
 /** After skill declare — sync GitHub and auto-match evidence (silent, best-effort). */

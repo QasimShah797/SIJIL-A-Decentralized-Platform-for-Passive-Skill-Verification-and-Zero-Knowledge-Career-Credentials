@@ -25,7 +25,7 @@ export async function createSkill(req: Request, res: Response): Promise<Response
 
 export async function declareSkill(req: Request, res: Response): Promise<Response> {
   const input = createSkillSchema.parse(req.body);
-  const result = await skillsService.create(req.user!.id, input);
+  const result = await skillsService.create(req.user!.id, input, req.query.deferEvidence === "true");
   return sendSuccess(res, result, "Skill declared", 201);
 }
 

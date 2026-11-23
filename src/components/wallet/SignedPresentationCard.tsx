@@ -1,41 +1,22 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "@/hooks/use-toast";
 import { useCredentials, useLearnerProfile } from "@/hooks/useLearnerData";
 import type { CredentialView } from "@/lib/db/credentials";
 import type { WalletShareFieldId } from "@/lib/wallet-competency-shared";
 import {
   assessEvidenceShareAvailability,
-  type EvidenceShareAvailability,
+  findUniqueWalletSkill,
 } from "@/lib/evidence-share-availability";
 import {
   emailPublicShareApi,
   getWalletCompetenciesApi,
-  listOwnerSharesApi,
   revokeWalletShareApi,
-  type OwnerShareSummary,
   shareWalletCompetencyApi,
 } from "@/services/api/wallet.api";
 import type { WalletCompetencyRecordView } from "@/lib/db/wallet-competency-records";
 import { walletShareRequest } from "@/lib/sharing/guide";
 import { apiRequest } from "@/services/api/client";
-import { GuidedShareFlow, type ManagedShare } from "./GuidedShareFlow";
-
-function toManagedShare(row: OwnerShareSummary): ManagedShare {
-  const status = row.shareStatus === "Revoked" ? "revoked" : row.shareStatus === "Expired" ? "expired" : "active";
-  const detail = row.shareKind === "direct-recruiter"
-    ? [row.recipientName, row.recipientOrganization].filter(Boolean).join(" at ")
-    : row.expiresAt
-      ? `Until ${new Date(row.expiresAt).toLocaleDateString()}`
-      : "";
-  return {
-    id: row.id,
-    label: row.label,
-    kind: row.shareKind === "all-recruiters" ? "all-recruiters" : row.shareKind === "direct-recruiter" ? "direct" : "public",
-    detail,
-    status,
-    sharedAt: row.createdAt,
-  };
-}
+import { GuidedShareFlow } from "./GuidedShareFlow";
 
 function statusLabel(credential: CredentialView): string {
   if (credential.ledgerAnchorStatus === "anchored" || credential.anchorStatus === "anchored") {
@@ -49,42 +30,50 @@ function statusLabel(credential: CredentialView): string {
 
 export function SignedPresentationCard({ onBack }: { onBack: () => void }) {
   const { credentials } = useCredentials();
-  const [managedShares, setManagedShares] = useState<ManagedShare[]>([]);
-
-  const loadShares = async () => {
-    try {
-      const rows = await listOwnerSharesApi();
-      setManagedShares(rows.map(toManagedShare));
-    } catch {
-      setManagedShares([]);
-    }
-  };
-
-  useEffect(() => {
-    void loadShares();
-  }, []);
-
   const { profile } = useLearnerProfile();
   const [walletRows, setWalletRows] = useState<WalletCompetencyRecordView[] | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    void getWalletCompetenciesApi().then((rows) => {
-      if (!cancelled) setWalletRows(rows);
-    });
-    return () => {
-      cancelled = true;
-    };
+  const [evidenceStatus, setEvidenceStatus] = useState<"loading" | "ready" | "error">("loading");
+  const requestVersion = useRef(0);
+  const refreshEvidence = useCallback(async (background = false) => {
+    const version = ++requestVersion.current;
+    if (!background) setEvidenceStatus("loading");
+    try {
+      const rows = await getWalletCompetenciesApi();
+      if (version !== requestVersion.current) return;
+      setWalletRows(rows);
+      setEvidenceStatus(rows ? "ready" : "error");
+    } catch {
+      if (version === requestVersion.current) setEvidenceStatus("error");
+    }
   }, []);
 
-  const availabilityBySkill = useMemo(() => {
-    const map = new Map<string, EvidenceShareAvailability>();
-    for (const row of walletRows ?? []) {
-      const key = row.competencyName.trim().toLowerCase();
-      map.set(key, assessEvidenceShareAvailability(row.evidencePackage));
-    }
-    return map;
-  }, [walletRows]);
+  useEffect(() => {
+    void refreshEvidence();
+    const refreshOnFocus = () => { void refreshEvidence(); };
+    window.addEventListener("focus", refreshOnFocus);
+    const poll = window.setInterval(() => {
+      if (!document.hidden) void refreshEvidence(true);
+    }, 30_000);
+    return () => {
+      requestVersion.current++;
+      window.clearInterval(poll);
+      window.removeEventListener("focus", refreshOnFocus);
+    };
+  }, [refreshEvidence]);
+
+  const shareCredentials = useMemo(() => credentials.map((credential) => {
+    const title = credential.skill !== "—" ? credential.skill : credential.name;
+    const record = findUniqueWalletSkill(walletRows ?? [], title);
+    return {
+      id: credential.id,
+      title,
+      issuer: credential.issuer || "SIJIL",
+      status: statusLabel(credential),
+      issuedAt: credential.validFrom,
+      evidenceAvailability: assessEvidenceShareAvailability(record?.evidencePackage),
+    };
+  }), [credentials, walletRows]);
 
   const shareSelected = async (
     chosenIds: string[],
@@ -93,7 +82,7 @@ export function SignedPresentationCard({ onBack }: { onBack: () => void }) {
       recipientUserId?: string;
       shareAudience?: "all-recruiters";
       consentToAllRecruiters?: boolean;
-      evidenceModes?: import("@/services/api/wallet.api").ShareEvidenceModes;
+      evidenceModesByCredential: Record<string, import("@/services/api/wallet.api").ShareEvidenceModes>;
     },
   ) => {
     const rows = await getWalletCompetenciesApi();
@@ -101,29 +90,29 @@ export function SignedPresentationCard({ onBack }: { onBack: () => void }) {
       throw new Error("The wallet service is unavailable. Start the SIJIL API and try again.");
     }
     const versionResult = await apiRequest<{ versions: Array<{ id: string; credentialId: string | null; status: string }> }>("/wallet/competency-versions").catch(() => null);
-    const versionIds = (versionResult?.versions ?? [])
-      .filter((version) => version.status === "issued" && version.credentialId && chosenIds.includes(version.credentialId))
-      .map((version) => version.id);
     const chosen = credentials.filter((credential) => chosenIds.includes(credential.id));
     if (chosen.length === 0) throw new Error("Select at least one achievement.");
     let recipientName: string | null = null;
     let recipientOrganization: string | null = null;
     for (const credential of chosen) {
       const skill = credential.skill !== "—" ? credential.skill : credential.name;
-      const wanted = skill.trim().toLowerCase();
-      const matches = rows.filter((row) => row.competencyName.trim().toLowerCase() === wanted);
-      if (matches.length !== 1) {
+      const record = findUniqueWalletSkill(rows, skill);
+      if (!record) {
         throw new Error(`${skill} is not available to share from the wallet yet.`);
       }
       const request = walletShareRequest({
-        competencyId: matches[0].competencyId,
-        selectedFields,
+        competencyId: record.competencyId,
+        selectedFields: [...selectedFields, ...Object.entries(extra.evidenceModesByCredential[credential.id] ?? {})
+          .filter(([, mode]) => mode !== "omit").map(([field]) => field)],
         expiresInDays: 30,
       });
+      const versionIds = (versionResult?.versions ?? [])
+        .filter((version) => version.status === "issued" && version.credentialId === credential.id)
+        .map((version) => version.id);
       const created = await shareWalletCompetencyApi({
         ...request,
         selectedFields: request.selectedFields as WalletShareFieldId[],
-        evidenceModes: extra.evidenceModes,
+        evidenceModes: extra.evidenceModesByCredential[credential.id],
         shareAudience: extra.shareAudience,
         consentToAllRecruiters: extra.consentToAllRecruiters,
         recipientUserId: extra.recipientUserId,
@@ -133,19 +122,18 @@ export function SignedPresentationCard({ onBack }: { onBack: () => void }) {
       recipientName = created.recipientName ?? recipientName;
       recipientOrganization = created.recipientOrganization ?? recipientOrganization;
     }
-    await loadShares();
     return { recipientName, recipientOrganization };
   };
 
   const shareWithAllRecruiters = async (input: {
     credentialIds: string[];
     selectedFields: string[];
-    evidenceModes: import("@/services/api/wallet.api").ShareEvidenceModes;
+    evidenceModesByCredential: Record<string, import("@/services/api/wallet.api").ShareEvidenceModes>;
   }) => {
     await shareSelected(input.credentialIds, input.selectedFields, {
       shareAudience: "all-recruiters",
       consentToAllRecruiters: true,
-      evidenceModes: input.evidenceModes,
+      evidenceModesByCredential: input.evidenceModesByCredential,
     });
     toast({ title: "Visible to all SIJIL recruiters" });
   };
@@ -163,13 +151,12 @@ export function SignedPresentationCard({ onBack }: { onBack: () => void }) {
     const credential = credentials.find((item) => item.id === input.credentialId);
     if (!credential) throw new Error("Select an issued credential.");
     const skill = credential.skill !== "—" ? credential.skill : credential.name;
-    const wanted = skill.trim().toLowerCase();
-    const matches = rows.filter((row) => row.competencyName.trim().toLowerCase() === wanted);
-    if (matches.length !== 1) {
+    const record = findUniqueWalletSkill(rows, skill);
+    if (!record) {
       throw new Error(`${skill} is not available to share from the wallet yet.`);
     }
     const request = walletShareRequest({
-      competencyId: matches[0].competencyId,
+      competencyId: record.competencyId,
       selectedFields: input.selectedFields,
       expiresInDays: input.expiresInDays,
     });
@@ -187,7 +174,6 @@ export function SignedPresentationCard({ onBack }: { onBack: () => void }) {
     } catch {
       // ignore quota / private-mode failures
     }
-    await loadShares();
     toast({ title: "Public verification link created" });
     return {
       shareUrl: created.shareUrl,
@@ -197,7 +183,7 @@ export function SignedPresentationCard({ onBack }: { onBack: () => void }) {
     };
   };
 
-  const revokeManagedShare = async (shareId: string) => {
+  const stopPublicLink = async (shareId: string) => {
     const confirmed = window.confirm(
       "Stop this share? Access ends the next time someone opens SIJIL or the public link. A copy they already saved is not deleted.",
     );
@@ -205,33 +191,22 @@ export function SignedPresentationCard({ onBack }: { onBack: () => void }) {
     const stopped = await revokeWalletShareApi(shareId);
     if (!stopped) throw new Error("The share could not be stopped.");
     toast({ title: "Sharing stopped" });
-    await loadShares();
     return true;
   };
 
   return (
     <GuidedShareFlow
-      credentials={credentials.map((credential) => {
-        const title = credential.skill !== "—" ? credential.skill : credential.name;
-        return {
-          id: credential.id,
-          title,
-          issuer: credential.issuer || "SIJIL",
-          status: statusLabel(credential),
-          issuedAt: credential.validFrom,
-          evidenceAvailability: availabilityBySkill.get(title.trim().toLowerCase()),
-        };
-      })}
+      credentials={shareCredentials}
       learnerName={profile?.name || "Learner"}
+      evidenceStatus={evidenceStatus}
+      onRefreshEvidence={() => void refreshEvidence()}
       onBack={onBack}
       onShareAll={shareWithAllRecruiters}
       onCreatePublicLink={createPublicLink}
       onEmailPublicLink={async (input) => {
         await emailPublicShareApi(input);
       }}
-      managedShares={managedShares}
-      onRevokeManagedShare={revokeManagedShare}
-      onStopPublicLink={revokeManagedShare}
+      onStopPublicLink={stopPublicLink}
     />
   );
 }

@@ -34,7 +34,7 @@ const TYPE_LABEL: Record<ClosedQuestionType, string> = {
 };
 
 function formatClock(ms: number) {
-  const total = Math.max(0, Math.floor(ms / 1000));
+  const total = Math.max(0, Math.ceil(ms / 1000));
   const minutes = Math.floor(total / 60);
   const seconds = total % 60;
   return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
@@ -53,8 +53,8 @@ export function AssessmentWorkspace({
   answers,
   currentIndex,
   flaggedIds,
-  deadlineAt,
-  now,
+  remainingMs,
+  expiredIds,
   evaluating,
   onAnswer,
   onJump,
@@ -68,8 +68,8 @@ export function AssessmentWorkspace({
   answers: Record<string, AssessmentAnswerValue | undefined>;
   currentIndex: number;
   flaggedIds: string[];
-  deadlineAt: string;
-  now: number;
+  remainingMs: number;
+  expiredIds: string[];
   evaluating: boolean;
   onAnswer: (questionId: string, value: AssessmentAnswerValue | null) => void;
   onJump: (index: number) => void;
@@ -83,11 +83,23 @@ export function AssessmentWorkspace({
   const [navOpen, setNavOpen] = useState(false);
   const [visited, setVisited] = useState<number[]>([currentIndex]);
   const question = questions[currentIndex];
-  const remaining = new Date(deadlineAt).getTime() - now;
-  const urgent = remaining <= 2 * 60 * 1000;
+  const urgent = remainingMs <= 10_000;
+  const expired = new Set(expiredIds);
+  const previousIndex = questions.reduce((previous, item, index) => index < currentIndex && !expired.has(item.id) ? index : previous, -1);
+  const nextIndex = questions.findIndex((item, index) => index > currentIndex && !expired.has(item.id));
+  const questionLocked = evaluating || remainingMs <= 0;
   const flagged = new Set(flaggedIds);
 
   useEffect(() => {
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = previous; };
+  }, []);
+
+  useEffect(() => {
+    setReviewing(false);
+    setConfirming(false);
+    setNavOpen(false);
     setVisited((current) => current.includes(currentIndex) ? current : [...current, currentIndex]);
   }, [currentIndex]);
 
@@ -104,7 +116,7 @@ export function AssessmentWorkspace({
   }, [answers, questions, flaggedIds]);
 
   useEffect(() => {
-    if (!question || reviewing) return;
+    if (!question || reviewing || confirming || quitting || navOpen || evaluating) return;
     const onKey = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       if (target?.closest("input, textarea, select, [contenteditable='true']")) return;
@@ -115,7 +127,7 @@ export function AssessmentWorkspace({
       };
       const optionId = optionByKey[key];
       const type = questionTypeOf(question);
-      if (optionId && question.options.some((option) => option.id === optionId) && type !== "order" && type !== "match") {
+      if (!questionLocked && optionId && question.options.some((option) => option.id === optionId) && type !== "order" && type !== "match") {
         event.preventDefault();
         if (type === "multi") {
           const current = optionList(answers[question.id]);
@@ -128,12 +140,12 @@ export function AssessmentWorkspace({
         }
         return;
       }
-      if (event.key === "ArrowLeft" && currentIndex > 0) {
+      if (event.key === "ArrowLeft" && previousIndex >= 0) {
         event.preventDefault();
-        onJump(currentIndex - 1);
-      } else if (event.key === "ArrowRight" && currentIndex < questions.length - 1) {
+        onJump(previousIndex);
+      } else if (event.key === "ArrowRight" && nextIndex >= 0) {
         event.preventDefault();
-        onJump(currentIndex + 1);
+        onJump(nextIndex);
       } else if (key === "f") {
         event.preventDefault();
         onFlag(question.id);
@@ -141,7 +153,7 @@ export function AssessmentWorkspace({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [question, reviewing, answers, currentIndex, questions.length, onAnswer, onJump, onFlag]);
+  }, [question, reviewing, confirming, quitting, navOpen, evaluating, questionLocked, answers, previousIndex, nextIndex, onAnswer, onJump, onFlag]);
 
   const navigator = (
     <QuestionNavigator
@@ -149,6 +161,7 @@ export function AssessmentWorkspace({
       answers={answers}
       currentIndex={currentIndex}
       flagged={flagged}
+      expired={expired}
       visited={new Set(visited)}
       onJump={(index) => {
         setReviewing(false);
@@ -162,11 +175,11 @@ export function AssessmentWorkspace({
   const selection = question ? selectionLabel(question, answers[question.id]) : "No question open";
 
   return (
-    <div className="exam-shell fixed inset-0 z-50 flex flex-col bg-[hsl(var(--sijil-blue)/0.06)] text-[#0f172a]">
-      <header className="border-b border-[hsl(var(--sijil-blue)/0.14)] bg-white">
-        <div className="flex items-center gap-3 px-4 py-2.5">
+    <div className="exam-shell fixed inset-0 z-50 flex flex-col bg-[#f3f6fb] text-[#0f172a]">
+      <header className="shrink-0 border-b border-[hsl(var(--sijil-blue)/0.14)] bg-white">
+        <div className="flex flex-wrap items-center gap-2 px-3 py-2.5 sm:gap-3 sm:px-4">
           <img src={sijilLogo} alt="SIJIL" className="h-8 w-8 shrink-0" />
-          <div className="min-w-0 flex-1">
+          <div className="min-w-0 flex-1 basis-32">
             <p className="truncate text-sm font-semibold text-sijil-blue">{title || "Practical assessment"}</p>
             <p className="truncate text-xs text-[#64748b]">{skillName}</p>
           </div>
@@ -182,9 +195,12 @@ export function AssessmentWorkspace({
           <p className="hidden text-xs font-medium text-[#64748b] md:block">
             {reviewing ? "Review" : `Question ${currentIndex + 1} of ${questions.length}`}
           </p>
-          <p className={cn("mono rounded-lg px-3 py-1.5 text-sm font-semibold", urgent ? "bg-[#fef2f2] text-[#b91c1c]" : "bg-[hsl(var(--sijil-blue)/0.04)] text-sijil-blue")} aria-live="polite">
-            {formatClock(remaining)}
-          </p>
+          <div className={cn("rounded-lg px-2.5 py-1 text-center", urgent ? "bg-red-50 text-red-700" : "bg-sijil-blue/5 text-sijil-blue")}>
+            <p className="text-[10px] font-semibold">Question time</p>
+            <p role="timer" aria-label="Time left for this question" className="mono text-sm font-semibold tabular-nums">
+              {formatClock(remainingMs)}
+            </p>
+          </div>
           <Button
             variant="outline"
             className="rounded-xl"
@@ -207,6 +223,7 @@ export function AssessmentWorkspace({
               questions={questions}
               answers={answers}
               flagged={flagged}
+              expired={expired}
               counts={counts}
               onJump={(index) => {
                 setReviewing(false);
@@ -216,7 +233,7 @@ export function AssessmentWorkspace({
               evaluating={evaluating}
             />
           ) : question ? (
-            <article className="exam-stage">
+            <article key={question.id} className="exam-stage">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="rounded-full bg-sijil-blue px-2.5 py-1 text-[11px] font-semibold text-white">
                   Q{currentIndex + 1}
@@ -239,11 +256,13 @@ export function AssessmentWorkspace({
                   {isResponsePresent(answers[question.id]) ? "Answered" : "Waiting for an answer"}
                 </span>
               </div>
-              <QuestionBody
-                question={question}
-                value={answers[question.id]}
-                onChange={(value) => onAnswer(question.id, value)}
-              />
+              <fieldset disabled={questionLocked} className="min-w-0">
+                <QuestionBody
+                  question={question}
+                  value={answers[question.id]}
+                  onChange={(value) => onAnswer(question.id, value)}
+                />
+              </fieldset>
               <div className="exam-stage-status">
                 <p className="min-w-0 truncate text-sm">
                   <span className="font-semibold text-[#0f172a]">Your choice. </span>
@@ -298,13 +317,13 @@ export function AssessmentWorkspace({
         </aside>
       </div>
 
-      <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-[hsl(var(--sijil-blue)/0.14)] bg-white px-4 py-3">
+      <footer className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-[hsl(var(--sijil-blue)/0.14)] bg-white px-4 py-3">
         <div className="flex flex-wrap gap-2">
           <Sheet open={navOpen} onOpenChange={setNavOpen}>
             <SheetTrigger asChild>
               <Button variant="outline" className="rounded-xl lg:hidden">Questions</Button>
             </SheetTrigger>
-            <SheetContent side="right" className="w-80">
+            <SheetContent side="right" className="w-full max-w-xs overflow-y-auto bg-white">
               <SheetHeader>
                 <SheetTitle>Questions</SheetTitle>
               </SheetHeader>
@@ -317,22 +336,22 @@ export function AssessmentWorkspace({
                 <Flag className={cn("mr-1.5 h-3.5 w-3.5", flagged.has(question.id) && "fill-[#CA8A04] text-[#CA8A04]")} />
                 {flagged.has(question.id) ? "Flagged" : "Mark for review"}
               </Button>
-              <Button variant="outline" className="rounded-xl" onClick={() => onAnswer(question.id, null)} disabled={!isResponsePresent(answers[question.id])}>
+              <Button variant="outline" className="rounded-xl" onClick={() => onAnswer(question.id, null)} disabled={questionLocked || !isResponsePresent(answers[question.id])}>
                 Clear response
               </Button>
             </>
           ) : null}
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" className="rounded-xl" disabled={reviewing || currentIndex === 0} onClick={() => onJump(currentIndex - 1)}>
+          <Button variant="outline" className="rounded-xl" disabled={reviewing || evaluating || previousIndex < 0} onClick={() => onJump(previousIndex)}>
             <ChevronLeft className="mr-1 h-4 w-4" /> Previous
           </Button>
           {reviewing ? (
             <Button variant="outline" className="rounded-xl" onClick={() => setReviewing(false)}>Back to question</Button>
-          ) : currentIndex >= questions.length - 1 ? (
+          ) : nextIndex < 0 ? (
             <Button className="rounded-xl bg-sijil-blue hover:bg-sijil-blue" onClick={() => setReviewing(true)}>Review</Button>
           ) : (
-            <Button className="rounded-xl bg-sijil-blue hover:bg-sijil-blue" onClick={() => onJump(currentIndex + 1)}>
+            <Button className="rounded-xl bg-sijil-blue hover:bg-sijil-blue" disabled={evaluating} onClick={() => onJump(nextIndex)}>
               Next <ChevronRight className="ml-1 h-4 w-4" />
             </Button>
           )}
@@ -340,13 +359,13 @@ export function AssessmentWorkspace({
       </footer>
 
       <Dialog open={confirming} onOpenChange={setConfirming}>
-        <DialogContent>
+        <DialogContent className="max-w-[min(28rem,calc(100%-2rem))] rounded-2xl bg-white">
           <DialogHeader>
             <DialogTitle>Submit this assessment?</DialogTitle>
             <DialogDescription>
               {counts.unanswered > 0
                 ? `${counts.unanswered} question${counts.unanswered === 1 ? " is" : "s are"} still unanswered and will be marked incorrect.`
-                : "Every question has a response. You can still go back before the timer ends."}
+                : "Every question has a response. You can still go back to questions with time remaining."}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -360,7 +379,7 @@ export function AssessmentWorkspace({
       </Dialog>
 
       <Dialog open={quitting} onOpenChange={setQuitting}>
-        <DialogContent>
+        <DialogContent className="max-w-[min(28rem,calc(100%-2rem))] rounded-2xl bg-white">
           <DialogHeader>
             <DialogTitle>Quit this sitting?</DialogTitle>
             <DialogDescription>
@@ -392,6 +411,7 @@ function QuestionNavigator({
   answers,
   currentIndex,
   flagged,
+  expired,
   visited,
   onJump,
 }: {
@@ -399,6 +419,7 @@ function QuestionNavigator({
   answers: Record<string, AssessmentAnswerValue | undefined>;
   currentIndex: number;
   flagged: Set<string>;
+  expired: Set<string>;
   visited: Set<number>;
   onJump: (index: number) => void;
 }) {
@@ -414,7 +435,9 @@ function QuestionNavigator({
               ? "flagged"
               : answered
                 ? "answered"
-                : visited.has(index)
+                : expired.has(item.id)
+                  ? "expired"
+                  : visited.has(index)
                   ? "visited"
                   : "new";
           return (
@@ -424,6 +447,7 @@ function QuestionNavigator({
               className={cn("exam-nav", `exam-nav--${state}`)}
               aria-current={index === currentIndex ? "step" : undefined}
               aria-label={`Question ${index + 1}, ${state}`}
+              disabled={expired.has(item.id)}
               onClick={() => onJump(index)}
             >
               {index + 1}
@@ -447,6 +471,7 @@ function ReviewPane({
   questions,
   answers,
   flagged,
+  expired,
   counts,
   onJump,
   onConfirm,
@@ -455,6 +480,7 @@ function ReviewPane({
   questions: McqQuestion[];
   answers: Record<string, AssessmentAnswerValue | undefined>;
   flagged: Set<string>;
+  expired: Set<string>;
   counts: { answered: number; unanswered: number; flagged: number };
   onJump: (index: number) => void;
   onConfirm: () => void;
@@ -478,10 +504,10 @@ function ReviewPane({
       <ul className="mt-4 space-y-2">
         {questions.map((item, index) => (
           <li key={item.id}>
-            <button type="button" className="flex w-full items-center justify-between gap-3 rounded-xl border border-[#e2e8f0] bg-white px-3 py-2 text-left" onClick={() => onJump(index)}>
+            <button type="button" className="flex w-full items-center justify-between gap-3 rounded-xl border border-[#e2e8f0] bg-white px-3 py-2 text-left" disabled={expired.has(item.id)} onClick={() => onJump(index)}>
               <span className="text-sm font-medium">{index + 1}. {TYPE_LABEL[questionTypeOf(item)]}</span>
               <span className="text-xs text-[#64748b]">
-                {flagged.has(item.id) ? "Flagged" : isResponsePresent(answers[item.id]) ? "Answered" : "Unanswered"}
+                {isResponsePresent(answers[item.id]) ? "Answered" : expired.has(item.id) ? "Time expired" : flagged.has(item.id) ? "Flagged" : "Unanswered"}
               </span>
             </button>
           </li>
@@ -550,7 +576,7 @@ function QuestionBody({
       <h2 className="text-xl font-semibold leading-snug text-[#0f172a]">{question.question}</h2>
       {question.selectionNote ? <p className="text-xs text-[#64748b]">{question.selectionNote}</p> : null}
       {(type === "code-output" || type === "debug") && question.code ? (
-        <McqCodeStage code={question.code} language={question.language} />
+        <McqCodeStage code={question.code} language={question.language} label={TYPE_LABEL[type]} />
       ) : null}
       {type === "hotspot" ? (
         <div className="exam-options exam-options--grid">

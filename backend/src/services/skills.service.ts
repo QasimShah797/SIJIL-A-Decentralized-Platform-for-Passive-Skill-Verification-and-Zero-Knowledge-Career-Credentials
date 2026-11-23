@@ -34,10 +34,6 @@ function parseBreakdown(row: Record<string, unknown>): Record<string, number> {
   return {};
 }
 
-function normalizeSkillKey(value: string): string {
-  return value.trim().toLowerCase().replace(/\s+/g, " ");
-}
-
 function mappingConfidenceForEvidence(row: Record<string, unknown>, skill: SkillView): "high" | "medium" | "low" {
   const metadata = (row.metadata as Record<string, unknown> | null) ?? {};
   const result = evaluateSkillProjectMatch(
@@ -139,7 +135,7 @@ export class SkillsService {
     return rowToView(data as DeclaredSkillRow);
   }
 
-  async create(userId: string, input: CreateSkillInput): Promise<DeclaredSkillWithEvidenceView> {
+  async create(userId: string, input: CreateSkillInput, deferEvidence = false): Promise<DeclaredSkillWithEvidenceView> {
     const competencyKey = declaredCompetencyKey(input.name);
     const domain = input.domain || "General";
 
@@ -176,28 +172,38 @@ export class SkillsService {
       skill = rowToView(data as DeclaredSkillRow);
     }
 
+    if (deferEvidence) {
+      void this.processDeclarationEvidence(userId, skill.id, true).catch((error: unknown) => {
+        console.error("Could not process declared competency evidence", error instanceof Error ? error.name : String(typeof error));
+      });
+      return { skill, relatedEvidence: [], evidenceStatus: "none" };
+    }
+
+    await this.processDeclarationEvidence(userId, skill.id, false);
+    return this.getSkillWithRelatedEvidence(userId, skill.id);
+  }
+
+  private async processDeclarationEvidence(userId: string, skillId: string, bestEffort: boolean): Promise<void> {
     try {
       await githubSyncService.sync(userId, await this.getSkillRefs(userId));
     } catch (error) {
       if (error instanceof AppError && (error.statusCode === 400 || error.statusCode === 401)) {
         // No GitHub connection or expired auth should not block skill declaration.
-      } else {
+      } else if (!bestEffort) {
         throw error;
       }
     }
 
     try {
-      await evidenceRecordsService.autoLinkStrongMatchesForSkill(userId, skill.id);
+      await evidenceRecordsService.autoLinkStrongMatchesForSkill(userId, skillId);
     } catch {
       // Auto-link is best-effort when GitHub is unavailable.
     }
 
     // Lazy import avoids a credentials/skills module cycle; runs in the background.
     void import("./competency-automation.service")
-      .then((automation) => automation.triggerCompetencyAutomation(userId, skill.id))
+      .then((automation) => automation.triggerCompetencyAutomation(userId, skillId))
       .catch(() => undefined);
-
-    return this.getSkillWithRelatedEvidence(userId, skill.id);
   }
 
   async update(userId: string, skillId: string, input: UpdateSkillInput): Promise<SkillView> {

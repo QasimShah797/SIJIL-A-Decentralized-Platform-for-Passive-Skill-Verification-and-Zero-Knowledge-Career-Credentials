@@ -1,5 +1,5 @@
 import { fetchUserRoles } from "@/lib/auth-helpers";
-import { fetchLearnerProfileRow, isLearnerProfileComplete } from "@/lib/db/learner-profile";
+import { fetchLearnerProfileRow } from "@/lib/db/learner-profile";
 
 export type LearnerAccessResult =
   | { ok: true; profileComplete: boolean }
@@ -17,6 +17,5 @@ export async function verifyLearnerAccess(userId: string): Promise<LearnerAccess
     return { ok: false, reason: "no_profile" };
   }
 
-  const profileComplete = await isLearnerProfileComplete(userId);
-  return { ok: true, profileComplete };
+  return { ok: true, profileComplete: row.profile_completed === true };
 }

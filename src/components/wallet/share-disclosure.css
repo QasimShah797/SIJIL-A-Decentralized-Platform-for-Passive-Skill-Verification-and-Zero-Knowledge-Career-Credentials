@@ -826,3 +826,30 @@
   font-size: 0.72rem;
   font-weight: 600;
 }
+
+.sd-recruiter { max-width: 68rem; }
+.sd-recruiter .sd-grid { grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 1024px) {
+  .sd-recruiter .sd-grid { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); }
+}
+.sd-recruiter .sd-card { min-width: 0; }
+.sd-recruiter .sd-options { margin-top: .75rem; gap: .45rem; }
+.sd-recruiter .sd-recruiter-row {
+  min-height: 3rem;
+  cursor: pointer;
+  padding: .45rem .65rem;
+  border-color: #e2eaf7;
+  background: #f9fbff;
+}
+.sd-recruiter .sd-option-icon { width: 2rem; height: 2rem; }
+.sd-recruiter .sd-option-copy { min-width: 0; }
+.sd-recruiter-preview {
+  height: 100%;
+  border-color: #ded8fb;
+  background: linear-gradient(145deg, #f2efff, #f7faff);
+}
+.sd-recruiter .sd-preview-card { background: white; }
+.sd-recruiter .sd-preview-row > * { min-width: 0; overflow-wrap: anywhere; }
+.sd-recruiter .sd-cred-chip { background: white; }
+.sd-recruiter .sd-credential-select { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; margin-bottom: .75rem; }
+.sd-recruiter .sd-actions .sd-btn { min-height: 2.65rem; }

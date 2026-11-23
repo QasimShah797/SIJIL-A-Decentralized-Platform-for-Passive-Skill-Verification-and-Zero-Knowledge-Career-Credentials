@@ -9,6 +9,8 @@ import {
   type EvidenceModes,
 } from "./share-evidence-summary";
 import type { WalletCompetencyRecordView } from "../types/wallet.types";
+import { lmsEvidenceMatchesSkill, matchesCompetency } from "../utils/moodle-evidence-matching";
+import { buildDisclosedPayload } from "./wallet.service";
 import { AppError } from "../utils/AppError";
 
 function emptyPackage(): WalletCompetencyRecordView["evidencePackage"] {
@@ -220,4 +222,23 @@ describe("summarizeGithubDetails", () => {
     assert.equal("commit_count" in repos[0]!, false);
     assert.equal(JSON.stringify(summary).includes("99"), false);
   });
+});
+
+it("refuses a conflicting Moodle skill link and avoids partial skill names", () => {
+  assert.equal(lmsEvidenceMatchesSkill({ linked_skill_id: "python-id", course_name: "TypeScript" }, "typescript-id", "TypeScript"), false);
+  assert.equal(matchesCompetency("JavaScript Fundamentals", "Java"), false);
+  assert.equal(matchesCompetency("Introduction to Python", "Python"), true);
+});
+
+it("shares the credential issue date without exposing evidence timestamps or omitted categories", () => {
+  const pkg = emptyPackage();
+  const record = recordFor("TypeScript", {
+    evidenceTimestamps: { ...pkg.evidenceTimestamps, github: ["2026-11-01T00:00:00Z"] },
+    github: { ...pkg.github, repos: [{ full_name: "example/private-repo" }] },
+  });
+  const issuedAt = "2026-11-24T08:00:00Z";
+  const payload = buildDisclosedPayload(record, ["competency_name", "timestamps"], undefined, [], issuedAt);
+  assert.deepEqual(payload.timestamps, { credentialIssuedAt: issuedAt });
+  assert.equal("evidence" in payload, false);
+  assert.equal(JSON.stringify(payload).includes("private-repo"), false);
 });

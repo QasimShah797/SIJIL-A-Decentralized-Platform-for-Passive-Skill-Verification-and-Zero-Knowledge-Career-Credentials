@@ -12,21 +12,11 @@ import {
   type ShareMethod,
 } from "@/lib/sharing/guide";
 
-export type ShareRecord = {
-  token: string;
-  label: string;
-  access: "active" | "expired" | "revoked";
-  kind: "link" | "presentation" | "direct";
-  recipient?: string | null;
-  sharedAt?: string | null;
-};
-
 export function ShareAchievementFlow({
   skill,
   fields,
   linkAvailable,
   zkp,
-  shares,
   working,
   error,
   resultUrl,
@@ -36,29 +26,22 @@ export function ShareAchievementFlow({
   onCreateDirect,
   onCreateAll,
   onSearchRecruiters,
-  onRevoke,
-  historyUnavailable = false,
-  onRetryHistory,
 }: {
   skill: string;
   fields: ShareField[];
   linkAvailable: boolean;
   zkp: { verified: boolean; fabric: string | null };
-  shares: ShareRecord[];
   working: boolean;
   error: string | null;
   resultUrl: string | null;
   resultNote?: string | null;
-  historyUnavailable?: boolean;
-  onRetryHistory?: () => void;
   onCreateLink: (input: { selectedFields: string[]; hiddenLabels: string[]; expiresInDays: number }) => void;
   onCreateSigned: () => void;
   onCreateDirect?: (input: { recipientUserId: string; selectedFields: string[]; expiresInDays: number }) => void;
   onCreateAll?: (input: { selectedFields: string[]; expiresInDays: number }) => void;
   onSearchRecruiters?: (query: string) => Promise<Array<{ id: string; name: string; organization: string; title: string }>>;
-  onRevoke: (share: ShareRecord) => void;
 }) {
-  const [step, setStep] = useState<"method" | "choose" | "review" | "confirm" | "manage">("method");
+  const [step, setStep] = useState<"method" | "choose" | "review" | "confirm">("method");
   const [method, setMethod] = useState<ShareMethod | "direct-recruiter" | "all-recruiters">("private-link");
   const [recruiterQuery, setRecruiterQuery] = useState("");
   const [recruiters, setRecruiters] = useState<Array<{ id: string; name: string; organization: string; title: string }>>([]);
@@ -85,7 +68,7 @@ export function ShareAchievementFlow({
         <p className="text-sm text-[#475569]">Choose what someone can open, and for how long. A copy they already saved is not deleted if you stop sharing later.</p>
       </header>
       <ol className="flex flex-wrap gap-2 text-xs font-medium text-[#64748b]" aria-label="Sharing progress">
-        {["Choose Information", "Review Sharing", "Confirm & Share", "Manage Shared Access"].map((label) => (
+        {["Choose Information", "Review Sharing", "Confirm & Share"].map((label) => (
           <li key={label}>{label}</li>
         ))}
       </ol>
@@ -303,46 +286,6 @@ export function ShareAchievementFlow({
         </p>
       ) : null}
 
-      <div className="space-y-2">
-        <div className="flex items-center justify-between gap-2">
-          <h2 className="text-sm font-semibold text-sijil-blue">Manage Shared Access</h2>
-          <Button type="button" variant="outline" size="sm" onClick={() => setStep("manage")}>Manage Shared Access</Button>
-        </div>
-        {step === "manage" ? (
-          <>
-            <p className="text-sm text-[#475569]">Stopping a link or a presentation does not revoke the achievement, and it does not delete a copy someone already saved.</p>
-            {historyUnavailable ? (
-              <div className="space-y-2">
-                <p role="alert" className="text-sm text-[#334155]">Sharing history temporarily unavailable</p>
-                <Button type="button" variant="outline" size="sm" onClick={onRetryHistory}>Retry</Button>
-              </div>
-            ) : shares.length === 0 ? <p className="text-sm text-[#475569]">No saved shares for this achievement yet.</p> : (
-              <ul className="space-y-2">
-                {shares.map((share) => (
-                  <li key={`${share.kind}-${share.token}`} className="learner-stat-card flex flex-col gap-2 p-3 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-[#0f172a]">{share.label}</p>
-                      <p className="text-xs text-[#64748b]">
-                        {share.kind === "direct"
-                          ? `Shared with ${share.recipient || "a recruiter"}`
-                          : share.kind === "link"
-                            ? "Public verification link"
-                            : "Signed share"}
-                        {" · "}
-                        {share.access === "active" ? "Shared" : share.access === "expired" ? "Expired" : "Access stopped"}
-                        {share.sharedAt ? ` · ${new Date(share.sharedAt).toLocaleDateString()}` : ""}
-                      </p>
-                    </div>
-                    {share.access === "active" ? (
-                      <Button type="button" variant="outline" size="sm" onClick={() => onRevoke(share)}>Stop Sharing</Button>
-                    ) : null}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </>
-        ) : null}
-      </div>
     </section>
   );
 }

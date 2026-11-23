@@ -571,7 +571,7 @@ export function LearnerWorkspaceShell({
           </aside>
           <div className="learner-main-scroll min-w-0 flex-1 overflow-auto p-4 sm:p-6 lg:p-8">{children}</div>
           {rightRail ? (
-            <aside className="learner-main-scroll hidden w-[320px] shrink-0 space-y-4 overflow-auto border-l border-[#e2e8f0] bg-[#f8fafc] p-6 lg:block">
+            <aside className="learner-main-scroll hidden w-[300px] shrink-0 space-y-4 overflow-auto border-l border-[#e2e8f0] bg-[#f8fafc] p-5 xl:block">
               {rightRail}
             </aside>
           ) : null}

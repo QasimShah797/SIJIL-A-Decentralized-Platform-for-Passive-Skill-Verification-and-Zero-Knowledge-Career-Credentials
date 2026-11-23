@@ -101,7 +101,7 @@ function competencyMatches(value: unknown, competencyName: string): boolean {
   const left = normalizedText(value);
   const right = normalizedText(competencyName);
   if (!left || !right) return false;
-  return left === right || left.includes(right) || right.includes(left);
+  return left === right;
 }
 
 function sortByLatest<T extends Record<string, unknown>>(rows: T[], fields: string[]): T[] {
@@ -291,6 +291,9 @@ function buildAttemptHistoryItem(row: Record<string, unknown>): WalletAttemptHis
   const scorePercent = asNumber(row.percentage ?? row.score ?? row.resultPercentage);
   const correctCount = asNumber(row.correct_count ?? row.resultCorrectCount);
   const totalQuestions = asNumber(row.total_questions ?? row.resultTotalQuestions);
+  const status = asText(row.status).trim().toLowerCase().replace(/[- ]/g, "_");
+  if (["in_progress", "expired_no_submission", "not_started", "abandoned"].includes(status)) return null;
+  if (scorePercent == null && row.passed !== true && !["completed", "submitted", "auto_submitted", "passed", "failed"].includes(status)) return null;
   const passed = row.passed === true;
   const submittedAt = asNullableText(row.submitted_at ?? row.updated_at ?? row.created_at);
 
@@ -513,8 +516,7 @@ async function fetchDerivedWalletCompetencyRecords(
     const skillGithubRepos = githubRepos.filter((row) => asText(row.linked_skill_id) === competencyId);
     const skillGithubActivities = githubActivities.filter((row) => asText(row.linked_skill_id) === competencyId);
     const skillGithubEvidenceRecords = githubEvidenceAll.filter((row) =>
-      asText(row.mapped_skill_id) === competencyId
-      || asText(row.suggested_skill_id) === competencyId,
+      asText(row.mapped_skill_id) === competencyId,
     );
     const skillLmsEvidenceRecords = lmsEvidenceAll.filter((row) =>
       asText(row.mapped_skill_id) === competencyId,
@@ -539,14 +541,10 @@ async function fetchDerivedWalletCompetencyRecords(
     );
     const skillPeerReviews = peerReviews.filter((row) => {
       if (asText(row.source) === "LMS" || isLmsPeerReviewRow(row)) return false;
-      if (asText(row.skill_id) === competencyId) return true;
-      if (competencyMatches(row.skill, competencyName)) return true;
-      if (competencyMatches(row.competency_name, competencyName)) return true;
-      // Unscoped reviews still belong on the package when the learner has this competency.
-      const hasSkillBinding = Boolean(
-        asText(row.skill_id) || asText(row.skill) || asText(row.competency_name),
-      );
-      return !hasSkillBinding && skillRows.length === 1;
+      const binding = asText(row.skill_id);
+      if (binding) return binding === competencyId;
+      return skillRows.filter((skill) => competencyMatches(skill.name, competencyName)).length === 1
+        && competencyMatches(asText(row.competency_name) || row.skill, competencyName);
     });
 
     const mcqHistory = sortByLatest(
@@ -562,6 +560,7 @@ async function fetchDerivedWalletCompetencyRecords(
       const fallbackAttempt = buildAttemptHistoryItem({
         id: practicalRow.attempt_id,
         title: competencyName ? `${competencyName} practical task` : "Practical task",
+        status: practicalRow.status,
         score: practicalRow.score,
         resultPercentage: session?.resultPercentage,
         resultCorrectCount: session?.resultCorrectCount,

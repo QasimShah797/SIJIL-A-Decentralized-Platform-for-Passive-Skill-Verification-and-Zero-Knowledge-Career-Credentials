@@ -5,9 +5,9 @@ import {
   BookOpen,
   Copy,
   FileText,
+  UsersRound,
   Github,
   Layers,
-  MessageSquare,
   MoreHorizontal,
   Plus,
   Star,
@@ -26,7 +26,6 @@ import type { DeclaredSkill } from "@/lib/sijil-data";
 import type { LearnerProfileView } from "@/lib/db/learner-profile";
 import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
-import { VerifyShieldIllustration } from "@/components/learner/PromoIllustrations";
 
 export function skillBucket(status: string): "verified" | "progress" | "idle" {
   const s = status.toLowerCase();
@@ -64,7 +63,7 @@ export function DonutChart({
   const active = verified + progress + idle;
 
   return (
-    <div className="relative mx-auto h-40 w-40">
+    <div className="relative mx-auto h-32 w-32 shrink-0">
       <svg viewBox="0 0 128 128" className="h-full w-full -rotate-90">
         <circle cx="64" cy="64" r={r} fill="none" strokeWidth="14" stroke="#e2e8f0" />
         {idle > 0 && (
@@ -105,7 +104,7 @@ export function DonutChart({
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
         <span className="text-2xl font-bold text-sijil-blue">{active}</span>
-        <span className="text-[10px] uppercase tracking-wider text-[#64748b]">Active</span>
+        <span className="text-xs text-[#64748b]">Active</span>
       </div>
     </div>
   );
@@ -172,13 +171,30 @@ export function StatCard({
   value,
   hint,
   tint = 0,
+  compact = false,
 }: {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
   value: string | number;
   hint?: string;
   tint?: number;
+  compact?: boolean;
 }) {
+  if (compact) {
+    return (
+      <div className="learner-stat-card flex min-h-28 items-center gap-4 px-5 py-4">
+        <span className="grid h-14 w-14 shrink-0 place-items-center rounded-xl bg-sijil-blue/10 text-sijil-blue">
+          <Icon className="h-7 w-7" />
+        </span>
+        <div className="min-w-0">
+          <p className="text-3xl font-bold leading-none text-sijil-blue">{value}</p>
+          <p className="mt-1 text-sm font-semibold text-sijil-blue">{label}</p>
+          {hint && <p className="mt-1 text-xs text-slate-600">{hint}</p>}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="learner-stat-card p-5">
       <div className={cn("flex h-10 w-10 items-center justify-center rounded-xl", statIconTints[tint % statIconTints.length])}>
@@ -233,7 +249,7 @@ export function CompetencySkillRow({
             <DropdownMenuTrigger asChild>
               <button
                 type="button"
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[#64748b] opacity-0 transition-opacity hover:bg-[#f1f5f9] group-hover:opacity-100 focus:opacity-100"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[#64748b] transition-opacity hover:bg-[#f1f5f9] lg:opacity-0 lg:group-hover:opacity-100 lg:focus:opacity-100"
                 aria-label={`Actions for ${skill.name}`}
               >
                 <MoreHorizontal className="h-4 w-4" />
@@ -296,12 +312,12 @@ export function OverviewRightRail({
           {[
             { to: "/learner/integrations", icon: Github, label: "Add Evidence", sub: "Connect GitHub or LMS" },
             { to: "/learner/wallet", icon: Wallet, label: "Open Wallet", sub: "View credentials" },
-            { to: "/learner/peer-reviews", icon: MessageSquare, label: "Request Peer Review", sub: "Invite reviewers" },
+            { to: "/learner/peer-reviews", icon: UsersRound, label: "Request Peer Review", sub: "Invite reviewers" },
           ].map(({ to, icon: Icon, label, sub }) => (
             <Link
               key={to}
               to={to}
-              className="flex items-center gap-3 rounded-xl border border-[#e2e8f0] bg-white p-3 transition-colors hover:border-sijil-blue/40"
+              className="flex items-center gap-3 rounded-xl border border-[#e2e8f0] bg-white px-3 py-2 transition-colors hover:border-sijil-blue/40"
             >
               <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#f1f5f9] text-sijil-blue">
                 <Icon className="h-4 w-4" />
@@ -363,10 +379,10 @@ export function OverviewRightRail({
             <span className="font-semibold text-sijil-blue">{completion}%</span>
           </div>
           <div className="h-2 overflow-hidden rounded-full bg-[#e2e8f0]">
-            <div className="h-full rounded-full bg-[#14b8a6] transition-all" style={{ width: `${completion}%` }} />
+            <div className="h-full rounded-full bg-sijil-blue transition-all" style={{ width: `${completion}%` }} />
           </div>
         </div>
-        <Button asChild variant="outline" className="mt-4 w-full rounded-xl border-[#e2e8f0]">
+        <Button asChild variant="outline" className="mt-4 w-full rounded-xl border-[#e2e8f0] bg-sijil-blue/5 text-sijil-blue">
           <Link to="/learner/my-profile">
             <UserCircle className="mr-2 h-4 w-4" />
             View full profile
@@ -374,17 +390,6 @@ export function OverviewRightRail({
         </Button>
       </div>
 
-      <div className="learner-dashboard-cta p-5 text-white">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0 flex-1 pr-1">
-            <p className="text-sm font-semibold leading-snug">Build. Prove. Verify.</p>
-            <p className="mt-2 text-xs leading-relaxed text-white/65">
-              Add, prove your professional identity with evidence-backed competencies.
-            </p>
-          </div>
-          <VerifyShieldIllustration className="h-14 w-14" />
-        </div>
-      </div>
     </>
   );
 }

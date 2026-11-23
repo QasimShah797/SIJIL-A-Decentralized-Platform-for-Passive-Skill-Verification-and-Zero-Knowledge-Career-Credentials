@@ -38,6 +38,8 @@ import {
   usePeerReviews,
 } from "@/hooks/useLearnerData";
 import {
+  isValidGraduationYear,
+  normalizeLearnerGender,
   updateLearnerEditableProfile,
   uploadLearnerAvatar,
   type LearnerEditableProfile,
@@ -73,8 +75,8 @@ const selfSignupEditSchema = z.object({
   city: z.string().trim().min(1, "City is required").max(80),
   country: z.string().trim().min(1, "Country is required").max(80),
   dateOfBirth: z.string().trim().optional().or(z.literal("")),
-  gender: z.string().trim().optional().or(z.literal("")),
-  graduationYear: z.string().trim().optional().or(z.literal("")),
+  gender: z.enum(["", "male", "female"]),
+  graduationYear: z.string().trim().refine((year) => !year || isValidGraduationYear(year), "Enter a graduation year between 1950 and 2100."),
   institutionName: z.string().trim().max(200).optional().or(z.literal("")),
   program: z.string().trim().max(200).optional().or(z.literal("")),
 });
@@ -191,7 +193,7 @@ export default function MyProfile() {
       skillsSummary: profile.skillsSummary ?? "",
       careerGoal: profile.careerGoal ?? "",
       dateOfBirth: profile.dateOfBirth ?? "",
-      gender: profile.gender ?? "",
+      gender: normalizeLearnerGender(profile.gender),
       graduationYear: profile.graduationYear != null ? String(profile.graduationYear) : "",
       institutionName: profile.institution !== "—" ? profile.institution : "",
       program: profile.program !== "—" ? profile.program : "",
@@ -245,7 +247,7 @@ export default function MyProfile() {
         skillsSummary: profile.skillsSummary ?? "",
         careerGoal: profile.careerGoal ?? "",
         dateOfBirth: profile.dateOfBirth ?? "",
-        gender: profile.gender ?? "",
+        gender: normalizeLearnerGender(profile.gender),
         graduationYear: profile.graduationYear != null ? String(profile.graduationYear) : "",
         institutionName: profile.institution !== "—" ? profile.institution : "",
         program: profile.program !== "—" ? profile.program : "",
@@ -306,7 +308,7 @@ export default function MyProfile() {
         city: d.city,
         country: d.country,
         dateOfBirth: d.dateOfBirth || undefined,
-        gender: d.gender || undefined,
+        gender: d.gender,
         graduationYear,
         institutionName: d.institutionName || undefined,
         program: d.program || undefined,
@@ -505,7 +507,13 @@ export default function MyProfile() {
                     <Input type="date" value={form.dateOfBirth} onChange={set("dateOfBirth")} className="rounded-xl" />
                   </Field>
                   <Field label="Gender">
-                    <Input value={form.gender} onChange={set("gender")} placeholder="e.g. Female" className="rounded-xl" />
+                    <select aria-label="Gender" value={form.gender ?? ""}
+                      onChange={(event) => setForm((prev) => ({ ...prev, gender: normalizeLearnerGender(event.target.value) }))}
+                      className="h-10 w-full rounded-xl border border-input bg-background px-3 text-sm">
+                      <option value="" aria-label="No selection" />
+                      <option value="male">Male</option>
+                      <option value="female">Female</option>
+                    </select>
                   </Field>
                   <Field label="Country" required>
                     <Input value={form.country} onChange={set("country")} className="rounded-xl" />

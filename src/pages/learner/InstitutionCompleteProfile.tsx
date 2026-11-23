@@ -16,7 +16,7 @@ import { StatusBadge } from "@/components/sijil/StatusBadge";
 import { VerifiedProfessionalAccounts } from "@/components/profile/VerifiedProfessionalAccounts";
 import {
   fetchLearnerProfileRow,
-  isLearnerProfileComplete,
+  type LearnerProfileRow,
   saveLearnerOnboarding,
   saveLearnerProfileProgress,
   uploadLearnerAvatar,
@@ -78,7 +78,7 @@ type InstitutionForm = {
 
 const RETURN_PATH = "/learner/complete-profile";
 
-export default function InstitutionCompleteProfile() {
+export default function InstitutionCompleteProfile({ initialRow }: { initialRow?: LearnerProfileRow }) {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { user, loading: authLoading } = useAuth();
@@ -113,7 +113,7 @@ export default function InstitutionCompleteProfile() {
     let cancelled = false;
 
     (async () => {
-      const row = await fetchLearnerProfileRow(user.id);
+      const row = initialRow ?? await fetchLearnerProfileRow(user.id);
       if (cancelled) return;
 
       if (!row?.institution_id) {
@@ -125,24 +125,24 @@ export default function InstitutionCompleteProfile() {
         return;
       }
 
+      if (row.profile_completed) {
+        clearProfileFormDraft(user.id, "institution");
+        navigate("/learner/profile", { replace: true });
+        return;
+      }
+
       setIsProvisioned(true);
       const draft = loadProfileFormDraft<InstitutionForm>(user.id, "institution");
       setF(draft ?? rowToOnboardingForm(row, user.email));
       setFormReady(true);
       setChecking(false);
 
-      const complete = await isLearnerProfileComplete(user.id);
-      if (cancelled) return;
-      if (complete) {
-        clearProfileFormDraft(user.id, "institution");
-        navigate("/learner/profile", { replace: true });
-      }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [user, authLoading, navigate]);
+  }, [user, authLoading, navigate, initialRow]);
 
   useEffect(() => {
     const github = searchParams.get("github");
@@ -160,6 +160,8 @@ export default function InstitutionCompleteProfile() {
 
   useEffect(() => {
     if (!user || !formReady) return;
+
+    saveProfileFormDraft(user.id, "institution", f);
 
     const timer = window.setTimeout(() => {
       let linkedinUrl: string | null | undefined;
@@ -307,16 +309,16 @@ export default function InstitutionCompleteProfile() {
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="First name" required>
-              <Input value={f.firstName} onChange={set("firstName")} placeholder="Ali" />
+              <Input value={f.firstName} onChange={set("firstName")} />
             </Field>
             <Field label="Last name" required>
-              <Input value={f.lastName} onChange={set("lastName")} placeholder="Khan" />
+              <Input value={f.lastName} onChange={set("lastName")} />
             </Field>
             <Field label="Phone number" required>
-              <Input value={f.contactNumber} onChange={set("contactNumber")} placeholder="+92 300 1234567" />
+              <Input value={f.contactNumber} onChange={set("contactNumber")} />
             </Field>
             <Field label="City / country" required>
-              <Input value={f.cityCountry} onChange={set("cityCountry")} placeholder="Islamabad, Pakistan" />
+              <Input value={f.cityCountry} onChange={set("cityCountry")} />
             </Field>
           </div>
         </section>
@@ -353,6 +355,7 @@ export default function InstitutionCompleteProfile() {
           <VerifiedProfessionalAccounts
             userId={user.id}
             returnTo={RETURN_PATH}
+            hideLinkedInPlaceholder
             linkedinUrl={f.linkedinUrl}
             onLinkedInUrlChange={(value) => setF((prev) => ({ ...prev, linkedinUrl: value }))}
             onBeforeConnect={persistDraft}

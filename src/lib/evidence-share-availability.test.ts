@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   assessEvidenceShareAvailability,
   defaultEvidenceModesForAvailability,
+  findUniqueWalletSkill,
 } from "./evidence-share-availability";
 
 describe("evidence-share-availability", () => {
@@ -45,4 +46,11 @@ describe("evidence-share-availability", () => {
     });
     expect(Object.values(avail).every((item) => item.present === false)).toBe(true);
   });
+});
+
+it("matches only the selected competency and refuses ambiguous legacy names", () => {
+  const rows = [{ competencyName: "JavaScript" }, { competencyName: "Python" }];
+  expect(findUniqueWalletSkill(rows, "Java")).toBeUndefined();
+  expect(findUniqueWalletSkill(rows, " python ")).toBe(rows[1]);
+  expect(findUniqueWalletSkill([...rows, { competencyName: "PYTHON" }], "Python")).toBeUndefined();
 });

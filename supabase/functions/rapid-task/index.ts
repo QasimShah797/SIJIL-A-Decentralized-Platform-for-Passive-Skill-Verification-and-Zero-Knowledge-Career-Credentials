@@ -818,14 +818,12 @@ Deno.serve(async (req) => {
 
         const durationMinutes = test.durationMinutes || 18;
         const startedAt = new Date();
-        const deadlineAt = new Date(startedAt.getTime() + 30 * 1000);
         return json({
           attemptId: attempt.id,
           title: test.title,
           type: "MCQ",
           durationMinutes,
           startedAt: startedAt.toISOString(),
-          deadlineAt: deadlineAt.toISOString(),
           questions: learnerQuestions,
           skill: skillName,
           classification,

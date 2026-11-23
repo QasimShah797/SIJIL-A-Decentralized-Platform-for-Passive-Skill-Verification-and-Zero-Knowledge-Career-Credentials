@@ -701,6 +701,8 @@ export type Database = {
           last_name: string | null
           linkedin_url: string | null
           portfolio_url: string | null
+          gender: string | null
+          graduation_year: number | null
           profile_completed: boolean
           program: string | null
           skills_summary: string | null
@@ -729,6 +731,8 @@ export type Database = {
           last_name?: string | null
           linkedin_url?: string | null
           portfolio_url?: string | null
+          gender?: string | null
+          graduation_year?: number | null
           profile_completed?: boolean
           program?: string | null
           skills_summary?: string | null
@@ -757,6 +761,8 @@ export type Database = {
           last_name?: string | null
           linkedin_url?: string | null
           portfolio_url?: string | null
+          gender?: string | null
+          graduation_year?: number | null
           profile_completed?: boolean
           program?: string | null
           skills_summary?: string | null
