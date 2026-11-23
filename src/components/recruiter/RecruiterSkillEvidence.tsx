@@ -130,7 +130,7 @@ export function RecruiterCompetencyDetail({
         <div className="xl:col-span-2">
           <div className="space-y-3">
             <div>
-              <h2 className="text-base font-semibold text-[#0f172a]">Request Private Verification</h2>
+              <h2 className="text-base font-semibold text-[#0f172a]">Request Private Skill Confirmation</h2>
               <p className="mt-1 text-sm text-[#64748b]">Practical task score and GitHub activity can be requested. Moodle performance and skill progression are not ready. A request never shows the exact score or commit count.</p>
             </div>
             <AssessmentProofRequestCard presentationId={card.presentationId} />

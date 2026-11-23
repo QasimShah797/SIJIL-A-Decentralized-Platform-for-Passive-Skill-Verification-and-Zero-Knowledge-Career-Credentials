@@ -122,7 +122,7 @@ export default function RecruiterCompare() {
                     <th className="px-4 py-2 text-left">Credentials</th>
                     <th className="px-4 py-2 text-left">Total evidence</th>
                     <th className="px-4 py-2 text-left">Reviews</th>
-                    <th className="px-4 py-2 text-left">Verification</th>
+                    <th className="px-4 py-2 text-left">Skill confirmation</th>
                     <th className="px-4 py-2 text-left"></th>
                   </tr>
                 </thead>

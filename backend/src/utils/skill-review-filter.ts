@@ -1,4 +1,5 @@
 import { supabaseService } from "../services/supabase.service";
+import { declaredCompetencyKey } from "./competency-matching";
 
 export type DeclaredSkillRef = {
   id: string;
@@ -6,7 +7,7 @@ export type DeclaredSkillRef = {
 };
 
 export function normalizeSkillName(value: string): string {
-  return value.trim().toLowerCase();
+  return declaredCompetencyKey(value);
 }
 
 function declaredIds(skills: DeclaredSkillRef[]): Set<string> {

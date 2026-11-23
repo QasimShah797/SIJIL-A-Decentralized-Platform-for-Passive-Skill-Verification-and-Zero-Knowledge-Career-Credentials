@@ -37,7 +37,7 @@ function statusLabel(credential: CredentialView): string {
     return "Anchored";
   }
   if (credential.verification === "verified" || credential.attestation === "attested") {
-    return "Verified";
+    return "Confirmed";
   }
   return credential.verification || credential.attestation || "Issued";
 }

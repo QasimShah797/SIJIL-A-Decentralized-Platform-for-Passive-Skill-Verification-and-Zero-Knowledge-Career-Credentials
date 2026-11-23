@@ -217,7 +217,7 @@ export default function RecruiterSearch() {
                 type="button"
                 className="inline-flex h-9 items-center gap-2 rounded-lg border border-border/70 bg-background px-3 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
-                {statFilter === "verified" ? "Verified" : statFilter === "credentials" ? "With credentials" : "All"}
+                {statFilter === "verified" ? "Confirmed Skills" : statFilter === "credentials" ? "With credentials" : "All"}
                 <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
               </button>
             </DropdownMenuTrigger>
@@ -227,7 +227,7 @@ export default function RecruiterSearch() {
                 onValueChange={(value) => setStatFilter(value as RecruiterStatFilter)}
               >
                 <DropdownMenuRadioItem value="all">All</DropdownMenuRadioItem>
-                <DropdownMenuRadioItem value="verified">Verified</DropdownMenuRadioItem>
+                <DropdownMenuRadioItem value="verified">Confirmed Skills</DropdownMenuRadioItem>
                 <DropdownMenuRadioItem value="credentials">With credentials</DropdownMenuRadioItem>
               </DropdownMenuRadioGroup>
             </DropdownMenuContent>

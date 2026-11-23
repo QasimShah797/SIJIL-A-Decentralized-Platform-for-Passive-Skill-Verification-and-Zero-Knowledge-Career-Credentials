@@ -25,6 +25,7 @@ import {
   type SharedCompetencyVersion,
 } from "@/services/api/recruiter-workspace.api";
 import { readRecruiterShortlist, writeRecruiterShortlist } from "@/components/recruiter/RecruiterDashboardPanels";
+import { aggregateRecruiterDashboardSkillCounts } from "@/lib/recruiter-dashboard-skills";
 import type { CandidateView } from "@/lib/db/candidates";
 import type { ScheduledInterviewView } from "@/lib/interview";
 import { cn } from "@/lib/utils";
@@ -37,9 +38,9 @@ function initials(name: string) {
 }
 
 function verificationLabel(candidate: CandidateView) {
-  if (candidate.attestation === "Approved") return "Disclosed as verified";
+  if (candidate.attestation === "Approved") return "Disclosed as confirmed";
   if (candidate.attestation === "Partial") return "Partly disclosed";
-  return "Verification not disclosed";
+  return "Skill confirmation not disclosed";
 }
 
 function anchorLabel(status: SharedCompetencyVersion["anchorStatus"]) {
@@ -47,25 +48,6 @@ function anchorLabel(status: SharedCompetencyVersion["anchorStatus"]) {
   if (status === "failed") return "Blockchain anchor failed";
   if (status === "unavailable") return "Blockchain anchor unavailable";
   return "Blockchain anchor not requested";
-}
-
-function skillCounts(candidates: CandidateView[]) {
-  const counts = new Map<string, number>();
-  for (const candidate of candidates) {
-    const named = candidate.verifiedSkills?.length
-      ? candidate.verifiedSkills
-      : candidate.searchableSkills?.length
-        ? candidate.searchableSkills
-        : candidate.topSkill && candidate.topSkill !== "—"
-          ? [candidate.topSkill]
-          : [];
-    for (const skill of named) {
-      const label = skill.trim();
-      if (!label) continue;
-      counts.set(label, (counts.get(label) ?? 0) + 1);
-    }
-  }
-  return [...counts.entries()].sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0])).slice(0, 6);
 }
 
 function WelcomeArt() {
@@ -159,7 +141,7 @@ export default function RecruiterDashboard() {
   const practicalCount = openRequests?.filter((row) => row.category === "practical-score").length ?? null;
   const githubCount = openRequests?.filter((row) => row.category === "github-activity").length ?? null;
   const recent = [...candidates].sort((a, b) => Date.parse(b.sharedAt ?? "") - Date.parse(a.sharedAt ?? "")).slice(0, 4);
-  const skills = skillCounts(candidates);
+  const skills = aggregateRecruiterDashboardSkillCounts(candidates);
   const skillMax = Math.max(1, ...skills.map(([, count]) => count));
   const highlights = versions.slice(0, 3);
 
@@ -175,7 +157,7 @@ export default function RecruiterDashboard() {
       <div className="mx-auto max-w-[1440px] space-y-5">
         <header>
           <h1 className="text-[30px] font-semibold leading-tight tracking-tight text-[#0B1F46]">Recruitment Intelligence</h1>
-          <p className="mt-1.5 max-w-3xl text-[15px] leading-6 text-[#52627a]">Discover evidence-based talent, review verified credentials, and track skill development.</p>
+          <p className="mt-1.5 max-w-3xl text-[15px] leading-6 text-[#52627a]">Discover evidence-based talent, review confirmed credentials, and track skill development.</p>
         </header>
 
         <section className="overflow-hidden rounded-3xl bg-gradient-to-br from-[#0B1F46] via-[#163872] to-[#2563EB] text-white shadow-[0_18px_40px_-24px_rgba(11,31,70,0.65)]">
@@ -293,11 +275,11 @@ export default function RecruiterDashboard() {
 
           <div className="rounded-3xl bg-white p-5 shadow-[0_10px_30px_-22px_rgba(11,31,70,0.45)] sm:p-6">
             <h2 className="text-[19px] font-semibold text-[#0B1F46]">Longitudinal Skill Highlights</h2>
-            <p className="mt-1 text-[14px] text-[#64748b]">Verified skill progression from shared credential versions</p>
+            <p className="mt-1 text-[14px] text-[#64748b]">Confirmed skill progression from shared credential versions</p>
             {highlights.length === 0 ? (
               <div className="mt-5 flex items-center gap-4 rounded-2xl bg-[#F4F7FC] px-4 py-5">
                 <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-white text-[#2563EB] shadow-sm"><ShieldCheck className="h-7 w-7" /></span>
-                <p className="text-[15px] leading-6 text-[#52627a]">Verified skill progression will appear here as learners share new credential versions.</p>
+                <p className="text-[15px] leading-6 text-[#52627a]">Confirmed skill progression will appear here as learners share new credential versions.</p>
               </div>
             ) : (
               <ul className="mt-5 space-y-3">

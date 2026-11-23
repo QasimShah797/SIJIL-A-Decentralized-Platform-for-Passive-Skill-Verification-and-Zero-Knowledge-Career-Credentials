@@ -1,5 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import type { CandidateView } from "@/lib/db/candidates";
+import { skillsMatch } from "@/lib/recruiter-skills";
 import { isMissingRelationError } from "@/lib/supabase-errors";
 import { formatSupabaseError } from "@/lib/utils";
 
@@ -55,15 +56,7 @@ export function candidateSkillNames(candidate: CandidateView) {
 
 export function matchJobSkills(required: string[], candidate: CandidateView) {
   const have = candidateSkillNames(candidate);
-  return required.filter((skill) => {
-    const needle = normalizeSkill(skill);
-    if (!needle) return false;
-    return have.some((name) => {
-      const hay = normalizeSkill(name);
-      if (!hay) return false;
-      return hay === needle || hay.includes(needle) || needle.includes(hay);
-    });
-  });
+  return required.filter((skill) => have.some((name) => skillsMatch(name, skill)));
 }
 
 export function matchesForJob(job: RecruiterJob, candidates: CandidateView[]): JobMatch[] {

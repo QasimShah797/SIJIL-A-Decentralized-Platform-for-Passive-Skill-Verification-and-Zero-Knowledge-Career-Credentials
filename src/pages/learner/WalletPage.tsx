@@ -676,7 +676,7 @@ export default function WalletPage() {
   const statusLabel = credentialIssued
     ? "Credential issued"
     : institutionApproved
-      ? "Competency verified"
+      ? "Skill confirmed"
       : `Competency · ${activeRecord?.status ?? "Collected"}`;
   const lastSync = githubSyncedAt ?? moodleSyncedAt ?? activeRecord?.updatedAt ?? null;
   const taskLabel = attempt

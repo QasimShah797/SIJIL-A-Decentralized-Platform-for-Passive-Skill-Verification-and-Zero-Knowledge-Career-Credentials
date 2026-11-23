@@ -36,7 +36,7 @@ describe("wallet share flow", () => {
     renderFlow();
     expect(screen.getByRole("heading", { name: "Share My Achievements" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Share with All SIJIL Recruiters" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Create Public Verification Link" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Create Public Skill Confirmation Link" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Share with a SIJIL recruiter" })).toBeNull();
   });
 
@@ -74,10 +74,10 @@ describe("wallet share flow", () => {
 
   it("creates a public verification link with copy and email delivery", async () => {
     const { onCreatePublicLink, onShareAll, onEmailPublicLink } = renderFlow();
-    fireEvent.click(screen.getByRole("button", { name: "Create Public Verification Link" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create Public Skill Confirmation Link" }));
     fireEvent.click(screen.getByRole("button", { name: /TypeScript/ }));
     fireEvent.click(screen.getByRole("button", { name: "Review public link" }));
-    fireEvent.click(screen.getByLabelText("I agree to share this information through a public verification link."));
+    fireEvent.click(screen.getByLabelText("I agree to share this information through a public skill confirmation link."));
     fireEvent.click(screen.getByRole("button", { name: "Generate public link" }));
     expect(onCreatePublicLink).toHaveBeenCalledWith({
       credentialId: "cred-1",

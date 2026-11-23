@@ -308,7 +308,7 @@ export function AppShell({
         <div className="text-[11px] uppercase tracking-[0.14em] text-sidebar-foreground/60">{role === "recruiter" ? "Recruiter Workspace" : `${roleLabel} workspace`}</div>
         <div className="mt-2">
           <SidebarBrand />
-          {role === "recruiter" ? <p className="mt-1 text-[11px] text-white/55">Verified skills. Trusted talent.</p> : null}
+          {role === "recruiter" ? <p className="mt-1 text-[11px] text-white/55">Confirmed skills. Trusted talent.</p> : null}
         </div>
       </div>
       <div className="flex-1 overflow-y-auto px-3 py-4">

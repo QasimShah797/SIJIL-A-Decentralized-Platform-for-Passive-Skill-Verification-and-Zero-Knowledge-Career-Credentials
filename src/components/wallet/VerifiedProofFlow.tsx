@@ -98,7 +98,7 @@ export function VerifiedProofGuide({
   };
 
   return (
-    <section className="mx-auto w-full max-w-3xl" aria-label="Get verified proof">
+    <section className="mx-auto w-full max-w-3xl" aria-label="Get confirmed proof">
       <Progress active={progress} />
       {error ? <p role="alert" className="mb-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</p> : null}
 

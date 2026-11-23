@@ -184,7 +184,7 @@ export default function CandidateSummary() {
                 ["overview", "Overview"],
                 ["competencies", "Competencies"],
                 ["journey", "Skill growth"],
-                ["verification", "Private verification"],
+                ["verification", "Private skill confirmation"],
               ] as const).map(([id, label]) => (
                 <button
                   key={id}

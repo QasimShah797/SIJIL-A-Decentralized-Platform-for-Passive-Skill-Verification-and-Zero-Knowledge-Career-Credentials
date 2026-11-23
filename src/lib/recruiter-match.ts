@@ -1,4 +1,5 @@
 import type { CandidateView } from "@/lib/db/candidates";
+import { skillsMatch } from "@/lib/recruiter-skills";
 import type { CandidateSkill } from "@/lib/sijil-data";
 
 export type MatchRequirement = {
@@ -153,13 +154,7 @@ function candidateSkillNames(candidate: CandidateView, skills: CandidateSkill[])
 }
 
 function namesMatch(want: string, have: string): boolean {
-  const needle = normalize(want);
-  const hay = normalize(have);
-  if (!needle || !hay) return false;
-  if (hay === needle) return true;
-  if (needle === "java" && hay.includes("javascript")) return false;
-  if (hay === "java" && needle.includes("javascript")) return false;
-  return hasWord(hay, needle) || hasWord(needle, hay);
+  return skillsMatch(want, have);
 }
 
 function skillHits(required: string[], available: string[]): string[] {

@@ -67,7 +67,7 @@ export function PracticalTasksBreadcrumbBar({ didShort }: { didShort?: string })
           Learner
         </Link>
         <ChevronRight className="h-3 w-3" aria-hidden />
-        <span>Verification workspace</span>
+        <span>Skill confirmation workspace</span>
         <ChevronRight className="h-3 w-3" aria-hidden />
         <span className="font-semibold text-[#023E8A]">Practical Tasks</span>
       </nav>

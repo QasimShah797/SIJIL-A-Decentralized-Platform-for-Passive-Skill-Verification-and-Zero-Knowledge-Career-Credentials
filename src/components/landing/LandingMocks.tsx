@@ -34,7 +34,7 @@ export function HeroHubIllustration() {
         style={{ background: BRAND }}
       >
         <div className="flex items-center justify-between">
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-blue-200">Verified Skills</p>
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-blue-200">Confirmed Skills</p>
           <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[9px] font-semibold text-emerald-400">Live</span>
         </div>
         <p className="mt-3 text-xl font-bold text-white">TypeScript</p>
@@ -107,7 +107,7 @@ export function WalletDashboardMock() {
           </div>
           <div className="mt-5 grid grid-cols-3 gap-3">
             {[
-              { label: "Verified Skills", val: "12" },
+              { label: "Confirmed Skills", val: "12" },
               { label: "Badges", val: "8" },
               { label: "Evidence", val: "24" },
             ].map((s) => (

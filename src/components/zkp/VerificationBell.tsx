@@ -11,7 +11,7 @@ export function VerificationBell({ role }: { role: "learner" | "recruiter" }) {
       type="button"
       onClick={() => navigate(destination)}
       className="relative flex h-9 w-9 items-center justify-center rounded-full hover:bg-[#f1f5f9]"
-      aria-label={unread > 0 ? `${unread} verification notifications` : "Verification notifications"}
+      aria-label={unread > 0 ? `${unread} skill confirmation notifications` : "Skill confirmation notifications"}
     >
       <Bell className="h-4 w-4 text-[#334155]" />
       {unread > 0 ? (

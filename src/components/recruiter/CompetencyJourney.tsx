@@ -48,7 +48,7 @@ export function CompetencyJourney({
         <>
           <p className="mt-4 text-sm text-[#334155]">
             {disclosed.length < 2
-              ? "This competency has one verified credential. Future validated updates will appear here when shared."
+              ? "This competency has one confirmed credential. Future validated updates will appear here when shared."
               : `${disclosed.length} disclosed credentials are available for this skill.`}
           </p>
           <ol className="mt-4 space-y-3 border-l border-[#c7d7f5] pl-4">

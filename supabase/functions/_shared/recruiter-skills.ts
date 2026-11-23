@@ -1,3 +1,11 @@
+import {
+  declaredCompetencyKey,
+  declaredCompetencyNamesEqual,
+  githubLanguageToCanonical,
+  isProgrammingLanguageSkill,
+  matchesCompetencyToken,
+} from "./competency-matching.ts";
+
 export type CompetencyMatch = {
   id: string;
   label: string;
@@ -19,22 +27,53 @@ const TAXONOMY: { id: string; label: string; skills: string[] }[] = [
 ];
 
 export function normalizeSkill(value: string): string {
-  return value.toLowerCase().replace(/[^a-z0-9+#]+/g, " ").replace(/\s+/g, " ").trim();
+  return declaredCompetencyKey(value);
 }
 
+function normalizeSemantic(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9+#]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Compare declared competency labels for recruiter search/matching.
+ * Programming languages: exact canonical keys + token rules (no Java ⊂ JavaScript).
+ * Other competencies: case-insensitive equality with controlled substring overlap.
+ */
 export function skillsMatch(left: string, right: string): boolean {
-  const have = normalizeSkill(left);
-  const want = normalizeSkill(right);
-  if (!have || !want) return false;
-  if ((want === "java" || want.startsWith("java ")) && have.includes("javascript")) return false;
-  if ((have === "java" || have.startsWith("java ")) && want.includes("javascript")) return false;
+  const a = left.trim();
+  const b = right.trim();
+  if (!a || !b) return false;
+
+  if (declaredCompetencyNamesEqual(a, b)) return true;
+
+  const aIsLang = isProgrammingLanguageSkill(a);
+  const bIsLang = isProgrammingLanguageSkill(b);
+
+  if (aIsLang || bIsLang) {
+    if (aIsLang && bIsLang) {
+      return githubLanguageToCanonical(a) === githubLanguageToCanonical(b);
+    }
+    if (matchesCompetencyToken(a, b) || matchesCompetencyToken(b, a)) return true;
+    return false;
+  }
+
+  const have = normalizeSemantic(a);
+  const want = normalizeSemantic(b);
   if (have === want) return true;
   if (want.length < 3 || have.length < 3) return false;
   return have.includes(want) || want.includes(have);
 }
 
+function normalizeQuestionText(question: string): string {
+  return normalizeSemantic(question);
+}
+
 export function competencyFromQuestion(question: string): CompetencyMatch {
-  const text = normalizeSkill(question);
+  const text = normalizeQuestionText(question);
   const preferVerified = text.includes("verified");
   const mentioned = TAXONOMY.filter((entry) => {
     if (entry.id === "full-stack") return text.includes("full stack") || text.includes("fullstack");
@@ -154,7 +193,7 @@ export function taxonomySkills(id: string): string[] {
 
 /** Explicit skill names in the question win. Taxonomy expands only when none are named. */
 export function parseMatchQuery(question: string, knownSkills: string[] = []): MatchQuery {
-  const text = normalizeSkill(question);
+  const text = normalizeQuestionText(question);
   const count = parseCountFilter(text);
   if (count) {
     return {

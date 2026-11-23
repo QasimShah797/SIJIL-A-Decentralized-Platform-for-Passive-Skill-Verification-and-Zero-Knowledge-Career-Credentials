@@ -34,7 +34,7 @@ export type ManagedShare = {
 const SHARE_FIELDS = [
   { id: "competency_name", label: "Achievement name" },
   { id: "competency_domain", label: "Subject area" },
-  { id: "verification_status", label: "Verification summary" },
+  { id: "verification_status", label: "Skill confirmation summary" },
   { id: "learner_name", label: "Your name" },
   { id: "learner_institution", label: "Institution" },
   { id: "github_evidence", label: "Project evidence" },
@@ -149,7 +149,7 @@ export function GuidedShareFlow({
   const createPublicLink = async () => {
     if (!consent || selected.length !== 1 || included.length === 0 || working) return;
     if (!onCreatePublicLink) {
-      setError("Public verification links are not available right now.");
+      setError("Public skill confirmation links are not available right now.");
       return;
     }
     setWorking(true);
@@ -230,7 +230,7 @@ export function GuidedShareFlow({
             <div>
               <h1 className="text-2xl font-semibold text-[#0f172a]">Share My Achievements</h1>
               <p className="mt-1 text-sm leading-relaxed text-[#475569]">
-                Choose how to share issued credentials. Sharing with all SIJIL recruiters and creating a public verification link are separate options. You can use both.
+                Choose how to share issued credentials. Sharing with all SIJIL recruiters and creating a public skill confirmation link are separate options. You can use both.
               </p>
             </div>
           </div>
@@ -256,7 +256,7 @@ export function GuidedShareFlow({
             <article className="rounded-2xl border border-[#dbeafe] bg-white p-4 space-y-2">
               <div className="flex items-center gap-2 text-[#023E8A]">
                 <Link2 className="h-4 w-4" />
-                <h2 className="text-sm font-semibold">Create Public Verification Link</h2>
+                <h2 className="text-sm font-semibold">Create Public Skill Confirmation Link</h2>
               </div>
               <p className="text-sm text-[#475569]">
                 Anyone with the link can open only the details you select. No SIJIL account is required. This does not add anyone to a recruiter dashboard.
@@ -267,7 +267,7 @@ export function GuidedShareFlow({
                 className="rounded-xl border-[#bfdbfe]"
                 onClick={() => startMethod("public")}
               >
-                Create Public Verification Link
+                Create Public Skill Confirmation Link
               </Button>
             </article>
           </div>
@@ -366,7 +366,7 @@ export function GuidedShareFlow({
       {step === "choose" && method === "public" ? (
         <div className="space-y-5 rounded-[28px] border border-[#dbeafe] bg-white p-5 shadow-sm sm:p-8">
           <div>
-            <h1 className="text-2xl font-semibold text-[#0f172a]">Create Public Verification Link</h1>
+            <h1 className="text-2xl font-semibold text-[#0f172a]">Create Public Skill Confirmation Link</h1>
             <p className="mt-1 text-sm text-[#475569]">
               Select one issued credential and the information that appears on the public page. Anyone with the link can open it without a SIJIL account.
             </p>
@@ -488,7 +488,7 @@ export function GuidedShareFlow({
 
       {step === "review" && method === "public" ? (
         <div className="space-y-4 rounded-[28px] border border-[#dbeafe] bg-white p-5 shadow-sm sm:p-8">
-          <h1 className="text-2xl font-semibold text-[#0f172a]">Review public verification link</h1>
+          <h1 className="text-2xl font-semibold text-[#0f172a]">Review public skill confirmation link</h1>
           <p className="text-sm text-[#334155]">
             Anyone with the link can open only the selected details for {selected[0]?.title ?? "this credential"}. This does not add them to a recruiter dashboard.
           </p>
@@ -496,7 +496,7 @@ export function GuidedShareFlow({
           <p className="text-sm text-[#475569]">Expires in {expiresInDays} days. Stopping the link later does not delete a copy someone already saved.</p>
           <label className="flex items-start gap-2 text-sm text-[#334155]" htmlFor="public-link-consent">
             <input id="public-link-consent" type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} />
-            I agree to share this information through a public verification link.
+            I agree to share this information through a public skill confirmation link.
           </label>
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-between">
             <Button type="button" variant="ghost" onClick={() => setStep("choose")}>Back</Button>
@@ -523,12 +523,12 @@ export function GuidedShareFlow({
 
       {step === "done" && method === "public" ? (
         <div className="space-y-4 rounded-[28px] border border-emerald-200 bg-white p-5 shadow-sm sm:p-8">
-          <h1 className="text-2xl font-semibold text-[#0f172a]">Public Verification Link Created</h1>
+          <h1 className="text-2xl font-semibold text-[#0f172a]">Public Skill Confirmation Link Created</h1>
           <p className="text-sm text-[#14532d]">
             Anyone with this link can verify the selected credential details without signing in.
           </p>
           <p className="text-sm text-[#334155]">
-            <span className="font-semibold">Credential:</span> {publicSkillName ?? selected[0]?.title ?? "Verified credential"}
+            <span className="font-semibold">Credential:</span> {publicSkillName ?? selected[0]?.title ?? "Confirmed credential"}
           </p>
           {publicUrl ? (
             <div className="space-y-3">
@@ -538,7 +538,7 @@ export function GuidedShareFlow({
               </Button>
               <div className="space-y-2 rounded-2xl border border-[#dbeafe] bg-[#f8fafc] p-4">
                 <h2 className="text-sm font-semibold text-[#023E8A]">Send via Email</h2>
-                <p className="text-sm text-[#475569]">Uses the same verification link. No new share is created.</p>
+                <p className="text-sm text-[#475569]">Uses the same skill confirmation link. No new share is created.</p>
                 <label className="block text-sm text-[#334155]" htmlFor="public-share-email">
                   Recipient email
                   <input
@@ -605,7 +605,7 @@ export function GuidedShareFlow({
                         : share.kind === "direct"
                           ? "Shared with a specific recruiter"
                           : share.kind === "public"
-                            ? "Public verification link active"
+                            ? "Public skill confirmation link active"
                             : "Visible to all SIJIL recruiters"}
                     {share.detail ? ` · ${share.detail}` : ""}
                     {share.sharedAt ? ` · ${new Date(share.sharedAt).toLocaleDateString()}` : ""}

@@ -206,4 +206,16 @@ describe("fallback match ranking", () => {
     expect(skillsMatch("Frontend Development", "frontend")).toBe(true);
     expect(skillsMatch("Java", "JavaScript")).toBe(false);
   });
+
+  it("does not conflate distinct programming languages (recruiter skillsMatch)", () => {
+    expect(skillsMatch("Java", "JAVA")).toBe(true);
+    expect(skillsMatch("Java", "JavaScript")).toBe(false);
+    expect(skillsMatch("JavaScript", "TypeScript")).toBe(false);
+    expect(skillsMatch("Javascript", "typescript")).toBe(false);
+    expect(skillsMatch("C", "C++")).toBe(false);
+    expect(skillsMatch("C", "C#")).toBe(false);
+    expect(skillsMatch("C++", "C#")).toBe(false);
+    expect(skillsMatch("TypeScript", "ts")).toBe(true);
+    expect(skillsMatch("JavaScript", "js")).toBe(true);
+  });
 });

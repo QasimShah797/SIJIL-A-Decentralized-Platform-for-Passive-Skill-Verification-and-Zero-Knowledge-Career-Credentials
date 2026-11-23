@@ -106,7 +106,7 @@ export function ValidationDetailHero({
       {walletReady && (
         <div className="flex max-w-md shrink-0 flex-col gap-2">
           <p className="text-xs text-[#475569]">
-            A verified credential is a signed record of this competency. It uses the evidence SIJIL has already accepted. It does not re-check the original project, course, or review content.
+            A confirmed credential is a signed record of this competency. It uses the evidence SIJIL has already accepted. It does not re-check the original project, course, or review content.
           </p>
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" className="rounded-xl border-[#e2e8f0]" onClick={onOpenWallet}>
@@ -352,7 +352,7 @@ export function ValidationSkillOverviewCard({ summary }: { summary: ValidationSu
       </div>
       {summary.evidencePackageSent && (
         <p className="mt-4 rounded-lg border border-[#bbf7d0] bg-[#ecfdf5] px-3 py-2 text-xs text-[#059669]">
-          Evidence package sent for verification review.
+          Evidence package sent for skill confirmation review.
         </p>
       )}
     </div>
@@ -367,7 +367,7 @@ export function ValidationPipelineCard({ stages }: { stages: StepperStage[] }) {
         <PipelineStepper stages={stages} />
       </div>
       <p className="mt-4 rounded-lg bg-[#f8fafc] px-3 py-2.5 text-xs leading-relaxed text-[#64748b]">
-        <span className="font-semibold text-[#334155]">Verification — </span>
+        <span className="font-semibold text-[#334155]">Skill confirmation — </span>
         {VERIFICATION_STAGE_TOOLTIP}
       </p>
     </div>
@@ -544,7 +544,7 @@ export function ValidationEmptyState({ onGoProfile }: { onGoProfile: () => void 
       <GitBranch className="mb-3 h-9 w-9 text-[#94a3b8]" />
       <p className="font-semibold text-[#0f172a]">No declared competencies yet</p>
       <p className="mt-1 max-w-sm text-sm text-[#64748b]">
-        Declare a skill on your profile first to track its verification pipeline.
+        Declare a skill on your profile first to track its skill confirmation pipeline.
       </p>
       <Button className="mt-4 rounded-xl bg-[#023E8A] hover:bg-[#012A5C]" onClick={onGoProfile}>
         Go to profile
@@ -556,7 +556,7 @@ export function ValidationEmptyState({ onGoProfile }: { onGoProfile: () => void 
 export function ValidationFooter() {
   return (
     <footer className="mt-10 border-t border-[#e2e8f0] pt-6 text-center text-xs text-[#94a3b8]">
-      SIJIL · Learner verification workspace
+      SIJIL · Learner skill confirmation workspace
     </footer>
   );
 }
