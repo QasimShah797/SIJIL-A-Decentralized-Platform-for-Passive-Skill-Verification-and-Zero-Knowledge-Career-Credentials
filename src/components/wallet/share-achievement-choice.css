@@ -1,3 +1,35 @@
+.learner-main-scroll:has(.recruiter-share-success) {
+  background: linear-gradient(145deg, #f8fafc, #f2f7fc);
+}
+
+.learner-main-scroll:has(.recruiter-share-success) > .wallet-refresh-bar {
+  display: none;
+}
+
+.recruiter-share-success-card {
+  display: grid;
+  align-items: center;
+  gap: 1rem;
+  padding: clamp(1.25rem, 3vw, 2rem);
+  border: 1px solid #d8e5f8;
+  border-radius: .85rem;
+  background: #fff;
+  box-shadow: 0 6px 14px #04408a0d;
+}
+
+.recruiter-share-success-art {
+  width: 100%;
+  max-width: 22rem;
+  justify-self: center;
+}
+
+@media (min-width: 768px) {
+  .recruiter-share-success-card {
+    grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
+    min-height: 18.25rem;
+  }
+}
+
 .sac-page {
   width: 100%;
   max-width: 920px;

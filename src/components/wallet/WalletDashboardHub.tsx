@@ -63,30 +63,30 @@ export function WalletDashboardHub({
   };
 
   return (
-    <section className="overflow-hidden rounded-3xl bg-[#faf7ff] shadow-sm" aria-label="Secure wallet">
-      <div className="bg-gradient-to-br from-[#f9f6ff] via-[#f4eeff] to-[#e8ddff] px-5 pb-5 pt-4 sm:px-8">
-        <Link to="/learner/dashboard" className="mb-4 inline-flex items-center gap-1 text-xs font-semibold text-[#4c1bb5]"><ArrowLeft className="h-3.5 w-3.5" /> Back to dashboard</Link>
+    <section className="overflow-hidden rounded-3xl bg-blue-50/50 shadow-sm" aria-label="Secure wallet">
+      <div className="bg-gradient-to-br from-slate-50 via-blue-50 to-blue-100 px-5 pb-5 pt-4 sm:px-8">
+        <Link to="/learner/dashboard" className="mb-4 inline-flex items-center gap-1 text-xs font-semibold text-sijil-blue"><ArrowLeft className="h-3.5 w-3.5" /> Back to dashboard</Link>
         <div className="flex items-center justify-between gap-4">
           <div>
-            <p className="inline-flex rounded-full bg-[#e7d9fc] px-2.5 py-1 text-[10px] font-bold uppercase text-[#281452]">SIJIL wallet</p>
-            <h1 className="mt-2 text-3xl font-bold tracking-tight text-[#171034] sm:text-4xl">My Secure <span className="text-[#581acc]">Wallet</span></h1>
+            <p className="inline-flex rounded-full bg-blue-100 px-2.5 py-1 text-[10px] font-bold uppercase text-blue-950">SIJIL wallet</p>
+            <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl">My Secure <span className="text-sijil-blue">Wallet</span></h1>
           </div>
-          <div aria-hidden="true" className="mr-4 hidden rotate-[-9deg] rounded-3xl bg-gradient-to-br from-[#a278f2] to-[#5418ba] p-4 text-white shadow-lg sm:block lg:mr-16">
+          <div aria-hidden="true" className="mr-4 hidden rotate-[-9deg] rounded-3xl bg-gradient-to-br from-blue-500 to-sijil-blue p-4 text-white shadow-lg sm:block lg:mr-16">
             <Wallet className="h-14 w-14" strokeWidth={1.5} />
           </div>
         </div>
 
         <div className="mt-6 flex flex-col gap-4 rounded-2xl border border-[hsl(var(--sijil-blue)/0.08)] bg-white/90 p-4 sm:flex-row sm:items-center">
-          <div className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl text-white ${active ? "bg-[#059669]" : "bg-[#4f46e5]"}`}>
+          <div className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl text-white ${active ? "bg-[#059669]" : "bg-sijil-blue"}`}>
             {active ? <ShieldCheck className="h-7 w-7" /> : <KeyRound className="h-7 w-7" />}
           </div>
           <div className="min-w-0 flex-1">
             <p className="text-sm font-semibold text-[#0f172a]">Your Digital Identity</p>
             <div className="mt-1 flex min-w-0 items-center gap-2">
-              <p className="truncate font-mono text-xs text-[#4b3973]">
+              <p className="truncate font-mono text-xs text-slate-600">
                 {loading ? "Checking this device…" : did ? shortDid(did) : "No identity on this account yet"}
               </p>
-              {did ? <button type="button" aria-label="Copy identity identifier" className="rounded p-1 text-[#591ecc]" onClick={() => {
+              {did ? <button type="button" aria-label="Copy identity identifier" className="rounded p-1 text-sijil-blue" onClick={() => {
                 void navigator.clipboard.writeText(did).then(() => toast({ title: "Identity identifier copied" }), () => toast({ title: "Could not copy identity identifier" }));
               }}><Copy className="h-4 w-4" /></button> : null}
             </div>
@@ -149,25 +149,25 @@ export function WalletDashboardHub({
       </div>
 
       <div className="grid gap-3 px-5 py-5 sm:grid-cols-2 sm:px-8">
-        <article className="relative rounded-2xl border border-[#e5d8fc] bg-[#eee6fc] p-4 pl-16">
-          <LockKeyhole aria-hidden="true" className="absolute left-4 top-4 h-9 w-9 rounded-xl bg-[#e4d5fc] p-2 text-[#591ecc]" />
+        <article className="relative rounded-2xl border border-blue-100 bg-blue-50 p-4 pl-16">
+          <LockKeyhole aria-hidden="true" className="absolute left-4 top-4 h-9 w-9 rounded-xl bg-blue-100 p-2 text-sijil-blue" />
           <p className="text-xs font-semibold uppercase tracking-wide text-[#64748b]">Identity on this device</p>
           <p className="mt-2 text-2xl font-semibold text-[#0f172a]">{loading ? "…" : identityStatusLabel(status)}</p>
         </article>
-        <article className="relative rounded-2xl border border-[#e5d8fc] bg-[#eee6fc] p-4 pl-16">
-          <Award aria-hidden="true" className="absolute left-4 top-4 h-9 w-9 rounded-xl bg-[#e4d5fc] p-2 text-[#591ecc]" />
-          <p className="text-xs font-semibold uppercase tracking-wide text-[#4f46e5]">Achievements on your account</p>
+        <article className="relative rounded-2xl border border-blue-100 bg-blue-50 p-4 pl-16">
+          <Award aria-hidden="true" className="absolute left-4 top-4 h-9 w-9 rounded-xl bg-blue-100 p-2 text-sijil-blue" />
+          <p className="text-xs font-semibold uppercase tracking-wide text-sijil-blue">Achievements on your account</p>
           <p className="mt-2 text-2xl font-semibold text-[#0f172a]">{credentialsLoading ? "…" : credentials.length}</p>
           <p className="mt-1 text-xs text-[#475569]">Signed credentials already issued to this account.</p>
         </article>
       </div>
 
       <div className="grid gap-3 px-5 pb-2 sm:grid-cols-2 sm:px-8">
-        <Button type="button" className="h-12 rounded-2xl bg-gradient-to-b from-[#7134e4] to-[#4a16aa] text-base text-white hover:brightness-95" onClick={onGetProof}>
+        <Button type="button" className="h-12 rounded-2xl bg-gradient-to-b from-blue-700 to-sijil-blue text-base text-white hover:brightness-95" onClick={onGetProof}>
           <Award className="h-4 w-4" />
           Get Verified Proof
         </Button>
-        <Button type="button" variant="outline" className="h-12 rounded-2xl border-[hsl(var(--sijil-blue)/0.15)] bg-white text-base text-[#312e81]" onClick={onShare}>
+        <Button type="button" variant="outline" className="h-12 rounded-2xl border-[hsl(var(--sijil-blue)/0.15)] bg-white text-base text-sijil-blue" onClick={onShare}>
           <Share2 className="h-4 w-4" />
           Share My Achievements
         </Button>
@@ -175,7 +175,7 @@ export function WalletDashboardHub({
 
       <div className="px-5 py-5 sm:px-8">
         <div className="mb-3 flex items-center justify-between gap-3">
-          <h2 className="flex items-center gap-2 text-base font-bold text-[#171034]"><Layers className="h-4 w-4 text-[#591ecc]" /> Existing Achievements</h2>
+          <h2 className="flex items-center gap-2 text-base font-bold text-slate-950"><Layers className="h-4 w-4 text-sijil-blue" /> Existing Achievements</h2>
         </div>
         {credentialsLoading ? <p className="text-sm text-[#64748b]">Checking issued credentials…</p> : null}
         {!credentialsLoading && credentials.length === 0 ? (
@@ -189,13 +189,13 @@ export function WalletDashboardHub({
               <li key={credential.id}>
                 <button
                   type="button"
-                  className="flex w-full items-center gap-3 rounded-2xl border border-[#e2e8f0] bg-white px-4 py-3 text-left transition hover:border-[#c4b5fd] hover:bg-[#faf8ff]"
+                  className="flex w-full items-center gap-3 rounded-2xl border border-[#e2e8f0] bg-white px-4 py-3 text-left transition hover:border-blue-200 hover:bg-blue-50"
                   onClick={() => onCredentialClick?.(credential.name, credential.id)}
                 >
                   <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#fff7ed] text-[#c2410c]">
                     <Award className="h-4 w-4" />
                   </span>
-                  <span className="min-w-0 flex-1 truncate text-sm font-semibold text-[#171034]">{credential.name}</span>
+                  <span className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-950">{credential.name}</span>
                   <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-[#ddf5eb] px-2 py-1 text-xs font-semibold text-[#067a56]"><CheckCircle2 className="h-3 w-3" /> Issued</span>
                 </button>
               </li>

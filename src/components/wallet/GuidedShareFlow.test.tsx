@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import { MemoryRouter } from "react-router-dom";
 import { GuidedShareFlow, type GuidedShareCredential } from "./GuidedShareFlow";
 import type { EvidenceShareAvailability } from "@/lib/evidence-share-availability";
 
@@ -36,15 +37,17 @@ function renderFlow(overrides: Partial<Parameters<typeof GuidedShareFlow>[0]> = 
   }));
   const onEmailPublicLink = vi.fn(async () => undefined);
   render(
-    <GuidedShareFlow
-      credentials={[credential]}
-      learnerName="eesha"
-      onBack={vi.fn()}
-      onShareAll={onShareAll}
-      onCreatePublicLink={onCreatePublicLink}
-      onEmailPublicLink={onEmailPublicLink}
-      {...overrides}
-    />,
+    <MemoryRouter>
+      <GuidedShareFlow
+        credentials={[credential]}
+        learnerName="eesha"
+        onBack={vi.fn()}
+        onShareAll={onShareAll}
+        onCreatePublicLink={onCreatePublicLink}
+        onEmailPublicLink={onEmailPublicLink}
+        {...overrides}
+      />
+    </MemoryRouter>,
   );
   return { onShareAll, onCreatePublicLink, onEmailPublicLink };
 }
@@ -73,7 +76,11 @@ describe("wallet share flow", () => {
     expect(onShareAll).toHaveBeenCalled();
     const shareArg = onShareAll.mock.calls[0]?.[0];
     expect(shareArg?.evidenceModes).toMatchObject({ practical_task_result: "details", github_evidence: "omit" });
-    expect(await screen.findByText("Your achievements are now visible to all SIJIL recruiters.")).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Visible to SIJIL Recruiters" })).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("Status: Visible");
+    expect(screen.getByRole("link", { name: "Back to Dashboard" })).toHaveAttribute("href", "/learner/dashboard");
+    fireEvent.click(screen.getByRole("button", { name: "Create Another Share" }));
+    expect(screen.getByRole("heading", { name: "Share My Achievement" })).toBeInTheDocument();
   });
 
   it("hides Moodle and Peer cards when TypeScript has no linked evidence", () => {

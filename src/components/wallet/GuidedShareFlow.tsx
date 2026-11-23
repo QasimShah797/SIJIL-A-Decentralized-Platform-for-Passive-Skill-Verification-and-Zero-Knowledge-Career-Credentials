@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   ArrowLeft,
   ArrowRight,
@@ -10,9 +11,11 @@ import {
   Info,
   Link2,
   Mail,
+  Plus,
   Send,
   Share2,
   UserRound,
+  Wallet,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SHARE_EXPIRY_DAYS } from "@/lib/sharing/guide";
@@ -271,7 +274,7 @@ export function GuidedShareFlow({
   return (
     <section
       id="share-achievements"
-      className={`mx-auto w-full space-y-4 ${step === "review" ? "max-w-6xl" : "max-w-3xl"}`}
+      className={`mx-auto w-full space-y-4 ${step === "review" || (step === "done" && method === "all-recruiters") ? "max-w-6xl" : "max-w-3xl"}`}
       aria-label="Share my achievements"
     >
       {error ? <p role="alert" className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</p> : null}
@@ -425,16 +428,38 @@ export function GuidedShareFlow({
       ) : null}
 
       {step === "done" && method === "all-recruiters" ? (
-        <div className="space-y-4 rounded-[28px] border border-emerald-200 bg-white p-5 shadow-sm sm:p-8">
-          <h1 className="text-2xl font-semibold text-[#0f172a]">Visible to all SIJIL recruiters</h1>
-          <p className="text-sm text-[#14532d]">Your achievements are now visible to all SIJIL recruiters.</p>
-          <p className="text-sm text-[#475569]">Status: Visible to all SIJIL recruiters. This is not a public link. You can stop it below. A copy someone already saved is not deleted.</p>
-          <div className="flex flex-wrap gap-2">
-            <Button type="button" variant="outline" onClick={() => { setMethod(null); setStep("method"); resetSelection(); }}>
-              Create another share
-            </Button>
-            <Button type="button" variant="ghost" onClick={onBack}>Back to wallet</Button>
-          </div>
+        <div className="recruiter-share-success">
+          <Link className="sac-back text-sm" to="/learner/dashboard">
+            <ArrowLeft className="h-4 w-4" aria-hidden="true" /> Back to Dashboard
+          </Link>
+          <header className="mb-6 flex items-center gap-4">
+            <div className="grid size-12 shrink-0 place-items-center rounded-xl bg-sijil-blue text-white">
+              <Share2 className="size-6" aria-hidden="true" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold tracking-tight text-slate-950">Share with Recruiters</h1>
+              <p className="mt-1 text-sm text-slate-700">Control who can view your achievements and profile.</p>
+            </div>
+          </header>
+          <article className="recruiter-share-success-card">
+            <div>
+              <h2 className="text-2xl font-extrabold tracking-tight text-slate-950 sm:text-3xl">Visible to SIJIL Recruiters</h2>
+              <p className="mt-3 text-base text-slate-700">Your verified achievements are now visible to all SIJIL recruiters.</p>
+              <p role="status" className="mt-7 inline-flex items-center gap-2 rounded-full bg-green-100 px-3 py-2 text-sm font-bold text-green-800">
+                <Check className="size-5 rounded-full bg-green-600 p-0.5 text-white" aria-hidden="true" />
+                Status: Visible
+              </p>
+              <div className="mt-8 flex flex-wrap gap-3 sm:gap-5">
+                <Button type="button" className="h-11 gap-2 rounded-xl bg-sijil-blue px-5 font-semibold text-white hover:bg-sijil-blue/90" onClick={() => { setMethod(null); setStep("method"); resetSelection(); }}>
+                  <Plus className="size-5" aria-hidden="true" /> Create Another Share
+                </Button>
+                <Button type="button" variant="outline" className="h-11 gap-2 rounded-xl border-blue-200 bg-white px-5 font-semibold text-sijil-blue hover:bg-blue-50 hover:text-sijil-blue" onClick={onBack}>
+                  <Wallet className="size-5" aria-hidden="true" /> Back to Wallet
+                </Button>
+              </div>
+            </div>
+            <img className="recruiter-share-success-art" src="/recruiter-share-success.png" alt="" />
+          </article>
         </div>
       ) : null}
 

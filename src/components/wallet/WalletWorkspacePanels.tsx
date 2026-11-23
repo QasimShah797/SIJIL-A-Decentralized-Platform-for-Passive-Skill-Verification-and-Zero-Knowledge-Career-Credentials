@@ -902,7 +902,7 @@ export function WalletRefreshBar({
   loading: boolean;
 }) {
   return (
-    <div className="mb-4 flex items-center justify-between">
+    <div className="wallet-refresh-bar mb-4 flex items-center justify-between">
       <Link to="/learner/profile" className="text-xs font-medium text-sijil-blue hover:underline">
         Back to dashboard
       </Link>

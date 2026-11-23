@@ -15,15 +15,12 @@ import {
   Info,
   Laptop,
   Layers,
-  Link2,
-  Share2,
   Search,
   ShieldCheck,
   UserRound,
   Users,
   Wallet,
 } from "lucide-react";
-import { Switch } from "@/components/ui/switch";
 import { PasswordInput } from "@/components/auth/PasswordInput";
 import { toast } from "@/hooks/use-toast";
 import { useDeclaredSkills } from "@/hooks/useLearnerData";
@@ -115,15 +112,6 @@ function formatDate(value: string | null | undefined): string {
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
-function formatDateTime(value: string | null | undefined): string {
-  if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "—";
-  const day = date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-  const time = date.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true });
-  return `${day} • ${time}`;
-}
-
 function shortDid(did: string): string {
   if (did.length <= 22) return did;
   return `${did.slice(0, 12)}...${did.slice(-6)}`;
@@ -195,11 +183,8 @@ export function VerifiedProofGuide({
   const [unlockError, setUnlockError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [issued, setIssued] = useState<CredentialView | null>(null);
-  const [accessLinkOn, setAccessLinkOn] = useState(true);
-  const [accessLinkCreatedAt, setAccessLinkCreatedAt] = useState<string | null>(null);
 
   const selected = items.find((item) => item.skillId === selectedId) ?? null;
-  const theme = step === "confirm" ? "blue" : "purple";
   const progress = step === "success" ? 3 : step === "confirm" ? 2 : step === "review" ? 1 : 0;
   const displayName = (learnerName || "Learner").trim() || "Learner";
 
@@ -220,7 +205,6 @@ export function VerifiedProofGuide({
         return;
       }
       setIssued(created);
-      if (accessLinkOn) setAccessLinkCreatedAt(new Date().toISOString());
       setStep("success");
     } catch (issueError) {
       setError(issueError instanceof Error ? issueError.message : "Could not issue credential.");
@@ -274,7 +258,7 @@ export function VerifiedProofGuide({
   );
 
   return (
-    <section className={`vpf vpf-theme-${theme}${step === "choose" ? " vpf-choose" : step === "review" ? " vpf-choose vpf-review" : ""}`} aria-label="Get verified proof">
+    <section className={`vpf vpf-theme-blue${step === "choose" ? " vpf-choose" : step === "review" ? " vpf-choose vpf-review" : ""}`} aria-label="Get verified proof">
       {step === "choose" || step === "review" ? (
         <header className="vpf-choose-header">
           {step === "choose" ? (
@@ -289,7 +273,7 @@ export function VerifiedProofGuide({
               <p className="vpf-hero-sub">
                 {step === "choose" ? <>
                   Select the achievement you want to digitally sign with your identity.
-                  <br />A signed credential confirms that you have reviewed and approve it for sharing.
+                  <br />SIJIL adds the signed credential to your wallet.
                 </> : "Review the information and supporting evidence before issuing this credential."}
               </p>
             </div>
@@ -437,7 +421,7 @@ export function VerifiedProofGuide({
               <div className="vpf-warn">
                 <p className="font-semibold">This achievement is not ready to issue.</p>
                 <p className="mt-1">Remaining step: {selected.nextStep}</p>
-                <Link className="mt-3 inline-flex font-semibold text-[#5b21b6] underline" to={`/learner/validation/${selected.skillId}`}>
+                <Link className="mt-3 inline-flex font-semibold text-sijil-blue underline" to={`/learner/validation/${selected.skillId}`}>
                   Open Competency Progress
                 </Link>
               </div>
@@ -492,7 +476,7 @@ export function VerifiedProofGuide({
           <h2 className="vpf-section-title"><UserRound className="h-4 w-4" /> Recipient</h2>
           <div className="vpf-panel vpf-recipient">
             <div className="vpf-recipient-main">
-              <span className="vpf-share-icon"><UserRound className="h-4 w-4" /></span>
+              <span className="vpf-recipient-icon"><UserRound className="h-4 w-4" /></span>
               <div>
                 <p className="vpf-item-title">You (Self)</p>
                 <p className="vpf-item-sub">Learner Wallet</p>
@@ -532,40 +516,6 @@ export function VerifiedProofGuide({
                 <span className="vpf-badge vpf-badge-ready mr-2">{sourceCount(selected.sources)}</span>
                 {friendlySources(selected.sources)}
               </p>
-            </div>
-          </div>
-
-          <h2 className="vpf-section-title"><Share2 className="h-4 w-4" /> Sharing Options</h2>
-          <div className="vpf-share-list">
-            <button
-              type="button"
-              className="vpf-share-row"
-              onClick={() => navigate("/learner/wallet?panel=share")}
-            >
-              <span className="vpf-share-icon"><Users className="h-4 w-4" /></span>
-              <span className="vpf-item-copy">
-                <p className="vpf-item-title">Share with a Recruiter</p>
-                <p className="vpf-item-sub">Send this credential directly to a recruiter or organization.</p>
-              </span>
-              <span className="vpf-not-shared">Not Shared</span>
-              <ChevronRight className="h-4 w-4 text-[#94a3b8]" />
-            </button>
-            <div className="vpf-share-row" style={{ cursor: "default" }}>
-              <span className="vpf-share-icon"><Link2 className="h-4 w-4" /></span>
-              <span className="vpf-item-copy">
-                <p className="vpf-item-title">Credential Access Link</p>
-                <p className="vpf-item-sub">A secure link to view this credential online.</p>
-                <p className="vpf-item-sub" style={{ marginTop: 4 }}>
-                  {accessLinkOn
-                    ? `Created: ${formatDateTime(accessLinkCreatedAt ?? new Date().toISOString())}`
-                    : "No active link"}
-                </p>
-              </span>
-              <Switch
-                checked={accessLinkOn}
-                onCheckedChange={setAccessLinkOn}
-                aria-label="Toggle credential access link"
-              />
             </div>
           </div>
 
