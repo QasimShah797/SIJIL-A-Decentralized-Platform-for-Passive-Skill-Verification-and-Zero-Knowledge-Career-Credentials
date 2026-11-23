@@ -223,7 +223,7 @@ export function ZkpProofCard({
           <dd>The recruiter chooses a percentage. The proof says whether you meet it.</dd>
         </div>
         <div>
-          <dt className="font-medium">Verified proof</dt>
+          <dt className="font-medium">Confirmed proof</dt>
           <dd>Shown only after the proof checks on this device and the server accepts the request.</dd>
         </div>
         <div>

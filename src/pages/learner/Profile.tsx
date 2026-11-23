@@ -41,6 +41,7 @@ import { toast } from "@/hooks/use-toast";
 import { cn, formatSupabaseError } from "@/lib/utils";
 import { listOpenJobsForLearners, matchJobSkills, type RecruiterJob } from "@/lib/recruiter-jobs";
 import type { CandidateView } from "@/lib/db/candidates";
+import { CONFIRMED_LABEL } from "@/lib/skill-confirmation-copy";
 
 export default function LearnerProfile() {
   const navigate = useNavigate();
@@ -319,12 +320,12 @@ export default function LearnerProfile() {
         <div className="grid gap-4 lg:grid-cols-2">
           <div className="learner-stat-card p-6">
             <h2 className="text-base font-semibold text-sijil-blue">Competency Progress</h2>
-            <p className="text-xs text-[#64748b]">Verified · In Progress · Not Started</p>
+            <p className="text-xs text-[#64748b]">{CONFIRMED_LABEL} · In Progress · Not Started</p>
             <div className="mt-4 flex flex-col items-center gap-4 sm:flex-row">
               <DonutChart {...buckets} />
               <ul className="space-y-2 text-sm">
                 {[
-                  { label: "Verified", count: buckets.verified, color: "bg-[#14b8a6]" },
+                  { label: CONFIRMED_LABEL, count: buckets.verified, color: "bg-[#14b8a6]" },
                   { label: "In Progress", count: buckets.progress, color: "bg-sijil-blue" },
                   { label: "Not Started", count: buckets.idle, color: "bg-[#cbd5e1]" },
                 ].map(({ label, count, color }) => (

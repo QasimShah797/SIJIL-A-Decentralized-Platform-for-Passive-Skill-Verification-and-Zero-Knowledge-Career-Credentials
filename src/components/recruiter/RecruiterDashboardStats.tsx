@@ -73,7 +73,7 @@ export function RecruiterDashboardStats({
     tint: number;
   }[] = [
     { id: "all", label: "Directory", value: candidates.length, hint: "Learners with shared profiles", icon: Users, tint: 0 },
-    { id: "verified", label: "Verified", value: verified, hint: ZKP_UI_ENABLED ? "Approved disclosure or confirmed ZKP" : "Approved disclosure", icon: ShieldCheck, tint: 1 },
+    { id: "verified", label: "Confirmed Skills", value: verified, hint: ZKP_UI_ENABLED ? "Approved disclosure or confirmed ZKP" : "Approved disclosure", icon: ShieldCheck, tint: 1 },
     { id: "zkp", label: "Confirmed ZKP", value: confirmedZkp, hint: "Private results verified cryptographically", icon: BadgeCheck, tint: 3 },
     { id: "credentials", label: "Credentials", value: credentials, hint: "Active shared competency packs", icon: Wallet, tint: 2 },
   ];

@@ -27,6 +27,7 @@ import {
   type WalletCompetencyDetailView,
 } from "@/services/api/wallet.api";
 import { useLearnerProfile } from "@/hooks/useLearnerData";
+import { displaySkillStatusValue } from "@/lib/skill-confirmation-copy";
 
 const SHARE_FIELD_OPTIONS: Array<{
   id: WalletShareFieldId;
@@ -36,7 +37,7 @@ const SHARE_FIELD_OPTIONS: Array<{
   { id: "competency_name", label: "Competency name", description: "Share the declared competency name." },
   { id: "competency_domain", label: "Competency domain", description: "Share the competency category or domain." },
   { id: "competency_description", label: "Competency description", description: "Share the learner-provided competency description." },
-  { id: "verification_status", label: "Verification status", description: "Share SIJIL's current competency verification summary." },
+  { id: "verification_status", label: "Skill status", description: "Share SIJIL's current skill confirmation summary." },
   { id: "practical_task_result", label: "Practical task result", description: "Share the latest practical task status and score summary." },
   { id: "github_evidence", label: "GitHub evidence", description: "Share linked repositories, activities, and GitHub review evidence." },
   { id: "lms_evidence", label: "LMS evidence", description: "Share Moodle or LMS coursework, assignments, and grades." },

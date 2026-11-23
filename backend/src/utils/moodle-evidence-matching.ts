@@ -1,12 +1,116 @@
+/**
+ * Backend mirror of src/lib Moodle competency matching (Phase 1 Option B).
+ * Keep language-token rules aligned with moodle-competency-content-matching.ts.
+ */
+
+const MOODLE_CONTENT_MATCH_MAX_CHARS = 8_000;
+
 export function normalizedCompetencyText(value: unknown): string {
-  return String(value ?? "").trim().toLowerCase();
+  return String(value ?? "")
+    .normalize("NFKC")
+    .replace(/[\u0000-\u001F\u007F]/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+export function moodleHtmlToPlainText(raw: unknown, maxChars = MOODLE_CONTENT_MATCH_MAX_CHARS): string {
+  if (raw == null) return "";
+  const asString = typeof raw === "string" ? raw : String(raw);
+  return asString
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/&apos;/gi, "'")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, maxChars);
+}
+
+function candidatePlainText(candidate: unknown): string {
+  if (typeof candidate === "string" && candidate.trim()) {
+    return moodleHtmlToPlainText(candidate);
+  }
+  if (candidate && typeof candidate === "object") {
+    const text = (candidate as Record<string, unknown>).text;
+    if (typeof text === "string" && text.trim()) {
+      return moodleHtmlToPlainText(text);
+    }
+  }
+  return "";
+}
+
+/** Supports intro_text, raw.intro, raw.assign.intro, raw.modAssign.intro (merged path). */
+export function extractMoodleAssignmentIntroText(raw: unknown): string {
+  if (!raw || typeof raw !== "object") return "";
+  const row = raw as Record<string, unknown>;
+  if (typeof row.intro_text === "string" && row.intro_text.trim()) {
+    return moodleHtmlToPlainText(row.intro_text);
+  }
+
+  const assign = row.assign && typeof row.assign === "object"
+    ? (row.assign as Record<string, unknown>)
+    : null;
+  const modAssign = (
+    (row.modAssign && typeof row.modAssign === "object" ? row.modAssign : null)
+    || (assign?.modAssign && typeof assign.modAssign === "object" ? assign.modAssign : null)
+  ) as Record<string, unknown> | null;
+
+  const buckets: Array<Record<string, unknown> | null> = [modAssign, assign, row];
+  const fieldNames = ["intro", "description", "introeditor"] as const;
+
+  for (const bucket of buckets) {
+    if (!bucket) continue;
+    for (const field of fieldNames) {
+      const plain = candidatePlainText(bucket[field]);
+      if (plain) return plain;
+    }
+    if (bucket.modAssign && typeof bucket.modAssign === "object") {
+      const nested = bucket.modAssign as Record<string, unknown>;
+      for (const field of fieldNames) {
+        const plain = candidatePlainText(nested[field]);
+        if (plain) return plain;
+      }
+    }
+  }
+  return "";
 }
 
 export function matchesCompetency(value: unknown, competencyName: string): boolean {
-  const left = normalizedCompetencyText(value);
-  const right = normalizedCompetencyText(competencyName);
-  if (!left || !right) return false;
-  return left === right || left.includes(right) || right.includes(left);
+  const text = normalizedCompetencyText(value);
+  const skill = normalizedCompetencyText(competencyName);
+  if (!text || !skill) return false;
+
+  const token = (pattern: string) => new RegExp(`(?:^|[^a-z0-9_])(?:${pattern})(?=[^a-z0-9_]|$)`, "i");
+
+  if (skill === "java") return token("java(?!script)").test(text);
+  if (skill === "javascript" || skill === "js") {
+    return token("javascript").test(text) || token("node\\.?js").test(text) || token("js").test(text);
+  }
+  if (skill === "typescript" || skill === "ts") {
+    return token("typescript").test(text) || token("ts").test(text);
+  }
+  if (skill === "c++" || skill === "cpp") {
+    return token("c\\+\\+").test(text) || token("cpp").test(text);
+  }
+  if (skill === "c#" || skill === "csharp") {
+    return token("c#").test(text) || token("csharp").test(text);
+  }
+  if (skill === "c") return token("c(?!\\+\\+|#|ss|at)").test(text);
+  if (skill === "python" || skill === "py") {
+    return token("python").test(text) || token("py").test(text);
+  }
+  if (skill === "go" || skill === "golang") {
+    return token("golang").test(text) || token("go(?:lang)?").test(text);
+  }
+  if (skill === "r") return token("r").test(text);
+
+  return text === skill || text.includes(skill) || skill.includes(text);
 }
 
 export function matchesCompetencyTags(tags: unknown, competencyName: string): boolean {
@@ -46,8 +150,16 @@ export function moodleAssignmentMatchesSkill(
   row: Record<string, unknown>,
   skillName: string,
 ): boolean {
+  const intro = extractMoodleAssignmentIntroText(row.raw)
+    || moodleHtmlToPlainText(row.intro)
+    || moodleHtmlToPlainText(row.intro_text);
+  const submissionText = typeof row.submission_text === "string"
+    ? moodleHtmlToPlainText(row.submission_text)
+    : "";
   return matchesCompetencyTags(row.competency_tags, skillName)
-    || matchesCompetency(row.name, skillName);
+    || matchesCompetency(row.name, skillName)
+    || matchesCompetency(intro, skillName)
+    || matchesCompetency(submissionText, skillName);
 }
 
 export function moodleCourseMatchesSkill(
