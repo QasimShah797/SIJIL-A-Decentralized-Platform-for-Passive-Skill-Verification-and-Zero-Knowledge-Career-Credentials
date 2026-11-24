@@ -65,6 +65,14 @@ export function SignedPresentationCard({ onBack }: { onBack: () => void }) {
   const shareCredentials = useMemo(() => credentials.map((credential) => {
     const title = credential.skill !== "—" ? credential.skill : credential.name;
     const record = findUniqueWalletSkill(walletRows ?? [], title);
+    const repos = record?.evidencePackage.github.repos ?? [];
+    const attempt = record?.evidencePackage.practicalTask.latestAttempt ?? record?.evidencePackage.practicalTask.attemptHistory[0];
+    const hasCommitCounts = repos.some((repo) => typeof repo.learner_commit_count === "number");
+    const hasCommitDates = repos.some((repo) => typeof repo.learner_last_commit_at === "string");
+    const hasMarks = attempt?.correctCount != null && (attempt.totalQuestions ?? 0) > 0;
+    const hasPercentage = attempt?.scorePercent != null;
+    const githubMetrics = [hasCommitCounts && "learner commit counts", hasCommitDates && "latest commit dates"].filter(Boolean).join(" and ");
+    const assessmentMetrics = [hasMarks && "latest marks", hasPercentage && "percentage"].filter(Boolean).join(" and ");
     return {
       id: credential.id,
       title,
@@ -72,6 +80,16 @@ export function SignedPresentationCard({ onBack }: { onBack: () => void }) {
       status: statusLabel(credential),
       issuedAt: credential.validFrom,
       evidenceAvailability: assessEvidenceShareAvailability(record?.evidencePackage),
+      recruiterEvidencePreview: record ? {
+        github_evidence: !repos.length ? "GitHub activity summary" : githubMetrics
+          ? `Repositories, languages, links and available ${githubMetrics}`
+          : "Repositories, languages and links. SIJIL checks GitHub for missing commit metrics when you share.",
+        practical_task_result: assessmentMetrics
+          ? `Completed attempt count and ${assessmentMetrics}`
+          : "Completed attempt count. Marks and percentage unavailable.",
+        lms_evidence: "Course and assignment counts",
+        peer_reviews: "Review count",
+      } : undefined,
     };
   }), [credentials, walletRows]);
 

@@ -18,19 +18,19 @@ const SETTINGS: Array<{ key: Key; id: string; label: string; off: string; on: st
     key: "shareExactAssessmentMarks",
     id: "share-exact-marks",
     label: "Share exact assessment marks",
-    off: "Recruiters see only whether you met the 60% policy.",
-    on: "Authorized recruiters with your share link also see your exact marks.",
+    off: "Recruiters can see the attempt count when you share the assessment.",
+    on: "Authorized recruiters can also see your latest marks and percentage when included in your share.",
   },
   {
     key: "shareExactGithubCommitCount",
     id: "share-exact-commits",
     label: "Share exact GitHub commit count",
-    off: "Recruiters see only whether a repository met the 70-commit policy.",
-    on: "Authorized recruiters with your share link also see exact commit counts.",
+    off: "Recruiters can see repository details when you share GitHub activity.",
+    on: "Authorized recruiters can also see your commit counts and latest commit dates when included in your share.",
   },
 ];
 
-export function WalletPrivacySettingsCard() {
+export function WalletPrivacySettingsCard({ onSaved }: { onSaved?: (prefs: DisclosurePreferences) => void }) {
   const [prefs, setPrefs] = useState<DisclosurePreferences | null>(null);
   const [saving, setSaving] = useState<Key | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -45,7 +45,9 @@ export function WalletPrivacySettingsCard() {
     setSaving(key);
     setError(null);
     try {
-      setPrefs(await updateDisclosurePreferencesApi({ [key]: value }));
+      const updated = await updateDisclosurePreferencesApi({ [key]: value });
+      setPrefs(updated);
+      onSaved?.(updated);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save this setting.");
     } finally {

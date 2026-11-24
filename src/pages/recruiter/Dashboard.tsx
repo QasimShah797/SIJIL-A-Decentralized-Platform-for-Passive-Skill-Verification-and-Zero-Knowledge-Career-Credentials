@@ -1,22 +1,14 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import {
-  BadgeCheck,
-  CalendarClock,
-  ShieldCheck,
-  Sparkles,
-  Users,
-} from "lucide-react";
+import { ArrowRight, Bookmark, CalendarDays, Sparkles } from "lucide-react";
 import { RecruiterWorkspaceShell } from "@/components/sijil/RecruiterWorkspaceShell";
 import { PageSkeleton } from "@/components/sijil/SkeletonLoader";
-import { StatCard } from "@/components/learner/OverviewDashboardPanels";
 import { SijilMatchBot } from "@/components/recruiter/SijilMatchBot";
 import {
-  RecruiterDashboardRail,
+  isUpcomingInterview,
   readRecruiterShortlist,
   writeRecruiterShortlist,
 } from "@/components/recruiter/RecruiterDashboardPanels";
-import { formatTimestamp } from "@/components/zkp/policy-outcome";
 import { useCandidates } from "@/hooks/useCandidates";
 import { useRecruiterProfile } from "@/hooks/useRecruiterProfile";
 import { listInterviewsApi } from "@/services/api/interview.api";
@@ -25,7 +17,7 @@ import {
   listShortlist,
   saveShortlist,
 } from "@/services/api/recruiter-workspace.api";
-import type { CandidateView } from "@/lib/db/candidates";
+import "./recruiter-dashboard.css";
 import type { ScheduledInterviewView } from "@/lib/interview";
 import { cn } from "@/lib/utils";
 
@@ -34,10 +26,10 @@ function initials(name: string) {
   return (parts[0]?.[0] ?? "C").concat(parts[1]?.[0] ?? "").toUpperCase();
 }
 
-function verificationLabel(candidate: CandidateView) {
-  if (candidate.attestation === "Approved") return "Disclosed as verified";
-  if (candidate.attestation === "Partial") return "Partly disclosed";
-  return "Verification not disclosed";
+function formatSharedDate(value: string | null | undefined) {
+  const date = new Date(value ?? "");
+  if (!Number.isFinite(date.getTime())) return "Unavailable";
+  return new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric" }).format(date);
 }
 
 export default function RecruiterDashboard() {
@@ -47,7 +39,9 @@ export default function RecruiterDashboard() {
   const [interviews, setInterviews] = useState<ScheduledInterviewView[]>([]);
   const [shortlistMode, setShortlistMode] = useState<"account" | "browser" | "unknown">("unknown");
   const [selected, setSelected] = useState<string[]>(() => readRecruiterShortlist());
+  const [updatingShortlist, setUpdatingShortlist] = useState(false);
   const [shortlistError, setShortlistError] = useState<string | null>(null);
+  const [tab, setTab] = useState<"recent" | "shortlist">("recent");
   const [focusIds, setFocusIds] = useState<string[] | null>(null);
 
   useEffect(() => {
@@ -68,6 +62,7 @@ export default function RecruiterDashboard() {
   }, []);
 
   const toggleShortlist = (id: string) => {
+    if (updatingShortlist || shortlistMode === "unknown") return;
     setShortlistError(null);
     const current = selected;
     const next = current.includes(id)
@@ -75,251 +70,148 @@ export default function RecruiterDashboard() {
       : current.length >= 4
         ? current
         : [...current, id];
+    if (next.length === current.length) {
+      setShortlistError("You can shortlist up to four candidates.");
+      return;
+    }
     setSelected(next);
     writeRecruiterShortlist(next);
-    if (shortlistMode === "account" && next.length !== current.length) {
+    if (shortlistMode === "account") {
+      setUpdatingShortlist(true);
       const action = current.includes(id) ? deleteShortlist(id) : saveShortlist(id);
       void action.catch(() => {
         setSelected(current);
         writeRecruiterShortlist(current);
         setShortlistError("Could not update shortlist.");
-      });
+      }).finally(() => setUpdatingShortlist(false));
     }
   };
 
   if (loading) {
     return (
-      <RecruiterWorkspaceShell>
+      <RecruiterWorkspaceShell dashboardLayout>
         <PageSkeleton rows={4} />
       </RecruiterWorkspaceShell>
     );
   }
 
-  const credentialTotal = candidates.reduce((total, candidate) => total + (candidate.credentialCount ?? 0), 0);
-  const upcoming = interviews.filter((row) => Date.parse(row.scheduledAt) >= Date.now());
-  const recentAll = [...candidates]
-    .sort((a, b) => Date.parse(b.sharedAt ?? "") - Date.parse(a.sharedAt ?? ""))
-    .filter((candidate) => !focusIds || focusIds.includes(candidate.id));
-  const recent = recentAll.slice(0, 3);
-
-  const kpis = [
-    {
-      label: "Learners",
-      value: candidates.length,
-      hint: "Shared with you",
-      to: "/recruiter/search",
-      icon: Users,
-      tint: 0,
-    },
-    {
-      label: "Credentials",
-      value: credentialTotal,
-      hint: "Active evidence packs",
-      to: "/recruiter/search",
-      icon: ShieldCheck,
-      tint: 1,
-    },
-    {
-      label: "Compare",
-      value: selected.length,
-      hint: "Shortlisted now",
-      to: "/recruiter/compare",
-      icon: BadgeCheck,
-      tint: 2,
-    },
-    {
-      label: "Interviews",
-      value: upcoming.length,
-      hint: "Coming up next",
-      to: "/recruiter/interviews",
-      icon: CalendarClock,
-      tint: 3,
-    },
-  ];
-
-  const rightRail = (
-    <RecruiterDashboardRail
-      selectedCount={selected.length}
-      onCompare={() => {
-        if (selected.length >= 2) {
-          navigate(`/recruiter/compare?ids=${selected.join(",")}`);
-          return;
-        }
-        navigate("/recruiter/search");
-      }}
-    />
-  );
+  const upcoming = interviews.filter(isUpcomingInterview);
+  const visible = [...candidates]
+    .filter((candidate) => !focusIds || focusIds.includes(candidate.id))
+    .sort((a, b) => (Date.parse(b.sharedAt ?? "") || 0) - (Date.parse(a.sharedAt ?? "") || 0));
+  const rows = tab === "shortlist"
+    ? visible.filter((candidate) => selected.includes(candidate.id))
+    : visible.slice(0, 3);
 
   return (
-    <RecruiterWorkspaceShell rightRail={rightRail}>
-      <div className="space-y-6">
-        {error ? (
-          <p className="rounded-xl border border-[#fecaca] bg-[#fef2f2] px-4 py-3 text-sm text-[#dc2626]" role="alert">
-            {error}
-          </p>
-        ) : null}
-
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {kpis.map((card) => (
-            <Link
-              key={card.label}
-              to={card.to}
-              className="block rounded-xl transition hover:opacity-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#023E8A]"
-            >
-              <StatCard
-                icon={card.icon}
-                label={card.label}
-                value={card.value}
-                hint={card.hint}
-                tint={card.tint}
-              />
-            </Link>
-          ))}
-        </div>
-
-        <section className="learner-stat-card p-5">
-          <div className="mb-4 flex items-center gap-3">
-            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#e8eef7] text-[#023E8A]">
-              <Sparkles className="h-4 w-4" />
-            </span>
-            <div>
-              <h2 className="text-base font-semibold text-[#023E8A]">Ask SIJIL Match</h2>
-              <p className="text-xs text-[#64748b]">
-                Describe the role or skills you need — AI ranks the best shared learners.
-              </p>
-            </div>
-          </div>
+    <RecruiterWorkspaceShell dashboardLayout>
+      <div className="recruiter-dashboard space-y-4">
+        {error && <p className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700" role="alert">{error}</p>}
+        <section className="recruiter-match-hero" aria-labelledby="recruiter-match-title">
+          <h1 id="recruiter-match-title" className="flex items-center gap-3 text-2xl font-bold">
+            <Sparkles className="size-6 shrink-0" aria-hidden="true" /> SIJIL Match
+          </h1>
+          <p className="mb-3 mt-1 text-sm text-blue-50">Find the right skills from profiles shared with you.</p>
           <SijilMatchBot
             candidates={candidates}
             candidateSkills={candidateSkills}
-            selectedIds={selected}
-            onClearSelection={() => setSelected([])}
+            selectedIds={tab === "shortlist" ? selected : []}
             onResultIds={setFocusIds}
-            onOpenCandidate={(id) => navigate(`/recruiter/candidate/${id}`)}
-            onCompare={(leftId, rightId) => navigate(`/recruiter/compare?ids=${leftId},${rightId}`)}
+            onOpenCandidate={(id) => navigate("/recruiter/candidate/" + id)}
           />
         </section>
-
-        <section className="learner-stat-card overflow-hidden">
-          <div className="flex items-center justify-between gap-3 border-b border-[#e2e8f0] px-5 py-4">
-            <div>
-              <h2 className="text-base font-semibold text-[#023E8A]">Recently Shared</h2>
-              <p className="mt-0.5 text-xs text-[#64748b]">Latest profiles shared with your account</p>
-            </div>
-            {focusIds ? (
-              <button
-                type="button"
-                onClick={() => setFocusIds(null)}
-                className="text-xs font-medium text-[#023E8A] hover:underline"
-              >
-                Clear filter
-              </button>
-            ) : null}
-          </div>
-          {shortlistError ? (
-            <p className="border-b border-[#fecaca] bg-[#fef2f2] px-5 py-2 text-sm text-[#dc2626]" role="alert">
-              {shortlistError}
-            </p>
-          ) : null}
-          {recent.length === 0 ? (
-            <p className="px-5 py-8 text-sm text-[#64748b]">No shared learners yet.</p>
-          ) : (
-            <ul className="divide-y divide-[#f1f5f9]">
-              {recent.map((candidate) => {
-                const skillsShown = (candidate.verifiedSkills?.length
-                  ? candidate.verifiedSkills
-                  : candidate.searchableSkills ?? []
-                ).slice(0, 2);
-                const saved = selected.includes(candidate.id);
-                return (
-                  <li
-                    key={candidate.id}
-                    className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between"
-                  >
-                    <div className="flex min-w-0 items-center gap-3">
-                      {candidate.avatarUrl ? (
-                        <img
-                          src={candidate.avatarUrl}
-                          alt=""
-                          className="h-11 w-11 rounded-full object-cover ring-2 ring-[#e8eef7]"
-                        />
-                      ) : (
-                        <span className="flex h-11 w-11 items-center justify-center rounded-full bg-[#e8eef7] text-sm font-semibold text-[#023E8A]">
-                          {initials(candidate.name)}
-                        </span>
-                      )}
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold text-[#023E8A]">{candidate.name}</p>
-                        <p className="mt-0.5 text-xs text-[#64748b]">
-                          {candidate.sharedAt
-                            ? `Shared ${formatTimestamp(candidate.sharedAt)}`
-                            : "Recently shared"}
-                          {" · "}
-                          {candidate.credentialCount}{" "}
-                          {candidate.credentialCount === 1 ? "credential" : "credentials"}
-                        </p>
-                        <div className="mt-1.5 flex flex-wrap gap-1.5">
-                          {skillsShown.map((skill) => (
-                            <span
-                              key={skill}
-                              className="rounded-full bg-[#e8eef7] px-2 py-0.5 text-[10px] font-semibold text-[#023E8A]"
-                            >
-                              {skill}
-                            </span>
-                          ))}
-                          <span
-                            className={cn(
-                              "rounded-full px-2 py-0.5 text-[10px] font-semibold",
-                              candidate.attestation === "Approved"
-                                ? "bg-[#ecfdf5] text-[#059669]"
-                                : "bg-[#f1f5f9] text-[#64748b]",
-                            )}
-                          >
-                            {verificationLabel(candidate)}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex shrink-0 flex-wrap gap-2">
-                      <Link
-                        to={`/recruiter/candidate/${candidate.id}?tab=journey`}
-                        className="rounded-xl bg-[#023E8A] px-3.5 py-2 text-xs font-semibold text-white transition hover:bg-[#012A5C]"
-                      >
-                        Longitudinal Journey
-                      </Link>
-                      <Link
-                        to={`/recruiter/candidate/${candidate.id}`}
-                        className="rounded-xl border border-[#e2e8f0] bg-white px-3.5 py-2 text-xs font-semibold text-[#023E8A] transition hover:bg-[#f8fafc]"
-                      >
-                        Review
-                      </Link>
-                      <button
-                        type="button"
-                        onClick={() => toggleShortlist(candidate.id)}
-                        className={cn(
-                          "rounded-xl px-3.5 py-2 text-xs font-semibold transition",
-                          saved
-                            ? "bg-[#e8eef7] text-[#023E8A]"
-                            : "border border-[#e2e8f0] bg-white text-[#023E8A] hover:bg-[#f8fafc]",
-                        )}
-                      >
-                        {saved ? "Shortlisted" : "Shortlist"}
-                      </button>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-          <div className="border-t border-[#e2e8f0] px-5 py-3">
-            <Link
-              to="/recruiter/search"
-              className="inline-flex items-center text-sm font-semibold text-[#023E8A] hover:underline"
-            >
-              See all in Directory
-              {recentAll.length > recent.length ? ` (${recentAll.length})` : ""}
+        <section className="recruiter-dashboard-card" aria-labelledby="recruiter-shared-profiles">
+          <div className="flex flex-wrap items-center justify-between gap-2 px-3 pb-2 pt-3 sm:px-4">
+            <h2 id="recruiter-shared-profiles" className="text-lg font-bold text-sijil-blue">Shared Profiles</h2>
+            <Link to="/recruiter/search" className="recruiter-dashboard-link">
+              View all profiles <ArrowRight className="size-4" aria-hidden="true" />
             </Link>
           </div>
+          <div className="mx-3 flex items-center gap-2 border-b border-blue-100 sm:mx-4">
+            {(["recent", "shortlist"] as const).map((item) => (
+              <button key={item} type="button" aria-pressed={tab === item}
+                onClick={() => { setTab(item); setFocusIds(null); }}
+                className={cn("border-b-2 px-3 py-2.5 text-xs font-medium",
+                  tab === item ? "border-sijil-blue font-semibold text-sijil-blue" : "border-transparent text-slate-600 hover:text-sijil-blue")}>
+                {item === "recent" ? "Recently shared (" + candidates.length + ")" : "Shortlisted"}
+              </button>
+            ))}
+            {tab === "shortlist" && selected.length >= 2 && (
+              <Link to={"/recruiter/compare?" + new URLSearchParams({ ids: selected.join(",") })}
+                className="ml-auto text-xs font-semibold text-sijil-blue hover:underline">Compare shortlisted</Link>
+            )}
+            {focusIds && <button type="button" className="ml-auto text-xs text-sijil-blue underline" onClick={() => setFocusIds(null)}>Clear filter</button>}
+          </div>
+          {shortlistError && <p role="alert" className="mx-4 mt-2 text-sm text-red-700">{shortlistError}</p>}
+          <div className="m-3 overflow-x-auto rounded-lg border border-blue-100 sm:m-4">
+            <table className="w-full min-w-[38rem] text-left text-xs">
+              <thead className="bg-[#eff5fc] text-sijil-blue">
+                <tr>{["Candidate", "Shared skills", "Credentials", "Date shared", "Action"].map((label) => (
+                  <th key={label} scope="col" className="px-3 py-2.5 font-semibold">{label}</th>
+                ))}</tr>
+              </thead>
+              <tbody className="divide-y divide-blue-100 text-slate-700">
+                {rows.map((candidate) => {
+                  const skills = (candidate.verifiedSkills?.length ? candidate.verifiedSkills : candidate.searchableSkills ?? []).slice(0, 2);
+                  const count = candidate.credentialCount ?? 0;
+                  const saved = selected.includes(candidate.id);
+                  return (
+                    <tr key={candidate.id}>
+                      <th scope="row" className="px-3 py-3">
+                        <div className="flex items-center gap-3 text-sijil-blue">
+                          {candidate.avatarUrl
+                            ? <img src={candidate.avatarUrl} alt="" className="size-9 shrink-0 rounded-full object-cover" />
+                            : <span className="grid size-9 shrink-0 place-items-center rounded-full bg-[#dfebfa] font-bold">{initials(candidate.name)}</span>}
+                          <span className="break-words font-semibold">{candidate.name}</span>
+                        </div>
+                      </th>
+                      <td className="px-3 py-3">
+                        <div className="flex flex-wrap gap-1.5">
+                          {skills.length ? skills.map((skill) => (
+                            <span key={skill} className="rounded-md bg-[#e6f0fc] px-2 py-1 text-sijil-blue">{skill}</span>
+                          )) : <span>Unavailable</span>}
+                        </div>
+                      </td>
+                      <td className="px-3 py-3">{count} {count === 1 ? "credential" : "credentials"}</td>
+                      <td className="whitespace-nowrap px-3 py-3">{formatSharedDate(candidate.sharedAt)}</td>
+                      <td className="px-3 py-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <Link to={"/recruiter/candidate/" + encodeURIComponent(candidate.id)}
+                            className="whitespace-nowrap rounded-lg border border-sijil-blue/45 px-3 py-1.5 font-semibold text-sijil-blue hover:bg-blue-50">
+                            View profile
+                          </Link>
+                          <button type="button" aria-label={"Shortlist " + candidate.name} aria-pressed={saved}
+                            disabled={updatingShortlist || shortlistMode === "unknown"} onClick={() => toggleShortlist(candidate.id)}
+                            className="rounded-lg p-1.5 text-sijil-blue hover:bg-blue-50 disabled:opacity-50">
+                            <Bookmark className={cn("size-4", saved && "fill-current")} aria-hidden="true" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {rows.length === 0 && (
+                  <tr><td colSpan={5} className="px-4 py-6 text-sm text-slate-600">
+                    {focusIds ? "No shared profiles match this search." : tab === "shortlist" ? "No shortlisted profiles yet." : "No profiles have been shared with you yet."}
+                  </td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+        <section className="recruiter-dashboard-card flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+          <div className="flex items-center gap-3">
+            <span className="grid size-11 shrink-0 place-items-center rounded-lg bg-[#e0edfc] text-sijil-blue">
+              <CalendarDays className="size-5" aria-hidden="true" />
+            </span>
+            <div>
+              <h2 className="text-sm font-semibold text-sijil-blue">Upcoming Interviews</h2>
+              <p className="text-xs text-slate-600">{upcoming.length} scheduled {upcoming.length === 1 ? "interview" : "interviews"}</p>
+            </div>
+          </div>
+          <Link to="/recruiter/interviews" className="recruiter-dashboard-link">
+            View schedule <ArrowRight className="size-4" aria-hidden="true" />
+          </Link>
         </section>
       </div>
     </RecruiterWorkspaceShell>

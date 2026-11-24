@@ -3,6 +3,7 @@
  */
 import { supabaseService } from "./supabase.service";
 import { recruiterService } from "./recruiter.service";
+import { getGoogleCalendarOAuthConfig } from "../config/google-calendar";
 import { env } from "../config/env";
 import { getUserSupabase } from "../config/supabase";
 import { AppError } from "../utils/AppError";
@@ -235,6 +236,9 @@ export class InterviewService {
 
     // Video calls: create Meet on the SIJIL Calendar BEFORE insert/email (unless recruiter overrode).
     if (input.mode === INTERVIEW_MODE.VIDEO_CALL && !manualVideoOverride) {
+      if (!getGoogleCalendarOAuthConfig()) {
+        throw new AppError("Automatic Google Meet is unavailable. Enter your own meeting link, or ask a SIJIL administrator to configure Google Calendar.", 503);
+      }
       const meet = await createGoogleMeetEvent({
         summary: `SIJIL interview: ${contact.name} / ${recruiter.name}`,
         description: [
@@ -283,14 +287,12 @@ export class InterviewService {
       .single();
 
     if (error || !data) {
-      if (googleCalendarEventId) {
-        await deleteGoogleCalendarEventQuietly(googleCalendarEventId);
-      }
       const code = error && "code" in error ? error.code ?? null : null;
       const missingZone = code === "42703" || /time_zone/i.test(error?.message ?? "");
       const missingEventCol = code === "42703" || /google_calendar_event_id/i.test(error?.message ?? "");
       console.error("interview save failed", { code });
       if (missingZone && /time_zone/i.test(error?.message ?? "")) {
+        if (googleCalendarEventId) await deleteGoogleCalendarEventQuietly(googleCalendarEventId);
         throw new AppError(
           "Interview scheduling needs the scheduled_interviews time_zone column. Apply supabase/migrations/20261118120000_scheduled_interviews_time_zone.sql first.",
           503,
@@ -312,6 +314,7 @@ export class InterviewService {
         });
         return { ...interviewFallback, emailStatus: emailStatusFallback };
       }
+      if (googleCalendarEventId) await deleteGoogleCalendarEventQuietly(googleCalendarEventId);
       throw interviewSaveFailure();
     }
 

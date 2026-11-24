@@ -98,6 +98,16 @@ describe("recruiter verify selective disclosure access", () => {
     assert.equal(access, "forbidden");
   });
 
+  it("does not substitute a different credential for one pinned in a share", () => {
+    const pinned = "33333333-3333-4333-8333-333333333333";
+    const shares = [{ competencyId: "skill-1", disclosedPayload: {
+      shareKind: "all-recruiters", sharedCredentialId: pinned, competency: { name: "React" },
+    } }];
+    const input = { recruiterUserId: RECRUITER, skillName: "React", competencyId: "skill-1", shares };
+    assert.equal(classifyRecruiterCredentialAccess({ ...input, credentialId: CREDENTIAL }), "forbidden");
+    assert.equal(classifyRecruiterCredentialAccess({ ...input, credentialId: pinned }), "allowed");
+  });
+
   it("throws 410 for expired access", () => {
     assert.throws(
       () => assertRecruiterCredentialAccess("expired"),

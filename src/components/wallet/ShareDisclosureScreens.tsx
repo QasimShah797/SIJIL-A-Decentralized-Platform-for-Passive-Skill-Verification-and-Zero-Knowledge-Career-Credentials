@@ -195,7 +195,7 @@ function InfoTip({ text }: { text: string }) {
 
 export function RecruiterShareDisclosure({
   skillName, learnerName, issuer, issuedAt, selectedFields, onChangeFields, evidenceModes, onChangeEvidenceModes,
-  evidenceAvailability, evidenceStatus, onRefreshEvidence, credentials, activeId, onChooseCredential,
+  evidenceAvailability, evidencePreview, evidenceStatus, onRefreshEvidence, credentials, activeId, onChooseCredential,
   onCancel, onConfirm, confirming, canContinue, step,
 }: {
   skillName: string;
@@ -207,6 +207,7 @@ export function RecruiterShareDisclosure({
   evidenceModes: EvidenceModes;
   onChangeEvidenceModes: (next: EvidenceModes) => void;
   evidenceAvailability?: EvidenceShareAvailability;
+  evidencePreview?: Partial<Record<keyof EvidenceModes, string>>;
   evidenceStatus: "loading" | "ready" | "error";
   onRefreshEvidence?: () => void;
   credentials: { id: string; title: string }[];
@@ -287,7 +288,7 @@ export function RecruiterShareDisclosure({
               ))}
             </div>
           ) : (
-            <p className="sd-card-sub">SIJIL recruiters will be able to see the information you selected for each credential.</p>
+            <p className="sd-card-sub">SIJIL recruiters will see the available details for each evidence source you selected, including any exact values shown in the preview.</p>
           )}
           {evidenceStatus === "loading" && <p className="sd-card-sub" role="status">Checking linked evidence…</p>}
           {evidenceStatus === "error" && (
@@ -316,7 +317,7 @@ export function RecruiterShareDisclosure({
                 <div key={card.id} className="sd-preview-row">
                   <dt>{titleFor(card)}</dt>
                   <dd><Check className="mr-1 inline size-4 rounded-full bg-emerald-100 p-0.5 text-emerald-800" aria-hidden="true" />
-                    {evidenceModes[card.id] === "private" ? "Private proof" : "Summary included"}
+                    {evidenceModes[card.id] === "private" ? "Private proof" : evidencePreview?.[card.id] ?? "Summary included"}
                   </dd>
                 </div>
               ))}

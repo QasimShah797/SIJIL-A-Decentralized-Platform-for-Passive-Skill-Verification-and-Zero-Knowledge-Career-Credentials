@@ -1,6 +1,6 @@
 /**
  * Safe evidence summaries for "Share details" mode.
- * Never includes exact scores, full commit lists, grades, or individual review text.
+ * Exact recruiter metrics are opt-in. Full commit lists, grades and review text stay private.
  *
  * Evidence cards / modes are gated by per-competency linked evidence only.
  */
@@ -188,19 +188,24 @@ export function resolveShareFieldsForModes(
   return [...nonEvidence, ...detailEvidence];
 }
 
-export function summarizePracticalDetails(record: WalletCompetencyRecordView): Record<string, unknown> | undefined {
+export function summarizePracticalDetails(record: WalletCompetencyRecordView, exactMarks = false): Record<string, unknown> | undefined {
   const latest = record.evidencePackage.practicalTask.latestAttempt ?? record.evidencePackage.practicalTask.attemptHistory[0];
   if (!latest) return undefined;
   return {
-    status: latest.status,
+    status: "Completed",
     submittedAt: latest.submittedAt,
-    passed: latest.passed,
-    // Explicitly omit scorePercent / correctCount / totalQuestions
-    scoreHidden: true,
+    attemptCount: new Set([latest, ...record.evidencePackage.practicalTask.attemptHistory].map((attempt) => attempt.attemptId)).size,
+    ...(exactMarks ? {
+      recruiterMetrics: {
+        assessmentScorePercent: latest.scorePercent,
+        correctCount: latest.correctCount,
+        totalQuestions: latest.totalQuestions,
+      },
+    } : { scoreHidden: true }),
   };
 }
 
-export function summarizeGithubDetails(record: WalletCompetencyRecordView): Record<string, unknown> | undefined {
+export function summarizeGithubDetails(record: WalletCompetencyRecordView, exactCommits?: boolean): Record<string, unknown> | undefined {
   const repos = record.evidencePackage.github.repos ?? [];
   if (!Array.isArray(repos) || repos.length === 0) {
     const activities = record.evidencePackage.github.activities ?? [];
@@ -213,11 +218,17 @@ export function summarizeGithubDetails(record: WalletCompetencyRecordView): Reco
       summary: "GitHub activity on file",
     };
   }
-  // Safe details for "Share details" / activity-count mode: repo identity only.
-  // Exact commit counts stay under disclosure-preference redaction if ever present.
   const safeRepos = repos.map((repo) => {
     const row = repo && typeof repo === "object" ? repo as Record<string, unknown> : {};
+    const count = row.learner_commit_count;
+    const date = row.learner_last_commit_at;
     return {
+      ...(exactCommits ? {
+        recruiterMetrics: {
+          syncedCommitCount: typeof count === "number" && Number.isSafeInteger(count) && count >= 0 ? count : null,
+          lastCommitAt: typeof date === "string" && Number.isFinite(Date.parse(date)) ? date : null,
+        },
+      } : (exactCommits === false ? { recruiterMetrics: {} } : {})),
       full_name: typeof row.full_name === "string" ? row.full_name : null,
       repo_name: typeof row.repo_name === "string" ? row.repo_name : null,
       primary_language: typeof row.primary_language === "string"
@@ -253,7 +264,7 @@ export function summarizePeerDetails(record: WalletCompetencyRecordView): Record
   const list = peerReviewCandidates(record);
   if (list.length === 0) return undefined;
   return {
-    reviewCountDisclosed: false,
+    reviewCount: list.length,
     feedbackShared: false,
     summary: "Peer reviews on file",
   };

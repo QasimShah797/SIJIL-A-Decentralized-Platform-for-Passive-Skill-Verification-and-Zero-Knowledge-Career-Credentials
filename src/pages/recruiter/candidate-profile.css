@@ -1,0 +1,186 @@
+﻿.candidate-profile {
+  display: grid;
+  gap: .8rem;
+  width: 100%;
+}
+
+.candidate-back,
+.candidate-detail-link {
+  display: inline-flex;
+  align-items: center;
+  gap: .45rem;
+  width: fit-content;
+  color: hsl(var(--sijil-blue));
+  font-size: .8rem;
+  font-weight: 700;
+}
+
+.candidate-back:hover,
+.candidate-detail-link:hover { text-decoration: underline; }
+
+.candidate-hero {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: .75rem clamp(.85rem, 2vw, 1.4rem);
+  border-radius: .8rem;
+  background: linear-gradient(112deg, hsl(var(--sijil-blue)), #092d63);
+  color: white;
+}
+
+.candidate-avatar {
+  display: grid;
+  place-items: center;
+  width: 3.9rem;
+  height: 3.9rem;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: #eff5fd;
+  color: hsl(var(--sijil-blue));
+  font-size: 1.3rem;
+  font-weight: 750;
+}
+
+.candidate-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: .55rem;
+}
+
+.candidate-tabs button {
+  display: flex;
+  min-height: 2.55rem;
+  align-items: center;
+  justify-content: center;
+  gap: .45rem;
+  border: 1px solid #dbe6f7;
+  border-radius: .65rem;
+  background: #edf3fc;
+  padding: .45rem;
+  color: hsl(var(--sijil-blue));
+  font-size: clamp(.68rem, 1.4vw, .85rem);
+  font-weight: 700;
+}
+
+.candidate-tabs button[aria-selected="true"] {
+  border-color: hsl(var(--sijil-blue));
+  background: hsl(var(--sijil-blue));
+  color: white;
+}
+
+.candidate-tabs button:focus-visible,
+.candidate-evidence-row summary:focus-visible {
+  outline: 2px solid hsl(var(--sijil-blue));
+  outline-offset: 2px;
+}
+
+.candidate-profile-grid { display: grid; gap: .8rem; align-items: start; }
+@media (min-width: 1024px) {
+  .candidate-profile-grid { grid-template-columns: minmax(0, 1.55fr) minmax(250px, 1fr); }
+}
+
+.candidate-panel {
+  min-width: 0;
+  border: 1px solid #e0eafa;
+  border-radius: .9rem;
+  background: #fff;
+  box-shadow: 0 3px 9px hsl(var(--sijil-blue) / .05);
+}
+
+.candidate-panel-title {
+  display: flex;
+  align-items: center;
+  gap: .55rem;
+  color: hsl(var(--sijil-blue));
+  font-size: .95rem;
+  font-weight: 750;
+}
+
+.candidate-evidence-icon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 2.8rem;
+  height: 2.8rem;
+  border-radius: .65rem;
+  background: #edf3fc;
+  color: hsl(var(--sijil-blue));
+}
+
+.candidate-evidence {
+  display: grid;
+  gap: .35rem;
+  padding: .55rem;
+  border-radius: .7rem;
+  background: linear-gradient(#eaf1fb, #f7faff);
+}
+
+.candidate-evidence > h3 {
+  padding: .2rem .1rem;
+  color: #101e3d;
+  font-size: .95rem;
+  font-weight: 750;
+}
+
+.candidate-evidence-row {
+  border: 1px solid #e0eafa;
+  border-radius: .7rem;
+  background: #fff;
+}
+
+.candidate-evidence-row summary {
+  display: flex;
+  align-items: center;
+  gap: .9rem;
+  padding: .6rem .85rem;
+  font-size: .88rem;
+  list-style: none;
+  cursor: pointer;
+}
+
+.candidate-evidence-row summary::-webkit-details-marker { display: none; }
+.candidate-evidence-row[open] .candidate-evidence-chevron { rotate: 180deg; }
+
+.candidate-status,
+.candidate-credential {
+  display: flex;
+  align-items: center;
+  gap: .65rem;
+  margin-top: .65rem;
+  padding: .65rem .75rem;
+  border-radius: .65rem;
+  background: #f2f6fc;
+  color: #142646;
+}
+
+.candidate-status-verified { background: #e0f5e8; color: #135236; }
+.candidate-status-failed { background: #fef1f0; color: #9f2521; }
+.candidate-detail-link { display: flex; margin: .85rem 0 .1rem auto; }
+
+.candidate-commit-table { margin: 0 .75rem .65rem; overflow-x: auto; border-radius: .45rem; }
+.candidate-commit-table table { width: 100%; min-width: 34rem; text-align: left; font-size: .75rem; }
+.candidate-commit-table th { background: #eaf1fc; color: #172950; font-weight: 700; }
+.candidate-commit-table th,
+.candidate-commit-table td { padding: .4rem .55rem; border-bottom: 1px solid #e2eafa; }
+.candidate-commit-table td { color: #263858; }
+
+.candidate-task-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 8rem), 1fr));
+  gap: .6rem;
+  margin: 0 .75rem .75rem;
+}
+.candidate-task-stats > div {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  padding: .65rem .75rem;
+  border-radius: .6rem;
+  background: #eaf1fc;
+  color: #172950;
+}
+.candidate-task-stats dt { font-size: .75rem; }
+.candidate-task-stats dd { font-size: 1.3rem; font-weight: 750; line-height: 1.25; }
+.candidate-task-stats .candidate-stat-withheld { font-size: .82rem; font-weight: 600; }

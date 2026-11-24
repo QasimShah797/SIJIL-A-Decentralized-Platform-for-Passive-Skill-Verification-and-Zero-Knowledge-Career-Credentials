@@ -1,3 +1,6 @@
+import { fetchLearnerCommitMetrics } from "./github-sync.service";
+import { buildSelectiveDisclosureProof, hashDisclosurePayload } from "./proof.service";
+import { hasValidSharedPayloadSignature } from "./shared-zkp-verification";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -10,7 +13,10 @@ import {
 } from "./share-evidence-summary";
 import type { WalletCompetencyRecordView } from "../types/wallet.types";
 import { lmsEvidenceMatchesSkill, matchesCompetency } from "../utils/moodle-evidence-matching";
-import { buildDisclosedPayload } from "./wallet.service";
+import { assertNoPrivateWitnessLeak } from "./share-zkp.service";
+import { redactExactValues, recruiterShareExactPreferences } from "../utils/exact-value-redaction";
+import { DEFAULT_DISCLOSURE_PREFERENCES } from "./disclosure-preferences.service";
+import { buildAttemptHistoryItem, buildDisclosedPayload, fetchWalletGithubRepositories } from "./wallet.service";
 import { AppError } from "../utils/AppError";
 
 function emptyPackage(): WalletCompetencyRecordView["evidencePackage"] {
@@ -241,4 +247,141 @@ it("shares the credential issue date without exposing evidence timestamps or omi
   assert.deepEqual(payload.timestamps, { credentialIssuedAt: issuedAt });
   assert.equal("evidence" in payload, false);
   assert.equal(JSON.stringify(payload).includes("private-repo"), false);
+});
+
+it("snapshots only scoped authored metrics and stored marks, and redacts them at read time", () => {
+  const pkg = emptyPackage();
+  const latest = buildAttemptHistoryItem({ id: "latest", title: "Assessment", status: "completed", percentage: 85, correct_count: 17, total_questions: 20 });
+  assert.ok(latest);
+  const repo = { full_name: "owner/python", commit_count: 99, learner_commit_count: 12, learner_last_commit_at: "2026-11-22T09:00:00Z" };
+  const commit = { activity_type: "commit", repo_name: "owner/python", commit_hash: "one", occurred_at: "2026-11-22T09:00:00Z" };
+  const record = recordFor("Python", {
+    github: { ...pkg.github, repos: [repo], activities: [commit, commit, { ...commit, repo_name: "owner/typescript", commit_hash: "two" }] },
+    practicalTask: { latestAttempt: latest, attemptHistory: [latest, { ...latest, attemptId: "previous" }] },
+  });
+  const prefs = { ...DEFAULT_DISCLOSURE_PREFERENCES, shareExactAssessmentMarks: true, shareExactGithubCommitCount: true };
+  const snapshot = buildDisclosedPayload(record, ["github_evidence", "practical_task_result"], undefined, [], null, prefs);
+  assert.deepEqual(snapshot.evidence, {
+    github: { repositoryCount: 1, activityCount: 1, activityRecordsShared: false, summary: "1 linked repository",
+      repos: [{ full_name: "owner/python", repo_name: null, primary_language: null, github_url: null,
+        recruiterMetrics: { syncedCommitCount: 12, lastCommitAt: repo.learner_last_commit_at } }] },
+    practicalTask: { status: "Completed", submittedAt: null, attemptCount: 2,
+      recruiterMetrics: { assessmentScorePercent: 85, correctCount: 17, totalQuestions: 20 } },
+  });
+  assert.doesNotThrow(() => assertNoPrivateWitnessLeak(snapshot));
+  const identity = { learnerId: "learner", competencyId: record.competencyId, learnerDid: null, createdAt: "2026-11-23T13:00:00Z", expiresAt: null };
+  const payloadHash = hashDisclosurePayload(snapshot);
+  const proof = buildSelectiveDisclosureProof({ ...identity, payloadHash });
+  const stored = {
+    learner_id: identity.learnerId, competency_id: identity.competencyId, created_at: "2026-11-23T13:00:00+00:00",
+    proof_value: proof.proofValue, verification_method: proof.verificationMethod, payload_hash: payloadHash,
+    expires_at: null, disclosed_payload: JSON.parse(JSON.stringify(snapshot)),
+  };
+  assert.equal(hasValidSharedPayloadSignature(stored), true);
+  assert.equal(hasValidSharedPayloadSignature({ ...stored, disclosed_payload: { ...snapshot, evidence: {} } }), false);
+  assert.deepEqual(redactExactValues(stored.disclosed_payload, prefs, "now"), snapshot);
+  const olderShare = buildDisclosedPayload(record, ["github_evidence", "practical_task_result"]);
+  const reenabled = JSON.stringify(redactExactValues(olderShare, prefs, "now"));
+  assert.equal(reenabled.includes("syncedCommitCount"), false);
+  assert.equal(reenabled.includes("assessmentScorePercent"), false);
+  assert.deepEqual(redactExactValues(snapshot, prefs, "now"), snapshot);
+  const withheld = JSON.stringify(redactExactValues(snapshot, DEFAULT_DISCLOSURE_PREFERENCES, "now"));
+  for (const key of ["correctCount", "totalQuestions", "assessmentScorePercent", "syncedCommitCount", "lastCommitAt"]) {
+    assert.equal(withheld.includes(key), false);
+  }
+  assert.equal(JSON.stringify(redactExactValues(snapshot, prefs, "now", { omitRecruiterMetrics: true })).includes("recruiterMetrics"), false);
+});
+
+it("shares scoped Moodle and peer summaries only when available and selected", () => {
+  const pkg = emptyPackage();
+  const fields = ["lms_evidence", "peer_reviews"] as const;
+  const empty = recordFor("TypeScript", {});
+  const python = recordFor("Python", {
+    lms: { ...pkg.lms, courses: [{ fullname: "Python Fundamentals" }], assignments: [{ id: "assignment", grade: 82 }] },
+    peerReviews: [{ id: "review", review_text: "private feedback" }],
+  });
+  assert.equal("evidence" in buildDisclosedPayload(empty, [...fields]), false);
+  assert.deepEqual(buildDisclosedPayload(python, ["lms_evidence"]).evidence, {
+    lms: { courseCount: 1, assignmentCount: 1, gradesShared: false, summary: "Moodle learning overview" },
+  });
+  assert.deepEqual(buildDisclosedPayload(python, ["peer_reviews"]).evidence, {
+    peerReviews: { reviewCount: 1, feedbackShared: false, summary: "Peer reviews on file" },
+  });
+});
+
+it("uses confirmed per-share evidence choices independently of legacy defaults", () => {
+  const evidenceModes = { github_evidence: "details", practical_task_result: "omit" };
+  const consent = { evidenceModes, recruiterEvidenceConsent: "selected-details-v1" };
+  const payload = {
+    ...consent,
+    evidence: {
+      github: { repos: [{ recruiterMetrics: { syncedCommitCount: 3, lastCommitAt: "2026-11-22T09:00:00Z" } }] },
+      practicalTask: { recruiterMetrics: { assessmentScorePercent: 75 } },
+    },
+  };
+  const recruiter = JSON.stringify(redactExactValues(payload, recruiterShareExactPreferences(consent), "now"));
+  assert.match(recruiter, /"syncedCommitCount":3/);
+  assert.doesNotMatch(recruiter, /assessmentScorePercent|recruiterEvidenceConsent/);
+  const assessment = recruiterShareExactPreferences({ evidenceModes: { practical_task_result: "details", github_evidence: "omit" } });
+  assert.match(JSON.stringify(redactExactValues(payload, assessment, "now")), /"assessmentScorePercent":75/);
+  const bearer = redactExactValues(payload, DEFAULT_DISCLOSURE_PREFERENCES, "now", { omitRecruiterMetrics: true });
+  assert.doesNotMatch(JSON.stringify(bearer), /recruiterMetrics|recruiterEvidenceConsent/);
+});
+
+it("keeps linked GitHub repositories shareable on a schema without authored metrics", async () => {
+  const repo = { id: "repo-id", linked_skill_id: "typescript", full_name: "owner/typescript", commit_count: 99 };
+  const queries: string[] = [];
+  const result = await fetchWalletGithubRepositories(async (columns) => {
+    queries.push(columns);
+    return columns.includes("learner_commit_count")
+      ? { data: null, error: { code: "42703" } }
+      : { data: [repo], error: null };
+  });
+  assert.equal(queries.length, 2);
+  assert.deepEqual(result.data, [repo]);
+
+  const pkg = emptyPackage();
+  const record = recordFor("TypeScript", { github: { ...pkg.github, repos: result.data as typeof pkg.github.repos } });
+  assert.equal(assessEvidenceShareAvailability(record).github_evidence.present, true);
+  const details = summarizeGithubDetails(record, true);
+  assert.deepEqual((details?.repos as Array<Record<string, unknown>>)[0]?.recruiterMetrics,
+    { syncedCommitCount: null, lastCommitAt: null });
+});
+
+it("never treats a GitHub repository permission error as an older schema", async () => {
+  const denied = { data: null, error: { code: "42501", message: "permission denied" } };
+  let queries = 0;
+  assert.equal(await fetchWalletGithubRepositories(async () => { queries++; return denied; }), denied);
+  assert.equal(queries, 1);
+});
+
+it("uses author-filtered GitHub data in the new share when the repo has no cached metrics", async () => {
+  const date = "2026-11-22T09:00:00Z";
+  const metrics = await fetchLearnerCommitMetrics("owner/typescript", "learner", {}, async (input) => {
+    const url = new URL(String(input));
+    assert.equal(url.pathname, "/repos/owner/typescript/commits");
+    assert.equal(url.searchParams.get("author"), "learner");
+    assert.equal(url.searchParams.get("per_page"), "1");
+    return Response.json([{ commit: { author: { date } } }], {
+      headers: { link: '<https://api.github.com/repositories/42/commits?page=6>; rel="last"' },
+    });
+  });
+  const pkg = emptyPackage();
+  const record = recordFor("TypeScript", {
+    github: { ...pkg.github, repos: [{ full_name: "owner/typescript", commit_count: 99, ...metrics }] },
+  });
+  const modes = { github_evidence: "details" };
+  const exact = recruiterShareExactPreferences({ evidenceModes: modes });
+  const payload = buildDisclosedPayload(record, ["github_evidence"], undefined, [], null, exact);
+  const recruiter = JSON.stringify(redactExactValues(payload, exact, "now"));
+  assert.match(recruiter, /"syncedCommitCount":6/);
+  assert.ok(recruiter.includes(date));
+  assert.doesNotMatch(recruiter, /commit_count|99/);
+});
+
+it("keeps unavailable metrics distinct from a verified zero authored commits", async () => {
+  const unavailable = await fetchLearnerCommitMetrics("owner/repo", "learner", {}, async () => new Response(null, { status: 403 }));
+  assert.deepEqual(unavailable, { learner_commit_count: null, learner_last_commit_at: null });
+  const zero = await fetchLearnerCommitMetrics("owner/repo", "learner", {}, async () => Response.json([]));
+  assert.deepEqual(zero, { learner_commit_count: 0, learner_last_commit_at: null });
 });

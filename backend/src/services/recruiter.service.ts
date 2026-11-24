@@ -12,6 +12,7 @@ import { verifyPublicCredential } from "./credential-verify.service";
 import {
   assertRecruiterCredentialAccess,
   classifyRecruiterCredentialAccess,
+  pinnedRecruiterCredentialId,
   recruiterVerifyCredential,
 } from "./recruiter-verify";
 import {
@@ -21,7 +22,7 @@ import {
 import { canReadLearnerData, type AuthCaller } from "./learner-access";
 import { DIRECT_RECRUITER_SHARE, directRecipientId, isAllRecruiterShare, shareVisibleToRecruiter } from "./share-directory";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { redactExactValues } from "../utils/exact-value-redaction";
+import { redactExactValues, recruiterShareExactPreferences } from "../utils/exact-value-redaction";
 import { hasValidSharedPayloadSignature } from "./shared-zkp-verification";
 import {
   DEFAULT_DISCLOSURE_PREFERENCES,
@@ -654,6 +655,11 @@ async function redactShareRows<T extends Record<string, unknown>>(
     const payload = asRecord(row.disclosed_payload);
     if ((row.proof_value || payload?.shareKind === DIRECT_RECRUITER_SHARE || isAllRecruiterShare(payload))
       && !hasValidSharedPayloadSignature(row)) continue;
+    if (payload && isAllRecruiterShare(payload) && payload.recruiterEvidenceConsent === "selected-details-v1") {
+      const { privateResults: _privateResults, ...disclosedFields } = payload;
+      out.push({ ...row, disclosed_payload: redactExactValues(disclosedFields, recruiterShareExactPreferences(payload), asOf) });
+      continue;
+    }
     const learnerId = learnerIdOf(row) ?? "";
     let prefs = prefsByLearner.get(learnerId);
     if (!prefs) {
@@ -778,8 +784,21 @@ async function listActiveSharedCredentials(
   const shared = (await Promise.all(redactedWalletRows.map(async (row) => {
     const competencyId = asText(row.competency_id);
     if (!competencyId) return mapWalletShare(row);
-    const issued = await findCredentialForLearnerCompetency(candidateId, competencyId).catch(() => null);
-    return mapWalletShare(row, issued && !issued.revoked_at ? issued.id : null);
+    const pinnedId = pinnedRecruiterCredentialId(row.disclosed_payload);
+    const issued = await (pinnedId ? loadCredentialByIdOrUri(pinnedId)
+      : findCredentialForLearnerCompetency(candidateId, competencyId)).catch(() => null);
+    const view = mapWalletShare(row, issued?.user_id === candidateId ? issued.id : null);
+    if (!view || !issued || issued.user_id !== candidateId) return view;
+    return {
+      ...view,
+      disclosedPayload: {
+        ...view.disclosedPayload,
+        recruiterCredentialInfo: {
+          issuer: issued.issuer_name,
+          issuedAt: view.selectedFields.includes("timestamps") ? issued.valid_from : null,
+        },
+      },
+    };
   }))).filter((item): item is SharedCredentialView => item !== null);
 
   return dedupeSharedCredentials(
@@ -855,7 +874,7 @@ export class RecruiterService {
     const db = recruiterDb(accessToken);
     const { data, error } = await db
       .from("selective_disclosure_presentations")
-      .select("competency_id, expires_at, revoked_at, disclosed_payload")
+      .select("id, learner_id, competency_id, expires_at, revoked_at, disclosed_payload, payload_hash, proof_value, verification_method, created_at")
       .eq("learner_id", credential.user_id)
       .order("created_at", { ascending: false })
       .limit(200);
@@ -864,7 +883,11 @@ export class RecruiterService {
       throw new AppError("Credential verification is temporarily unavailable", 503);
     }
 
-    const shares = ((data ?? []) as Record<string, unknown>[]).map((row) => ({
+    const shares = ((data ?? []) as Record<string, unknown>[]).filter((row) => {
+      const payload = asRecord(row.disclosed_payload);
+      return !(row.proof_value || isAllRecruiterShare(payload) || payload?.shareKind === DIRECT_RECRUITER_SHARE)
+        || hasValidSharedPayloadSignature(row);
+    }).map((row) => ({
       revokedAt: asText(row.revoked_at),
       expiresAt: asText(row.expires_at),
       disclosedPayload: row.disclosed_payload,

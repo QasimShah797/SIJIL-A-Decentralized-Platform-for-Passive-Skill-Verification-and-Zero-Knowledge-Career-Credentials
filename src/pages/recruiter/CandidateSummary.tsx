@@ -1,14 +1,15 @@
 import { ZKP_UI_ENABLED } from "@/lib/zkp-ui";
-import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { RecruiterWorkspaceShell } from "@/components/sijil/RecruiterWorkspaceShell";
-import { StatusBadge } from "@/components/sijil/StatusBadge";
 import { EmptyState } from "@/components/sijil/EmptyState";
 import { PageSkeleton } from "@/components/sijil/SkeletonLoader";
 import {
   RecruiterCompetencyDetail,
   displayRecruiterSkillName,
   recruiterSkillCards,
+  sharedEvidenceForSkill,
 } from "@/components/recruiter/RecruiterSkillEvidence";
+import { CandidateCredentials } from "@/components/recruiter/CandidateCredentials";
 import { CompetencyJourney } from "@/components/recruiter/CompetencyJourney";
 import { listSharedCompetencyVersions } from "@/services/api/recruiter-workspace.api";
 import type { SharedCompetencyVersion } from "@/services/api/recruiter-workspace.api";
@@ -16,6 +17,14 @@ import { ScheduleInterviewDialog } from "@/components/recruiter/ScheduleIntervie
 import { Button } from "@/components/ui/button";
 import {
   CalendarClock,
+  ArrowLeft,
+  ArrowRight,
+  Award,
+  Check,
+  CodeXml,
+  GraduationCap,
+  MapPin,
+  UserRound,
   Layers,
   Route,
   ShieldCheck,
@@ -23,7 +32,8 @@ import {
 } from "lucide-react";
 import { fetchCandidateDetail } from "@/lib/db/shared-credentials";
 import { useEffect, useMemo, useState } from "react";
-import { getEvidenceStats } from "@/lib/recruiter-evidence";
+import { extractDisclosedCredentialIdentity } from "@/lib/recruiter-ssi-verify";
+import "./candidate-profile.css";
 import {
   dedupeLatestSharedCredentials,
   type CandidateDetailView,
@@ -35,10 +45,10 @@ import { SidebarProofRequestsCard } from "@/components/recruiter/SidebarProofReq
 
 type ProfileTab = "competencies" | "journey" | "verify";
 
-const PROFILE_TABS: Array<{ id: ProfileTab; label: string; hint: string; icon: typeof Layers }> = [
-  { id: "competencies", label: "Shared Competencies", hint: "GitHub, LMS, and practical evidence", icon: Layers },
-  { id: "journey", label: "Longitudinal Journey", hint: "Repos, commits, tasks, credentials", icon: Route },
-  { id: "verify", label: "Verify Credentials", hint: "SSI signature, issuer, and status", icon: ShieldCheck },
+const PROFILE_TABS: Array<{ id: ProfileTab; label: string; icon: typeof Layers }> = [
+  { id: "competencies", label: "Shared Skills", icon: Layers },
+  { id: "journey", label: "Skill History", icon: Route },
+  { id: "verify", label: "Credentials", icon: ShieldCheck },
 ];
 
 const PROFILE_TAB_IDS = new Set<ProfileTab>(PROFILE_TABS.map((tab) => tab.id));
@@ -61,12 +71,6 @@ function emptyStateCopy(tab: ProfileTab): { title: string; description: string }
         description: "This learner has not shared credentials or progress with recruiters yet.",
       };
   }
-}
-
-function detailSectionForTab(tab: ProfileTab): "evidence" | "verify" | null {
-  if (tab === "competencies") return "evidence";
-  if (tab === "verify") return "verify";
-  return null;
 }
 
 type DisclosedPersonal = {
@@ -206,10 +210,16 @@ export default function CandidateSummary() {
     );
   }
 
-  const evidence = getEvidenceStats(candidate);
-  const institute = candidate.institution && candidate.institution !== "—"
-    ? candidate.institution
+  const evidenceSources = new Set(skillCards.flatMap((card) => sharedEvidenceForSkill(card).categories.map(({ source }) => source))).size;
+  const sharedCredentialCount = candidate.credentialCount ?? 0;
+  const activeVersions = recordedVersions.filter((version) => version.skillName.trim().toLowerCase() === activeSkill?.name.trim().toLowerCase());
+  const credentialId = activeSkill
+    ? activeSkill.credentialId ?? activeVersions.find((version) => version.hasCredential && version.credentialId)?.credentialId ?? null
     : null;
+  const identity = activeSkill ? extractDisclosedCredentialIdentity(activeSkill.payload, credentialId) : null;
+  const signature = activeSkill?.payload.issuerSignatureStatus;
+  const signatureVerified = signature === "valid";
+  const signatureFailed = signature === "invalid";
 
   const selectCompetency = (card: RecruiterSkillCard) => {
     setActiveSkillId(card.id);
@@ -223,105 +233,63 @@ export default function CandidateSummary() {
 
   return (
     <RecruiterWorkspaceShell>
-      <section className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex min-w-0 items-center gap-4">
-          {personal.photoUrl ? (
-            <img
-              src={personal.photoUrl}
-              alt=""
-              className="h-20 w-20 shrink-0 rounded-full object-cover ring-2 ring-[#e8eef7] sm:h-24 sm:w-24"
-            />
-          ) : (
-            <span className="flex h-20 w-20 shrink-0 items-center justify-center rounded-full bg-[#e8eef7] text-lg font-semibold text-[#023E8A] sm:h-24 sm:w-24 sm:text-xl">
-              {initials(candidate.name)}
-            </span>
-          )}
-          <div className="min-w-0">
-            <h1 className="truncate text-base font-semibold capitalize tracking-tight text-[#023E8A] sm:text-lg">
-              {candidate.name}
-            </h1>
-            {institute ? (
-              <p className="mt-1 truncate text-sm text-[#64748b]">{institute}</p>
-            ) : null}
-            <div className="mt-2">
-              <StatusBadge variant="verified" icon={<ShieldCheck className="h-3 w-3" />}>
-                {candidate.attestation}
-              </StatusBadge>
+      <div className="candidate-profile">
+        <Link to="/recruiter/search" className="candidate-back">
+          <ArrowLeft className="size-4" aria-hidden="true" /> Back to Candidates
+        </Link>
+        <header className="candidate-hero">
+          <div className="flex min-w-0 items-center gap-4">
+            {personal.photoUrl
+              ? <img src={personal.photoUrl} alt="" className="candidate-avatar object-cover" />
+              : <span className="candidate-avatar">{initials(candidate.name)}</span>}
+            <div className="min-w-0">
+              <h1 className="break-words text-xl font-bold sm:text-2xl">{candidate.name}</h1>
+              {(personal.program || personal.location) && (
+                <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-blue-50">
+                  {personal.program && <span className="inline-flex items-center gap-1.5"><GraduationCap className="size-4" aria-hidden="true" />{personal.program}</span>}
+                  {personal.location && <span className="inline-flex items-center gap-1.5"><MapPin className="size-4" aria-hidden="true" />{personal.location}</span>}
+                </div>
+              )}
             </div>
           </div>
+          <Button className="shrink-0 rounded-xl bg-white text-sijil-blue hover:bg-blue-50" onClick={() => setScheduleOpen(true)}>
+            <CalendarClock className="size-4" aria-hidden="true" /> Schedule Interview
+          </Button>
+        </header>
+        <div className="candidate-tabs" role="tablist" aria-label="Learner profile sections">
+          {PROFILE_TABS.map(({ id: tab, label, icon: Icon }) => (
+            <button key={tab} type="button" role="tab" aria-selected={profileTab === tab} onClick={() => selectProfileTab(tab)}>
+              <Icon className="size-5 shrink-0" aria-hidden="true" /> {label}
+            </button>
+          ))}
         </div>
-        <Button className="shrink-0 rounded-xl bg-[#023E8A] hover:bg-[#012A5C]" onClick={() => setScheduleOpen(true)}>
-          <CalendarClock className="mr-1.5 h-4 w-4" />
-          Schedule Interview
-        </Button>
-      </section>
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_300px]">
+      {profileTab === "verify" ? (
+        <CandidateCredentials key={candidate.id} cards={skillCards.filter((card) => card.credentialId)} />
+      ) : (
+      <div className="candidate-profile-grid">
         <div className="min-w-0 space-y-6">
-          <div className="learner-stat-card overflow-hidden">
-            <div className="border-b border-[#e2e8f0] px-3 py-3 sm:px-4">
-              <div
-                className="grid grid-cols-1 gap-2 sm:grid-cols-3"
-                role="tablist"
-                aria-label="Learner profile sections"
-              >
-                {PROFILE_TABS.map((tab) => {
-                  const active = profileTab === tab.id;
-                  const Icon = tab.icon;
-                  return (
-                    <button
-                      key={tab.id}
-                      type="button"
-                      role="tab"
-                      aria-selected={active}
-                      className={cn(
-                        "flex items-center gap-2.5 rounded-xl border px-3 py-3 text-left transition",
-                        active
-                          ? "border-[#023E8A] bg-[#023E8A] text-white shadow-sm"
-                          : "border-[#e2e8f0] bg-[#f8fafc] text-[#334155] hover:border-[#c5d4eb] hover:bg-white",
-                      )}
-                      onClick={() => selectProfileTab(tab.id)}
-                    >
-                      <span
-                        className={cn(
-                          "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg",
-                          active ? "bg-white/15 text-white" : "bg-white text-[#023E8A]",
-                        )}
-                      >
-                        <Icon className="h-4 w-4" />
-                      </span>
-                      <span className="min-w-0">
-                        <span className="block truncate text-xs font-semibold">{tab.label}</span>
-                        <span className={cn("mt-0.5 block truncate text-[10px]", active ? "text-white/80" : "text-[#94a3b8]")}>
-                          {tab.hint}
-                        </span>
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
+          <div className="candidate-panel">
             <div className="p-4 sm:p-5">
               {skillCards.length === 0 ? (
                 <EmptyState
-                  icon={profileTab === "verify" ? ShieldCheck : Wallet}
+                  icon={Wallet}
                   title={emptyStateCopy(profileTab).title}
                   description={emptyStateCopy(profileTab).description}
                   className="border-0 bg-transparent px-0 py-6"
                 />
               ) : (
                 <div className="space-y-4">
-                  <CompetencySlider
+                  {skillCards.length > 1 && <CompetencySlider
                     cards={skillCards}
                     activeId={activeSkill?.id ?? null}
                     onSelect={selectCompetency}
-                  />
+                  />}
 
                   {profileTab === "journey" && activeSkill ? (
                     <CompetencyJourney
                       skill={activeSkill.name}
-                      recordedVersions={recordedVersions}
+                      recordedVersions={activeVersions}
                       disclosedPayload={activeSkill.payload}
                       sharedAt={activeSkill.createdAt}
                       credentials={sharedCredentials
@@ -329,9 +297,7 @@ export default function CandidateSummary() {
                           const skillName = (credential.skill || credential.title || "").trim().toLowerCase();
                           const wanted = activeSkill.name.trim().toLowerCase();
                           return credential.presentationId === activeSkill.presentationId
-                            || skillName === wanted
-                            || skillName.includes(wanted)
-                            || wanted.includes(skillName);
+                            || skillName === wanted;
                         })
                         .map((credential) => ({
                           id: credential.presentationId,
@@ -343,33 +309,27 @@ export default function CandidateSummary() {
                     />
                   ) : null}
 
-                  {activeSkill && detailSectionForTab(profileTab) ? (
-                    <div className="rounded-xl border border-[#e2e8f0] bg-[#f8fafc] p-4">
-                      <div className="mb-4 flex flex-wrap items-start justify-between gap-2">
-                        <div>
-                          <h3 className="text-base font-semibold text-[#023E8A]">
-                            {displayRecruiterSkillName(activeSkill.name)}
-                          </h3>
+                  {activeSkill && profileTab === "competencies" ? (
+                    <div>
+                      <div className="mb-3 flex items-center gap-3">
+                        <span className="candidate-evidence-icon"><CodeXml className="size-6" aria-hidden="true" /></span>
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h3 className="text-base font-bold text-slate-900">{displayRecruiterSkillName(activeSkill.name)}</h3>
+                            <span className="learner-tag-linked">Shared</span>
+                          </div>
                           <p className="mt-0.5 text-xs text-[#64748b]">
                             {[
-                              activeSkill.domain,
-                              formatShortDate(activeSkill.createdAt) ? `Shared ${formatShortDate(activeSkill.createdAt)}` : null,
+                              formatShortDate(activeSkill.createdAt) ? `Shared on ${formatShortDate(activeSkill.createdAt)}` : null,
                               formatShortDate(activeSkill.expiresAt) ? `Valid through ${formatShortDate(activeSkill.expiresAt)}` : null,
                             ].filter(Boolean).join(" · ")}
                           </p>
                         </div>
-                        <span className="learner-tag-linked">Shared</span>
                       </div>
                       <RecruiterCompetencyDetail
                         card={activeSkill}
-                        section={detailSectionForTab(profileTab)!}
-                        credentialId={
-                          recordedVersions.find((version) => version.hasCredential && version.credentialId)
-                            ?.credentialId
-                          ?? recordedVersions.find((version) => version.credentialId)?.credentialId
-                          ?? activeSkill.credentialId
-                          ?? null
-                        }
+                        section="evidence"
+                        credentialId={credentialId}
                       />
                     </div>
                   ) : null}
@@ -379,22 +339,51 @@ export default function CandidateSummary() {
           </div>
         </div>
 
-        <aside className="space-y-4 xl:sticky xl:top-20 xl:self-start">
-          <div className="learner-stat-card p-5">
-            <h3 className="text-sm font-semibold text-[#023E8A]">Verification summary</h3>
-            <dl className="mt-4 space-y-3">
-              <SummaryRow label="Status" value={candidate.attestation} />
-              <SummaryRow label="Shared credentials" value={String(evidence.credentials || candidate.credentialCount)} />
-              <SummaryRow label="Disclosed evidence" value={String(evidence.evidenceTotal)} />
-              <SummaryRow label="Active presentations" value={String(sharedCredentials.length)} />
+        <aside className="min-w-0 space-y-3">
+          <section className="candidate-panel p-4">
+            <h2 className="candidate-panel-title"><UserRound className="size-5" aria-hidden="true" /> Candidate Summary</h2>
+            <dl className="mt-3">
+              <SummaryRow icon={Layers} label="Shared Skills" value={String(skillCards.length)} />
+              <SummaryRow icon={Award} label="Shared Credentials" value={String(sharedCredentialCount)} />
+              <SummaryRow icon={Layers} label="Shared Evidence Sources" value={String(evidenceSources)} />
             </dl>
-          </div>
+          </section>
+          <section className="candidate-panel p-4">
+            <h2 className="candidate-panel-title"><ShieldCheck className="size-5" aria-hidden="true" /> Credential Status</h2>
+            <div className={cn("candidate-status", signatureVerified && "candidate-status-verified", signatureFailed && "candidate-status-failed")}>
+              {signatureVerified ? <Check className="size-6 shrink-0" aria-hidden="true" /> : <ShieldCheck className="size-6 shrink-0" aria-hidden="true" />}
+              <div>
+                <strong>{signatureVerified ? "Signature verified" : signatureFailed ? "Signature check failed" : "Verification status unavailable"}</strong>
+                <p className="text-xs">{signatureVerified ? "SIJIL verified the issuer signature when this credential was shared." : "Open credential details to check its current status."}</p>
+              </div>
+            </div>
+            {activeSkill && (
+              <>
+                <div className="candidate-credential">
+                  <span className="candidate-evidence-icon"><CodeXml className="size-5" aria-hidden="true" /></span>
+                  <div className="min-w-0">
+                    <strong className="break-words text-sm">{displayRecruiterSkillName(activeSkill.name)} Credential</strong>
+                    <p className="text-xs text-slate-600">
+                      {[identity?.issuer ? "Issued by " + identity.issuer : null,
+                        formatShortDate(activeSkill.expiresAt) ? "Share valid through " + formatShortDate(activeSkill.expiresAt) : null].filter(Boolean).join(" · ")}
+                    </p>
+                  </div>
+                </div>
+                <button type="button" onClick={() => selectProfileTab("verify")} className="candidate-detail-link">
+                  View Credential Details <ArrowRight className="size-4" aria-hidden="true" />
+                </button>
+              </>
+            )}
+          </section>
 
           {ZKP_UI_ENABLED && <SidebarProofRequestsCard
             skills={skillCards}
             learnerUserId={candidate.id}
           />}
         </aside>
+      </div>
+      )}
+
       </div>
 
       <ScheduleInterviewDialog
@@ -443,10 +432,10 @@ function CompetencySlider({
   );
 }
 
-function SummaryRow({ label, value }: { label: string; value: string }) {
+function SummaryRow({ icon: Icon, label, value }: { icon: typeof Layers; label: string; value: string }) {
   return (
-    <div className="flex items-center justify-between gap-3 border-b border-[#f1f5f9] pb-2 last:border-0 last:pb-0">
-      <dt className="text-xs text-[#64748b]">{label}</dt>
+    <div className="flex items-center justify-between gap-3 border-b border-blue-50 py-2 last:border-0">
+      <dt className="flex items-center gap-2 text-sm text-slate-700"><Icon className="size-4 text-sijil-blue" aria-hidden="true" />{label}</dt>
       <dd className="text-sm font-semibold text-[#023E8A]">{value}</dd>
     </div>
   );

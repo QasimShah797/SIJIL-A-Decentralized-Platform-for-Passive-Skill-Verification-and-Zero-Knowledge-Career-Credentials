@@ -224,10 +224,7 @@ function practicalMilestones(payload: Record<string, unknown> | null | undefined
   return attempts.map(({ key, attempt, date }, index) => {
     const attemptNumber = index + 1;
     const scoreLabel = scoreLabelFrom(attempt);
-    const passed = attempt.passed === true
-      || attempt.status === "Passed"
-      || asText(attempt.result)?.toLowerCase() === "passed";
-    const status = asText(attempt.status) ?? (passed ? "Passed" : "Submitted");
+    const status = "Submitted";
     const attemptTitle = asText(attempt.title) ?? asText(attempt.taskTitle) ?? taskTitle;
     const retryLabel = attemptNumber === 1
       ? "First attempt"
@@ -243,7 +240,7 @@ function practicalMilestones(payload: Record<string, unknown> | null | undefined
         status,
       ].filter(Boolean).join(" · "),
       date,
-      verification: (passed ? "Verified" : "Shared") as JourneyVerification,
+      verification: "Shared" as JourneyVerification,
       skill,
       attemptNumber,
       attemptTotal: total,

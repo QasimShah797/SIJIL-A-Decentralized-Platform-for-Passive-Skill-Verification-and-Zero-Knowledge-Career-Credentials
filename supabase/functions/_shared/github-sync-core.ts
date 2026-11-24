@@ -102,6 +102,23 @@ export async function runGitHubSync(
     }, declaredSkills);
 
     let commitCount: number | null = null;
+    let authoredCount: number | null = null;
+    let lastAuthoredCommitAt: string | null = null;
+    try {
+      const query = new URLSearchParams({ author: connection.github_username, per_page: "1" });
+      const response = await fetch(`${GH}/repos/${r.full_name}/commits?${query}`, { headers: ghHeaders });
+      if (response.ok) {
+        const commits = await response.json();
+        const links = response.headers.get("link") ?? "";
+        const last = links.match(/<([^>]+)>;\s*rel="last"/)?.[1];
+        const total = last ? Number(new URL(last).searchParams.get("page")) : links.includes('rel="next"') ? null : commits.length;
+        if (Array.isArray(commits) && total !== null && Number.isSafeInteger(total) && total >= commits.length) {
+          authoredCount = total;
+          const date = commits[0]?.commit?.author?.date;
+          if (typeof date === "string" && Number.isFinite(Date.parse(date))) lastAuthoredCommitAt = date;
+        }
+      }
+    } catch { /* leave authored metrics unavailable for this sync */ }
     if (skill) {
       try {
         const cResp = await fetch(`${GH}/repos/${r.full_name}/commits?per_page=1`, { headers: ghHeaders });
@@ -182,6 +199,8 @@ export async function runGitHubSync(
       primary_language: r.language ?? null,
       last_updated: r.updated_at,
       commit_count: commitCount,
+      learner_commit_count: authoredCount,
+      learner_last_commit_at: lastAuthoredCommitAt,
       linked_skill_id: skill?.id ?? null,
       linked_skill_name: skill?.name ?? null,
       linked_at: skill ? new Date().toISOString() : null,
@@ -323,9 +342,14 @@ export async function runGitHubSync(
       }
       return r;
     });
-    const { error: repoErr, count } = await admin
+    const upsert = (repositories: Array<Record<string, unknown>>) => admin
       .from("github_repos")
-      .upsert(merged, { onConflict: "user_id,repo_id", count: "exact" });
+      .upsert(repositories, { onConflict: "user_id,repo_id", count: "exact" });
+    let { error: repoErr, count } = await upsert(merged);
+    if (repoErr?.code === "PGRST204" || repoErr?.code === "42703") {
+      const legacyRows = merged.map(({ learner_commit_count: _count, learner_last_commit_at: _date, ...repo }) => repo);
+      ({ error: repoErr, count } = await upsert(legacyRows));
+    }
     if (repoErr) throw new Error(repoErr.message);
     reposUpserted = count ?? merged.length;
   }

@@ -45,6 +45,7 @@ export type GuidedShareCredential = {
   sharedWithRecruiters?: boolean;
   sharedPublicly?: boolean;
   evidenceAvailability?: EvidenceShareAvailability;
+  recruiterEvidencePreview?: Partial<Record<keyof EvidenceModes, string>>;
 };
 
 export type GuidedShareResult = {
@@ -429,6 +430,7 @@ export function GuidedShareFlow({
           evidenceModes={recruiterModesFor(activeCredential)}
           onChangeEvidenceModes={(next) => setRecruiterModes((current) => ({ ...current, [activeCredential.id]: next }))}
           evidenceAvailability={activeCredential.evidenceAvailability}
+          evidencePreview={activeCredential.recruiterEvidencePreview}
           evidenceStatus={evidenceStatus}
           onRefreshEvidence={onRefreshEvidence}
           credentials={selected}

@@ -45,7 +45,7 @@ type NavItem = {
 
 type NavGroup = { label: string; items: NavItem[] };
 
-function recruiterNav(): NavGroup[] {
+function recruiterNav(dashboardLayout: boolean): NavGroup[] {
   return [
     {
       label: "Overview",
@@ -59,7 +59,7 @@ function recruiterNav(): NavGroup[] {
       ],
     },
     {
-      label: "Profile",
+      label: dashboardLayout ? "Account" : "Profile",
       items: [
         {
           to: "/recruiter/profile",
@@ -70,19 +70,18 @@ function recruiterNav(): NavGroup[] {
       ],
     },
     {
-      label: "Talent",
+      label: dashboardLayout ? "Recruitment" : "Talent",
       items: [
-        { to: "/recruiter/search", icon: Users, label: "Directory" },
+        { to: "/recruiter/search", icon: Users, label: dashboardLayout ? "Shared Profiles" : "Directory" },
         { to: "/recruiter/jobs", icon: Briefcase, label: "Jobs" },
         { to: "/recruiter/interviews", icon: CalendarClock, label: "Interviews" },
+        ...(dashboardLayout ? [{ to: "/recruiter/compare", icon: BadgeCheck, label: "Compare Candidates" }] : []),
       ],
     },
-    {
+    ...(!dashboardLayout ? [{
       label: "Review",
-      items: [
-        { to: "/recruiter/compare", icon: BadgeCheck, label: "Compare" },
-      ],
-    },
+      items: [{ to: "/recruiter/compare", icon: BadgeCheck, label: "Compare" }],
+    }] : []),
   ];
 }
 
@@ -325,10 +324,12 @@ export function RecruiterWorkspaceShell({
   variant = "dashboard",
   children,
   rightRail,
+  dashboardLayout = false,
 }: {
   variant?: ShellVariant;
   children: ReactNode;
   rightRail?: ReactNode;
+  dashboardLayout?: boolean;
 }) {
   const { pathname } = useLocation();
   const navigate = useNavigate();
@@ -352,7 +353,7 @@ export function RecruiterWorkspaceShell({
   }, [sidebarCollapsed]);
 
   const isDark = variant === "dashboard";
-  const groups = recruiterNav();
+  const groups = recruiterNav(dashboardLayout);
 
   const handleSignOut = () => {
     void signOut().then(() => navigate("/login/recruiter"));
@@ -382,7 +383,7 @@ export function RecruiterWorkspaceShell({
   const sidebar = <SidebarContent {...sidebarProps} />;
 
   return (
-    <div className={cn("flex min-h-screen w-full flex-col", isDark ? "learner-shell-dashboard" : "learner-shell-profile")}>
+    <div className={cn("flex min-h-screen w-full flex-col", isDark ? "learner-shell-dashboard" : "learner-shell-profile", dashboardLayout && "recruiter-dashboard-shell")}>
       <header
         className={cn(
           "sticky top-0 z-40 flex h-16 w-full shrink-0 items-center",

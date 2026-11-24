@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ChevronRight, ListFilter, Loader2, RefreshCw, Send, Sparkles, X } from "lucide-react";
+import { ArrowRight, Search, ChevronRight, ListFilter, Loader2, RefreshCw, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { CandidateView } from "@/lib/db/candidates";
 import type { CandidateSkill } from "@/lib/sijil-data";
@@ -7,15 +7,6 @@ import { buildFallbackMatchAnswer } from "@/lib/recruiter-match-fallback";
 import type { RecruiterMatchAnswer } from "@/lib/recruiter-match-response";
 import { useRecruiterMatch } from "@/hooks/useRecruiterMatch";
 import { cn } from "@/lib/utils";
-
-const SUGGESTIONS = [
-  "Compare the selected learners on TypeScript",
-  "Who has the strongest verified frontend evidence?",
-  "Rank learners for a junior full-stack role",
-  "Which learners have skills without supporting evidence?",
-  "Show learners with Java and Mobile App Development",
-  "Where is each learner strongest and weakest?",
-];
 
 const FALLBACK_CODES = new Set(["UPSTREAM", "UPSTREAM_HTTP", "UPSTREAM_EMPTY", "UPSTREAM_BLOCKED", "UPSTREAM_TRUNCATED", "BAD_JSON", "NOT_FOUND", "UNKNOWN"]);
 
@@ -149,32 +140,32 @@ export function SijilMatchBot({
   return (
     <div className="relative w-full">
       <form
-        className="flex h-14 items-center gap-3 rounded-xl border border-[#e2e8f0] bg-white px-3 shadow-sm transition duration-200 focus-within:border-[#023E8A]/40 focus-within:ring-2 focus-within:ring-[#023E8A]/15"
+        className="flex min-h-12 items-center gap-2 rounded-xl border border-[#e2e8f0] bg-white px-2.5 py-1.5 shadow-sm transition duration-200 focus-within:border-[#023E8A]/40 focus-within:ring-2 focus-within:ring-[#023E8A]/15"
         onSubmit={(event) => {
           event.preventDefault();
           submit(input);
         }}
       >
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#e8eef7] text-[#023E8A]">
-          <Sparkles className="h-4 w-4" aria-hidden />
+        <span className="flex size-8 shrink-0 items-center justify-center text-sijil-blue">
+          <Search className="h-5 w-5" aria-hidden />
         </span>
         <label className="sr-only" htmlFor="sijil-match-question">Ask SIJIL Match</label>
         <input
           id="sijil-match-question"
           value={input}
           onChange={(event) => setInput(event.target.value)}
-          placeholder="e.g. Rank learners for a junior TypeScript role…"
+          placeholder="Describe the role or skills you are looking for..."
           maxLength={500}
           className="h-full min-w-0 flex-1 bg-transparent text-sm text-[#0f172a] outline-none placeholder:text-[#94a3b8] focus-visible:outline-none"
         />
         <Button
           type="submit"
           size="sm"
-          className="h-10 w-10 shrink-0 rounded-full bg-[#023E8A] p-0 hover:bg-[#012A5C] focus-visible:ring-2 focus-visible:ring-[#023E8A] focus-visible:ring-offset-2"
+          className="h-9 shrink-0 gap-2 rounded-lg bg-[#023E8A] px-3 text-xs sm:px-5 hover:bg-[#012A5C] focus-visible:ring-2 focus-visible:ring-[#023E8A] focus-visible:ring-offset-2"
           disabled={status === "loading" || !input.trim()}
-          aria-label="Ask SIJIL Match"
+          aria-label="Find matches"
         >
-          {status === "loading" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+          {status === "loading" ? <Loader2 className="h-4 w-4 animate-spin" /> : <>Find matches <ArrowRight className="size-4" aria-hidden="true" /></>}
         </Button>
       </form>
 
@@ -187,21 +178,6 @@ export function SijilMatchBot({
             </button>
           ) : null}
         </p>
-      ) : null}
-
-      {status === "idle" ? (
-        <div className="mt-3 flex flex-wrap gap-2">
-          {SUGGESTIONS.slice(0, 5).map((suggestion) => (
-            <button
-              key={suggestion}
-              type="button"
-              onClick={() => submit(suggestion)}
-              className="rounded-full border border-[#e2e8f0] bg-[#f8fafc] px-3 py-1.5 text-left text-xs font-medium text-[#64748b] transition duration-200 hover:border-[#c5d4eb] hover:text-[#023E8A] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#023E8A]"
-            >
-              {suggestion}
-            </button>
-          ))}
-        </div>
       ) : null}
 
       {showResults ? (

@@ -36,7 +36,8 @@ function saved(emailStatus: string): ScheduledInterviewView {
 }
 
 function submit() {
-  fireEvent.change(screen.getByLabelText("Meeting link"), {
+  fireEvent.click(screen.getByRole("radio", { name: "Enter my own meeting link" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "Meeting URL" }), {
     target: { value: "https://meet.example.com/sijil" },
   });
   fireEvent.click(screen.getByRole("button", { name: "Send invitation" }));
@@ -64,6 +65,41 @@ describe("schedule interview dialog", () => {
     expect(payload.timeZone).toBeTruthy();
     expect(payload).not.toHaveProperty("candidateEmail");
     expect(payload.candidateId).toBe("learner-1");
+    expect(payload.locationOrLink).toBe("https://meet.example.com/sijil");
+  });
+
+  it("defaults to generating a Meet link and omits a manual override", async () => {
+    vi.mocked(scheduleInterviewApi).mockResolvedValue(saved("sent"));
+    render(
+      <ScheduleInterviewDialog open onOpenChange={() => undefined} candidateId="learner-1" candidateName="Horain" />,
+    );
+    expect(screen.getByRole("radio", { name: "Generate Google Meet link (recommended)" })).toBeChecked();
+    expect(screen.queryByRole("textbox", { name: "Meeting URL" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Send invitation" }));
+    await waitFor(() => expect(scheduleInterviewApi).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: "video_call", locationOrLink: undefined }),
+    ));
+  });
+
+  it("offers a manual retry with the same interview details when automatic Meet is unavailable", async () => {
+    vi.mocked(scheduleInterviewApi)
+      .mockRejectedValueOnce(new Error("API 503: Automatic Google Meet is unavailable. Enter your own meeting link."))
+      .mockResolvedValueOnce(saved("sent"));
+    const onOpenChange = vi.fn();
+    render(<ScheduleInterviewDialog open onOpenChange={onOpenChange} candidateId="learner-1" candidateName="Horain" />);
+    fireEvent.change(screen.getByLabelText("Notes (optional)"), { target: { value: "Bring portfolio" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send invitation" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Automatic Google Meet is unavailable");
+    expect(onOpenChange).not.toHaveBeenCalled();
+    expect(screen.getByRole("radio", { name: "Enter my own meeting link" })).toBeChecked();
+    fireEvent.change(screen.getByRole("textbox", { name: "Meeting URL" }), { target: { value: "https://meet.example.com/sijil" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send invitation" }));
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+    expect(scheduleInterviewApi).toHaveBeenNthCalledWith(2, {
+      ...vi.mocked(scheduleInterviewApi).mock.calls[0][0],
+      notes: "Bring portfolio",
+      locationOrLink: "https://meet.example.com/sijil",
+    });
   });
 
   it("keeps a saved interview separate from an email rejection", async () => {

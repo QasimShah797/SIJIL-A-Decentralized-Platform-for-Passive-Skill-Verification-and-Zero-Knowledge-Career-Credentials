@@ -1,6 +1,6 @@
 import type { FormEvent } from "react";
 import { useEffect, useMemo, useState } from "react";
-import { CalendarClock } from "lucide-react";
+import { CalendarClock, CalendarDays, Clock, FileText, Globe, Link2, MapPin, Video } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -52,6 +52,9 @@ export function ScheduleInterviewDialog({
   const [durationMinutes, setDurationMinutes] = useState("30");
   const [mode, setMode] = useState<InterviewMode>(INTERVIEW_MODE.VIDEO_CALL);
   const [locationOrLink, setLocationOrLink] = useState("");
+  const [meetingLinkMode, setMeetingLinkMode] = useState<"automatic" | "manual">("automatic");
+  const [meetUnavailable, setMeetUnavailable] = useState(false);
+  const [meetingLink, setMeetingLink] = useState("");
   const [notes, setNotes] = useState("");
   const [timeZone, setTimeZone] = useState(() => browserTimeZone());
   const [submitting, setSubmitting] = useState(false);
@@ -62,6 +65,9 @@ export function ScheduleInterviewDialog({
     setDurationMinutes("30");
     setMode(INTERVIEW_MODE.VIDEO_CALL);
     setLocationOrLink("");
+    setMeetingLinkMode("automatic");
+    setMeetingLink("");
+    setMeetUnavailable(false);
     setNotes("");
     setTimeZone(browserTimeZone());
   }, [open, candidateId]);
@@ -98,6 +104,10 @@ export function ScheduleInterviewDialog({
       return;
     }
 
+    const interviewLocation = mode !== INTERVIEW_MODE.VIDEO_CALL
+      ? locationOrLink.trim()
+      : meetingLinkMode === "manual" ? meetingLink.trim() : undefined;
+
     setSubmitting(true);
     try {
       const interview = await scheduleInterviewApi({
@@ -105,10 +115,7 @@ export function ScheduleInterviewDialog({
         scheduledAt: scheduledIso,
         durationMinutes: Number(durationMinutes),
         mode,
-        locationOrLink:
-          mode === INTERVIEW_MODE.VIDEO_CALL
-            ? locationOrLink.trim() || undefined
-            : locationOrLink.trim(),
+        locationOrLink: interviewLocation,
         notes: notes.trim() || undefined,
         timeZone: zone,
       });
@@ -133,6 +140,12 @@ export function ScheduleInterviewDialog({
       onOpenChange(false);
       onScheduled?.();
     } catch (err) {
+      if (mode === INTERVIEW_MODE.VIDEO_CALL && meetingLinkMode === "automatic" && err instanceof Error
+        && /^(?:API 503: )?(?:Automatic Google Meet is unavailable|Google Calendar is not connected|Google Calendar (?:access expired|authorization failed|credentials are invalid))/i.test(err.message)) {
+        setMeetUnavailable(true);
+        setMeetingLinkMode("manual");
+        return;
+      }
       toast({
         title: "Interview scheduling failed",
         description: err instanceof Error ? err.message : "Please try again.",
@@ -143,22 +156,26 @@ export function ScheduleInterviewDialog({
     }
   };
 
+  const fieldLabel = "flex items-center gap-2.5 text-sm font-semibold text-[#112557] sm:text-base";
+  const control = "h-11 rounded-xl border-slate-300 bg-white px-3.5 text-sm text-slate-950 sm:h-12 sm:text-base";
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>Schedule interview</DialogTitle>
-          <DialogDescription>
-            Invite {candidateName} by email. Video calls get a Google Meet link from SIJIL automatically —
-            recruiters do not need their own Google account.
-          </DialogDescription>
+      <DialogContent
+        overlayClassName="bg-slate-950/65"
+        className="max-h-[calc(100dvh-1.5rem)] w-[calc(100%-1.5rem)] gap-5 overflow-y-auto rounded-2xl border-slate-200 bg-white p-5 shadow-2xl sm:max-w-2xl sm:gap-7 sm:p-8 [&>button]:right-5 [&>button]:top-5 [&>button]:bg-transparent [&>button]:text-[#112557] sm:[&>button]:right-7 sm:[&>button]:top-7 [&>button>svg]:size-5"
+      >
+        <DialogHeader className="pr-8 text-left">
+          <DialogTitle className="text-2xl font-bold text-[#112557] sm:text-3xl">Schedule Interview</DialogTitle>
+          <DialogDescription className="sr-only">Send an interview invitation to {candidateName}.</DialogDescription>
         </DialogHeader>
-        <form onSubmit={submit} className="space-y-4">
+        <form onSubmit={submit} className="space-y-5 sm:space-y-6">
           <div className="space-y-2">
-            <Label htmlFor="interview-datetime">Date and time</Label>
+            <Label htmlFor="interview-datetime" className={fieldLabel}><CalendarDays className="size-5 shrink-0" aria-hidden="true" />Date and time</Label>
             <Input
               id="interview-datetime"
               type="datetime-local"
+              className={control}
               min={minDateTime}
               value={scheduledAt}
               onChange={(event) => setScheduledAt(event.target.value)}
@@ -167,9 +184,9 @@ export function ScheduleInterviewDialog({
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
-              <Label htmlFor="interview-duration">Duration</Label>
+              <Label htmlFor="interview-duration" className={fieldLabel}><Clock className="size-5 shrink-0" aria-hidden="true" />Duration</Label>
               <Select value={durationMinutes} onValueChange={setDurationMinutes}>
-                <SelectTrigger id="interview-duration">
+                <SelectTrigger id="interview-duration" className={control}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -182,9 +199,9 @@ export function ScheduleInterviewDialog({
               </Select>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="interview-mode">Interview mode</Label>
+              <Label htmlFor="interview-mode" className={fieldLabel}><Video className="size-5 shrink-0" aria-hidden="true" />Interview mode</Label>
               <Select value={mode} onValueChange={(value) => setMode(value as InterviewMode)}>
-                <SelectTrigger id="interview-mode">
+                <SelectTrigger id="interview-mode" className={control}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -198,39 +215,55 @@ export function ScheduleInterviewDialog({
             </div>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="interview-timezone">Timezone</Label>
+            <Label htmlFor="interview-timezone" className={fieldLabel}><Globe className="size-5 shrink-0" aria-hidden="true" />Timezone</Label>
             <Input
               id="interview-timezone"
+              className={control}
+              list="interview-timezones"
+              aria-describedby="interview-timezone-help"
               value={timeZone}
               onChange={(event) => setTimeZone(event.target.value)}
               placeholder="Asia/Karachi"
               required
             />
-            <p className="text-xs text-muted-foreground">
+            <datalist id="interview-timezones">
+              {[...new Set(["Asia/Karachi", "UTC", browserTimeZone()])].map((zone) => <option key={zone} value={zone} />)}
+            </datalist>
+            <p id="interview-timezone-help" className="text-sm text-slate-600">
               The date and time above are read in this timezone. Example: Asia/Karachi or UTC.
             </p>
           </div>
           {mode === INTERVIEW_MODE.VIDEO_CALL ? (
-            <div className="rounded-lg border border-border/70 bg-muted/30 px-3 py-3 text-sm text-muted-foreground">
-              <Label htmlFor="interview-location" className="text-foreground">Meeting link</Label>
-              <p id="interview-link-help" className="mt-1">
-                Leave this blank to generate a Google Meet link with SIJIL, or enter your own meeting link.
-              </p>
-              <Input
-                id="interview-location"
-                aria-describedby="interview-link-help"
-                type="url"
-                className="mt-3"
-                value={locationOrLink}
-                onChange={(event) => setLocationOrLink(event.target.value)}
-                placeholder="Optional override (leave blank for auto Meet)"
-              />
-            </div>
+            <fieldset className="rounded-xl border border-blue-100 bg-blue-50 p-3.5 sm:p-4" aria-labelledby="interview-meeting-title">
+              <div id="interview-meeting-title" className={fieldLabel}><Link2 className="size-5" aria-hidden="true" />Meeting link</div>
+              <div className="mt-3 space-y-1">
+                <label className={`flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-slate-950 sm:text-base ${meetingLinkMode === "automatic" ? "bg-blue-100" : ""}`}>
+                  <input type="radio" name="interview-link-mode" value="automatic" checked={meetingLinkMode === "automatic"} onChange={() => setMeetingLinkMode("automatic")} className="size-4 shrink-0 accent-sijil-blue" />
+                  Generate Google Meet link (recommended)
+                </label>
+                <label className={`flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-slate-950 sm:text-base ${meetingLinkMode === "manual" ? "bg-blue-100" : ""}`}>
+                  <input type="radio" name="interview-link-mode" value="manual" checked={meetingLinkMode === "manual"} onChange={() => setMeetingLinkMode("manual")} className="size-4 shrink-0 accent-sijil-blue" />
+                  Enter my own meeting link
+                </label>
+              </div>
+              {meetUnavailable && (
+                <p className="mt-3 text-sm text-slate-700" role="alert">
+                  Automatic Google Meet is unavailable. Enter a meeting URL to send the invitation.
+                </p>
+              )}
+              {meetingLinkMode === "manual" && (
+                <div className="mt-3 space-y-2">
+                  <Label htmlFor="interview-meeting-url" className={fieldLabel}>Meeting URL</Label>
+                  <Input id="interview-meeting-url" required type="url" className={control} value={meetingLink} onChange={(event) => setMeetingLink(event.target.value)} placeholder="https://" />
+                </div>
+              )}
+            </fieldset>
           ) : (
             <div className="space-y-2">
-              <Label htmlFor="interview-location">{locationLabel}</Label>
+              <Label htmlFor="interview-location" className={fieldLabel}><MapPin className="size-5" aria-hidden="true" />{locationLabel}</Label>
               <Input
                 id="interview-location"
+                className={control}
                 value={locationOrLink}
                 onChange={(event) => setLocationOrLink(event.target.value)}
                 placeholder={INTERVIEW_LOCATION_PLACEHOLDERS[mode]}
@@ -239,20 +272,21 @@ export function ScheduleInterviewDialog({
             </div>
           )}
           <div className="space-y-2">
-            <Label htmlFor="interview-notes">Notes (optional)</Label>
+            <Label htmlFor="interview-notes" className={fieldLabel}><FileText className="size-5 shrink-0" aria-hidden="true" />Notes (optional)</Label>
             <Textarea
               id="interview-notes"
+              className="min-h-24 rounded-xl border-slate-300 bg-white p-3.5 text-slate-950 placeholder:text-slate-500 sm:text-base"
               value={notes}
               onChange={(event) => setNotes(event.target.value)}
               placeholder="Agenda, interviewer names, or anything the learner should prepare"
               maxLength={2000}
             />
           </div>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>
+          <DialogFooter className="gap-2 pt-2 sm:gap-3 sm:space-x-0 sm:pt-4">
+            <Button type="button" variant="outline" className="h-11 rounded-xl border-sijil-blue px-6 font-semibold text-sijil-blue" onClick={() => onOpenChange(false)} disabled={submitting}>
               Close
             </Button>
-            <Button type="submit" disabled={submitting}>
+            <Button type="submit" disabled={submitting} className="h-11 rounded-xl bg-sijil-blue px-6 font-semibold text-white hover:bg-sijil-blue/90">
               <CalendarClock className="mr-1.5 h-4 w-4" />
               {submitting ? "Scheduling…" : "Send invitation"}
             </Button>

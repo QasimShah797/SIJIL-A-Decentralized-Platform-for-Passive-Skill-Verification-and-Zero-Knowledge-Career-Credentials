@@ -1,0 +1,60 @@
+﻿.recruiter-dashboard {
+  width: 100%;
+}
+
+.recruiter-match-hero {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  padding: clamp(1rem, 3vw, 1.5rem);
+  border-radius: .7rem;
+  background: linear-gradient(115deg, hsl(var(--sijil-blue)), #07346c);
+  color: white;
+}
+
+.recruiter-match-hero::before,
+.recruiter-match-hero::after {
+  position: absolute;
+  z-index: -1;
+  top: -1.5rem;
+  right: .75rem;
+  width: 9.5rem;
+  height: 9.5rem;
+  border-bottom: 1.25rem solid #5c9de232;
+  border-left: 1.25rem solid #5c9de232;
+  transform: rotate(45deg);
+  pointer-events: none;
+  content: "";
+}
+
+.recruiter-match-hero::after {
+  right: 5.25rem;
+}
+
+.recruiter-dashboard-card {
+  overflow: hidden;
+  border: 1px solid #dee9f6;
+  border-radius: .7rem;
+  background: white;
+}
+
+.recruiter-dashboard-link {
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  color: hsl(var(--sijil-blue));
+  font-size: .75rem;
+  font-weight: 650;
+}
+
+.recruiter-dashboard-link:hover { text-decoration: underline; }
+
+.recruiter-dashboard-shell .learner-main-scroll {
+  background: #f1f6fc;
+}
+
+.recruiter-dashboard-shell .learner-sidebar-dark {
+  background: linear-gradient(160deg, #07376f, hsl(var(--sijil-blue)));
+}
+
+.recruiter-dashboard-shell .learner-sidebar-promo { display: none; }

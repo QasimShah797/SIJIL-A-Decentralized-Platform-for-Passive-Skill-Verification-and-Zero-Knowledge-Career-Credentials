@@ -30,7 +30,7 @@ describe("WalletPrivacySettingsCard", () => {
     await waitFor(() => expect(marks).not.toBeDisabled());
     expect(marks).toHaveAttribute("aria-checked", "false");
     expect(commits).toHaveAttribute("aria-checked", "false");
-    expect(screen.getByText(/only whether you met the 60% policy/)).toBeInTheDocument();
+    expect(screen.getByText(/see the attempt count when you share the assessment/)).toBeInTheDocument();
   });
 
   it("sends only the toggled permission and never thresholds or values", async () => {

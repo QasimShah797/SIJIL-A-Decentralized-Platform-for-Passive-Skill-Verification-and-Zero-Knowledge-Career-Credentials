@@ -64,7 +64,8 @@ describe("buildSkillJourneyTimeline", () => {
     expect(timeline.map((item) => item.kind)).toEqual(["assessment", "credential", "version"]);
     expect(timeline[0].title).toContain("Attempt 1 of 1");
     expect(timeline[0].scoreLabel).toBe("88%");
-    expect(timeline[0].verification).toBe("Verified");
+    expect(timeline[0].verification).toBe("Shared");
+    expect(timeline[0].detail).not.toMatch(/pass|fail/i);
     expect(timeline[2].verification).toBe("Verified");
   });
 

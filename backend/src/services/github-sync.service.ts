@@ -3,6 +3,7 @@
  * Does not auto-link repositories to skills; preserves existing manual links on re-sync.
  */
 import { supabaseService } from "./supabase.service";
+import { isMissingColumnError } from "../utils/supabase-errors";
 import { AppError } from "../utils/AppError";
 import {
   EVIDENCE_RECORD_STATUS,
@@ -14,6 +15,37 @@ import type { GitHubSyncResult } from "../types/github-evidence.types";
 import { bytesToPercentages } from "../utils/evidence-matching";
 
 const GH = "https://api.github.com";
+
+export async function fetchLearnerCommitMetrics(
+  fullName: string,
+  login: string,
+  headers: Record<string, string>,
+  request: typeof fetch = fetch,
+): Promise<{ learner_commit_count: number | null; learner_last_commit_at: string | null }> {
+  const missing = { learner_commit_count: null, learner_last_commit_at: null };
+  const names = fullName.split("/");
+  if (names.length !== 2 || names.some((name) => !/^[a-z0-9_.-]+$/i.test(name) || name === "." || name === "..")) return missing;
+  const query = new URLSearchParams({ author: login, per_page: "1" });
+  try {
+    const response = await request(`${GH}/repos/${names.map(encodeURIComponent).join("/")}/commits?${query}`, {
+      headers, signal: AbortSignal.timeout(5000),
+    });
+    if (!response.ok) return missing;
+    const commits = await response.json();
+    if (!Array.isArray(commits)) return missing;
+    const links = response.headers.get("link") ?? "";
+    const last = links.match(/<([^>]+)>;\s*rel="last"/)?.[1];
+    const total = last ? Number(new URL(last).searchParams.get("page"))
+      : links.includes('rel="next"') ? null : commits.length;
+    const date = commits[0]?.commit?.author?.date;
+    return {
+      learner_commit_count: total !== null && Number.isSafeInteger(total) && total >= commits.length ? total : null,
+      learner_last_commit_at: typeof date === "string" && Number.isFinite(Date.parse(date)) ? date : null,
+    };
+  } catch {
+    return missing;
+  }
+}
 
 type DeclaredSkillRef = { id: string; name: string; domain?: string };
 
@@ -170,6 +202,8 @@ export class GitHubSyncService {
         fetchPackageDependencies(fullName, ghHeaders),
       ]);
 
+      const learnerMetrics = await fetchLearnerCommitMetrics(fullName, connection.github_username, ghHeaders);
+
       let commitCount: number | null = null;
       try {
         const cResp = await fetch(`${GH}/repos/${fullName}/commits?per_page=1`, { headers: ghHeaders });
@@ -263,6 +297,7 @@ export class GitHubSyncService {
         dependencies,
         last_updated: r.updated_at,
         commit_count: commitCount,
+        ...learnerMetrics,
         synced_at: new Date().toISOString(),
       });
 
@@ -314,9 +349,15 @@ export class GitHubSyncService {
     }
 
     if (repoRows.length) {
-      await supabaseService.client
+      const upsert = (rows: Array<Record<string, unknown>>) => supabaseService.client
         .from("github_repos")
-        .upsert(repoRows, { onConflict: "user_id,repo_id" });
+        .upsert(rows, { onConflict: "user_id,repo_id" });
+      let { error } = await upsert(repoRows);
+      if (isMissingColumnError(error)) {
+        const legacyRows = repoRows.map(({ learner_commit_count: _count, learner_last_commit_at: _date, ...repo }) => repo);
+        ({ error } = await upsert(legacyRows));
+      }
+      if (error) throw new AppError(error.message, 500);
     }
 
     await supabaseService.client
@@ -331,6 +372,30 @@ export class GitHubSyncService {
       activitiesSynced: activityRows.length,
       contributorsSynced: contributorRows.length,
     };
+  }
+
+  async fillMissingLearnerCommitMetrics(userId: string, repos: Array<Record<string, unknown>>) {
+    const needsMetrics = (repo: Record<string, unknown>) => typeof repo.full_name === "string"
+      && (repo.learner_commit_count == null || (repo.learner_commit_count !== 0 && repo.learner_last_commit_at == null));
+    if (!repos.some(needsMetrics)) return;
+
+    const { data: connection, error } = await supabaseService.client
+      .from("github_connections")
+      .select("github_username, access_token")
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (error || !connection?.github_username || !connection.access_token) return;
+
+    const headers = {
+      Authorization: `Bearer ${connection.access_token}`,
+      Accept: "application/vnd.github+json",
+      "User-Agent": "SIJIL-backend",
+    };
+    await Promise.all(repos.filter(needsMetrics).map(async (repo) => {
+      const metrics = await fetchLearnerCommitMetrics(repo.full_name as string, connection.github_username, headers);
+      repo.learner_commit_count ??= metrics.learner_commit_count;
+      repo.learner_last_commit_at ??= metrics.learner_last_commit_at;
+    }));
   }
 
   async getLatestSyncStatus(userId: string): Promise<string> {

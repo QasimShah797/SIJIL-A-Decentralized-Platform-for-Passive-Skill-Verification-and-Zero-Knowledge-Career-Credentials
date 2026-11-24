@@ -32,7 +32,7 @@ export function sharePayloadMentionsCredential(
     ? row.competency as Record<string, unknown>
     : null;
   const competencyName = typeof competency?.name === "string" ? competency.name.trim().toLowerCase() : "";
-  if (competencyName && (competencyName === wanted || competencyName.includes(wanted) || wanted.includes(competencyName))) {
+  if (competencyName && competencyName === wanted) {
     return true;
   }
 
@@ -42,9 +42,16 @@ export function sharePayloadMentionsCredential(
     const name = typeof (skill as Record<string, unknown>).name === "string"
       ? String((skill as Record<string, unknown>).name).trim().toLowerCase()
       : "";
-    if (name && (name === wanted || name.includes(wanted) || wanted.includes(name))) return true;
+    if (name && name === wanted) return true;
   }
   return false;
+}
+
+export function pinnedRecruiterCredentialId(payload: unknown): string | null {
+  if (!payload || typeof payload !== "object") return null;
+  const row = payload as { sharedCredentialId?: unknown; selectiveDisclosure?: { credentialId?: unknown } };
+  const id = row.sharedCredentialId ?? row.selectiveDisclosure?.credentialId;
+  return typeof id === "string" && id.trim() ? id.trim() : null;
 }
 
 export function classifyRecruiterCredentialAccess(input: {
@@ -57,6 +64,8 @@ export function classifyRecruiterCredentialAccess(input: {
 }): "allowed" | "expired" | "revoked" | "forbidden" {
   const now = input.now ?? new Date();
   const related = input.shares.filter((share) => {
+    const pinnedId = pinnedRecruiterCredentialId(share.disclosedPayload);
+    if (pinnedId) return pinnedId === input.credentialId;
     if (
       input.competencyId
       && share.competencyId

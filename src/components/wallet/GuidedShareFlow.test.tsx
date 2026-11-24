@@ -80,7 +80,7 @@ describe("wallet share flow", () => {
   });
 
   it("opens Share with Recruiter disclosure before confirming", async () => {
-    const { onShareAll } = renderFlow();
+    const { onShareAll } = renderFlow({ credentials: [{ ...credential, recruiterEvidencePreview: { practical_task_result: "Completed attempt count and latest marks and percentage" } }] });
     fireEvent.click(screen.getByRole("button", { name: "Share with Recruiters on SIJIL" }));
     fireEvent.click(screen.getByRole("button", { name: /TypeScript/ }));
     fireEvent.click(screen.getByRole("button", { name: "Continue" }));
@@ -91,7 +91,7 @@ describe("wallet share flow", () => {
     const assessment = screen.getByRole("switch", { name: "Practical Assessment" });
     expect(assessment).not.toBeChecked();
     fireEvent.click(assessment);
-    expect(screen.getByText("Summary included")).toBeVisible();
+    expect(screen.getByText("Completed attempt count and latest marks and percentage")).toBeVisible();
     fireEvent.click(screen.getByRole("switch", { name: "Learner Name" }));
     expect(screen.queryByText("eesha")).toBeNull();
     expect(screen.queryByText(/Selective Disclosure/i)).toBeNull();

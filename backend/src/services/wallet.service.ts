@@ -50,7 +50,9 @@ import {
   buildEvidenceLedger,
   competencyFromSharePayload,
 } from "../utils/public-credential-map";
-import { enforcePrivateGithubDisclosure, redactExactValues } from "../utils/exact-value-redaction";
+import { enforcePrivateGithubDisclosure, redactExactValues, recruiterShareExactPreferences } from "../utils/exact-value-redaction";
+import { isMissingColumnError } from "../utils/supabase-errors";
+import { githubSyncService } from "./github-sync.service";
 import { disclosurePreferencesStore } from "./disclosure-preferences.service";
 import { verifySharedPrivateResults } from "./shared-zkp-verification";
 import { walletExportAvailability } from "./wallet-pass.service";
@@ -142,6 +144,8 @@ export const LEARNER_MCQ_ATTEMPT_COLUMNS = [
 ] as const;
 
 const DISCLOSURE_REDACT_KEYS = new Set([
+  "learner_commit_count",
+  "learner_last_commit_at",
   "id",
   "user_id",
   "learner_user_id",
@@ -448,6 +452,16 @@ async function fetchShareRowsStrict(
   }
 }
 
+const GITHUB_REPOSITORY_COLUMNS = "id, linked_skill_id, repo_name, full_name, github_url, primary_language, commit_count, last_updated, synced_at";
+
+export async function fetchWalletGithubRepositories(
+  select: (columns: string) => PromiseLike<{ data: unknown[] | null; error: { code?: string; message?: string } | null }>,
+) {
+  const result = await select(GITHUB_REPOSITORY_COLUMNS + ", learner_commit_count, learner_last_commit_at");
+  // Repository identity and skill links are available on schemas that predate authored metrics.
+  return isMissingColumnError(result.error) ? select(GITHUB_REPOSITORY_COLUMNS) : result;
+}
+
 async function safeFetchRows(
   table: string,
   run: () => PromiseLike<{ data: unknown[] | null; error: { message?: string } | null }>,
@@ -557,13 +571,14 @@ type LearnerDisclosureContext = {
 function buildSkillEvidenceSlice(
   record: WalletCompetencyRecordView,
   selectedFields: WalletShareFieldId[],
+  exact?: { shareExactAssessmentMarks: boolean; shareExactGithubCommitCount: boolean },
 ): Record<string, unknown> | undefined {
   const hasField = (field: WalletShareFieldId) => selectedFields.includes(field);
   const evidence: Record<string, unknown> = {};
   // Per-field "details" mode uses the same safe summaries as the top-level evidence
   // block. Raw repos/scores/grades only enter via complete_evidence_package.
   if (hasField("github_evidence")) {
-    const githubEvidence = summarizeGithubDetails(record);
+    const githubEvidence = summarizeGithubDetails(record, exact?.shareExactGithubCommitCount);
     if (githubEvidence) evidence.github = githubEvidence;
   }
   if (hasField("lms_evidence")) {
@@ -571,7 +586,7 @@ function buildSkillEvidenceSlice(
     if (lmsEvidence) evidence.lms = lmsEvidence;
   }
   if (hasField("practical_task_result")) {
-    const practicalTask = summarizePracticalDetails(record);
+    const practicalTask = summarizePracticalDetails(record, exact?.shareExactAssessmentMarks);
     if (practicalTask) evidence.practicalTask = practicalTask;
   }
   if (hasField("peer_reviews")) {
@@ -617,6 +632,7 @@ export function buildDisclosedPayload(
   learnerContext?: LearnerDisclosureContext,
   siblingRecords: WalletCompetencyRecordView[] = [],
   credentialIssueDate?: string | null,
+  exact?: { shareExactAssessmentMarks: boolean; shareExactGithubCommitCount: boolean },
 ): Record<string, unknown> {
   const hasField = (field: WalletShareFieldId) => selectedFields.includes(field);
   const payload: Record<string, unknown> = {};
@@ -661,7 +677,7 @@ export function buildDisclosedPayload(
   const evidence: Record<string, unknown> = {};
   // "Share details" uses safe summaries only — never full scores, grades, commits, or review text.
   if (hasField("github_evidence")) {
-    const githubEvidence = summarizeGithubDetails(record);
+    const githubEvidence = summarizeGithubDetails(record, exact?.shareExactGithubCommitCount);
     if (githubEvidence) evidence.github = githubEvidence;
   }
   if (hasField("lms_evidence")) {
@@ -669,7 +685,7 @@ export function buildDisclosedPayload(
     if (lmsEvidence) evidence.lms = lmsEvidence;
   }
   if (hasField("practical_task_result")) {
-    const practicalTask = summarizePracticalDetails(record);
+    const practicalTask = summarizePracticalDetails(record, exact?.shareExactAssessmentMarks);
     if (practicalTask) evidence.practicalTask = practicalTask;
   }
   if (hasField("peer_reviews")) {
@@ -732,7 +748,7 @@ export function buildDisclosedPayload(
     if (hasField("competency_name")) primarySkill.name = record.competencyName;
     if (hasField("competency_domain")) primarySkill.domain = record.domain;
     if (hasField("competency_description") && record.description) primarySkill.description = record.description;
-    const primaryEvidence = buildSkillEvidenceSlice(record, selectedFields);
+    const primaryEvidence = buildSkillEvidenceSlice(record, selectedFields, exact);
     if (primaryEvidence) primarySkill.evidence = primaryEvidence;
     skillRows.push(primarySkill);
   }
@@ -1066,12 +1082,9 @@ async function loadAggregatedWallet(userId: string): Promise<WalletCompetencyRec
         .eq("user_id", userId)
         .order("created_at", { ascending: true }),
     ),
-    safeFetchRows("github_repos", () =>
-      db()
-        .from("github_repos")
-        .select("id, linked_skill_id, repo_name, full_name, github_url, primary_language, commit_count, last_updated, synced_at")
-        .eq("user_id", userId),
-    ),
+    safeFetchRows("github_repos", () => fetchWalletGithubRepositories((columns) =>
+      db().from("github_repos").select(columns).eq("user_id", userId),
+    )),
     safeFetchRows("github_repo_skill_links", () =>
       db()
         .from("github_repo_skill_links")
@@ -1785,6 +1798,11 @@ export class WalletService {
     competencyId: string,
     input: ShareWalletCompetencyInput,
   ): Promise<ShareWalletCompetencyResult> {
+    const useSelectedRecruiterDetails = input.shareAudience === "all-recruiters"
+      && input.consentToAllRecruiters === true && !input.selectedFields.includes("complete_evidence_package");
+    const exact = !useSelectedRecruiterDetails && (input.shareAudience === "all-recruiters" || input.recipientUserId)
+      ? await disclosurePreferencesStore().get(userId)
+      : undefined;
     const records = await loadAggregatedWallet(userId);
     const record = records.find((item) => item.competencyId === competencyId);
     if (!record) throw new AppError("Competency wallet record not found", 404);
@@ -1823,13 +1841,18 @@ export class WalletService {
       input.selectedFields,
       evidenceModes,
     ) as WalletShareFieldId[];
+    if (useSelectedRecruiterDetails && evidenceModes.github_evidence === "details") {
+      await githubSyncService.fillMissingLearnerCommitMetrics(userId, record.evidencePackage.github.repos);
+    }
     let disclosedPayload = buildDisclosedPayload(
       record,
       fieldsForPayload,
       learnerContext,
       recordsForShareScope(shareScope, record, records, issuedIds),
       input.shareAudience === "all-recruiters" ? issuedCred?.valid_from ?? null : undefined,
+      useSelectedRecruiterDetails ? recruiterShareExactPreferences({ evidenceModes }) : exact,
     );
+    if (useSelectedRecruiterDetails) disclosedPayload.recruiterEvidenceConsent = "selected-details-v1";
     disclosedPayload.shareScope = shareScope;
     disclosedPayload.evidenceModes = evidenceModes;
     disclosedPayload.anchorStatus = "Not anchored";
@@ -1973,6 +1996,13 @@ export class WalletService {
           note: issuerCheck === "valid"
             ? "Issuer signature verified on the credential. Claim filtering is legacy application-level (not cryptographic SD)."
             : "Legacy application-level field filtering. Issuer signature check: " + issuerCheck,
+        };
+      }
+      if (input.shareAudience === "all-recruiters" || input.recipientUserId) {
+        disclosedPayload.sharedCredentialId = issuedCred.id;
+        disclosedPayload.recruiterCredentialInfo = {
+          issuer: issuedCred.issuer_name,
+          issuedAt: fieldsForPayload.includes("timestamps") ? issuedCred.valid_from : null,
         };
       }
       disclosedPayload.issuerSignatureStatus = issuerCheck;
@@ -2614,7 +2644,7 @@ async function recruiterPayload(
 ): Promise<Record<string, unknown>> {
   const prefs = await disclosurePreferencesStore().get(row.learner_id);
   const payload = await verifySharedPrivateResults(row, { bearerLink: true });
-  return redactExactValues(payload, prefs, asOf);
+  return redactExactValues(payload, prefs, asOf, { omitRecruiterMetrics: true });
 }
 
 function withoutPrivateResults(payload: Record<string, unknown>): Record<string, unknown> {

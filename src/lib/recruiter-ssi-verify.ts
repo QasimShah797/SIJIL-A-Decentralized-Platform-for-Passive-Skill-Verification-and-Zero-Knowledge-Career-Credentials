@@ -46,6 +46,8 @@ export function extractDisclosedCredentialIdentity(
 ): DisclosedCredentialIdentity {
   const root = payload ?? {};
   const learner = asRecord(root.learner) ?? {};
+  const recruiterInfo = asRecord(root.recruiterCredentialInfo);
+  const timestamps = asRecord(root.timestamps);
   const meta = asRecords(root.credentialMetadata)[0] ?? {};
   const disclosedFields = Array.isArray(root.disclosedFields) ? root.disclosedFields : [];
 
@@ -58,14 +60,17 @@ export function extractDisclosedCredentialIdentity(
     return null;
   };
 
-  const issuer = asText(meta.issuer_name)
+  const issuer = asText(recruiterInfo?.issuer)
+    ?? asText(meta.issuer_name)
     ?? asText(meta.issuer)
     ?? fieldValue("issuer")
     ?? fieldValue("issuerDid")
     ?? asText(meta.issuer_did)
     ?? null;
 
-  const issuedAt = asText(meta.valid_from)
+  const issuedAt = asText(timestamps?.credentialIssuedAt)
+    ?? asText(recruiterInfo?.issuedAt)
+    ?? asText(meta.valid_from)
     ?? asText(meta.issued_at)
     ?? asText(meta.created_at)
     ?? fieldValue("issuedAt")
@@ -74,9 +79,7 @@ export function extractDisclosedCredentialIdentity(
 
   const did = asText(learner.did)
     ?? asText(meta.holder_did)
-    ?? asText(meta.issuer_did)
     ?? fieldValue("holderDid")
-    ?? fieldValue("issuerDid")
     ?? fieldValue("learner_did")
     ?? null;
 
